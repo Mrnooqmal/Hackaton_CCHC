@@ -81,6 +81,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 3.4 | Tokens de recuperación almacenados hasheados | **Implementado** | `hashResetToken()` con SHA-256; nunca se guarda el token en claro. |
 | 3.5 | El cambio de contraseña actúa sobre la sesión, no sobre el cuerpo | **Implementado** | `changePassword` tomaba el `personaId` del cuerpo: con la contraseña temporal de cualquiera —que el propio sistema devolvía al resetear— se le cambiaba la contraseña a otra persona. |
 | 3.6 | El alta de empresas no es un endpoint | **Implementado** | Era pública, tras un código compartido que además estaba vacío en los dos ambientes. La ejecuta el operador con `Backend/scripts/crear-empresa.js`: autorización por IAM y trazabilidad en CloudTrail. |
+| 3.7 | Cambiar la contraseña revoca las sesiones abiertas | **Implementado (en el árbol)** | Al cambiarla, al restablecerla por correo y al restablecerla un administrador se revocan todas las sesiones de la persona, en todas sus empresas; el cambio con sesión emite una nueva. Antes no se revocaba ninguna: una sesión abierta con la contraseña inicial por quien conoce el RUT quedaba completa al cambiarla su dueña. `Backend/tests/cambio-password-sesiones.test.js`. Ver D-26. |
 
 ### 2.4 Integridad y trazabilidad documental
 
@@ -1484,6 +1485,52 @@ inc. 2), y un aviso que fallaba se perdía en silencio.
   alarma. Un aviso ahí es una notificación que no llegó.
 - En pruebas y en local (sin cola) todo sigue corriendo en la petición.
 
+### D-26. Cambiar la contraseña revoca todas las sesiones y emite una nueva
+**Estado: implementado el 30 de septiembre de 2026 (en el árbol, sin desplegar).
+Reproducido en dev antes de corregir.**
+
+**El síntoma.** Tras cambiar la contraseña inicial, crear el PIN respondía
+"Debes cambiar tu contraseña inicial". El autorizador cachea su respuesta 60
+segundos por token, y el cambio no emitía token nuevo: durante ese minuto el
+autorizador seguía diciendo `credencialProvisional=true`, y el enrolamiento,
+que llega segundos después, caía siempre en esa ventana. En dev, con el mismo
+token y sin tocar el cliente: 403 a los 2 s del cambio, 200 a los 69 s. El
+frontend no era la causa.
+
+**Lo que había detrás.** Cambiar la contraseña no revocaba ninguna sesión. Con
+la contraseña inicial de D-13, quien conoce un RUT puede entrar antes que su
+dueña y dejar abierta esa sesión provisional. Cuando ella cambiaba la
+contraseña, la sesión ajena dejaba de ser provisional y quedaba completa por
+seis horas. Pasaba lo mismo con el restablecimiento por correo y por un
+administrador.
+
+**Qué se decidió.**
+
+- Cambiar la contraseña, restablecerla por correo y restablecerla un
+  administrador **revocan todas las sesiones de la persona** (`activa=false`,
+  con `revocadaEn`). También las de sus fichas en otras empresas, porque
+  `propagarPassword` les cambia la contraseña.
+- El cambio con sesión responde con **una sesión nueva** (token, `sessionId`,
+  vencimiento y usuario), y el frontend la adopta en el acto. Se revoca antes de
+  emitirla: al revés, se revocaría también la nueva.
+- Si no se pueden revocar, el cambio responde 503 y no entrega sesión nueva:
+  informar que todo salió bien con las sesiones anteriores vivas es justo lo que
+  esto cierra. Queda medido como `auth.revocarSesiones`.
+- Para encontrar las sesiones, la tabla tiene un índice nuevo,
+  `personaId-index`, que proyecta solo claves (como en D-6).
+- No se bajó el caché del autorizador. Sigue siendo de 60 s, y una sesión
+  revocada puede seguir respondiendo hasta ese minuto, igual que un cierre de
+  sesión. En la práctica, lo que pueda haber quedado cacheado para la sesión
+  provisional solo sirve para cambiar la contraseña, y eso exige conocer la
+  nueva.
+
+**Despliegue.** El índice va en un commit propio que se despliega primero.
+Mientras DynamoDB llena un índice nuevo, no se lo puede consultar, y si el
+código llegara en el mismo despliegue, un cambio de contraseña en esa ventana
+respondería 503. El backend y el frontend van juntos (regla 4). Con el frontend
+anterior, el token viejo queda revocado y la persona vuelve a la pantalla de
+ingreso.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo
@@ -1736,6 +1783,24 @@ los exámenes. Desde el 29 de septiembre de 2026 su lectura y descarga quedan en
 la auditoría (D-18), pero quién debe poder verlos es una decisión de producto:
 restringirlos al permiso de vigilancia, o sacar del registro el detalle por
 persona y dejar solo los conteos.
+
+### H-16. Cualquier sesión lista todo el personal de su empresa
+**Severidad: media — ABIERTO, espera decisión de producto. Encontrado el 30 de
+septiembre de 2026 por la prueba de punta a punta, en dev.**
+
+`GET /personas` solo exige sesión: no pide `personas.ver`. Una persona con rol
+`trabajador`, recién enrolada, recibe la lista completa del personal de su
+empresa con RUT, correo y fecha de nacimiento de cada una. Los datos de salud no
+viajan (5.2b), y el aislamiento entre empresas se mantiene. Aun así, es
+bastante más de lo que una trabajadora necesita (checklist 7.5).
+
+No se corrigió en el acto porque unas quince pantallas usan ese listado,
+algunas de uso posible en terreno (por ejemplo, el reporte de incidentes).
+Exigir el permiso sin revisarlas puede dejar a una trabajadora sin poder
+reportar. Hay que decidir qué necesita ver cada rol: probablemente un listado
+mínimo (nombre y cargo) para elegir personas, y la ficha completa solo con
+`personas.ver`. Cuando se decida, la prueba de punta a punta agrega la
+comprobación (hoy verifica solo que la trabajadora no puede dar de alta).
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

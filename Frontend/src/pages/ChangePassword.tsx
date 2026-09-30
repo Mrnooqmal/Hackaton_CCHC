@@ -46,7 +46,7 @@ function RuleCheck({ ok, label }: { ok: boolean; label: string }) {
 }
 
 export default function ChangePassword() {
-  const { user, logout, updateUser } = useAuth();
+  const { user, logout, updateUser, reemplazarSesion } = useAuth();
   const navigate = useNavigate();
   const isFirstEntry = user?.passwordTemporal === true || user?.habilitado === false;
 
@@ -78,7 +78,15 @@ export default function ChangePassword() {
         ...form
       });
       if (response.success) {
-        updateUser({ passwordTemporal: false } as Parameters<typeof updateUser>[0]);
+        const d = response.data;
+        if (d?.token && d.sessionId && d.expiresAt && d.user) {
+          // El cambio revoca la sesión con la que se hizo y emite otra: hay que
+          // usar la nueva desde ya, o lo siguiente (crear el PIN) sale con un
+          // token que ya no vale.
+          reemplazarSesion({ token: d.token, sessionId: d.sessionId, expiresAt: d.expiresAt, user: d.user });
+        } else {
+          updateUser({ passwordTemporal: false } as Parameters<typeof updateUser>[0]);
+        }
         setSuccess(true);
         setTimeout(() => {
           if (!user?.habilitado) {

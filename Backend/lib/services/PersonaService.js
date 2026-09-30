@@ -42,6 +42,7 @@ const errorPin = (mensaje, codigo) => Object.assign(new Error(mensaje), { codigo
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const cifradoCampo = require('../cifradoCampo');
+const { revocarSesionesDe } = require('../auth/sesion');
 const { llaveDeTenant, PROPOSITOS } = require('../llaveTenant');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
@@ -367,6 +368,9 @@ class PersonaService {
      * toda la identidad. Recibe la ficha ya actualizada (origen) + la
      * contraseña en texto plano (necesaria para recalcular el hash con la sal
      * propia de cada ficha hermana).
+     *
+     * @returns {Promise<string[]>} los `personaId` de las fichas hermanas que
+     *   cambió: sus sesiones abiertas también hay que revocarlas (D-26).
      */
     async propagarPassword(personaOrigen, passwordPlano, { passwordTemporal = false } = {}) {
         const todas = await this.getAllByRutGlobal(personaOrigen.rut);
@@ -390,6 +394,7 @@ class PersonaService {
                 ':updatedAt': now
             }
         }))));
+        return hermanas.map((h) => h.personaId);
     }
 
     /**
@@ -1007,7 +1012,10 @@ class PersonaService {
                 ':updatedAt': now
             }
         }));
-        await this.propagarPassword(persona, passwordTemporal, { passwordTemporal: true });
+        const hermanas = await this.propagarPassword(persona, passwordTemporal, { passwordTemporal: true });
+        // Quien pidió el restablecimiento no puede entrar; quien tenga una sesión
+        // abierta con la contraseña anterior, tampoco (D-26).
+        await revocarSesionesDe([personaId, ...hermanas]);
 
         return {
             message: 'Contraseña reseteada exitosamente',

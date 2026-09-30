@@ -79,12 +79,11 @@ infra/desplegar-infra-frontend.sh <commit>
 **Cuidados:**
 - **Si un deploy se corta:** revisa el estado del stack (`aws cloudformation describe-stacks`) y los `CodeSha256` de las funciones antes de reintentar, y limpia los worktrees colgados con `git worktree prune`.
 - **Si una publicación del frontend termina sin la línea `Publicado …`, no se publicó.** Compruébalo mirando la fecha de `index.html` en el bucket, y repite la publicación.
-- **Las pruebas de punta a punta no están en el repo.** Se escribieron como scripts de sesión y se pierden al reiniciar. Hacen esto:
-  1. Dan de alta una empresa desechable con `scripts/crear-empresa.js`, con correo a `atorres@thecodecookers.cl`, que está verificado en SES.
-  2. Entran con la contraseña inicial y la cambian.
-  3. Ejercitan el flujo por la API, con el `Origin` del frontend del ambiente.
-  4. Borran todo lo de la empresa en todas las tablas del ambiente y en los dos buckets, y vuelven a escanear para confirmar que no queda nada.
-  Conviene versionarlas en `Backend/scripts/` (pendiente de decidir).
+- **Prueba de punta a punta:** `Backend/scripts/prueba-punta-a-punta.js`, desde `Backend/`:
+  ```bash
+  AWS_PROFILE=adrean_cchc node scripts/prueba-punta-a-punta.js --stage dev|prod
+  ```
+  Da de alta una empresa desechable con `crear-empresa.js`, con correos a `atorres@thecodecookers.cl`, verificado en SES. Recorre por la API, con el `Origin` del frontend del ambiente, el primer ingreso del administrador y el de una persona trabajadora: contraseña inicial, cambio, sesión nueva, PIN y enrolamiento enseguida. Comprueba además permisos, CORS, `no-store` y cierre de sesión. Al final borra todo lo de la empresa, pase lo que pase: busca por identificador en todas las tablas del ambiente y en los dos buckets, y termina bien solo si un recorrido completo da cero. Sale con código 0 solo si todo pasó **y** el borrado quedó confirmado. Una empresa que no se alcanzó a borrar queda anotada, y la próxima ejecución la borra primero. También borra toda empresa desechable con más de una hora. Para borrar una a mano: `--borrar <tenantId>` (solo acepta desechables).
 
 `docs/DEPLOY.md` está **obsoleto**: describe un esquema anterior de dos servicios. No lo sigas.
 
@@ -94,11 +93,13 @@ infra/desplegar-infra-frontend.sh <commit>
 
 | Cuándo | Qué | Detalle |
 |---|---|---|
+| **Próximo despliegue** | D-26: cambiar la contraseña revoca las sesiones y emite una nueva | En el árbol, sin desplegar. El índice `personaId-index` de Sessions va en un commit propio y se despliega primero (dev y prod). Después va el commit con el código, backend y frontend juntos. Verificar con `prueba-punta-a-punta.js`: hoy, contra dev, falla justamente en "crea su PIN inmediatamente después del cambio". |
 | **Lunes 5 de octubre de 2026** | Quitar la URL de CloudFront del CORS de prod | Antes, revisar en los logs que no llegue tráfico con `Origin: https://d30jksx91fodea.cloudfront.net`. Si no llega, quitarla de `custom.corsOrigins.prod` en `Backend/serverless.yml` y desplegar prod. Actualizar D-21. |
 | **Lunes 5 de octubre de 2026** | CSP a modo activo | Solo si la métrica `CspViolaciones` de prod sigue en cero. El cambio va en `infra/frontend.yml` e `infra/desplegar-infra-frontend.sh`, y consiste en que la cabecera pase de `Content-Security-Policy-Report-Only` a `Content-Security-Policy` en las dos distribuciones. Se despliega con `desplegar-infra-frontend.sh` desde un commit pusheado. Si aparecen violaciones legítimas, se corrigen antes. |
 | **Cuando Adrean y Benjamin registren MFA** | Exigir el rol de publicación | Desplegar la infra del frontend con `ExigirRolPublicador=true`: los buckets pasan a aceptar escrituras solo del rol y se niega invalidar a las personas. Hoy nadie tiene MFA, y activarlo antes dejaría a nadie en condiciones de publicar (D-22). La siguiente etapa, GitHub Actions por OIDC, queda para después. |
 | **Urgente** | **SES: la salida del sandbox figura DENEGADA** | Al 30 de septiembre, `aws sesv2 get-account` responde `ReviewDetails.Status = DENIED`, caso `179073624400729`, con tipo de correo `TRANSACTIONAL`, sitio `https://buildandserve.cl` y la descripción de uso **vacía**. Hay que revisar el caso en el Support Center y volver a pedirlo con la descripción completa: correos transaccionales, rebotes y quejas por SNS y supresión automática. Mientras siga en sandbox, prod solo envía correos a direcciones verificadas: los de bienvenida y restablecimiento no le llegan a nadie más. |
 | Sin fecha | Timeout de la función de lotes de supresión | `gobernanzaLotes` tiene un timeout de 300 s, pero HTTP API corta a los 30 s: un lote grande se ejecuta, pero quien lo lanza recibe un error. Candidato a pasar a la cola (D-17, D-24). |
+| Sin fecha | H-16, decisión de producto | Cualquier sesión, incluida la de una trabajadora, lista todo el personal de su empresa con RUT, correo y fecha de nacimiento (`GET /personas` no exige `personas.ver`). Hay que decidir qué ve cada rol antes de restringirlo: unas quince pantallas usan ese listado. |
 | Sin fecha | H-15, decisión de producto | El Registro AT/EP y la investigación de accidentes traen datos de salud sin el resguardo de los documentos de salud. |
 | Sin fecha | Protocolo de notificación de brechas (checklist 7.4) | Ya existe con qué responder qué se expuso (D-19). Falta decidir quién notifica, en qué plazos y por qué canal: decisión legal. |
 
@@ -137,10 +138,11 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-23 | Índices de Documents, SignatureRequests y Signatures: se quedan en `ALL` |
 | D-24 | Carga masiva de personas en cola |
 | D-25 | Avisos del EventBus durables sobre la misma cola |
+| D-26 | Cambiar la contraseña revoca todas las sesiones y emite una nueva |
 
 ### Hallazgos (sección 4)
 
-H-1 a H-15. Están abiertos **H-15**, que espera una decisión de producto, y lo que el checklist marca como pendiente o parcial.
+H-1 a H-16. Están abiertos **H-15** y **H-16**, que esperan una decisión de producto, y lo que el checklist marca como pendiente o parcial.
 
 ### Otros documentos
 

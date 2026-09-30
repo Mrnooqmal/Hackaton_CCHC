@@ -4,6 +4,28 @@ Scripts que se ejecutan con credenciales de AWS, no desde la aplicacion. Los de
 migracion siguen el patron `--dry-run` (default) / `--apply` y son idempotentes
 salvo que se indique.
 
+## prueba-punta-a-punta.js
+
+La prueba que verifica cada despliegue, contra dev o prod:
+
+```
+AWS_PROFILE=<perfil> node scripts/prueba-punta-a-punta.js --stage dev
+AWS_PROFILE=<perfil> node scripts/prueba-punta-a-punta.js --stage prod
+AWS_PROFILE=<perfil> node scripts/prueba-punta-a-punta.js --stage dev --borrar <tenantId>
+```
+
+Crea una empresa desechable (nombre `E2E desechable <fecha> <azar>`) con
+`crear-empresa.js`, recorre por la API lo que hace una persona desde el frontend
+del ambiente y borra todo lo de la empresa al terminar, pase lo que pase. El
+borrado busca por identificador, no por `tenantId`: hay elementos que no lo
+llevan, como la traza de una firma. Se niega a borrar una empresa cuyo nombre no
+tenga la marca. Lo que no se alcanza a borrar queda en
+`~/.cache/buildandserve/e2e-pendientes-<stage>.json`, y la ejecución siguiente
+lo borra primero. Los detalles están en `scripts/e2e/empresa-desechable.js`.
+
+Necesita `s3:BypassGovernanceRetention` sobre el bucket de evidencia, que tiene
+Object Lock en modo gobernanza.
+
 ## sembrar-ambiente.js
 
 Deja un ambiente recien desplegado listo para usar: **empresa, administrador y

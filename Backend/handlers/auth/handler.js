@@ -21,7 +21,7 @@ const { registrarFallo } = require('../../lib/degradacion');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { resolvePersonaPermisos } = require('../../lib/permissions');
-const { hashToken, tokenDelEvento, sesionDesdeToken, conSesion } = require('../../lib/auth/sesion');
+const { hashToken, tokenDelEvento, sesionDesdeToken, conSesion, revocarSesionesDe } = require('../../lib/auth/sesion');
 const crypto = require('crypto');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
@@ -93,6 +93,39 @@ const crearSesionParaPersona = async (persona, event) => {
         return error('Usuario suspendido o desvinculado. Contacta al administrador.', 403);
     }
 
+    const { token, sessionId, expiresAt, now } = await emitirSesion(persona, event);
+
+    // Actualizar último acceso
+    await docClient.send(new UpdateCommand({
+        TableName: process.env.PERSONAS_TABLE || 'Personas',
+        Key: {
+            PK: `TENANT#${persona.tenantId}`,
+            SK: `PERSONA#${persona.personaId}`
+        },
+        UpdateExpression: 'SET ultimoAcceso = :ultimoAcceso',
+        ExpressionAttributeValues: { ':ultimoAcceso': now.toISOString() }
+    }));
+
+    return success({
+        message: 'Inicio de sesión exitoso',
+        token,
+        sessionId,
+        expiresAt: expiresAt.toISOString(),
+        user: await buildUserPayload(persona),
+        tenantId: persona.tenantId,
+        requiereCambioPassword: persona.passwordTemporal,
+        requiereEnrolamiento: !persona.habilitado
+    });
+};
+
+/**
+ * Crea y guarda una sesión nueva para la persona. Devuelve el token en claro,
+ * que solo viaja en esta respuesta: en la tabla queda su hash.
+ *
+ * La usan el ingreso y el cambio de contraseña, que emite una sesión nueva
+ * porque el autorizador cachea su respuesta por token (D-26).
+ */
+const emitirSesion = async (persona, event) => {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + SESSION_DURATION_HOURS * 60 * 60 * 1000);
     const sessionId = uuidv4();
@@ -122,27 +155,7 @@ const crearSesionParaPersona = async (persona, event) => {
         Item: session
     }));
 
-    // Actualizar último acceso
-    await docClient.send(new UpdateCommand({
-        TableName: process.env.PERSONAS_TABLE || 'Personas',
-        Key: {
-            PK: `TENANT#${persona.tenantId}`,
-            SK: `PERSONA#${persona.personaId}`
-        },
-        UpdateExpression: 'SET ultimoAcceso = :ultimoAcceso',
-        ExpressionAttributeValues: { ':ultimoAcceso': now.toISOString() }
-    }));
-
-    return success({
-        message: 'Inicio de sesión exitoso',
-        token,
-        sessionId,
-        expiresAt: expiresAt.toISOString(),
-        user: await buildUserPayload(persona),
-        tenantId: persona.tenantId,
-        requiereCambioPassword: persona.passwordTemporal,
-        requiereEnrolamiento: !persona.habilitado
-    });
+    return { token, sessionId, expiresAt, now };
 };
 
 /**
@@ -374,9 +387,34 @@ module.exports.changePassword = async (event) => {
         }));
         // Mantiene la contraseña "única" para toda la identidad (mismo RUT en
         // otras empresas).
-        await personaService.propagarPassword(persona, passwordNuevo, { passwordTemporal: false });
+        const hermanas = await personaService.propagarPassword(persona, passwordNuevo, { passwordTemporal: false });
 
-        return success({ message: 'Contraseña actualizada exitosamente', passwordTemporal: false });
+        // Ninguna sesión abierta con la contraseña anterior sigue valiendo, la
+        // propia incluida, y en todas las empresas de la persona (D-26). Antes de
+        // emitir la nueva: al revés, se revocaría también esa.
+        try {
+            await revocarSesionesDe([personaId, ...hermanas]);
+        } catch (revErr) {
+            registrarFallo('auth.revocarSesiones', revErr);
+            return error('Tu contraseña se cambió, pero no pudimos cerrar tus otras sesiones. Cierra sesión y vuelve a entrar con tu nueva contraseña.', 503);
+        }
+
+        // Sesión nueva, con otro token. El autorizador cachea su respuesta 60
+        // segundos por token: con el mismo, seguía diciendo que la contraseña era
+        // la inicial, y el enrolamiento que viene justo después caía en esa
+        // ventana con "Debes cambiar tu contraseña inicial".
+        const actualizada = await personaService.getById(personaId);
+        const nueva = await emitirSesion(actualizada, event);
+
+        return success({
+            message: 'Contraseña actualizada exitosamente',
+            passwordTemporal: false,
+            token: nueva.token,
+            sessionId: nueva.sessionId,
+            expiresAt: nueva.expiresAt.toISOString(),
+            user: await buildUserPayload(actualizada),
+            tenantId: actualizada.tenantId,
+        });
     } catch (err) {
         console.error('Error changing password:', err);
         return error(err.message, 500);
@@ -530,7 +568,16 @@ module.exports.resetPassword = async (event) => {
         }));
         // Mantiene la contraseña "única" para toda la identidad (mismo RUT en
         // otras empresas).
-        await personaService.propagarPassword(personaItem, passwordNuevo, { passwordTemporal: false });
+        const hermanas = await personaService.propagarPassword(personaItem, passwordNuevo, { passwordTemporal: false });
+
+        // Quien recupera su cuenta la recupera entera: una sesión abierta con la
+        // contraseña anterior no sigue valiendo (D-26).
+        try {
+            await revocarSesionesDe([personaId, ...hermanas]);
+        } catch (revErr) {
+            registrarFallo('auth.revocarSesiones', revErr);
+            return error('Tu contraseña se restableció, pero no pudimos cerrar las sesiones abiertas. Vuelve a intentarlo en unos minutos.', 503);
+        }
 
         return success({ message: 'Contraseña restablecida exitosamente. Ya puedes iniciar sesión.' });
     } catch (err) {
