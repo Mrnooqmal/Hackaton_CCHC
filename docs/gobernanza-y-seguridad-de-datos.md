@@ -1192,6 +1192,43 @@ cuenta antes de desplegar: avisa sobre 450 y se niega sobre 490. Cuando haga
 falta más, la salida es agrupar rutas por módulo (una función con un router,
 como ya hacen personas, obras e inbox) antes que partir el stack.
 
+### D-20. QA prueba en dev: una distribución del frontend por ambiente
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol; se despliega
+tras el push).**
+
+**Qué pasó.** El 29 de septiembre de 2026, a las 17:45 UTC, se publicó en la URL
+de producción (`d30jksx91fodea.cloudfront.net`) un build del frontend que
+apuntaba a la API de dev. Fue intencional: producción había quedado sin datos y
+QA necesitaba usuarios con qué probar. No hubo exposición de datos: dev no
+tiene datos reales y la API de producción no se tocó. Pero durante esas horas
+la URL de producción no servía producción, y se publicó a mano, sin
+`infra/desplegar-frontend.sh`, que lo habría rechazado. Se detectó por la CSP
+en modo solo reporte: 683 violaciones `connect-src`, todas contra la API de dev,
+desde un minuto después de la publicación.
+
+**Por qué pasó.** Había una sola distribución, la de producción: QA no tenía una
+URL propia contra dev, y la única forma de darle una era usar la de producción.
+Y nada impedía publicar a mano: cualquier credencial con acceso a la cuenta
+puede escribir en el bucket e invalidar la distribución.
+
+**Qué se decidió.**
+
+- Dos distribuciones en `infra/frontend.yml`: la de producción y una de dev
+  (bucket, política de cabeceras y CSP propios), para QA.
+- `infra/desplegar-frontend.sh <commit> <dev|prod>` publica un build solo en la
+  distribución de su ambiente, y se niega si el bundle contiene la API del otro
+  ambiente, cualquier otra API Gateway o `localhost`.
+- El backend de dev acepta el frontend de dev (CORS y enlaces de los correos),
+  leyendo su dominio de la salida del stack del frontend. La URL de producción
+  sigue aceptada en dev solo durante el traspaso de QA; se quita cuando
+  producción vuelve a servir su build.
+- Producción vuelve a `8eb344d`, el build que corresponde a su backend, **después**
+  de que QA tenga su URL, para no dejarlo sin dónde probar. Se confirma con la
+  métrica `CspViolaciones` en cero.
+- Pendiente: que publicar a mano no sea posible. Un rol de despliegue que sea
+  el único con escritura en los buckets del frontend y permiso de invalidar
+  (propuesto, sin implementar).
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

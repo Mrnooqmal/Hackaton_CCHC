@@ -16,7 +16,12 @@ Description: >-
 # Cambios: se editan ACÁ y se aplican con `infra/desplegar-infra-frontend.sh`.
 # Publicar una versión del frontend es otra cosa: `infra/desplegar-frontend.sh`.
 #
-# Una sola distribución, que sirve producción. El TLS mínimo (hoy TLSv1) no se
+# Dos distribuciones: la de producción (importada, la de siempre) y la de dev
+# (creada el 29 de septiembre de 2026), cada una con su bucket y su política de
+# cabeceras, porque la CSP de cada una autoriza solo la API de su ambiente. QA
+# prueba en dev; la URL de producción sirve solo el build de producción (ver
+# D-20 en docs/gobernanza-y-seguridad-de-datos.md). Comparten el OAC: es solo la
+# forma de firmar, y cada bucket admite únicamente a su distribución. El TLS mínimo (hoy TLSv1) no se
 # puede subir con el certificado por defecto de cloudfront.net: requiere dominio
 # propio con certificado de ACM (ver D-14 en docs/gobernanza-y-seguridad-de-datos.md).
 
@@ -39,8 +44,20 @@ Parameters:
       Cabecera Reporting-Endpoints para `report-to` (Chrome). Va junto con la CSP
       en modo solo reporte.
 
+  NombreBucketDev:
+    Type: String
+    Default: buildandserve-frontend-dev
+  CspSoloReporteDev:
+    Type: String
+    Default: ''
+    Description: La CSP en modo solo reporte de la distribución de dev (API de dev).
+  ReportingEndpointsDev:
+    Type: String
+    Default: ''
+
 Conditions:
   ConCspSoloReporte: !Not [!Equals [!Ref CspSoloReporte, '']]
+  ConCspSoloReporteDev: !Not [!Equals [!Ref CspSoloReporteDev, '']]
 
 Resources:
 
@@ -192,6 +209,128 @@ Resources:
           CloudFrontDefaultCertificate: true
           MinimumProtocolVersion: TLSv1
 
+  # ─── Dev ──────────────────────────────────────────────────────────────────
+  # Misma configuración que producción salvo nombres y CSP. Sin Retain en la
+  # distribución ni en las cabeceras (se recrean sin perder nada); sí en el
+  # bucket, para que borrar el stack no falle por un bucket con contenido.
+
+  BucketFrontendDev:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref NombreBucketDev
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  PoliticaBucketFrontendDev:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BucketFrontendDev
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${NombreBucketDev}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistribucionDev}'
+          - Sid: SoloConTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${NombreBucketDev}'
+              - !Sub 'arn:aws:s3:::${NombreBucketDev}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  CabecerasSeguridadDev:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: buildandserve-cabeceras-seguridad-dev
+        Comment: Iguales a las de producción; la CSP autoriza la API de dev.
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: false
+            Preload: false
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            Override: true
+            FrameOption: DENY
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: "frame-ancestors 'none'"
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: strict-origin-when-cross-origin
+        CustomHeadersConfig: !If
+          - ConCspSoloReporteDev
+          - Items:
+              - Header: Content-Security-Policy-Report-Only
+                Value: !Ref CspSoloReporteDev
+                Override: true
+              - Header: Reporting-Endpoints
+                Value: !Ref ReportingEndpointsDev
+                Override: true
+          - !Ref AWS::NoValue
+
+  DistribucionDev:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: CF for buildandserve-frontend-dev (QA)
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3-buildandserve-frontend-dev
+            DomainName: !Sub '${NombreBucketDev}.s3.${AWS::Region}.amazonaws.com'
+            OriginAccessControlId: !GetAtt AccesoOrigen.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: S3-buildandserve-frontend-dev
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [HEAD, GET]
+          CachedMethods: [HEAD, GET]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !GetAtt CabecerasSeguridadDev.Id
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          MinimumProtocolVersion: TLSv1
+
 Outputs:
   DistribucionId:
     Value: !Ref Distribucion
@@ -199,3 +338,9 @@ Outputs:
     Value: !GetAtt Distribucion.DomainName
   Bucket:
     Value: !Ref BucketFrontend
+  DistribucionDevId:
+    Value: !Ref DistribucionDev
+  DominioDistribucionDev:
+    Value: !GetAtt DistribucionDev.DomainName
+  BucketDev:
+    Value: !Ref BucketFrontendDev

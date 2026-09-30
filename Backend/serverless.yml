@@ -27,10 +27,18 @@ custom:
   # dirección debe confirmar la suscripción por correo antes de recibir nada.
   destinatarioAlertas: ${env:ALERTAS_EMAIL, 'atorres@thecodecookers.cl'}
 
+  # Cada backend acepta el frontend de su ambiente (D-20). El de dev sale de la
+  # salida del stack del frontend, así que ese stack se despliega primero. La URL
+  # de producción sigue aceptada en dev solo mientras QA termina de pasarse a su
+  # distribución: se quita cuando producción vuelve a servir su propio build.
+  frontendUrl:
+    prod: https://d30jksx91fodea.cloudfront.net
+    dev: https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
   corsOrigins:
     prod:
       - https://d30jksx91fodea.cloudfront.net
     dev:
+      - https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
       - https://d30jksx91fodea.cloudfront.net
       - http://localhost:5173
       - http://localhost:3000
@@ -102,7 +110,7 @@ provider:
     # URL del frontend para construir enlaces (ej. recuperación de contraseña).
     # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
     # para que funcione aunque no se cargue el .env. Overridable por env var.
-    FRONTEND_URL: ${env:FRONTEND_URL, 'https://d30jksx91fodea.cloudfront.net'}
+    FRONTEND_URL: ${env:FRONTEND_URL, self:custom.frontendUrl.${self:provider.stage}}
     # --- Credenciales (PIN y contraseña) ---
     # El PIN y la contraseña se guardan con scrypt. `ln` es log2 del costo: 15
     # son 32 MB y ~180 ms por verificación en esta Lambda (medido, ver
