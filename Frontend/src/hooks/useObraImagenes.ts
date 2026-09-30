@@ -4,7 +4,7 @@ import { uploadsApi } from '../api/client';
 const CACHE_KEY = 'obraImageCache';
 
 type CacheEntry = { url: string; expiresAt: number };
-type UrlFirmada = { fileKey?: string; downloadUrl?: string };
+type UrlFirmada = { fileKey?: string; downloadUrl?: string | null };
 type RespuestaUrls = { success?: boolean; data?: { urls?: UrlFirmada[]; expiresIn?: number } };
 
 /**
@@ -14,7 +14,7 @@ type RespuestaUrls = { success?: boolean; data?: { urls?: UrlFirmada[]; expiresI
  * solo se piden las que faltan (en un solo lote). Las obras sin foto no
  * aparecen en el resultado: quien la muestre decide su imagen por defecto.
  */
-export function useObraImagenes(obras: { obraId: string; imagenKey?: string }[]): Record<string, string> {
+export function useObraImagenes(obras: { obraId?: string; imagenKey?: string }[]): Record<string, string> {
     const [urls, setUrls] = useState<Record<string, string>>({});
 
     // Solo cambia cuando cambian las fotos, no con cada nueva referencia a la lista
@@ -23,7 +23,7 @@ export function useObraImagenes(obras: { obraId: string; imagenKey?: string }[])
     useEffect(() => {
         const claves = obras
             .filter((o) => o.obraId && o.imagenKey)
-            .map((o) => ({ obraId: o.obraId, imagenKey: o.imagenKey as string }));
+            .map((o) => ({ obraId: o.obraId as string, imagenKey: o.imagenKey as string }));
         if (claves.length === 0) { setUrls({}); return; }
 
         let vivo = true;
