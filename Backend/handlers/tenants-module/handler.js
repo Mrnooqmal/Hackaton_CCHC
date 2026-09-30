@@ -10,30 +10,10 @@ const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds
 const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = require('../../lib/catalogos-actividad');
 const { EppCatalogoService } = require('../../lib/services/EppCatalogoService');
 const { PERMISSIONS } = require('../../lib/permissions');
-const { PutObjectCommand } = require('@aws-sdk/client-s3');
-const { s3Client } = require('../../lib/clients/s3');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
-const almacenamiento = require('../../lib/almacenamiento');
 const { FirmaRepresentanteService } = require('../../lib/services/FirmaRepresentanteService');
-
-const uploadTenantLogo = async (dataUrl, tenantId) => {
-    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    const contentType = match ? match[1] : 'image/png';
-    const base64Data = match ? match[2] : dataUrl;
-    const buffer = Buffer.from(base64Data, 'base64');
-    // El logo se reemplaza cuando la empresa quiere: es material de trabajo, no
-    // evidencia. En el bucket con bloqueo cada cambio habría dejado una versión
-    // inmovilizada por cinco años.
-    const key = `tenants/${tenantId}/${almacenamiento.CATEGORIAS.logos.carpeta}/logo.png`;
-    await s3Client.send(new PutObjectCommand({
-        Bucket: almacenamiento.bucketDeClave(key),
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-    }));
-    return key;
-};
+const { subirLogoEmpresa } = require('../../lib/services/LogoEmpresa');
 
 const tenantService = new TenantService();
 const personaService = new PersonaService();
@@ -167,7 +147,7 @@ module.exports.tenantsHandler = async (event) => {
                 const merged = { ...(existing.preferencias || {}), ...incoming };
                 if (logoBase64) {
                     try {
-                        merged.logoKey = await uploadTenantLogo(logoBase64, tenantId);
+                        merged.logoKey = await subirLogoEmpresa(logoBase64, tenantId);
                     } catch (logoErr) {
                         console.error('Logo upload failed on update:', logoErr);
                     }

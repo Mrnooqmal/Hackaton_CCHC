@@ -13,6 +13,7 @@ import {
 import type { CollectionMode } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
+import { SUGGESTED_COLORS, compressLogo, MAX_LOGO_BYTES } from '../utils/identidadEmpresa';
 import { useToast } from '../context/ToastContext';
 import { tenantsApi, type Tenant, type TenantRole, type TenantCargo } from '../api/tenants.api';
 import { eppApi, CERTIFICADO_TIPO_LABEL, type EppElemento, type EppAdjunto, type CertificadoTipo } from '../api/epp.api';
@@ -78,34 +79,6 @@ function contrastVsWhite(hex: string): number | null {
     if (!rgb) return null;
     const l = relativeLuminance(rgb);
     return (1 + 0.05) / (l + 0.05);
-}
-
-// Paleta sugerida: colores de marca legibles con texto blanco (contraste AA ≥ 4.5).
-const SUGGESTED_COLORS = [
-    { hex: '#006edc', label: 'Azul CChC' },
-    { hex: '#df3601', label: 'Naranja' },
-    { hex: '#c81e1e', label: 'Rojo' },
-    { hex: '#047857', label: 'Verde' },
-    { hex: '#7c3aed', label: 'Violeta' },
-    { hex: '#b45309', label: 'Ámbar' },
-    { hex: '#0e7490', label: 'Cian' },
-];
-
-function compressLogo(dataUrl: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const MAX_H = 120;
-            const scale = Math.min(1, MAX_H / img.height);
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.round(img.width * scale);
-            canvas.height = Math.round(img.height * scale);
-            canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = reject;
-        img.src = dataUrl;
-    });
 }
 
 interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
@@ -446,7 +419,7 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
 
     const onFile = (file: File) => {
         if (!file.type.startsWith('image/')) { setErr('El logo debe ser una imagen (PNG, JPG, SVG, WebP).'); return; }
-        if (file.size > 2 * 1024 * 1024) { setErr('El logo no puede superar los 2 MB.'); return; }
+        if (file.size > MAX_LOGO_BYTES) { setErr('El logo no puede superar los 2 MB.'); return; }
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {

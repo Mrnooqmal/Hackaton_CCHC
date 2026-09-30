@@ -75,7 +75,9 @@ module.exports.validarLicencia = async (event) => {
  * POST /onboarding/completar
  *
  * Body: { token, empresa: { nombre, rutEmpresa }, admin: { rut, nombre,
- *         apellidoPaterno, apellidoMaterno, password, confirmarPassword } }
+ *         apellidoPaterno, apellidoMaterno, fechaNacimiento (AAAA-MM-DD),
+ *         password, confirmarPassword },
+ *         identidad?: { colorPrimario, logoBase64 } }
  *
  * El orden importa y está elegido:
  *
@@ -96,6 +98,7 @@ module.exports.completar = async (event) => {
         token = body.token;
         const empresa = body.empresa || {};
         const admin = body.admin || {};
+        const identidad = body.identidad || {};
 
         const previo = await LicenciaService.validar(token);
         if (!previo.ok) {
@@ -105,6 +108,10 @@ module.exports.completar = async (event) => {
 
         if (admin.password !== admin.confirmarPassword) {
             return error('Las contraseñas no coinciden', 400);
+        }
+        // El servicio la admite opcional (script del operador); por esta vía se exige.
+        if (!admin.fechaNacimiento) {
+            return error('Falta la fecha de nacimiento', 400);
         }
 
         // El correo sale de la licencia, SIEMPRE. Si el cuerpo trae otro, se
@@ -118,9 +125,15 @@ module.exports.completar = async (event) => {
                 nombre: admin.nombre,
                 apellidoPaterno: admin.apellidoPaterno || '',
                 apellidoMaterno: admin.apellidoMaterno || '',
+                fechaNacimiento: admin.fechaNacimiento,
                 email: previo.licencia.email,
             },
             password: admin.password,
+            // Solo lo que la identidad admite: nada más del cuerpo llega a la empresa.
+            identidad: {
+                colorPrimario: identidad.colorPrimario || null,
+                logoBase64: identidad.logoBase64 || null,
+            },
         };
 
         // 1. Revisión completa antes de tocar la licencia.

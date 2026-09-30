@@ -30,8 +30,15 @@ export interface OnboardingData {
         nombre: string;
         apellidoPaterno: string;
         apellidoMaterno: string;
+        /** AAAA-MM-DD */
+        fechaNacimiento: string;
         password: string;
         confirmarPassword: string;
+    };
+    /** Los mismos campos que se editan después en Mi Empresa › Identidad. */
+    identidad?: {
+        colorPrimario?: string;
+        logoBase64?: string;
     };
 }
 
