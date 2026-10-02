@@ -2,6 +2,10 @@
 .app-layout {
   display: flex;
   min-height: 100vh;
+  /* En móvil 100vh mide el viewport con la barra del navegador oculta: el
+     contenedor quedaba más alto que el login (100dvh) y, al centrarlo, asomaba
+     una franja del fondo arriba y abajo. */
+  min-height: 100dvh;
 }
 
 .main-content {
