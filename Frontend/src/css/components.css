@@ -225,7 +225,11 @@
     border-bottom: 1px solid var(--surface-border);
 }
 
+/* Texto de apoyo bajo un campo. Va en --text-secondary y no en --text-muted:
+   es texto de cuerpo, y --text-muted queda bajo el mínimo de contraste. */
+
 .form-hint {
+  line-height: 1.45;
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 4px;
@@ -525,22 +529,6 @@
     width: 100%;
 }
 
-.ui-select-trigger {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
-    background: var(--surface-elevated);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    font-size: var(--text-base);
-    cursor: pointer;
-    text-align: left;
-    transition: all var(--transition-fast);
-}
-
 .ui-select-trigger:hover:not(:disabled) {
     border-color: var(--primary-400);
 }
@@ -583,12 +571,6 @@
     flex-shrink: 0;
 }
 
-.ui-select-caret {
-    color: var(--text-muted);
-    flex-shrink: 0;
-    transition: transform 0.2s ease;
-}
-
 .ui-select-trigger.open .ui-select-caret {
     transform: rotate(180deg);
 }
@@ -605,17 +587,14 @@
     animation: uiSelectIn 0.12s ease-out;
 }
 
-.ui-select-panel.is-above {
-    margin-top: 0;
-    margin-bottom: 4px;
-}
-
 @keyframes uiSelectIn {
     from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
 .ui-select-panel.is-above {
+    margin-top: 0;
+    margin-bottom: 4px;
     animation: none;
 }
 
@@ -811,7 +790,6 @@
     padding: 1px 7px; border-radius: 999px; background: var(--surface-hover);
     color: var(--text-secondary); font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-
 
 .idp-main {
     display: flex;
@@ -1019,7 +997,6 @@
     color: var(--text-primary);
     word-break: break-word;
 }
-.idp-field-value--mono { font-family: var(--font-mono); font-size: 0.88rem; }
 .idp-field-value--empty { color: var(--text-muted); font-weight: 400; }
 .idp-field-row {
     display: flex;
@@ -1124,6 +1101,16 @@
 /* El disparador del Select imita a .form-input para que un desplegable y un
    campo de texto en la misma fila se lean como el mismo control. */
 .ui-select-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: all var(--transition-fast);
     height: 38px;
     padding: 0 8px 0 12px;
     background-color: transparent;
@@ -1131,7 +1118,10 @@
     font-size: 13.5px;
 }
 
-.ui-select-caret { width: 14px; height: 14px; }
+.ui-select-caret {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    transition: transform 0.2s ease; width: 14px; height: 14px; }
 
 .ui-select-trigger:hover:not(:disabled),
 .ui-select-trigger.open {
@@ -1167,7 +1157,6 @@
 .ui-skel--circulo,
 .ob-skel--circulo { border-radius: 50%; }
 
-.ui-skel--titulo,
 .ob-skel--titulo { height: 26px; width: min(340px, 60vw); }
 
 .ui-skel--linea,

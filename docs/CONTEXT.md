@@ -46,7 +46,17 @@ documentos firmables con trazabilidad.
   (`src/hooks/useOfflineSignature.ts`, `localStorage.offlineVales`). El flujo
   anterior —IndexedDB con el PIN en claro y sincronización en lote— se eliminó;
   `src/services/purgaOffline.ts` borra esa base en los equipos que la tengan.
-- CSS modular con variables (no framework de UI pesado)
+- CSS plano con variables (no framework de UI pesado), en `src/css/`. Los globales se
+  importan desde `App.tsx` en un orden que **importa** (con igual especificidad gana el
+  último): `index` (tokens) → `layout` → `ds44` → `base` → `encuestas` → `responsive` →
+  `utilidades` → `incidentes` → `firmas` → `components` (piezas de `components/ui`) →
+  `dashboard`. Hasta el 29-09-2026 casi todo vivía en un `App.css` de 4.700 líneas, un
+  tercio sin uso; se partió conservando el orden de la cascada, verificado regla a regla.
+  Estilos nuevos de una pantalla: en su archivo de módulo, o uno nuevo importado desde
+  `App.tsx` en el lugar que le corresponda. Importarlo desde la página lo deja **antes**
+  de los globales en el bundle (Vite ordena por el grafo de imports), así que sus reglas
+  pierden contra `base`/`utilidades` a igual especificidad — por eso `obra.css` y
+  `repositorio-ds44.css` son la excepción, no el patrón.
 - Manual de usuario embebido: VitePress en `Frontend/manual-src/`, build a
   `Frontend/public/manual/` (se sirve desde `/manual/` en producción)
 

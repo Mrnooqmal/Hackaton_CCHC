@@ -59,7 +59,18 @@ import { BrandProvider, useBrand } from './context/BrandContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PERMISSIONS } from './permissions';
 import './css/index.css';
-import './css/App.css';
+// Estilos globales, por responsabilidad. EL ORDEN IMPORTA: con igual especificidad
+// gana el último, y cada archivo va donde estaban sus reglas en el antiguo App.css.
+// En particular, responsive.css va después de ds44/encuestas (en móvil se impone a
+// ellas) y antes de utilidades.css (que se impone a él).
+import './css/layout.css';
+import './css/ds44.css';
+import './css/base.css';
+import './css/encuestas.css';
+import './css/responsive.css';
+import './css/utilidades.css';
+import './css/incidentes.css';
+import './css/firmas.css';
 import './css/components.css';
 import './css/dashboard.css';
 

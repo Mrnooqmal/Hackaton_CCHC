@@ -1,0 +1,545 @@
+/* base.css — Piezas base compartidas: tarjetas, botones, formularios, tablas, insignias,
+   modales, alertas, pestañas y utilidades. Los componentes de components/ui viven en
+   components.css. */
+
+/* Cards */
+
+.card {
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  transition: all var(--transition-normal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.card:hover {
+  border-color: var(--primary-600);
+  box-shadow: var(--shadow-lg);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.card-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.card-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+.stat-value {
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+/* Buttons */
+
+/* Prevent line breaks in buttons and badges */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary-500);
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-600);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+/* Acción de guardar cambios — naranja de marca CChC para contrastar con
+   el azul del resto de la UI. Pensado para vivir sobre el PageHeader. */
+
+.btn-save {
+  background: #f13800;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(223, 54, 1, 0.28);
+}
+
+.btn-save:hover:not(:disabled) {
+  background: #df3601;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(223, 54, 1, 0.38);
+}
+
+/* ── Toolbar + búsqueda reutilizable (listados) ────────────────────────── */
+
+.tbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.tbar-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 360px;
+  min-width: 200px;
+}
+
+.tbar-search > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.tbar-search input {
+  width: 100%;
+  padding: 9px 12px 9px 36px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.tbar-search input:focus {
+  outline: none;
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+@media (max-width: 560px) {
+  .tbar { flex-direction: column; align-items: stretch; }
+  .tbar-search { max-width: none; }
+}
+
+.btn-secondary {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--primary-600);
+}
+
+.btn-danger {
+  background: var(--gradient-danger);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  box-shadow: var(--shadow-glow-danger);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.btn-lg {
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-base);
+}
+
+.btn-icon {
+  padding: var(--space-3);
+  width: 40px;
+  height: 40px;
+}
+
+/* Forms */
+
+.form-group {
+  margin-bottom: var(--space-5);
+}
+
+/* Rótulo en versalitas: el campo ya no se anuncia con una línea del mismo
+   cuerpo que su contenido, así que el ojo distingue rótulo de dato sin leer. */
+
+.form-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+/* Campo del sistema: 38px de alto, superficie transparente y cuerpo de 13.5px.
+   Antes eran 46px con fondo --surface-elevated: dos materiales distintos (el
+   campo relleno y la tarjeta que lo contiene) apilados sin que el corte entre
+   ambos dijera nada. Ahora el campo es un hueco delimitado por su borde, igual
+   que los controles del panel de obra. */
+
+.form-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  /* background-color y no el atajo: el <select> nativo lleva su flecha como
+     background-image y `background` la borraría. */
+  background-color: transparent;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+
+/* Los campos de varias líneas crecen; el alto fijo es solo para los de una. */
+
+textarea.form-input {
+  height: auto;
+  min-height: 84px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+/* En táctil el cuerpo vuelve a 16px: por debajo, iOS hace zoom al enfocar y
+   la página queda desplazada. */
+
+@media (pointer: coarse) {
+  .form-input { font-size: 16px; }
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
+}
+
+.form-input.error {
+  border-color: var(--danger-500);
+}
+
+.form-error {
+  font-size: var(--text-sm);
+  color: var(--danger-500);
+  margin-top: var(--space-1);
+}
+
+/* Checkbox styling */
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+
+.checkbox-row:hover {
+  background: var(--surface-hover);
+}
+
+.checkbox-input {
+  /* fallback basic appearance for browsers that support accent-color */
+  width: 18px;
+  height: 18px;
+  accent-color: var(--success-500, #2ecc71);
+  border-radius: 4px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-elevated);
+}
+
+/* Casillero cuadrado con tilde SVG (no el gajo de dos bordes rotados de
+   antes): mismo trazo en toda la app — Actividades y Crear obra incluidos. */
+
+.checkbox-input.custom-checkbox {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  vertical-align: middle;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--text-muted);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.checkbox-input.custom-checkbox:hover:not(:checked):not(:disabled) {
+  border-color: var(--primary-400);
+}
+
+.checkbox-input.custom-checkbox:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.checkbox-input.custom-checkbox:checked {
+  background: var(--primary-500);
+  border-color: var(--primary-500);
+}
+
+.checkbox-input.custom-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 65% no-repeat;
+}
+
+.checkbox-input.custom-checkbox:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Radio circular: misma técnica que el checkbox custom (input real, sin
+   div-falso), para la audiencia de una encuesta (opción única). */
+
+.radio-input.custom-radio {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  vertical-align: middle;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-muted);
+  background: none;
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.radio-input.custom-radio:hover:not(:checked):not(:disabled) {
+  border-color: var(--primary-400);
+}
+
+.radio-input.custom-radio:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.radio-input.custom-radio:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.radio-input.custom-radio:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0b1622;
+  transform: translate(-50%, -50%);
+}
+
+/* Select */
+
+.form-select,
+select.form-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 40px;
+}
+
+/* Opciones del desplegable: legibles en tema oscuro */
+
+.form-select option,
+select.form-input option {
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+/* Tables */
+
+.table-container {
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--surface-border);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.table th {
+  background: var(--surface-elevated);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.badge-success {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--success-500);
+}
+
+.badge-warning {
+  background: rgba(234, 179, 8, 0.2);
+  color: var(--warning-500);
+}
+
+.badge-danger {
+  background: rgba(244, 67, 54, 0.2);
+  color: var(--danger-500);
+}
+
+.badge-info {
+  background: rgba(59, 130, 246, 0.2);
+  color: var(--info-500);
+}
+
+/* Estado "en curso"/activo con el mismo azul de acento que el resto de la
+   interfaz (no el info-500 genérico, que es otro azul distinto). */
+
+.badge-accent {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+
+/* Un paso más que `--surface-elevated` a propósito: las filas de evidencia del
+   DS44 usan ese mismo tono de fondo, y con él la pastilla desaparecía contra la
+   fila. El texto también se subió de `--text-muted` a `--text-secondary`: en
+   oscuro el primero da 3.16:1 sobre este fondo (bajo el mínimo AA de 4.5:1),
+   así que aunque la pastilla ya se viera, "No aplica"/"Sin cubrir" seguían
+   ilegibles. `--text-secondary` da 5.77:1. */
+
+.badge-neutral {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+
+/* `badge-secondary` se usaba en varias pantallas sin estar definido: se
+   pintaba sin fondo y heredando el color del texto, así que en modo oscuro
+   quedaba como texto suelto sin pastilla. Va perfilado en vez de relleno para
+   distinguirse de `neutral`, que es el gris macizo. */
+
+.badge-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--surface-border);
+}
+
+/* Avatar */
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: white;
+  font-size: var(--text-sm);
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
+  font-size: var(--text-xs);
+}
+
+.avatar-lg {
+  width: 56px;
+  height: 56px;
+  font-size: var(--text-lg);
+}
+
+/* Grid */
+
+.grid {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
