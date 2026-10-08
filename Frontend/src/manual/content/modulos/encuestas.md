@@ -15,8 +15,8 @@ Hay dos miradas del módulo:
 
 ## Responder una encuesta
 
-1. Cuando te asignan una encuesta, te llega un aviso a tu
-   [Bandeja de Entrada](/modulos/bandeja-entrada). El aviso te lleva directo a la encuesta.
+1. Cuando te asignan una encuesta, te llega un aviso a tus
+   [Notificaciones](/modulos/bandeja-entrada). El aviso te lleva directo a la encuesta.
 2. También la encuentras en **Encuestas → Mis encuestas asignadas**, en el grupo
    **Pendientes**. Cada fila dice cuántas preguntas tiene y hace cuánto te la asignaron.
 3. Tócala para abrir la pantalla de respuesta. Responde cada pregunta; las marcadas como
@@ -28,14 +28,10 @@ puedes **actualizar tu respuesta** (se vuelve a firmar).
 
 ![Mis encuestas asignadas, con los grupos Pendientes y Respondidas](/img/encuestas/mis-encuestas.png)
 
-> Las encuestas pendientes también aparecen en tu [Dashboard](/modulos/dashboard) y como
+> Las encuestas pendientes también aparecen en [Inicio](/modulos/dashboard) y como
 > un número junto a **Encuestas** en el menú lateral.
 
-::: tip Sin conexión
-Si en terreno no tienes señal, puedes responder igual una encuesta que ya hayas abierto
-antes con conexión. La respuesta queda guardada en el equipo y se envía sola cuando vuelve
-la señal; mientras tanto verás el aviso **"por sincronizar"** arriba de la lista.
-:::
+> Para enviar la respuesta necesitas conexión, porque se firma con tu PIN.
 
 ## Crear una encuesta (gestor)
 
@@ -51,7 +47,7 @@ la señal; mientras tanto verás el aviso **"por sincronizar"** arriba de la lis
      **Selección múltiple** (con sus opciones; escribe una nueva en *"+ Agregar opción"*),
      **Escala 1–N** (defines el valor máximo) o **Pregunta abierta** (respuesta libre).
      Marca **Obligatoria** si no se puede dejar en blanco.
-3. Toca **Crear encuesta**. Cada destinatario recibe el aviso en su bandeja.
+3. Toca **Crear encuesta**. Cada destinatario recibe el aviso en sus notificaciones.
 
 ![Nueva encuesta con información general, audiencia y preguntas](/img/encuestas/nueva-encuesta.png)
 
@@ -85,17 +81,17 @@ declaró.
 ## Preguntas frecuentes
 
 **¿Quién puede crear encuestas?**
-Los roles de gestión (Administrador, Prevencionista, Jefe de Obra). Consulta
-[Roles de Usuario](/roles/).
+Quien tenga el permiso **Crear encuesta**: por defecto Administrador, Prevencionista y Jefe de
+Obra. Ver [Roles](/roles/).
 
 **Me asignaron una encuesta y no la veo.**
 Revisa la pestaña **Mis encuestas asignadas** (si gestionas encuestas, la vista parte en
-**Encuestas creadas**). También puedes abrirla desde el aviso de tu bandeja.
+**Encuestas creadas**). También puedes abrirla desde el aviso en tus notificaciones.
 
 **Asigné la encuesta pero nadie responde.**
-Los destinatarios la ven en **Mis encuestas asignadas**, en su Dashboard y en su Bandeja de
-Entrada. Si la **tasa de respuesta** está baja, puedes recordarles por la
-[Bandeja de Entrada](/modulos/bandeja-entrada).
+Los destinatarios la ven en **Mis encuestas asignadas**, en **Inicio** y en sus
+notificaciones. Si la **tasa de respuesta** está baja, puedes escribirles un mensaje desde
+[Notificaciones](/modulos/bandeja-entrada).
 
 **¿Quién ve las respuestas?**
 Quien gestiona encuestas ve los resultados de cada una. Un trabajador solo ve sus propias

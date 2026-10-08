@@ -1,94 +1,110 @@
 # Incidentes y hallazgos
 
-El módulo de **Incidentes** te permite registrar y dar seguimiento a todo lo que ocurre en
-materia de seguridad: desde un **hallazgo** (una condición o acto inseguro que detectaste a
-tiempo) hasta un **incidente** o un **accidente** que afectó a un trabajador.
+El módulo de **Incidentes** registra lo que ocurre en materia de seguridad en la obra: desde un
+**hallazgo** (una condición o acción insegura detectada a tiempo) hasta un **incidente** o un
+**accidente**.
 
-Registrar estos eventos no es solo una obligación normativa: es la base para prevenir que
-vuelvan a ocurrir. La plataforma transforma esos registros en **estadísticas** (tasa de
-accidentabilidad, días perdidos, siniestralidad) que te ayudan a entender dónde están los
-riesgos de tu obra.
+Registrarlos es la base para que no se repitan, y alimenta las **estadísticas** de la obra y los
+registros que exige el DS 44.
 
 ## Entrar al módulo
 
-En el menú lateral, haz clic en **Incidentes**. Verás la pantalla **"Incidentes y
-hallazgos"**, que combina dos cosas:
+En el menú lateral, toca **Incidentes**. Es de la obra elegida: si ves *"No hay una obra
+activa"*, usa **Cambiar de obra**. También puedes reportar desde el acceso **Reportar
+incidente** de [Inicio](/modulos/dashboard).
 
-- Un **consolidado estadístico** con los números y gráficos de tu obra.
-- El **listado de eventos** registrados, con su estado.
+La pantalla **Incidentes y hallazgos** tiene dos pestañas, según tus permisos:
 
-![Pantalla de Incidentes con el consolidado estadístico y el listado de eventos](/img/incidentes/inicio.png)
+- **Listado** — los eventos registrados, con su gravedad y estado.
+- **Estadísticas** — el consolidado de la obra.
 
-## Registrar un hallazgo, incidente o accidente
+![Pantalla de Incidentes con el listado de eventos](/img/incidentes/inicio.png)
 
-1. Haz clic en el botón para **registrar un nuevo evento**.
-2. Elige la **clasificación**: *hallazgo*, *incidente* o *accidente*.
-3. Completa el formulario. Según la clasificación verás campos como:
-   - **Tipo de Hallazgo** *(obligatorio)* — qué tipo de condición o acto detectaste.
-   - **Etapa Constructiva** — en qué etapa de la obra ocurrió.
-   - **Gravedad** *(obligatorio)* — qué tan serio es el evento.
-   - **Trabajador Afectado** — si corresponde, busca a la persona escribiendo su **nombre o
-     RUT**.
-   - **Detalle** *(obligatorio)* — describe qué pasó con la mayor claridad posible.
-4. Guarda. Verás una confirmación de **"Registro Exitoso"**.
+## Reportar un hallazgo o un incidente
 
-> Si tu dispositivo lo permite, la plataforma puede registrar la **ubicación** del
-> evento automáticamente, para dejar constancia de dónde ocurrió.
+1. Toca **Reportar hallazgo** o **Reportar incidente**. Se abre la pantalla **Reportar**.
+2. Arriba, elige **Hallazgo** o **Incidente**.
+   - **Cualquier persona puede reportar un hallazgo.**
+   - Reportar un incidente requiere el permiso **Reportar incidente**; si no lo tienes, esa
+     opción aparece deshabilitada.
+3. Completa:
+   - **Tipo de hallazgo** *(en hallazgos)* — **Condición subestándar** o **Acción subestándar**.
+   - **Etapa constructiva** en la que ocurrió.
+   - **Gravedad** *(obligatorio)* — **Leve**, **Grave** o **Fatal**.
+   - **Trabajador(es) afectado(s)** *(opcional)* — búscalos por nombre o RUT y toca **Agregar
+     afectado**.
+   - **Detalle** *(obligatorio)* — qué pasó, con la mayor claridad posible. Puedes tocar
+     **Dictar** y contarlo en voz alta: la plataforma lo transcribe a texto.
+   - **Evidencia fotográfica** *(opcional)* — sube fotos (PNG o JPG, hasta 10 MB) o tómalas con la
+     cámara del teléfono.
+4. Revisa la **Confirmación de envío** y envía.
 
-> **Registra los hallazgos aunque parezcan menores.** Un hallazgo a tiempo (una
-> herramienta en mal estado, una protección faltante) evita el accidente de mañana, y queda
-> como evidencia de tu gestión preventiva.
+![Pantalla Reportar con las opciones Hallazgo e Incidente](/img/incidentes/reportar.png)
 
-## El consolidado estadístico
+> El reporte queda registrado **con tu nombre** (*Reportado por*), y quienes gestionan la obra
+> pueden verificarlo.
 
-En la parte superior verás tarjetas y gráficos que resumen la accidentabilidad de la obra:
+> **Reporta los hallazgos aunque parezcan menores.** Una herramienta en mal estado o una
+> protección faltante, detectadas a tiempo, evitan el accidente de mañana y son evidencia de tu
+> gestión preventiva.
 
-- **Accidentes** — total de accidentes registrados.
-- **Tasa de Accidentabilidad** — indicador estándar de seguridad.
-- **Días Perdidos** — días de trabajo perdidos por accidentes.
-- **Siniestralidad** — indicador de siniestralidad del periodo.
+## El listado
 
-También hay **gráficos por mes y por etapa de obra**, y un **calendario** que marca los días
-con eventos. Todo esto se actualiza solo a medida que registras eventos.
+Busca por descripción y filtra por **gravedad**, **estado de cierre** (abiertos o cerrados) y
+**etapa**. Cada evento muestra su estado: **Reportado**, **En investigación**, **En proceso**,
+**Abierto** o **Cerrado**.
 
-## Seguimiento y cierre de eventos
+Al tocar un evento ves su detalle: etapa, días perdidos, trabajador afectado, evidencias
+fotográficas, quién lo reportó y las investigaciones asociadas.
 
-Cada evento tiene un **estado** (por ejemplo *reportado*, *en investigación*, *cerrado*).
-Los eventos más graves requieren una **investigación** y la definición de **medidas
-correctivas**, a las que luego se les da seguimiento hasta cerrarlas. Esto conecta con la
-fase **Actuar** del cumplimiento de la obra (ver [Obras](/modulos/obras)).
+### Gestionar un evento
 
-## Exportar el reporte
+Quien tiene permiso ve la sección **Gestionar**:
 
-Puedes generar un **Reporte de Incidentes y Accidentes** en formato imprimible (PDF), con el
-consolidado y el detalle de los eventos. Es útil para reuniones de comité o para presentar
-ante una fiscalización.
+- **Editar gobernanza** — define el **Responsable** del seguimiento (Prevencionista, Jefe
+  directo o Comité paritario), el **Plazo de respuesta**, el **Responsable de cierre**, el
+  **Estado de cierre** y un comentario de cierre.
+- **Marcar como accidente** — califica un incidente como accidente. Requiere el permiso
+  **Calificar accidente**.
+
+### Investigaciones
+
+Los incidentes **graves y fatales** requieren una **investigación** con árbol de causas y
+medidas correctivas (Art. 71). Se registran desde **Detalle de obra → Cumplimiento DS 44 →
+Verificar → Investigaciones AT/EP**, y sus medidas se siguen en **Actuar → Medidas
+correctivas**. Ver [Obras](/modulos/obras#módulos-de-cada-fase).
+
+## Estadísticas
+
+La pestaña **Estadísticas** muestra el **Consolidado estadístico** de la obra:
+
+- Totales de **Hallazgos**, **Incidentes** y **Accidentes**.
+- **Tasa de accidentabilidad**.
+- **% Hallazgos cerrados** y **Índice proactivo** (hallazgos sobre el total de eventos: cuanto
+  más alto, más se está previniendo).
+- Gráficos de **Tendencia mensual** y **Por etapa constructiva**, y un **Calendario** con los
+  días que tuvieron eventos.
+
+Puedes descargar el consolidado en **CSV** o **PDF**.
 
 ## Preguntas frecuentes
 
 **¿Cuál es la diferencia entre hallazgo, incidente y accidente?**
-Un **hallazgo** es una condición o acto inseguro detectado *antes* de que cause daño. Un
-**incidente** es un evento que ocurrió pero no causó lesión (o casi-accidente). Un
-**accidente** sí causó lesión a un trabajador. Registrar los tres da una imagen completa de
-la seguridad de tu obra.
+Un **hallazgo** es una condición o acción insegura detectada *antes* de que cause daño. Un
+**incidente** es un evento que ocurrió, con o sin lesión. Un **accidente** es un incidente que
+causó lesión a un trabajador; lo califica quien tiene ese permiso.
 
-**¿Cualquier persona puede registrar un evento?**
-Generalmente sí: se promueve que todos puedan reportar hallazgos. El seguimiento y cierre de
-la investigación lo realizan los roles de gestión. Consulta [Roles de Usuario](/roles/).
+**¿Cualquier persona puede reportar?**
+Un hallazgo, sí. Un incidente, quien tenga el permiso **Reportar incidente**.
 
-**Registré un accidente por error.**
-Avisa a un prevencionista o administrador. Los registros se conservan para mantener la
-trazabilidad, pero pueden corregirse o aclararse en el seguimiento del evento.
+**Reporté algo por error.**
+Avisa al prevencionista o al administrador. Los registros se conservan para no perder la
+trazabilidad, pero se pueden aclarar en la gestión del evento.
 
-**Los indicadores (tasa, siniestralidad) no me cuadran.**
-Esos indicadores se calculan automáticamente a partir de los eventos registrados y los días
-perdidos. Si un número no cuadra, revisa que todos los eventos estén bien clasificados y con
-sus datos completos.
+**No veo la pestaña Estadísticas (o Listado).**
+Cada una depende de un permiso (**Ver estadísticas** y **Ver historial**). Consulta con el
+administrador.
 
-**¿Por qué me pide la ubicación?**
-Para dejar constancia de **dónde** ocurrió el evento. Es opcional según tu dispositivo y
-ayuda a la investigación, pero el registro funciona igual si no la entregas.
-
-**¿Para qué sirve el reporte en PDF?**
-Para tener una versión imprimible y compartible del consolidado y los eventos, ideal para
-reuniones del comité paritario o para responder a una fiscalización.
+**Los datos de salud del afectado, ¿quién los ve?**
+Los datos de un accidente incluyen información de la persona afectada. Trátalos con reserva y
+compártelos solo con quien participa en la investigación.

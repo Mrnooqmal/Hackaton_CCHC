@@ -1,208 +1,182 @@
 # Obras
 
-Una **obra** es cada proyecto de construcción que gestionas dentro de la plataforma.
-Es el punto de partida de todo tu trabajo: dentro de una obra viven sus documentos de
-seguridad, las personas asignadas, las actividades, los incidentes y el seguimiento del
-cumplimiento del DS 44.
+Una **obra** es cada proyecto de construcción. Dentro de ella viven su equipo, sus documentos,
+sus actividades, sus incidentes y el seguimiento del cumplimiento del DS 44.
 
-Piensa en la obra como la "carpeta madre" de un proyecto. Mientras no tengas al menos
-una obra creada, no podrás cargar documentos, asignar trabajadores ni registrar
-capacitaciones. Por eso, **lo primero que harás al empezar es crear tu obra**.
+> **¿Quién puede crear obras?** Quien tenga el permiso **Crear obra** y pueda entrar a la
+> **vista de empresa** (permiso **Ver Mi Empresa**). Con la configuración de fábrica, eso es
+> solo el **Administrador**. Ver [Roles](/roles/#la-vista-de-empresa).
 
-> **¿Quién puede crear obras?** Solo los roles **Administrador** y **Prevencionista**.
-> Si tu rol es Jefe de Obra, Supervisor o Trabajador, podrás ver y trabajar dentro de las
-> obras a las que te asignen, pero no crear nuevas. Revisa [Roles de Usuario](/roles/)
-> para ver el detalle de permisos.
+## El listado de obras
 
-## Entrar al módulo de Obras
+El listado está en la **vista de empresa**: en el menú lateral, **Obras**. Muestra todas las
+obras de la empresa, con el subtítulo *"Proyectos activos, documentos DS44 y personal
+asignado"*.
 
-1. Inicia sesión en la plataforma.
-2. En el **menú lateral izquierdo**, haz clic en **Obras**.
-3. Se abrirá la pantalla **Obras**, con el subtítulo *"Proyectos activos, documentos DS44
-   y personal asignado"*.
+![Listado de obras con el botón Nueva obra](/img/obras/listado.png)
 
-![Listado de obras en vista de tarjetas, con el botón Nueva obra arriba a la derecha](/img/obras/listado.png)
+Cada obra muestra su foto, nombre, ubicación y un estado de color: **Activa**, **Pausada** o
+**Finalizada**. Arriba puedes **buscar** por nombre, código o dirección, **filtrar por estado**
+y alternar entre vista de **tarjetas** y de **tabla**.
 
-Aquí verás todas las obras de tu empresa. Cada obra se muestra como una **tarjeta** con:
+Si todavía no hay obras, verás *"Sin obras registradas"* con un botón para crear la primera.
 
-- La **foto** de la obra (si se cargó una; si no, aparece una imagen por defecto).
-- El **nombre** del proyecto.
-- Una etiqueta de **estado** de color: verde (**Activa**), amarillo (**Pausada**) o gris
-  (**Finalizada**).
-- La **comuna y región** donde se ubica.
-- Un indicador rojo de **DS44 pendientes** cuando a la obra le faltan documentos
-  obligatorios. Si está todo al día, no aparece la alerta.
+## Crear una obra
 
-### Buscar y filtrar obras
+1. En **Obras**, toca **Nueva obra**.
+2. Completa el formulario, de arriba hacia abajo:
+   - **Identificación** — **Nombre de obra** *(obligatorio)*, **Código** interno *(opcional)*,
+     **Empresa mandante** (se completa con tu empresa) y **Estado** (normalmente *Activa*).
+   - **Ubicación** — busca la **Dirección** y elígela de la lista: la plataforma completa la
+     **Región** y la **Comuna**; confírmalas.
+   - **Características DS44** — marca lo que corresponda. **De esto depende qué requisitos del
+     DS 44 se le exigen a la obra**:
+     - *Comparte sitio con otra(s) entidad(es) — faena compartida* (Art. 20).
+     - *Hay máquinas/herramientas motrices* (Art. 10).
+     - *Existen agentes físicos/químicos/biológicos* (Art. 2).
+   - **Imagen de referencia** *(opcional)* — la foto que encabeza la obra y su tarjeta.
+   - **Trabajadores asignados** *(opcional)* — busca por nombre o RUT y marca a quienes trabajarán
+     ahí desde el inicio. Puedes cambiarlo después.
+3. Toca **Crear obra**.
 
-Cuando tengas muchas obras, usa las herramientas de la parte superior del listado:
+![Formulario de creación de obra](/img/obras/nueva-obra.png)
 
-- **Buscador:** escribe en el campo *"Buscar por nombre, código o dirección…"* para
-  filtrar al instante.
-- **Filtro por estado:** el desplegable te permite mostrar **Todos los estados**,
-  **Activas**, **Pausadas** o **Finalizadas**.
-- **Vista:** puedes alternar entre **vista de tarjetas** (con foto) y **vista de tabla**
-  (más compacta, ideal para revisar muchas obras de un vistazo).
+> Si una característica cambia, la puedes corregir después: desde **Editar obra** o
+> respondiendo **Sí / No** en el requisito correspondiente del DS 44.
 
-> Si acabas de crear tu empresa y todavía no hay obras, verás el mensaje
-> *"Sin obras registradas"* con un botón directo para crear la primera.
+## La ficha de la obra
 
-## Crear una obra nueva
+Con la obra elegida, entra a **Detalle de obra** en el menú lateral. Arriba ves la foto, el
+nombre y dos pestañas: **Resumen** y **Cumplimiento DS 44**. A la derecha están **Editar obra**
+y el botón para **exportar** el reporte imprimible del Formulario Único de Fiscalización.
 
-1. En la pantalla **Obras**, haz clic en el botón **+ Nueva obra** (arriba a la derecha).
-2. Se abrirá el formulario **Nueva obra**, dividido en secciones. Complétalas de arriba
-   hacia abajo.
+### Resumen
 
-![Formulario de creación de obra con las secciones Identificación, Ubicación y Características DS44](/img/obras/nueva-obra.png)
+![Pestaña Resumen de la obra](/img/obras/resumen.png)
 
-### Sección "Identificación"
+- **Identificación** — mandante, código, fecha de registro y plano referencial.
+- **Ubicación**, con un enlace para abrirla en el mapa.
+- **Dotación** — cuántas personas trabajan en la obra y qué órgano preventivo le corresponde
+  por eso:
 
-- **Nombre de obra** *(obligatorio)* — el nombre con el que identificarás el proyecto.
-  Por ejemplo: *"Torre Costanera Norte"*.
-- **Código** *(opcional)* — un código interno de tu empresa, si usas alguno (ej.: *"OBR-001"*).
-- **Mandante** — se completa **automáticamente** con el nombre de tu empresa. Normalmente
-  no necesitas modificarlo.
-- **Estado** — elige entre **Activa**, **Pausada** o **Finalizada**. Al crear una obra
-  nueva, lo habitual es dejarla en **Activa**.
+  | Personas en la obra | Órgano que exige el DS 44 |
+  | --- | --- |
+  | 1 a 9 | Ninguno obligatorio |
+  | 10 a 25 | Delegado de Seguridad y Salud en el Trabajo |
+  | Más de 25 | Comité Paritario de Higiene y Seguridad |
 
-### Sección "Ubicación"
+  Si la empresa declaró una dotación para la obra, se usa esa; si no, la de personas
+  asignadas en la plataforma.
+- **Accesos** al **Equipo**, a los **Incidentes** y a los **Documentos de la obra**.
+- **Condiciones de la faena** — las tres características DS 44, con su respuesta.
 
-- **Región** *(obligatorio)* — selecciona la región desde el desplegable (puedes escribir
-  para buscarla más rápido).
-- **Comuna** *(obligatorio)* — se habilita una vez que eliges la región, y muestra solo las
-  comunas de esa región.
-- **Dirección** *(obligatorio)* — empieza a escribir y el sistema te sugerirá direcciones
-  para que selecciones la correcta.
+### Cumplimiento DS 44
 
-### Sección "Características DS44"
+Es el corazón de la obra. Muestra, requisito por requisito, qué exige el DS 44 a esta obra y en
+qué estado está cada uno.
 
-Aquí marcas las casillas que correspondan a tu obra. **Estas respuestas definen qué
-exigencias del DS 44 aplican**, para que la plataforma no te pida documentos que tu obra
-no necesita:
+![Pestaña Cumplimiento DS 44 con las cuatro fases](/img/obras/cumplimiento.png)
 
-- ☐ **Comparte sitio con otra(s) entidad(es)** — faena compartida (Art. 20).
-- ☐ **Hay máquinas / herramientas motrices** (Art. 10).
-- ☐ **Existen agentes físicos, químicos o biológicos** (Art. 2).
+Arriba ves el **Avance DS 44 de la obra** (en porcentaje) y las **cuatro fases** del ciclo de
+mejora: **Planificar**, **Hacer**, **Verificar** y **Actuar**. Cada fase muestra su avance y
+cuántos requisitos están completados. La fase marcada **En curso** es en la que está la obra.
 
-> Tómate un momento para responder bien estas casillas: de ellas depende qué
-> procedimientos y documentos te pedirá el sistema más adelante. Si tu situación cambia,
-> podrás ajustarlas después desde la obra.
+::: info La fase avanza sola
+No hay que apretar nada para pasar de fase: cuando una fase queda completa, la obra pasa sola
+a la siguiente. Puedes ir resolviendo requisitos de cualquier fase en cualquier momento.
+:::
 
-### Sección "Imagen de referencia" (opcional)
+Debajo están los **Requisitos** de la fase elegida. Si son muchos, se agrupan por tema (MIPER y
+mapa de riesgos, Programa de Trabajo Preventivo, Equipos y EPP, Emergencias…), y se abre solo el
+primer grupo con algo por resolver. Puedes **filtrar por estado**: Vencido, Pendiente,
+Incompleto, Pendiente de firma o Completado.
 
-Haz clic en **Seleccionar imagen** para subir una foto del terreno o de la obra. Es solo
-referencial (te ayuda a identificarla en el listado), pero no es obligatoria.
+Cada fila dice qué es el requisito, su número en el formulario (por ejemplo *FUF 8 · Art. 8
+inc. 1*) y, si falta algo, **qué falta**, en palabras. A la derecha, una sola acción según lo
+que se necesite:
 
-### Sección "Trabajadores asignados" (opcional)
+| Acción | Qué hace |
+| --- | --- |
+| **Cargar** | Subir el documento que acredita el requisito (ver más abajo). |
+| **Firmantes** | Elegir quiénes deben firmar un documento ya cargado. |
+| **Recordar** | Volver a avisar a quienes todavía no firman. |
+| **Solicitar** | Pedir la firma de una persona puntual, como el representante legal. |
+| **Nueva versión** | Renovar un documento cuya revisión venció. |
+| **Designar** | Ir a [Mi Empresa](/modulos/tenants) a designar al representante legal. |
+| **Registrar** | Dejar constancia de un envío que el DS 44 exige (ver más abajo). |
+| **Sí / No** | Responder si una condición aplica a la obra. Con **No**, el requisito pasa a *No aplica*. |
+| **Ver** | Abrir el documento que ya lo acredita, o el módulo donde se gestiona. |
 
-Verás la lista de personas registradas en tu empresa. **Marca las casillas** de quienes
-trabajarán en esta obra desde el inicio. No te preocupes si todavía no lo tienes claro:
-podrás agregar o quitar personas en cualquier momento desde la ficha de la obra.
+En las capacitaciones aparece además **o prográmala en la plataforma**: en vez de subir el
+certificado de una capacitación externa, puedes programarla en
+[Actividades](/modulos/actividades).
 
-### Guardar
+Los estados se explican en [Estados de cumplimiento](/ds44/fases-obra#estados-de-cada-requisito).
 
-Cuando completes los campos obligatorios, haz clic en **Crear obra** (mientras se procesa
-verás *"Creando…"*). Si prefieres descartar, usa **Cancelar**.
+### Cargar un documento y pedir las firmas
 
-> **Qué pasa al guardar:** la plataforma **prepara automáticamente los documentos
-> obligatorios** que el DS 44 exige según las características que marcaste. No tienes que
-> crearlos uno por uno: ya quedan listos, esperando que subas los archivos correspondientes.
+Al tocar **Cargar** en un requisito:
 
-## Abrir la ficha de una obra
+1. Selecciona o arrastra el **Archivo** (PDF o imagen, hasta 10 MB).
+2. Indica la **Fecha del hecho**: cuándo ocurrió lo que el documento acredita (la
+   capacitación, el simulacro), no el día en que lo subes. Y su fecha de **caducidad**.
+3. Elige a **quiénes firman**. Cada persona elegida lo recibe en
+   [Mis firmas](/modulos/firmas) y lo firma con su PIN.
 
-Haz clic sobre cualquier obra del listado para abrir su **ficha de detalle**. Dentro
-encontrarás dos pestañas en la parte superior:
+**Subir el archivo no es firmarlo**: mientras falten firmas, el requisito queda como
+*Pendiente de firma*.
 
-![Ficha de detalle de una obra mostrando las pestañas Resumen y DS44 — Cumplimiento](/img/obras/ficha-detalle.png)
+### Módulos de cada fase
 
-- **Resumen** — una vista rápida del estado de la obra: firmas pendientes, documentos
-  DS44 pendientes, actividades del mes e incidentes abiertos.
-- **DS44 — Cumplimiento** — el corazón de la obra. Aquí gestionas todo el cumplimiento
-  normativo paso a paso (ver más abajo).
+Al lado de los requisitos están los **Módulos de la fase**: las herramientas donde se registra
+el trabajo diario que después acredita los requisitos. Se abren en un panel sin salir de la
+obra.
 
-El equipo de la obra no vive en esta ficha: está en el módulo **Personas**, que al entrar
-con una obra elegida muestra exactamente su equipo (ver más abajo).
+| Fase | Módulos |
+| --- | --- |
+| **Planificar** | **Estructura preventiva** — comité paritario o delegado de la obra. Ver [Estructura preventiva](/modulos/estructura-preventiva). |
+| **Hacer** | **Registro de actividad preventiva** (Art. 72), **Onboarding de la obra**, **Registros de gestión** y **Eventos sobrevinientes** (registros que solo existen si ocurre el hecho; no cuentan como faltante). |
+| **Verificar** | **Consolidado del período** (siniestralidad, investigaciones, medidas, vigilancia) e **Investigaciones AT/EP** (informes de incidentes graves y fatales, Art. 71). |
+| **Actuar** | **Medidas correctivas**, **Actualizaciones hacia Planificar** (MIPER, programa y reglamento que toca revisar) y **Prescripciones** (Art. 70). |
 
-> Junto al nombre de la obra hay un pequeño botón para **copiar su identificador**.
-> Solo lo necesitarás si algún día el soporte te lo pide; en el uso diario puedes ignorarlo.
+### Registrar un envío
 
-## La pestaña "DS44 — Cumplimiento" (el ciclo de mejora)
+Algunos documentos no basta con tenerlos: el DS 44 exige **remitirlos** a ciertos destinatarios
+(personas trabajadoras, comité paritario o delegado, organizaciones sindicales, línea de mando o
+departamento de prevención, según el documento). Por ejemplo, el reglamento interno se remite
+con anticipación a su entrada en vigencia.
+En esos requisitos, **Registrar** abre las **Constancias de envío**: para cada destinatario
+anotas el **medio**, la **fecha del envío**, una observación y el **respaldo** (el acuse de
+recibo, el acta o la captura del correo).
 
-El cumplimiento de una obra **no avanza por etapas de construcción**, sino por un **ciclo
-de mejora continua** dividido en cuatro fases que se completan en orden:
+## El equipo de la obra
 
-```
-PLANIFICAR  →  HACER  →  VERIFICAR  →  ACTUAR
-```
+El equipo no se arma en la ficha: está en **Personas**, con la obra elegida. Ver
+[Personas](/modulos/personas#el-equipo-de-una-obra).
 
-- **Planificar** — cargas los documentos base de la obra (política, reglamento, matrices
-  de riesgo, etc.). Cuando están todos, la obra avanza sola a la siguiente fase.
-- **Hacer** — ejecutas lo planificado: onboarding de los trabajadores, procedimientos,
-  capacitaciones y firmas.
-- **Verificar** — revisas que todo se haya cumplido y dejas el registro consolidado.
-- **Actuar** — das seguimiento a las medidas correctivas surgidas de incidentes.
+## Editar, pausar o finalizar
 
-Para pasar de una fase a la siguiente, completa lo que la fase pide y usa el botón de
-**avanzar fase** que aparece en pantalla. El sistema **no te dejará avanzar dejando
-pendientes obligatorios**, para que no queden vacíos de cumplimiento.
+Con **Editar obra** cambias el nombre, el **Estado** y las características DS 44:
 
-> Avanzar de fase es un paso importante del proceso. Asegúrate de haber completado
-> realmente lo que corresponde antes de confirmar.
-
-## Asignar personas a la obra
-
-1. Con la obra elegida, entra a **Personas** desde el menú lateral. Verás el equipo de la
-   obra agrupado por **equipos**: el de gestión, la cuadrilla de cada supervisor y quienes
-   todavía no tienen cuadrilla.
-2. En **Agregar personas** aparecen quienes ya están registradas en la empresa y aún no
-   están en esta obra. Elígelas ahí (o arrástralas al equipo que corresponda). Para dar de
-   alta a alguien que no existe todavía, entra en la vista de empresa: el alta es un acto
-   de empresa, no de obra.
-3. Al sumar a alguien podrás indicar su **cargo** dentro de esta obra. El cargo define qué
-   documentos y capacitaciones de onboarding necesitará esa persona.
-
-Cada trabajador muestra su **avance de onboarding** y si ya está **apto para ingresar a
-terreno** (es decir, si completó todos sus requisitos obligatorios). Al abrir su ficha
-tienes el checklist completo, con los atajos para subir el documento, firmar de forma
-asistida o programar la capacitación pendiente.
-
-## Editar, pausar o finalizar una obra
-
-Desde la ficha de la obra puedes:
-
-- **Editar** sus datos (nombre, ubicación, características DS44, etc.) con el botón de
-  edición (ícono de lápiz).
-- **Pausar** la obra cambiando su estado a *Pausada*, si los trabajos se detienen
-  temporalmente. La obra conserva toda su información.
-- **Finalizar** la obra cambiando su estado a *Finalizada* cuando el proyecto concluye.
+- **Pausada** — los trabajos se detienen temporalmente. Se conserva todo.
+- **Finalizada** — el proyecto terminó. Se conserva todo para consulta.
 
 ## Preguntas frecuentes
 
-**¿Puedo tener varias obras al mismo tiempo?**
-Sí. Tu empresa puede gestionar todas las obras que necesites de forma simultánea, cada una
-con su propio cumplimiento, equipo y documentos.
+**No veo el botón "Nueva obra".**
+Tu rol no tiene el permiso para crear obras. Pídeselo a un administrador.
 
-**No veo el botón "+ Nueva obra".**
-Ese botón solo aparece para los roles **Administrador** y **Prevencionista**. Si no lo ves,
-es porque tu rol no tiene permiso para crear obras. Pídele a un administrador que la cree y
-te asigne.
+**¿Cómo avanzo de fase?**
+No se avanza a mano: la obra pasa sola a la siguiente fase cuando la actual queda completa.
 
-**Creé la obra pero no veo los documentos.**
-Los documentos obligatorios se generan solos al guardar la obra. Ábrela, entra a la pestaña
-**DS44 — Cumplimiento** y los verás listados, esperando que subas cada archivo.
+**Un requisito dice "No aplica". ¿Lo puedo marcar yo?**
+No a mano: lo decide la plataforma según la dotación de la obra y sus condiciones. Si una
+condición está mal, corrígela respondiendo **Sí / No** o editando la obra.
 
-**¿Por qué a mi obra le aparece una alerta roja de "DS44 pendientes"?**
-Significa que faltan documentos obligatorios por cargar. El número indica cuántos. Entra a
-la pestaña **DS44 — Cumplimiento** para completarlos; cuando estén todos, la alerta desaparece.
+**Subí el documento, pero el requisito sigue incompleto.**
+Lee la línea **Falta…** del requisito: muchas veces falta una firma, una fecha o una constancia
+de envío, no otro archivo.
 
-**Me equivoqué al marcar las características DS44 al crear la obra.**
-Puedes corregirlas editando la obra desde su ficha. Ten en cuenta que cambiarlas puede
-modificar qué documentos te exige el sistema.
-
-**El sistema no me deja avanzar de fase.**
-Es intencional: quedan requisitos obligatorios sin completar en la fase actual. Revisa qué
-está pendiente en la pestaña **DS44 — Cumplimiento**, complétalo y vuelve a intentar.
-
-**¿Qué diferencia hay entre pausar y finalizar una obra?**
-**Pausar** es temporal: la obra se detiene pero puedes retomarla. **Finalizar** marca el
-cierre del proyecto. En ambos casos la información se conserva y puedes consultarla.
+**¿Qué diferencia hay entre pausar y finalizar?**
+**Pausar** es temporal; **finalizar** marca el cierre del proyecto. En ambos casos la
+información se conserva.

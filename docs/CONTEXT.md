@@ -693,13 +693,15 @@ reflejadas aquí). Estructura S3: un bucket con aislamiento por prefijo
   `Frontend/src/manual/manualNav.ts`. Se sirve en la ruta `/manual/*` (lazy chunk
   aparte, ver `App.tsx`), a pantalla completa fuera del shell de la app.
   ⚠️ `Frontend/manual-src/` quedó como resto vacío de la versión VitePress: **no editar
-  ahí**. `DOCS_AGENT_PROMPT.md` es el prompt que generó el contenido. **28 páginas** en 5
-  secciones: `guia-inicio/`, `ds44/` (documentos obligatorios, fases, EPP,
-  capacitaciones, firmas), `modulos/` (los 11 módulos), `roles/` (los 5 roles con
-  tabla de permisos por módulo), + home. Es **documentación de usuario final**
-  (lenguaje no técnico), no técnica — para lo técnico está este `CONTEXT.md`.
-  Está **alineado con el código real** (5 roles, firmas PIN/Offline/Presencial,
-  advertencia legal del PIN, EPP trabajador+supervisor).
+  ahí**. `DOCS_AGENT_PROMPT.md` es el prompt que generó la primera versión. **33 páginas**
+  en 4 secciones: `guia-inicio/`, `ds44/` (fases y estados, documentos obligatorios, EPP,
+  capacitaciones, firmas), `modulos/` (17 páginas, una por pantalla o módulo) y `roles/`
+  (los 5 roles, con la tabla de permisos por defecto generada desde
+  `DEFAULT_ROLE_PRESETS`), + la portada. Es **documentación de usuario final** (lenguaje
+  no técnico). Se reescribió contra el código en octubre de 2026 (rama
+  `docs/manual-usuario`): si cambias una pantalla, revisa su página. La ayuda contextual
+  del header (`MANUAL_SECTION` en `components/Header.tsx`) lleva de cada ruta a su página.
+  Capturas en `Frontend/public/manual-img/` (convenciones en su `LEEME.txt`).
 - **Historia reciente relevante** (git): planificación diaria de charlas (spec, ver
   §11); onboarding por cambio de cargo (`reconcileCargoDocs`); permisos de
   asignación de docs; resumen de firmas que cuenta también firmados; transferencia

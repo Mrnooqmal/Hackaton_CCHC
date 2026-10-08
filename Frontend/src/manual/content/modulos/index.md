@@ -1,47 +1,72 @@
 # Módulos de la plataforma
 
-La plataforma se organiza en **módulos**, cada uno accesible desde el **menú lateral
-izquierdo**. Según tu [rol](/roles/), verás unos u otros: un trabajador verá los módulos que
-necesita para sus tareas, mientras que un administrador verá todos.
+La plataforma se organiza en **módulos**, que abres desde el **menú lateral**. Según tu
+[rol](/roles/) verás unos u otros, y el menú cambia según estés **dentro de una obra** o en la
+**vista de empresa** (ver [Primeros pasos](/guia-inicio/primeros-pasos#el-menú-lateral)).
 
-Esta es una guía rápida de para qué sirve cada módulo y dónde encontrar su explicación
-detallada.
+::: tip Ayuda en cada pantalla
+El signo de **pregunta** de la barra superior abre directamente la página de este manual que
+corresponde a la pantalla en la que estás.
+:::
+
+## Dentro de una obra
 
 | Módulo | ¿Para qué lo uso? |
 | --- | --- |
-| [Dashboard](/modulos/dashboard) | Tu pantalla de inicio: resume tus pendientes y el estado de tus obras. |
-| [Obras](/modulos/obras) | Crear y gestionar tus proyectos de construcción. Es el punto de partida de todo. |
-| [Documentos](/modulos/documentos) | Cargar, asignar y consultar los documentos de seguridad. |
-| [Firmas Digitales](/modulos/firmas) | Firmar con tu PIN y solicitar firmas a otros (incluso sin internet). |
-| [Incidentes](/modulos/incidentes) | Reportar hallazgos, incidentes y accidentes, y ver estadísticas. |
-| [Actividades](/modulos/actividades) | Planificar el mes en calendario, programar capacitaciones y charlas, y registrar la asistencia. |
-| [Encuestas](/modulos/encuestas) | Crear y responder encuestas de seguridad. |
-| [Personas](/modulos/personas) | Registrar a los trabajadores y definir su rol y cargo. |
-| [Bandeja de Entrada](/modulos/bandeja-entrada) | Enviar y recibir mensajes internos de la obra. |
-| [Mi Empresa](/modulos/tenants) | Configurar los datos, el logo, los roles y los cargos de tu empresa. |
+| [Inicio](/modulos/dashboard) | Ver mis pendientes y las actividades de hoy. |
+| [Obras](/modulos/obras) | Seguir el cumplimiento del DS 44 de la obra, requisito por requisito. |
+| [Personas](/modulos/personas) | Armar el equipo de la obra, ver el onboarding de cada uno, firmar asistido. |
+| [Repositorio](/modulos/documentos) | Buscar, ver y versionar los documentos de la obra y de la empresa. |
+| [Actividades](/modulos/actividades) | Planificar el mes, programar charlas y capacitaciones, registrar la asistencia. |
+| [Encuestas](/modulos/encuestas) | Responder las encuestas que me asignan, o crearlas. |
+| [Firmas](/modulos/firmas) | Firmar lo que me asignaron y ver mi historial. |
+| [Incidentes](/modulos/incidentes) | Reportar hallazgos e incidentes y ver las estadísticas. |
+| [Prescripciones](/modulos/prescripciones) | Seguir las medidas que nos ordenaron implementar. |
+
+## En la vista de empresa
+
+| Módulo | ¿Para qué lo uso? |
+| --- | --- |
+| [Obras](/modulos/obras) | Ver todas las obras y crear nuevas. |
+| [Personas](/modulos/personas) | Dar de alta al personal, una a una o con carga masiva. |
+| [Mi Empresa](/modulos/tenants) | Identidad, representante legal, roles, cargos, EPP y ficha de salud. |
+| [Onboarding por cargo](/modulos/onboarding-cargos) | Definir qué exige el DS 44 a cada cargo. |
+| [Catálogos](/modulos/catalogos) | Adaptar las listas de temas, riesgos y medidas de las charlas. |
+
+## Siempre a mano
+
+| Módulo | ¿Para qué lo uso? |
+| --- | --- |
+| [Notificaciones](/modulos/bandeja-entrada) | Avisos de la plataforma y mensajes del equipo (la campana). |
+| [Configuración](/modulos/configuracion) | Mis datos, mi contraseña y mi PIN. |
+
+## Módulos dentro de otros
+
+| Módulo | Dónde está |
+| --- | --- |
+| [Estructura preventiva](/modulos/estructura-preventiva) | En la obra (fase Planificar) y en Mi Empresa. |
+| [Datos personales](/modulos/datos-personales) | En Mi Empresa, para la Ley 21.719. |
 
 ## ¿Por dónde empiezo?
 
-Si es tu primera vez, el orden recomendado es:
+Si administras la empresa y es tu primera vez:
 
-1. **Mi Empresa** — revisa los datos, el logo y los cargos de tu empresa.
-2. **Personas** — registra a tu equipo de trabajo.
-3. **Obras** — crea tu primera obra (esto genera sus documentos obligatorios).
-4. **Documentos** y **Actividades** — completa los documentos y programa las capacitaciones.
-5. **Firmas** — cada persona firma lo que le corresponde.
+1. **Mi Empresa** — identidad, **representante legal**, roles y catálogo de EPP.
+2. **Personas** — registra a tu equipo.
+3. **Obras** — crea tu primera obra.
+4. **Personas** dentro de la obra — arma su equipo y cuadrillas.
+5. **Detalle de obra** y **Actividades** — carga los documentos y programa las capacitaciones.
 
-Revisa también la [Guía de Inicio](/guia-inicio/) para los primeros pasos paso a paso.
+Si eres trabajador, lo tuyo está en **Inicio**, **Mis firmas**, **Actividades** y **Encuestas**.
+Ver también la [Guía de inicio](/guia-inicio/).
 
-## Cómo se conectan los módulos
+## Cómo se conectan
 
 Todo gira en torno a la **obra**:
 
-- Dentro de una **Obra** viven sus **Documentos**, **Actividades**, **Incidentes** y
-  **Encuestas**.
-- Los documentos y las actividades se validan con **Firmas**.
-- Las **Personas** se asignan a las obras y firman lo que les corresponde.
-- Los avisos y coordinaciones se manejan por la **Bandeja de Entrada**.
-
-> Es posible que no veas todos los módulos. Cada empresa puede tener habilitados solo
-> algunos, según su plan. Si te falta un módulo que necesitas, consúltalo con el
-> administrador de tu empresa.
+- La obra tiene su **equipo**, sus **documentos**, sus **actividades**, sus **incidentes** y su
+  **cumplimiento DS 44**.
+- Los documentos, las actividades y las encuestas se acreditan con **firmas**.
+- Lo que pasa en los módulos (una capacitación firmada, una entrega de EPP, un acta) es lo que
+  después acredita los requisitos del DS 44 de la obra.
+- Los avisos llegan por **Notificaciones**.

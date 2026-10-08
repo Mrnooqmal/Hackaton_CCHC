@@ -2,9 +2,9 @@ import { Link } from 'react-router-dom';
 import Callout from './Callout';
 
 const FEATURES = [
-    { title: 'Guía de Inicio', details: 'Instalación, configuración y onboarding de un nuevo tenant en la plataforma.', link: '/manual/guia-inicio/' },
-    { title: 'DS44 & Normativa', details: 'Cumplimiento del Supremo Decreto 44. Documentos obligatorios, fases de obra y firmas.', link: '/manual/ds44/' },
-    { title: 'Módulos', details: 'Documentación completa de los módulos de la plataforma.', link: '/manual/modulos/' },
+    { title: 'Guía de Inicio', details: 'Tu primer ingreso, cómo moverte por la plataforma y el alta de una empresa.', link: '/manual/guia-inicio/' },
+    { title: 'DS44 & Normativa', details: 'Qué exige el Decreto Supremo 44: fases y estados del cumplimiento, documentos, EPP, capacitaciones y firmas.', link: '/manual/ds44/' },
+    { title: 'Módulos', details: 'Cómo usar cada pantalla de la plataforma, paso a paso.', link: '/manual/modulos/' },
     { title: 'Roles de Usuario', details: 'Qué puede hacer cada rol y sus responsabilidades dentro de la empresa.', link: '/manual/roles/' },
 ];
 
@@ -48,11 +48,11 @@ export default function ManualHome() {
             <section className="manual-prose">
                 <h2>¿Qué es Build &amp; Serve?</h2>
                 <p>
-                    <strong>Build &amp; Serve</strong> es una plataforma SaaS multi-tenant que
-                    digitaliza la gestión de Seguridad y Salud en el Trabajo (SST) en obras de
-                    construcción chilenas. Reemplaza los procesos basados en papel por un sistema
-                    único que centraliza documentos, firmas, incidentes, capacitaciones y
-                    reportería, con cumplimiento integrado del <strong>Supremo Decreto 44</strong>.
+                    <strong>Build &amp; Serve</strong> es una plataforma que digitaliza la gestión
+                    de Seguridad y Salud en el Trabajo (SST) en obras de construcción chilenas.
+                    Reemplaza el papel por un sistema único que reúne documentos, firmas,
+                    capacitaciones, entregas de EPP e incidentes, y muestra el cumplimiento del
+                    <strong>Decreto Supremo 44</strong> de cada obra, requisito por requisito.
                 </p>
 
                 <Callout type="warning" title="Consulta legal pendiente">
@@ -61,7 +61,7 @@ export default function ManualHome() {
                         DS 44 está siendo evaluada con la Dirección del Trabajo. La funcionalidad
                         opera con normalidad, pero <strong>no debe usarse como única prueba legal</strong>
                         {' '}hasta obtener respuesta oficial. Más detalles en{' '}
-                        <Link to="/manual/ds44/firmas-digitales">Firmas digitales y DS44</Link>.
+                        <Link to="/manual/ds44/firmas-digitales">Firmas digitales y DS 44</Link>.
                     </p>
                 </Callout>
 

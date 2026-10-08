@@ -1,21 +1,26 @@
 # Rol: Jefe de Obra
 
-El **jefe de obra** lidera la gestión operativa del proyecto. Coordina la ejecución y
-vela porque la obra avance cumpliendo los requisitos de seguridad.
+El **jefe de obra** dirige la obra: su equipo, su documentación y su avance, coordinando a la
+prevención y a los supervisores.
 
-## Responsabilidades
+## Qué hace
 
-- Gestionar la obra y su avance de fase.
-- Coordinar a supervisores y equipos.
-- Gestionar el personal de la obra (alta de trabajadores, onboarding, EPP).
-- **Planificar el mes de actividades** junto con el prevencionista (o en su ausencia).
-- Velar por el cumplimiento de los documentos obligatorios antes de avanzar de fase.
-- Revisar incidentes y el estado general de seguridad de la obra.
+- **Arma el equipo** de la obra y sus cuadrillas, y da de alta a las personas. Ver
+  [Personas](/modulos/personas).
+- **Sube documentos** y sigue el **cumplimiento DS 44** de la obra. Ver [Obras](/modulos/obras).
+- **Planifica el mes** de actividades junto con prevención. Ver
+  [Actividades](/modulos/actividades).
+- Registra **entregas de EPP**, gestiona el **onboarding** y la **vigilancia de la salud**.
+- Revisa los **incidentes** y **califica accidentes**.
+- **Desvincula** a quien deja la empresa.
 
-## Tareas clave
+## Permisos por defecto
 
-- **Avance de fase**: es responsable de avanzar la `etapaActual` de la obra. La
-  plataforma verifica que los documentos obligatorios de la fase anterior estén
-  completos. Ver [Obras](/modulos/obras) y [Fases de obra](/ds44/fases-obra).
-- **Coordinación operativa**: trabaja junto al prevencionista (cumplimiento) y a los
-  supervisores (ejecución en terreno).
+Ver la tabla completa en [Roles](/roles/). Por defecto tiene **Crear obra** y **Gestionar cargos
+y kits**, pero esas pantallas están en la vista de empresa: para usarlas necesita además **Ver Mi
+Empresa**, que da el administrador.
+
+## La fase de la obra
+
+No hay que avanzar la fase a mano: la obra pasa sola a la siguiente cuando la actual queda
+completa. Ver [Fases y estados del cumplimiento](/ds44/fases-obra).

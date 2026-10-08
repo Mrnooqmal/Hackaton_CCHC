@@ -1,100 +1,80 @@
 # Documentos obligatorios DS 44
 
-El DS 44 exige que cada obra mantenga un conjunto de documentos **vigentes y firmados**.
-La plataforma los **prepara automáticamente** al crear una obra, según las características que
-marcaste. Cada documento queda asociado a su etapa y con su flujo de firma definido, listo
-para que subas el archivo y recojas las firmas.
+El DS 44 exige que la empresa y cada obra mantengan un conjunto de documentos **vigentes,
+firmados y difundidos** a quien corresponde. La plataforma **no los redacta**: los escribe tu
+empresa. Lo que hace es decirte **cuáles necesitas**, guardarlos, controlar su versión y su
+vigencia, y recoger las firmas.
 
-## Catálogo de documentos
+## Dónde ver qué falta
 
-Estos son los documentos obligatorios que la plataforma gestiona:
+No hay que recordar ninguna lista: al crear la obra, la plataforma calcula qué requisitos le
+corresponden. Los ves en **Detalle de obra → Cumplimiento DS 44**, ordenados por fase, y en
+**Repositorio → DS44 · Cumplimiento**, ordenados por sección del formulario de fiscalización.
 
-| Documento | ¿Para qué sirve? | ¿Cuándo? | Quién firma |
+## Los principales documentos
+
+| Documento | Para qué sirve | Quién lo firma | Dónde vive |
 | --- | --- | --- | --- |
-| **Informe de Riesgos Laborales (IRL)** | Informa al trabajador de los riesgos de su labor | Todas las etapas | Prevencionista + Trabajador |
-| **Política de Seguridad y Salud Ocupacional** | Declara el compromiso de la empresa con la seguridad | Al inicio | Administrador / Jefe de Obra |
-| **Reglamento Interno de Orden, Higiene y Seguridad** | Normas internas de la empresa | Al inicio | Trabajador (recepción) |
-| **Procedimiento de Trabajo Seguro** | Cómo realizar una tarea de forma segura | Durante la ejecución | Supervisor + Trabajador |
-| **Acta de Entrega de EPP** | Constancia de entrega de elementos de protección personal | Todas las etapas | Trabajador + Supervisor |
-| **Encuesta / Declaración de Salud** | Información de salud del trabajador al ingresar | Al ingreso | Trabajador |
-| **Registro de Capacitación SST (Art. 16)** | Evidencia de capacitaciones realizadas | Todas las etapas | Relator + Asistentes |
-| **Mapa de Riesgos de la obra** | Identifica los riesgos por zona de la obra | Durante la ejecución | Prevencionista |
-| **Matriz de Riesgos (MIPER / MIPPER)** | Identifica peligros y evalúa riesgos por cargo | Todas (por cargo) | Prevencionista |
-| **Programa de Trabajo Preventivo** | Medidas preventivas y correctivas que salen de la MIPER, con plazos y responsables | Dentro de 30 días desde la MIPER | Representante Legal |
+| **Matriz de identificación de peligros y evaluación de riesgos (MIPER)** | Identifica los peligros de cada puesto y cómo se controlan. | Las personas a quienes se difunde | Obra |
+| **Programa de Trabajo Preventivo** | Las medidas que salen de la MIPER, con plazos y responsables. | El **representante legal** | Obra |
+| **Política de Seguridad y Salud en el Trabajo** | El compromiso de la empresa. | Cada persona, al recibirla | Empresa |
+| **Reglamento Interno de Orden, Higiene y Seguridad** | Las normas internas. | Cada persona, al recibirlo | Empresa |
+| **Información de riesgos laborales (IRL)** | Informa a cada trabajador los riesgos de su puesto. | El trabajador | Por cargo |
+| **Procedimientos de trabajo seguro** | Cómo hacer una tarea de forma segura (máquinas, EPP, emergencias, agentes, gestión de cambios…). | Las personas a quienes se asignan | Obra |
+| **Plan de gestión ante emergencias** | Qué hacer ante una emergencia, y su ensayo anual. | Las personas a quienes se difunde | Obra |
+| **Mapa de riesgos** | Los riesgos por zona, visible en la obra. | — (se acredita con evidencia de que está publicado) | Obra |
 
-> No tienes que recordar esta lista de memoria: al crear la obra, estos documentos
-> aparecen solos en la pestaña **DS44 — Cumplimiento** de la obra, esperando que los completes.
+Además hay **registros**: actas de capacitación, entregas de EPP, actas del comité paritario,
+el acta del simulacro, investigaciones de accidentes. Esos salen de lo que se registra en los
+módulos de la plataforma.
 
 ## La MIPER y el Programa de Trabajo van juntos
 
-Estos dos documentos están enlazados por el DS 44, y la plataforma te avisa si se
-desalinean:
+- **Al publicar una nueva versión de la MIPER** se pide el motivo, la versión anterior queda en
+  el historial, se avisa a la línea de mando y a los representantes de los trabajadores, y
+  **quienes la habían firmado deben firmarla de nuevo**.
+- **Desde esa fecha corren 30 días corridos** para actualizar el Programa de Trabajo Preventivo
+  (Art. 8). El requisito del programa muestra si está al día o si el plazo se pasó.
+- **El Programa lo aprueba el representante legal** con su firma. Se designa una sola vez en
+  [Mi Empresa → Identidad](/modulos/tenants#identidad), y desde ese momento le llega a firmar el
+  programa de cada obra.
 
-- **Al reemplazar el archivo de la MIPER se publica una versión nueva.** Se te pide
-  el motivo del cambio, la versión anterior queda guardada en el historial, se avisa
-  a la línea de mando y **las firmas anteriores dejan de valer**: quien la había
-  firmado debe firmarla de nuevo.
-- **A partir de esa fecha corren 30 días** para actualizar el Programa de Trabajo
-  Preventivo. La fila del programa te muestra cuántos días quedan, y avisa en rojo
-  si el plazo se pasó.
-- **El Programa lo aprueba el representante legal.** Se designa una sola vez en
-  *Mi Empresa → Identidad*, y la aprobación se registra cuando esa persona firma
-  el documento. Sin designarlo, el programa no puede quedar aprobado.
+## Versiones y vigencia
 
-> Cualquiera de los documentos de la obra guarda quién subió cada versión y cuándo:
-> ábrelo desde el menú **⋮ → Historial de cambios**.
+Los documentos que se revisan periódicamente (MIPER, procedimientos, reglamento interno) **se
+versionan** en vez de reemplazarse: cada versión queda en el historial con su archivo, su motivo
+y sus firmas. Al publicar una, las firmas de la anterior dejan de valer y se piden de nuevo. Ver
+[Publicar una nueva versión](/modulos/documentos#publicar-una-nueva-versión).
 
-## Dos tipos de documentos
+Cada documento tiene una **caducidad** (por defecto, 12 meses). La plataforma muestra hace
+cuánto se revisó y marca como **Vencido** lo que pasó su fecha.
 
-La plataforma maneja dos clases de documentos, según cómo se usan:
+## Difusión: informar no es solo tenerlo
 
-### Documentos base de la obra
+El DS 44 obliga a **informar** ciertos documentos a los representantes de los trabajadores
+(comité paritario, delegado, sindicatos):
 
-- Son los **obligatorios** que exige el DS 44 para la obra.
-- Se **preparan solos** al crear la obra.
-- Deben existir y estar firmados para cumplir la normativa.
-- Su avance se mide como un **porcentaje completado** por etapa.
+- La **MIPER** y el **Programa de Trabajo Preventivo** — cuando se publica una nueva versión, la
+  plataforma avisa a los integrantes vigentes del comité o del delegado, y deja constancia de a
+  quién se informó y cuándo.
+- El **Reglamento Interno** — se **remite** a los trabajadores, al comité o delegado y a las
+  organizaciones sindicales con **30 días de anticipación** a su entrada en vigencia. Cada envío
+  se registra con su medio, fecha y respaldo. Ver
+  [Registrar un envío](/modulos/obras#registrar-un-envío).
 
-### Documentos de uso diario
-
-- Se **crean y asignan** a personas específicas según se necesite.
-- Al asignarlos, la persona recibe un aviso en su [Bandeja de Entrada](/modulos/bandeja-entrada)
-  y le aparecen como **pendiente** en su [Dashboard](/modulos/dashboard).
-- Requieren **firma individual** (con PIN o presencial).
-- Pueden tener **fecha límite**; si vence sin firmar, quedan marcados como vencidos.
-
-## Estado de cada documento
-
-Un documento avanza así:
-
-```
-Borrador  →  Activo  →  Completado
-                    ↘  Vencido (si pasa la fecha límite sin firmar)
-```
-
-El cumplimiento de una etapa se calcula según cuántos documentos obligatorios están
-**completados**. Al intentar [avanzar de fase](/ds44/fases-obra), la plataforma verifica que
-la etapa anterior esté completa.
-
-::: tip Quién la elabora
-La **matriz de riesgos** la elabora el prevencionista: identifica peligros, riesgos y
-medidas de control por cargo, y firma el resultado.
-:::
+Si un documento se difundió pero la obra no tiene comité ni delegado vigente, el requisito queda
+**incompleto**: faltan los representantes.
 
 ## Preguntas frecuentes
 
 **¿Tengo que crear estos documentos uno por uno?**
-No. Se preparan automáticamente al crear la obra. Tú solo subes el archivo de cada uno y
-recoges las firmas.
+Los redacta tu empresa. En la plataforma solo los cargas en el requisito que corresponde, con su
+fecha y sus firmantes.
 
-**¿Qué pasa si me falta uno de estos documentos?**
-La obra mostrará una alerta de **DS44 pendientes** y no podrás avanzar de etapa hasta
-completarlo. Así te aseguras de no dejar vacíos de cumplimiento.
+**¿Qué pasa si me falta uno?**
+El requisito queda **Pendiente** (o **Vencido**, si pasó el plazo) y baja el avance de la obra.
 
-**¿Cuál es la diferencia entre un documento base y uno diario?**
-Los **base** son los obligatorios de la obra y se preparan solos. Los **diarios** los creas y
-asignas tú a personas concretas según la necesidad del día a día.
-
-**¿Un documento puede vencer?**
-Sí, los documentos de uso diario pueden tener fecha límite. Si vence sin firmar, quedan
-marcados como vencidos y deberás regularizarlos.
+**¿El reglamento interno se sube en cada obra?**
+No. Es de la empresa: se sube una vez en
+[Onboarding por cargo → Documentos de empresa](/modulos/onboarding-cargos#documentos-de-empresa)
+y cada persona lo recibe para firmar al ingresar.

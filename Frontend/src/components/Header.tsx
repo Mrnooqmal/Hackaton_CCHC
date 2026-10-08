@@ -44,12 +44,16 @@ const MANUAL_SECTION: Record<string, string> = {
     surveys: 'encuestas',
     incidents: 'incidentes',
     activities: 'actividades',
-    'catalogos-actividad': 'actividades',
+    'catalogos-actividad': 'catalogos',
     'my-signatures': 'firmas',
     'signature-requests': 'firmas',
     inbox: 'bandeja-entrada',
     'mi-empresa': 'tenants',
-    'cargos-onboarding': 'tenants',
+    'cargos-onboarding': 'onboarding-cargos',
+    prescripciones: 'prescripciones',
+    estructura: 'estructura-preventiva',
+    configuracion: 'configuracion',
+    'change-password': 'configuracion',
 };
 
 /** Ruta SPA del manual correspondiente a la ruta actual (portada si no hay módulo). */

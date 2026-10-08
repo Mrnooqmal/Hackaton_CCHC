@@ -1,99 +1,60 @@
-# Dashboard
+# Inicio
 
-El **Dashboard** es la pantalla de inicio: lo primero que ves al entrar a la plataforma.
-Funciona como tu "tablero de control", resumiendo de un vistazo lo más importante para ti:
-qué tienes pendiente, qué requiere tu atención y cómo va el cumplimiento de tus obras.
+**Inicio** es la pantalla que ves al entrar a una obra. Responde dos preguntas: **qué tengo que
+hacer** y **por dónde entro**. Es igual para todos los roles: cada persona ve sus propios
+pendientes.
 
-Lo más útil del Dashboard es que **se adapta a tu rol**. No le muestra lo mismo a un
-Trabajador que a un Administrador: cada persona ve la información relevante para lo que
-le toca hacer.
+Para volver a ella, toca **Inicio** en el menú lateral o el logo de la barra superior.
 
-## Entrar al Dashboard
+![Pantalla de Inicio con el saludo, los accesos rápidos y los pendientes](/img/dashboard/inicio.png)
 
-El Dashboard se abre **automáticamente** al iniciar sesión. También puedes volver a él en
-cualquier momento desde el menú lateral izquierdo, haciendo clic en **Dashboard** (o sobre
-el logo de la plataforma).
+## Qué muestra
 
-Lo primero que verás es un saludo personalizado: *"Hola, [tu nombre]"*.
+Arriba verás el saludo (*"Hola, [tu nombre]"*), la fecha, la obra en la que estás y tu rol.
 
-![Pantalla de inicio del Dashboard con el saludo y las tarjetas de resumen](/img/dashboard/inicio.png)
+### Aviso de ingreso a terreno
 
-## Qué muestra el Dashboard
+Si te faltan firmas de documentos **obligatorios para entrar a la obra** (los marcados como
+bloqueantes en tu onboarding), aparece primero un aviso rojo: *"Te faltan N firmas para quedar
+apto para ingresar a terreno"*. Toca **Firmar ahora**: es lo primero que tienes que resolver.
 
-### Tarjetas de resumen (indicadores)
+### Accesos rápidos
 
-En la parte superior verás unas **tarjetas con números** que resumen tu situación. Según
-tu rol, podrás ver indicadores como:
+Siempre los mismos cuatro, en el mismo orden:
 
-- **Completado (%)** — cuánto de tu cumplimiento ya está listo.
-- **Pendientes** — cuántas tareas tienes por resolver.
-- **Sin leer** — mensajes nuevos en tu [Bandeja de Entrada](/modulos/bandeja-entrada).
-- **Trabajadores** — cuántas personas hay en tu empresa u obra.
-- **Firmas pendientes** — documentos que esperan firma.
-- **Actividades hoy** — capacitaciones o actividades programadas para el día.
-- **Incidentes** — incidentes abiertos que requieren seguimiento.
-- **Documentos** — total de documentos cargados.
+| Acceso | Qué indica |
+| --- | --- |
+| **Mis firmas** | Cuántos documentos tienes por firmar, o *Al día*. |
+| **Actividades** | Cuántas actividades hay hoy en la obra, o *Nada hoy*. |
+| **Encuestas** | Cuántas encuestas tienes sin responder, o *Al día*. |
+| **Reportar incidente** | Para registrar un hallazgo o un incidente de inmediato. |
 
-> Varias de estas tarjetas son **clickeables**: al hacer clic te llevan directo a la
-> sección correspondiente (por ejemplo, la de incidentes te abre el módulo de Incidentes).
+### Tus pendientes
 
-### Mis pendientes
+La lista de lo que espera por ti: **firmar** un documento, **responder** una encuesta o
+**registrar tu asistencia** a una actividad. Lo **atrasado** aparece primero y marcado, y cada
+pendiente te lleva directo a resolverlo.
 
-Si tienes tareas que requieren tu atención, aparecerá una sección **"Mis pendientes"** que
-las lista de forma directa y accionable. Pueden ser cosas como:
+Si no tienes nada, verás **Todo al día**: *"No tienes firmas, actividades ni encuestas esperando
+por ti en esta obra."*
 
-- **Firmar** un documento que te asignaron.
-- **Asistir** a una capacitación o actividad programada.
-- Responder una **encuesta**.
+### Tu día
 
-Cada pendiente incluye un acceso directo para resolverlo sin tener que buscarlo por tu cuenta.
-
-> Cuando no tengas nada pendiente, verás un mensaje de **"¡Todo al día!"**. Esa es la
-> señal de que estás al corriente con tus obligaciones.
-
-### Estado de cumplimiento DS44 de tu obra
-
-Si trabajas sobre una obra específica, el Dashboard muestra un resumen del **cumplimiento
-DS44** de esa obra, para que sepas cuánto falta sin tener que entrar a la ficha completa.
-
-### Actividades recientes y obras
-
-Más abajo encontrarás un listado de **actividades recientes** (lo último que ha pasado en
-tus obras) y, para los roles de gestión, un acceso rápido a tus **obras** con un botón
-**Ver todas** que te lleva al módulo de [Obras](/modulos/obras).
-
-## Cómo cambia según tu rol
-
-El Dashboard prioriza lo que más te importa según quién seas:
-
-- **Trabajador** — verás principalmente **tus pendientes personales** (documentos por
-  firmar, capacitaciones por asistir, encuestas por responder).
-- **Supervisor / Jefe de Obra** — verás el estado de **tu obra y tu equipo**: firmas
-  pendientes, actividades del día e incidentes.
-- **Prevencionista / Administrador** — verás una visión más **amplia de la empresa**:
-  trabajadores, documentos, incidentes y el avance de todas las obras.
-
-Consulta [Roles de Usuario](/roles/) para entender en detalle qué ve y puede hacer cada rol.
+Las actividades de hoy en la obra, marcando las que ya hiciste y la siguiente. Si no hay nada
+programado para hoy, verás **Lo próximo**: la siguiente actividad que viene.
 
 ## Preguntas frecuentes
 
-**Entré y el Dashboard se ve casi vacío. ¿Está bien?**
-Sí. Si estás empezando y aún no hay obras, personas ni documentos cargados, el Dashboard
-tendrá poco que mostrar. A medida que uses la plataforma se irá llenando de información.
+**Veo "Todo al día", pero creo que tengo cosas pendientes.**
+Inicio muestra lo de **la obra en la que estás**. Si trabajas en varias, revisa la obra en la
+barra superior y usa **Cambiar de obra**.
 
-**Veo "¡Todo al día!" pero creo que tengo cosas pendientes.**
-"Todo al día" significa que **no tienes pendientes personales asignados a ti**. Puede haber
-tareas en la obra que correspondan a otras personas. Revisa el módulo específico (Documentos,
-Actividades, etc.) si necesitas ver el panorama completo.
+**¿Dónde veo el avance del DS 44 de la obra?**
+En **Detalle de obra → Cumplimiento DS 44**. Ver [Obras](/modulos/obras#cumplimiento-ds-44).
 
-**¿Por qué mi Dashboard se ve distinto al de un compañero?**
-Porque el Dashboard se adapta al **rol** de cada persona. Un administrador ve indicadores de
-toda la empresa; un trabajador ve sus tareas personales. Es el comportamiento esperado.
-
-**Hice clic en un número y me llevó a otra pantalla.**
-Es correcto: varias tarjetas son accesos directos. Por ejemplo, la tarjeta de "sin leer" te
-lleva a la Bandeja de Entrada, y la de "incidentes" al módulo de Incidentes.
+**¿Por qué mi Inicio se ve igual que el de mi jefe?**
+Porque Inicio es igual para todos: muestra los pendientes **de cada persona**. Las herramientas
+de gestión (equipo, repositorio, cumplimiento) están en el menú lateral de quien las usa.
 
 **Los números no coinciden con lo que veo en los módulos.**
-El Dashboard resume la información; si acabas de hacer un cambio, puede tardar un momento en
-reflejarse. Vuelve a entrar al Dashboard o recarga la página para ver los datos actualizados.
+Si acabas de hacer un cambio, recarga la página.

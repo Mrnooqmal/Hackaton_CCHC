@@ -1,74 +1,77 @@
-# Bandeja de Entrada
+# Notificaciones y mensajes
 
-La **Bandeja de Entrada** es el sistema de mensajería interno de la plataforma. Funciona
-como un correo simplificado entre las personas de una misma obra: sirve para coordinar,
-avisar y dejar registro de comunicaciones de seguridad, sin salir del sistema ni depender de
-WhatsApp o correos personales.
+Las **notificaciones** reúnen los avisos que te envía la plataforma (un documento por firmar,
+una encuesta asignada, una charla sin cerrar, una nueva versión de un procedimiento) y los
+**mensajes** que te escriben otras personas de tu obra. Es la **mensajería interna**: queda
+registrada dentro de la plataforma, asociada a la obra y a las personas.
 
-## Entrar a la Bandeja
+## Entrar
 
-En el menú lateral, haz clic en **Bandeja de Entrada** (o **Inbox**). Si tienes mensajes sin
-leer, lo verás reflejado también en tu [Dashboard](/modulos/dashboard).
+Toca la **campana** de la barra superior. Si tienes avisos sin leer, la campana muestra
+cuántos.
 
-![Bandeja de Entrada con las carpetas Recibidos, Enviados y Archivados](/img/bandeja-entrada/inicio.png)
+![Notificaciones con las carpetas Recibidos, Enviados y Archivados](/img/bandeja-entrada/inicio.png)
 
-## Organización de los mensajes
+## Organización
 
-Los mensajes se ordenan en tres carpetas, que cambias con las pestañas de la parte superior:
+Los mensajes se ordenan en tres carpetas:
 
-- **Recibidos** — los mensajes que te llegaron.
-- **Enviados** — los que tú enviaste.
-- **Archivados** — los que guardaste para sacarlos de la bandeja sin borrarlos.
+- **Recibidos** — lo que te llegó, avisos de la plataforma incluidos.
+- **Enviados** — lo que tú enviaste.
+- **Archivados** — lo que sacaste de Recibidos sin borrarlo.
 
-Dentro de **Recibidos** puedes filtrar entre **TODOS** y **NO LEÍDOS** para enfocarte en lo
-pendiente. También tienes un **buscador** para encontrar un mensaje por su contenido.
-
-## Enviar un mensaje nuevo
-
-1. Haz clic en el botón **Nuevo Mensaje**.
-2. Completa el formulario:
-   - **Obra** *(obligatorio)* — elige la obra en cuyo contexto envías el mensaje. Solo
-     puedes escribir a personas de una obra a la que perteneces.
-   - **Destinatarios** — selecciona a quién va dirigido. Puedes buscar por **nombre, cargo o
-     RUT** para encontrarlos rápido.
-   - **Prioridad** — marca la urgencia del mensaje.
-   - **Asunto** *(obligatorio)* — el tema del mensaje.
-   - **Mensaje** *(obligatorio)* — el contenido.
-3. Haz clic en **Enviar**.
-
-![Ventana de Nuevo Mensaje con la selección de obra y destinatarios](/img/bandeja-entrada/nuevo-mensaje.png)
-
-> La **Obra** es obligatoria porque la mensajería está organizada por proyecto. Esto
-> mantiene cada comunicación asociada a su contexto y a las personas correctas.
+Con **Filtros** puedes ver solo los **No leídos**, filtrar por **Fecha** (hoy, semana, mes) o
+por **Prioridad**, y con el buscador encontrar un mensaje por asunto, remitente o contenido.
+**Marcar todos como leídos** limpia los pendientes de una vez.
 
 ## Leer, archivar y eliminar
 
-Al abrir un mensaje verás su contenido completo. Desde ahí puedes:
+Al abrir un mensaje ves su contenido completo. Desde ahí puedes **Marcar como no leído**,
+**Archivar** o **Eliminar**. Muchos avisos de la plataforma traen un acceso directo a lo que
+tienes que hacer (por ejemplo, a la encuesta o al documento por firmar).
 
-- **Archivar** el mensaje (lo mueve a la carpeta Archivados).
-- **Eliminar** el mensaje.
+## Enviar un mensaje
 
-Los mensajes no leídos se destacan para que sepas qué te falta revisar.
+1. Toca **Nuevo mensaje**.
+2. Completa:
+   - **Obra** *(obligatorio)* — la obra en cuyo contexto escribes. Los destinatarios salen de
+     ella.
+   - **Destinatarios** — búscalos por nombre, cargo o RUT, o filtra por **Rol** y **Cargo**.
+     Puedes **Seleccionar todos**.
+   - **Tipo** — Mensaje, Notificación, Alerta o Tarea.
+   - **Prioridad** — Normal, Alta o Urgente.
+   - **Asunto** y **Mensaje** *(obligatorios)*.
+3. Toca **Enviar**.
+
+![Ventana de Nuevo mensaje con la obra y los destinatarios](/img/bandeja-entrada/nuevo-mensaje.png)
+
+## Avisos que llegan solos
+
+La plataforma te avisa, entre otras cosas, cuando:
+
+- Te **asignan un documento** para firmar, o se publica una **nueva versión** de uno que ya
+  firmaste.
+- Te asignan una **encuesta**.
+- Te convocan a una **actividad**, o una charla que gestionas superó su hora sin cerrarse.
+- El **reglamento interno** o la **política SST** se acercan a su revisión anual (si eres de la
+  línea de mando), o vence un plazo de la **estructura preventiva**.
+- Se acerca el plazo de una **solicitud de datos personales** (si gestionas esas solicitudes).
+- Te **restablecieron el PIN** de firma.
+
+Si tienes un correo registrado, algunos avisos llegan también por correo.
 
 ## Preguntas frecuentes
 
-**No puedo enviar un mensaje: me dice que no pertenezco a ninguna obra.**
-La mensajería requiere que tú y el destinatario estén en una misma obra. Si no perteneces a
-ninguna, pide a un administrador que te asigne a la obra correspondiente.
-
 **No encuentro a la persona a la que quiero escribir.**
-Solo aparecen los destinatarios de la **obra seleccionada**. Verifica que elegiste la obra
-correcta y que la persona esté asignada a ella. Usa el buscador por nombre, cargo o RUT.
+Solo aparecen las personas de la **obra elegida** en el mensaje. Revisa la obra y que la persona
+esté asignada a ella.
 
 **¿Cuál es la diferencia entre archivar y eliminar?**
-**Archivar** guarda el mensaje en la carpeta Archivados (lo conservas pero sale de
-Recibidos). **Eliminar** lo borra. Si dudas, archiva.
+**Archivar** lo guarda en Archivados. **Eliminar** lo borra. Si dudas, archiva.
 
 **¿Para qué sirve la prioridad?**
-Ayuda al destinatario a identificar qué mensajes son urgentes. Úsala con criterio: si todo
-es "alta prioridad", deja de ser útil.
+Para que el destinatario distinga lo urgente. Úsala con criterio: si todo es urgente, nada lo es.
 
-**¿Esto reemplaza al correo o WhatsApp de la obra?**
-Para las comunicaciones de seguridad, sí es recomendable: queda **registrado dentro de la
-plataforma**, asociado a la obra y a las personas, lo que aporta trazabilidad que un chat
-personal no tiene.
+**¿Esto reemplaza al correo o al WhatsApp de la obra?**
+Para las comunicaciones de seguridad conviene: queda registrado en la plataforma, asociado a la
+obra y a las personas.

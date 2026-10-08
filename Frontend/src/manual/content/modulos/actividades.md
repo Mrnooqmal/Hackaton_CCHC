@@ -11,16 +11,20 @@ capacitación efectivamente se realizó (una exigencia clave del DS 44, Art. 16)
 En el menú lateral, haz clic en **Actividades**. Se abrirá la pantalla **"Actividades y
 capacitación"**.
 
-> Las actividades se gestionan **por obra**. Si ves el mensaje *"Seleccione una obra para
-> ver sus actividades"*, elige primero la obra con la que quieres trabajar (en el selector de
-> obra, normalmente arriba). Una vez seleccionada, verás sus actividades.
+> Las actividades son **de una obra**. Si ves *"No hay una obra activa"*, elige la obra con
+> **Cambiar de obra** (menú de tres puntos, abajo en el menú lateral).
 
-La pantalla ofrece **dos vistas**, que alternas con los botones **Lista** y **Calendario**:
+La pantalla ofrece **dos vistas**, que alternas con **Lista** y **Calendario**:
 
-- **Lista** — *Actividades de Hoy* (lo programado para el día, listo para registrar
-  asistencia) e *Historial de Actividades* (lo ya realizado).
-- **Calendario** — el mes completo de un vistazo, para coordinar la planificación
-  (ver [El calendario mensual](#el-calendario-mensual)).
+- **Lista** — tres secciones: **Del plan, por completar** (borradores de la planificación
+  mensual a los que les falta el detalle del día), **Hoy** (lo programado para hoy, listo para
+  registrar asistencia) e **Historial** (lo ya realizado, con filtros por fecha: 7 días, 30
+  días o un rango).
+- **Calendario** — el mes completo de un vistazo (ver
+  [El calendario mensual](#el-calendario-mensual)).
+
+Arriba están **Planificar mes** y **Nueva actividad**, y un buscador para hoy y el
+calendario.
 
 ![Pantalla de Actividades mostrando las actividades de hoy y el historial](/img/actividades/inicio.png)
 
@@ -39,21 +43,21 @@ La pantalla ofrece **dos vistas**, que alternas con los botones **Lista** y **Ca
 
 ## Programar una actividad nueva
 
-1. Haz clic en el botón **Nueva actividad**.
-2. Completa el formulario:
-   - **Tipo de Actividad** *(obligatorio)* — según la tabla anterior.
-   - **Tipo de capacitación (DS44)** *(obligatorio si es capacitación)* — el tipo específico
-     que exige la normativa.
-   - **Título** *(obligatorio)* — un nombre claro (ej.: *"Uso correcto de EPP"*).
-   - **Descripción** *(opcional)* — de qué tratará.
-   - **Relator** *(obligatorio)* — quién dictará la actividad.
-   - **Fecha** *(obligatorio)* — cuándo se realizará.
-   - **Periodicidad** — si es una actividad **única** o se **repite** (en cuyo caso indicas
-     hasta cuándo).
-   - **Hora inicio** *(obligatorio)* y **Hora fin** *(opcional)*.
-   - **Ubicación** *(opcional)* — dónde se hará (ej.: *"Frente de obra, sala de charlas"*).
-   - **Trabajadores** — marca quiénes deben asistir (solo aparecen los asignados a la obra).
-3. Guarda. La actividad quedará programada y aparecerá en la agenda de la obra.
+1. Toca **Nueva actividad**. Se abre una pantalla completa con varias secciones.
+2. **Tipo y detalle**:
+   - **Tipo de actividad** *(obligatorio)* — según la tabla anterior.
+   - **Tipo de capacitación (DS44)** *(obligatorio si es capacitación)* — el tipo que exige la
+     norma. De él sale la **duración mínima** (ver [Duración](#duración-de-las-capacitaciones)).
+   - **Título** *(obligatorio)* y **Descripción**.
+   - En capacitaciones, **Con evaluación de aprendizaje** y su **Nota mínima de aprobación**:
+     70 % en general, 90 % en altura y SPDC.
+3. **Horario** — la fecha, la **Periodicidad** (única o repetida, con **Repetir hasta**), la
+   **Hora inicio** y, si quieres, la **Hora fin** y la **Ubicación**.
+4. **Responsable** — el **Relator**, que queda como primer responsable de la actividad.
+5. **Planificación del día** y **Permisos de trabajo especiales**, si corresponden (ver más
+   abajo).
+6. **Asistentes requeridos** *(opcional)* — los convocados. Reciben el aviso al programarse.
+7. Toca **Crear actividad**.
 
 ![Formulario de Nueva Actividad con los campos de tipo, relator y fecha](/img/actividades/nueva-actividad.png)
 
@@ -80,7 +84,7 @@ Cuando el tipo es **Charla 5 Minutos** o **ART**, el formulario agrega la secci�
   reuniones del Comité Paritario toma el nombre *"Participación y consulta"*.
 
 > Los desplegables de tema, recursos, riesgos y medidas se alimentan de los
-> [catálogos configurables de tu empresa](#catalogos-de-actividad).
+> [catálogos configurables de tu empresa](#catálogos-de-actividad).
 
 ### Permisos de trabajo especiales
 
@@ -96,9 +100,10 @@ El permiso queda embebido en la actividad y aparece en el reporte posterior.
 
 ## Planificar el mes completo
 
-En lugar de crear las actividades una a una, quien tenga el permiso de **planificación**
-(Prevencionista, Jefe de Obra o quien la empresa designe) puede armar el **esqueleto del
-mes** con el botón **Planificar mes**:
+En lugar de crear las actividades una a una, quien tenga el permiso **Planificar el mes**
+(por defecto Administrador, Prevencionista y Jefe de Obra, o quien la empresa designe) puede
+armar el **esqueleto del mes** con **Planificar mes**, que abre la pantalla **Planificar el
+mes**:
 
 1. Define el **rango de fechas** (por defecto, el mes visible del calendario).
 2. Agrega uno o más **ítems**, cada uno con:
@@ -110,7 +115,7 @@ mes** con el botón **Planificar mes**:
      varios supervisores a la vez.
    - **Título base**, **hora** y **ubicación** por defecto *(opcionales)* — quedan
      pre-llenados en cada día.
-3. Haz clic en **Generar planificación**.
+3. Toca **Generar planificación**.
 
 El sistema crea una actividad en estado **borrador** por cada día hábil y responsable.
 Los **sábados y domingos se excluyen automáticamente** (días no trabajados).
@@ -121,14 +126,14 @@ Los **sábados y domingos se excluyen automáticamente** (días no trabajados).
 
 ### Completar un borrador (el responsable)
 
-Los responsables ven sus borradores pendientes en la sección **"Planificadas por
-completar"** y en el calendario (con borde punteado y el símbolo ◌). Para completar uno:
+Los responsables ven sus borradores en la sección **Del plan, por completar** y en el
+calendario (con borde punteado y el símbolo ◌). Para completar uno:
 
-1. Ábrelo desde la lista, el calendario o el panel del día.
+1. Toca **Completar** en la lista, o ábrelo desde el calendario o el panel del día.
 2. Rellena el detalle de la jornada: título, tema del día, **relator**, horario, ubicación y
    asistentes.
 3. Guarda. El borrador pasa a **programada** y los asistentes convocados reciben el aviso
-   en su bandeja de entrada.
+   en sus notificaciones.
 
 El campo **Relator** viene precargado con la persona que la planificación mensual asignó a
 ese día, pero **puedes cambiarlo** si quien dicta la charla es otro (licencia, vacaciones,
@@ -166,11 +171,12 @@ o **crear una nueva** para ese día.
 Una actividad solo cuenta como **realizada** cuando queda registrada la asistencia de los
 trabajadores. Hay dos formas:
 
-- **Registrar Asistencia** (el relator o gestor) — abre la lista de trabajadores y marca
-  quiénes asistieron. Cada asistente confirma con su firma. Los que ya están registrados se
-  muestran con la etiqueta **"Ya registrado"**.
-- **Registrar mi asistencia** (el propio trabajador) — cada persona puede confirmar su
-  asistencia y firmar desde su cuenta.
+- **Registrar asistencia** (el relator o quien gestiona) — abre la lista de convocados y
+  cada trabajador firma con **su propio PIN**, uno por uno, en ese mismo equipo. Puedes
+  saltar a quien no esté presente. Cuando todos firmaron, verás *"Todos los convocados
+  firmaron."*
+- **Firmar mi asistencia** (el propio trabajador) — cada persona confirma su asistencia con
+  su firma desde su cuenta.
 
 > La firma de asistencia es la evidencia legal de la capacitación. Sin asistencia firmada,
 > la actividad queda como pendiente y **no cuenta** para el cumplimiento de la obra.
@@ -189,9 +195,9 @@ cierre automática. Esto permite registrar a los **trabajadores que llegan más 
 
 ## Cerrar la actividad
 
-Registrar asistencia y **cerrar** la actividad son dos acciones distintas. Firmar ya no la
-cierra sola: cuando terminas, el relator o gestor la cierra a propósito con el botón
-**Cerrar actividad** (en el detalle de la actividad). Al cerrarla pasa a **Realizada**.
+Registrar asistencia y **cerrar** la actividad son dos acciones distintas: firmar no la
+cierra. Cuando terminas, el relator o quien gestiona la cierra con **Cerrar actividad**, en el
+detalle de la actividad. Al cerrarla pasa a **Realizada**.
 
 Para poder cerrar, la actividad debe cumplir dos condiciones (si no, el botón aparece
 deshabilitado e indica el motivo):
@@ -216,23 +222,23 @@ actividad muestra su estado con color:
 - **Rojo (Vencida)** — pasó su día sin realizarse. En el calendario se marca con un
   **anillo rojo**.
 
-**Pendientes de firmar hoy.** Arriba de las actividades de hoy aparece un panel que cruza,
-por cada charla, **quiénes fueron convocados y todavía no firman**. Desde ahí puedes
-**Registrar asistencia** de inmediato o **marcar ausencias**.
+**Quién falta por firmar.** En cada actividad de hoy, **Ver pendientes** muestra a los
+convocados que todavía no firman. Desde ahí puedes **Registrar asistencia** de inmediato o
+**justificar ausencias**.
 
-**Marcar ausentes / permisos.** Si un convocado no va a asistir (permiso, licencia médica,
-falta, vacaciones, etc.), haz clic en su nombre dentro del panel y elige el **motivo**.
+**Justificar ausencias.** Si un convocado no va a asistir, toca su nombre, toca **Justificar**
+y elige el **motivo**: Permiso, Licencia médica, Falta, Vacaciones u Otro.
 Quedará registrado como ausente **y dejará de contar como pendiente** (ya no aparece en
 rojo). Puedes **quitar** la ausencia si te equivocaste.
 
-**Avisos automáticos.** El sistema envía avisos a la **bandeja de entrada** de los
-responsables cuando:
+**Avisos automáticos.** El sistema avisa en las **Notificaciones** de los responsables
+cuando:
 
 - Una charla superó su **hora de término** y aún no ha sido cerrada.
 - Llega el **mediodía** y todavía hay convocados sin firmar (los ausentes no cuentan).
 
-> Estos avisos llegan a la bandeja interna y sirven de recordatorio para cerrar
-> el día con todo firmado.
+> Estos avisos llegan a las notificaciones de la plataforma y sirven de recordatorio para
+> cerrar el día con todo firmado.
 
 ## Reporte post-charla
 
@@ -244,8 +250,7 @@ En el **detalle** de una actividad realizada encontrarás el **reporte de asiste
 - El **acta completa** de la jornada: planificación diaria (tema, recursos, riesgos,
   medidas, protector solar, observaciones) y los permisos de trabajo con su checklist.
 
-Con el botón de **descarga** se abre una vista imprimible que puedes guardar como PDF desde
-el navegador.
+Usa **Ver reporte** para verlo en pantalla y **Descargar reporte** para bajarlo en PDF.
 
 ### Completar el registro después de la charla
 
@@ -257,12 +262,44 @@ editar la **planificación diaria y los permisos de trabajo** de una actividad y
 > auditoría. Una vez que hay firmas, el resto del contenido de la actividad queda congelado
 > (solo puede completarse la descripción y el acta).
 
+## Duración de las capacitaciones
+
+El DS 44 fija un mínimo de horas a algunas capacitaciones:
+
+| Capacitación | Mínimo |
+| --- | --- |
+| Uso y mantención de EPP (Art. 13) | 1 hora |
+| Prevención de riesgos laborales (Art. 16) | 8 horas |
+| Orientación del Comité Paritario | 8 horas |
+| Curso del Comité Paritario | 20 horas |
+
+En el detalle de la capacitación, la sección **Duración** muestra el **Mínimo exigido** y lo
+**Declarado**. Escribe los **minutos que dice el certificado** y adjunta el certificado. Verás
+**Cumple**, **No alcanza el mínimo** o **Sin declarar**, y si el certificado está cargado.
+
+> La duración **no se calcula con el reloj** de la plataforma: se declara lo que dice el
+> certificado. Así también se acreditan las capacitaciones que dicta un organismo externo.
+> Una capacitación sin horas declaradas **no cuenta como completa** en el cumplimiento.
+
+La duración y el certificado se pueden completar **después** de cerrar la actividad, porque el
+certificado suele llegar días más tarde.
+
+## Evaluación de aprendizaje
+
+Si la capacitación se creó **con evaluación de aprendizaje**, su detalle muestra la sección
+**Evaluación de aprendizaje** con la nota mínima exigida y si el respaldo está cargado.
+
+La evaluación la toma y la corrige el relator **fuera de la plataforma**. Acá se guarda **un
+documento** con las evaluaciones de esa capacitación: toca **Subir evaluaciones**. Puedes
+**Ver**, **Reemplazar** o quitar el respaldo después. Como el certificado, se puede subir días
+después de la charla.
+
 ## Catálogos de actividad
 
-Los desplegables de **temas, recursos, riesgos y medidas** vienen con un set de fábrica y
-son **configurables por empresa** en el menú lateral → **Catálogos** (requiere permiso de
-gestión de la empresa). Ahí puedes agregar, renombrar o eliminar opciones de cada lista;
-los cambios se reflejan de inmediato en los formularios de actividad.
+Los desplegables de **temas, recursos, riesgos y medidas** vienen con un set de fábrica y son
+**configurables por empresa** en la vista de empresa → **Catálogos** (requiere el permiso
+**Gestionar cargos y kits**). Cada cambio se guarda al hacerlo, y renombrar un ítem no afecta
+a las actividades ya registradas. Ver [Catálogos](/modulos/catalogos).
 
 ## Ver el detalle de una actividad
 
@@ -273,18 +310,18 @@ lista de **asistentes** con su estado de firma.
 ## Preguntas frecuentes
 
 **No veo ninguna actividad.**
-Probablemente no has seleccionado una obra. Las actividades se muestran **por obra**: elige
-una en el selector de obra y aparecerán sus actividades.
+Las actividades se muestran **por obra**. Revisa en la barra superior en qué obra estás y, si
+no es la correcta, usa **Cambiar de obra**.
 
-**Programé la actividad pero no aparece como cumplida.**
-Una actividad se considera cumplida cuando tiene **asistencia registrada y firmada**.
-Mientras nadie firme la asistencia, quedará pendiente.
+**Programé la capacitación pero no aparece como cumplida.**
+Necesita **asistencia firmada** y, si es una capacitación con mínimo de horas, la **duración
+declarada**. Si exige evaluación, también el respaldo de las evaluaciones.
 
 **¿Quién puede crear actividades?**
-Los roles de gestión (Administrador, Prevencionista, Jefe de Obra, Supervisor). El relator
-asignado es quien la dicta. La **planificación mensual** requiere además el permiso de
-planificar, que la empresa puede delegar a otros roles (por ejemplo, representantes del
-Comité Paritario) desde **Mi Empresa → Roles**. Consulta [Roles de Usuario](/roles/).
+Quien tenga el permiso **Crear actividad**: por defecto Administrador, Prevencionista, Jefe de
+Obra y Supervisor. La **planificación mensual** requiere además **Planificar el mes**, que la
+empresa puede delegar a otros roles (por ejemplo, al Comité Paritario) desde
+**Mi Empresa → Roles y permisos**. Ver [Roles](/roles/).
 
 **¿Qué diferencia hay entre un borrador y una actividad programada?**
 El **borrador** lo genera la planificación mensual: tiene fecha, tipo y responsable, pero
@@ -324,9 +361,8 @@ con la etiqueta de **atraso**.
 Está **vencida**: pasó su día sin realizarse (sin cerrarse con asistencia). Es una señal
 para regularizarla o reprogramarla.
 
-**¿La asistencia se puede firmar en terreno sin señal?**
-La firma de asistencia usa el mismo sistema de PIN de las firmas. Si no hay conexión, revisa
-las opciones de [Firmas Offline](/modulos/firmas) para recolectarlas y sincronizarlas luego.
+**¿La asistencia se puede firmar sin señal?**
+No por ahora: firmar requiere conexión. Ver [Firmas](/modulos/firmas#sin-conexión).
 
 **¿Cómo programo la charla diaria que se repite todos los días?**
 Usa **Planificar mes**: un ítem de tipo *Charla 5 Minutos* con periodicidad *diaria* genera

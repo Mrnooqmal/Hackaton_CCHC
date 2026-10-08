@@ -1,30 +1,23 @@
 # Rol: Prevencionista
 
-El **prevencionista de riesgos** es el rol técnico responsable de la gestión preventiva.
-Es quien opera el día a día del cumplimiento del DS 44 en la obra.
+El **prevencionista de riesgos** opera el día a día del cumplimiento del DS 44 en la obra: los
+documentos, las capacitaciones, el EPP y los incidentes.
 
-## Responsabilidades
+## Qué hace
 
-- Elaborar y mantener las matrices de riesgo (MIPER / MIPPER).
-- Crear y asignar documentos de seguridad.
-- Programar y registrar capacitaciones y charlas.
-- **Armar la planificación mensual de actividades**: el esqueleto de charlas, ART e
-  inspecciones por tipo, periodicidad y responsable, que los supervisores completan
-  día a día.
-- Investigar incidentes y accidentes.
-- Hacer seguimiento del cumplimiento documental por fase.
+- **Carga y versiona los documentos** de la obra (MIPER, programa preventivo, procedimientos) en
+  el requisito que corresponde, y elige quiénes los firman. Ver [Obras](/modulos/obras).
+- **Sigue el cumplimiento** requisito por requisito en **Detalle de obra → Cumplimiento DS 44**.
+- **Planifica el mes** de actividades y programa capacitaciones y charlas. Ver
+  [Actividades](/modulos/actividades).
+- **Registra y valida entregas de EPP** y gestiona el **onboarding** de cada persona. Ver
+  [Personas](/modulos/personas).
+- Mantiene la **vigilancia de la salud** de quienes la requieren.
+- **Califica accidentes**, gestiona los incidentes y registra las **investigaciones**.
+- Crea **encuestas**.
+- Firma **asistido** a quien no puede firmar desde su equipo.
 
-## Tareas clave en la plataforma
+## Permisos por defecto
 
-- **Planificación mensual de actividades**: con [Planificar mes](/modulos/actividades#planificar-el-mes-completo)
-  genera el esqueleto del mes (charla diaria, inspecciones semanales, etc.) diferenciado
-  por tipo de trabajo y asignado a los supervisores que corresponda. Los fines de semana
-  se excluyen automáticamente.
-- **MIPPER por cargo**: elabora las matrices de cada cargo, las revisa y las firma.
-- **Asignación de documentos diarios**: asigna documentos a personas, generando
-  notificaciones automáticas en su bandeja.
-- **Destino de alertas de incidentes**: recibe notificación automática cuando se reporta
-  un incidente.
-
-Es el principal receptor de las notificaciones automáticas del sistema. Ver
-[Incidentes](/modulos/incidentes) y [Documentos](/modulos/documentos).
+Ver la tabla completa en [Roles](/roles/). Por defecto **no** crea obras ni da de alta personas
+(eso es de la jefatura de obra y la administración), y no entra a la vista de empresa.

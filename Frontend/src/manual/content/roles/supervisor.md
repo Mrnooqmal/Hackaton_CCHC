@@ -1,35 +1,29 @@
 # Rol: Supervisor
 
-El **supervisor** lidera a un equipo de trabajadores en terreno. Es un rol operativo
-clave en la captura de firmas y el registro de actividades.
+El **supervisor** lidera una cuadrilla en terreno. Es clave para que las charlas se hagan y se
+firmen, y para que su gente quede apta para trabajar.
 
-## Responsabilidades
+## Qué hace
 
-- Supervisar a los trabajadores de su equipo en la obra.
-- Dictar y firmar charlas y capacitaciones como **relator**.
-- **Completar las actividades planificadas** que le asigna la planificación mensual
-  (rellenar el tema y detalle de cada día).
-- **Crear sus propias actividades** cuando trabaja solo o tiene tareas adicionales no
-  contempladas en la planificación.
-- Verificar y firmar la entrega de EPP.
-- Reportar incidentes y condiciones subestándar.
+- **Completa las actividades planificadas** que le asigna la planificación del mes: abre cada
+  borrador, escribe el tema y el detalle del día, y lo guarda para que quede programado y se
+  convoque a los asistentes. Ver [Actividades](/modulos/actividades#completar-un-borrador-el-responsable).
+- **Crea sus propias actividades** cuando trabaja solo o tiene tareas no planificadas.
+- **Dicta charlas** como relator y **registra la asistencia**: cada trabajador firma con su PIN
+  en el equipo del supervisor.
+- **Justifica ausencias** (permiso, licencia, falta, vacaciones) para que no queden como
+  pendientes.
+- **Firma asistido**: abre los documentos pendientes de un trabajador para que firme en su
+  equipo. Ver [Firmas](/modulos/firmas#firma-asistida).
+- **Asigna personas** a su cuadrilla en el equipo de la obra.
+- **Reporta incidentes** y hallazgos.
 
-## Actividades planificadas
+## Si no puede dictar la charla
 
-Cuando el prevencionista arma la [planificación mensual](/modulos/actividades#planificar-el-mes-completo),
-el supervisor recibe **borradores** de sus actividades (charla diaria, inspecciones, etc.),
-uno por día hábil. Su tarea es **completarlos**: abrir el borrador (desde el calendario o la
-sección *"Planificadas por completar"*), rellenar el tema y detalle del día, y guardarlo
-para que quede programado y se convoque a los asistentes.
+Al completar el borrador, puede **cambiar el relator** por quien la vaya a dictar (licencia,
+vacaciones). Queda registrado que fue un reemplazo. Una vez que hay firmas, el relator ya no se
+cambia.
 
-## Firma como relator
+## Permisos por defecto
 
-El supervisor es uno de los roles que puede actuar como **relator** en actividades
-(`CAPACITACION_SST`, `CHARLA_5MIN`). Su firma cruzada (`tipoFirma: relator`) certifica
-que la actividad se impartió, complementando las firmas de asistencia de los
-trabajadores. Ver [Capacitaciones](/ds44/capacitaciones) y [Firmas](/modulos/firmas).
-
-## Verificación de EPP
-
-Firma como `supervisor` la entrega de EPP, validando que el trabajador recibió el equipo
-adecuado a su cargo. Ver [Entrega de EPP](/ds44/epp).
+Ver la tabla completa en [Roles](/roles/).

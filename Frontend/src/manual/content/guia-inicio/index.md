@@ -2,49 +2,59 @@
 
 **Build & Serve** es una plataforma para gestionar la **Seguridad y Salud en el Trabajo
 (SST)** de las obras de construcción de forma digital. Reemplaza las carpetas de papel por un
-sistema único donde centralizas documentos, firmas, capacitaciones e incidentes, con el
-cumplimiento del **Supremo Decreto 44 (DS 44)** integrado.
+sistema único donde se guardan los documentos, las firmas, las capacitaciones y los incidentes,
+con el cumplimiento del **Decreto Supremo 44 (DS 44)** integrado.
 
-En palabras simples: **todo el papeleo de prevención de riesgos de tu obra, en un solo lugar,
-firmado digitalmente y siempre disponible** — incluso desde el teléfono y sin conexión.
+En palabras simples: **el papeleo de prevención de riesgos de tu obra, en un solo lugar,
+firmado digitalmente y disponible desde el computador o el teléfono.**
 
 Desarrollada por **The Code Cookers** para el Hackathon CChC 2025 — *Seguridad sin Papeleo*,
 en colaboración con la Cámara Chilena de la Construcción.
 
-::: tip ¿Acabas de llegar o te sientes perdido? Empieza por aquí
-Ve directo al **[Resumen de Módulos](/modulos/)**: ahí está, en un solo lugar, la guía de uso
-de cada parte de la plataforma (Obras, Documentos, Firmas, Personas y más). Es el mejor punto
-de partida si solo quieres saber **cómo hacer algo**.
+::: tip ¿Acabas de llegar? Empieza por aquí
+Si es tu primera vez, lee [Cómo ingresar](/guia-inicio/instalacion). Si ya entraste y solo
+quieres saber **cómo hacer algo**, ve al [Resumen de módulos](/modulos/): ahí está la guía de
+cada parte de la plataforma.
 :::
 
 ## ¿Para quién es?
 
 | Si eres… | La plataforma te ayuda a… |
 | --- | --- |
-| **Empresa constructora** | Cumplir el DS 44 sin carpetas físicas ni papeleo disperso. |
-| **Prevencionista** | Gestionar en un solo lugar documentos, matrices de riesgo y capacitaciones. |
-| **Jefe de obra / Supervisor** | Capturar firmas y registrar actividades directamente en terreno. |
-| **Trabajador** | Firmar documentos y registrar asistencia desde el móvil, incluso sin conexión. |
+| **Empresa constructora** | Demostrar el cumplimiento del DS 44 sin carpetas físicas. |
+| **Prevencionista** | Tener en un solo lugar los documentos, las capacitaciones, el EPP y los incidentes. |
+| **Jefe de obra / Supervisor** | Recoger firmas y registrar charlas y actividades en terreno. |
+| **Trabajador** | Firmar lo que te corresponde, responder encuestas y reportar hallazgos desde el teléfono. |
 
 ## ¿Qué problemas resuelve?
 
-- **Papeleo disperso** → documentos centralizados y firmados digitalmente.
-- **Cumplimiento manual del DS 44** → documentos obligatorios que se preparan solos al crear
-  la obra.
-- **Firmas en papel** → firma digital con PIN, con registro de fecha, hora y verificación.
-- **Sin señal en obra** → firma sin conexión que se sincroniza automáticamente después.
-- **Matrices de riesgo lentas de hacer** → generación asistida por inteligencia artificial.
+- **Papeleo disperso** → documentos centralizados, con historial de versiones y firmados
+  digitalmente.
+- **Cumplimiento del DS 44 difícil de seguir** → cada obra muestra, requisito por requisito
+  del Formulario Único de Fiscalización (FUF), qué está cumplido y qué falta.
+- **Firmas en papel** → firma con un PIN personal, con registro de fecha, hora y un código
+  de verificación.
+- **Dudas sobre quién hizo qué** → cada firma, entrega de EPP y versión de documento queda
+  registrada y no se puede alterar.
+
+::: info La plataforma guarda, no redacta
+Build & Serve **no escribe** tus documentos normativos (matriz de riesgos, programa de
+trabajo preventivo, reglamento interno, procedimientos): los redacta tu empresa. La
+plataforma los **guarda, los reparte a quien corresponde, recoge las firmas** y te avisa
+cuando hay que revisarlos.
+:::
 
 ## ¿Cómo empiezo?
 
-1. [Cómo ingresar](/guia-inicio/instalacion) — acceder e iniciar sesión.
-2. [Primeros pasos](/guia-inicio/primeros-pasos) — recorrido para poner una obra en marcha.
+1. [Cómo ingresar](/guia-inicio/instalacion) — tu primer ingreso, la contraseña y el PIN de firma.
+2. [Primeros pasos](/guia-inicio/primeros-pasos) — elegir obra, moverte por el menú y poner
+   una obra en marcha.
 3. [Registro de una empresa](/guia-inicio/onboarding) — cómo se da de alta una empresa nueva.
 
 ## Mapa de la documentación
 
 | Sección | ¿Qué encontrarás? |
 | --- | --- |
-| **[Módulos](/modulos/)** | **Guía de uso de cada parte de la plataforma. Empieza aquí.** |
-| [DS44 & Normativa](/ds44/) | Qué exige el DS 44 y cómo cumplirlo desde la plataforma. |
-| [Roles](/roles/) | Qué puede hacer cada tipo de usuario. |
+| **[Módulos](/modulos/)** | **Guía de uso de cada pantalla de la plataforma.** |
+| [DS 44 y normativa](/ds44/) | Qué exige el DS 44 y cómo se cumple desde la plataforma. |
+| [Roles](/roles/) | Qué suele hacer cada tipo de usuario. |

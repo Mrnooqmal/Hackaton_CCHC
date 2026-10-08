@@ -1,57 +1,68 @@
 # Capacitaciones (Art. 16)
 
-El DS 44, en línea con el **Artículo 16**, obliga a las empresas a **informar y
-capacitar** oportuna y convenientemente a sus trabajadores sobre los riesgos de sus
-labores, las medidas preventivas y los métodos de trabajo correctos. Toda capacitación
-debe quedar **registrada y firmada**.
+El DS 44 obliga a **informar y capacitar** a cada persona sobre los riesgos de su trabajo, las
+medidas preventivas y los métodos de trabajo correctos (**Art. 15 y 16**). No basta con dictar la
+capacitación: hay que **registrarla**, con su **duración** y, cuando corresponde, con la
+**evaluación** de lo aprendido.
 
 ## Tipos de actividad formativa
 
-Build & Serve gestiona estas actividades a través del módulo de
-[Actividades](/modulos/actividades), con el campo `tipo`:
+Se gestionan en [Actividades](/modulos/actividades):
 
-| Tipo | Código | Duración / Frecuencia | Descripción |
-| --- | --- | --- | --- |
-| Charla de 5 minutos | `CHARLA_5MIN` | Diaria | Charla preventiva breve antes de iniciar la jornada |
-| Inducción | `INDUCCION` | Al ingreso | Inducción de seguridad para nuevos trabajadores |
-| Capacitación SST | `CAPACITACION` | 8 horas (Art. 16) | Capacitación formal obligatoria sobre riesgos y prevención |
-| Análisis de Riesgo del Trabajo | `ART` | Por tarea crítica | Identificación de riesgos antes de una actividad específica |
+| Tipo | Uso |
+| --- | --- |
+| **Charla 5 Minutos** | Charla diaria de inicio de jornada. |
+| **Análisis de Riesgos (ART)** | Análisis de los riesgos de una tarea antes de hacerla. |
+| **Inducción** | Inducción de ingreso (por ejemplo, al plan de emergencias). |
+| **Capacitación** | Capacitación formal, con su **tipo de capacitación DS 44**. |
 
-## Capacitación obligatoria de 8 horas
+## Duración mínima
 
-La capacitación formal del Art. 16 contempla un mínimo de **8 horas**. En la plataforma
-queda como un documento `CAPACITACION_SST` con:
+El decreto fija un piso de horas a algunas capacitaciones:
 
-- **Relator**: persona que dicta la capacitación (`relatorId`).
-- **Temario**: contenidos tratados.
-- **Asistentes**: lista de trabajadores con su firma individual.
-- **Firma del relator**: certifica que la capacitación se realizó.
+| Capacitación | Mínimo |
+| --- | --- |
+| Uso y mantención de EPP (Art. 13) | 1 hora |
+| Prevención de riesgos laborales (Art. 16) | 8 horas |
+| Orientación del Comité Paritario | 8 horas |
+| Curso del Comité Paritario | 20 horas |
 
-## Flujo de registro y firma
+La duración **se declara** según el certificado o la lista de asistencia, y el documento queda
+guardado como respaldo. No se calcula con el reloj de la plataforma, así también se acreditan las
+capacitaciones dictadas por un organismo externo. **Una capacitación sin horas declaradas no
+cuenta como completa.**
+
+## Evaluación de aprendizaje
+
+Una capacitación puede exigir **evaluación**, con **nota mínima** de 70 % en general o 90 % en
+trabajos en altura y SPDC. La evaluación la toma y corrige el relator fuera de la plataforma; la
+plataforma guarda **un documento** con las evaluaciones de esa capacitación y deja constancia de
+contra qué nota se midió.
+
+## Firma de asistentes y relator
 
 ```
-1. Prevencionista programa la actividad (estado: programada)
+1. Se programa la capacitación (con sus convocados)
         ↓
-2. Se realiza la capacitación (estado: en_curso)
+2. Cada asistente firma su asistencia con su PIN (durante todo el día)
         ↓
-3. Cada asistente firma su asistencia (PIN o presencial)
+3. El relator firma que la capacitación se realizó
         ↓
-4. El relator firma como responsable de la actividad
+4. Se declara la duración y se adjunta el certificado; si exige evaluación, el respaldo
         ↓
-5. La actividad queda completada con registro inmutable
+5. Se cierra la actividad
 ```
 
-## Firma cruzada del relator
+La firma del relator (**firma cruzada**) refuerza que la actividad efectivamente se impartió.
 
-Las capacitaciones (`CAPACITACION_SST`) y charlas (`CHARLA_5MIN`) usan **firma cruzada**:
-no basta con la asistencia del trabajador, también se requiere la firma del relator que
-valida que la actividad efectivamente se impartió. Esto refuerza la trazabilidad ante
-fiscalización.
+## Capacitaciones dictadas fuera de la plataforma
 
-Ver el detalle del mecanismo en [Firmas](/modulos/firmas).
+Si la capacitación la dictó un organismo externo (la mutualidad, un OTEC), en el requisito de la
+obra puedes **Cargar** directamente el certificado o la lista de asistencia, en vez de
+programarla. Ver [Obras](/modulos/obras#cargar-un-documento-y-pedir-las-firmas).
 
-::: tip Certificados de asistencia
-A partir del registro firmado, la plataforma puede generar constancias de asistencia
-por trabajador, útiles para acreditar el cumplimiento del Art. 16 ante la mutualidad o
-la Dirección del Trabajo.
-:::
+## El acta
+
+Cada actividad genera su **reporte**: convocados, asistentes, porcentaje de asistencia, hora de
+firma de cada uno (con **atraso** si firmó después del inicio), la planificación del día y los
+permisos de trabajo. Se descarga en PDF desde el detalle de la actividad.

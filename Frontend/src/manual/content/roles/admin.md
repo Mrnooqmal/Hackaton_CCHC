@@ -1,23 +1,30 @@
-# Rol: Admin
+# Rol: Administrador
 
-El **administrador** tiene la gestión completa de su tenant. Es el rol con mayor alcance
-dentro de una empresa cliente (no confundir con el superadmin del `tenant-0`, que tiene
-acceso cross-tenant).
+El **administrador** configura la empresa y tiene **acceso total**: todos los permisos, que no se
+pueden quitar. Es el único rol que, por defecto, entra a la **vista de empresa**.
 
-## Responsabilidades
+La empresa se crea con un administrador: quien activó el enlace de alta. Ver
+[Registro de una empresa](/guia-inicio/onboarding).
 
-- Configurar la empresa (datos, plan, personalización, módulos activos).
-- Crear y gestionar obras.
-- Gestionar personas y asignar roles.
-- Supervisar el cumplimiento documental de todas las obras.
-- Acceder a toda la reportería y KPIs del tenant.
+## Qué hace
 
-## Configuración exclusiva
+- **Configura la empresa** en [Mi Empresa](/modulos/tenants): identidad, **representante
+  legal**, roles y permisos, cargos, catálogo de EPP y ficha de salud.
+- Define **qué exige el DS 44 a cada cargo** en [Onboarding por cargo](/modulos/onboarding-cargos)
+  y adapta los [Catálogos](/modulos/catalogos) de las charlas.
+- **Da de alta al personal** y **crea las obras**.
+- **Restablece el PIN** de quien lo olvidó.
+- Gestiona las **solicitudes de datos personales** y las **supresiones** (Ley 21.719). Ver
+  [Datos personales](/modulos/datos-personales).
 
-El admin es el único rol que accede a la sección [Mi Empresa](/modulos/tenants), donde puede:
+## Lo que solo hace el administrador (por defecto)
 
-- Definir los datos y la **identidad** de la empresa (logo y color).
-- Gestionar los **roles** y sus permisos.
-- Mantener el catálogo de **cargos**.
+Restablecer PIN de firma, habilitar la Ficha Básica de Salud, gestionar los derechos de los
+titulares y aprobar o ejecutar supresiones. Todos se pueden **delegar** a otro rol desde
+**Mi Empresa → Roles y permisos**.
 
-El admin se crea automáticamente durante el [onboarding del tenant](/guia-inicio/onboarding).
+## Delegar la vista de empresa
+
+Si quieres que un jefe de obra o un prevencionista cree obras, mantenga el catálogo de EPP o
+edite el onboarding por cargo, dale también el permiso **Ver Mi Empresa**: sin él no llega a esas
+pantallas. Ver [Roles](/roles/#la-vista-de-empresa).

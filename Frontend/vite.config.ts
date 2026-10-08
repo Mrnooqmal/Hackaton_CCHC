@@ -40,6 +40,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Las capturas del manual pesan varios MB y solo se ven al abrirlo, que
+        // ya es un chunk aparte: precachearlas haría que cada instalación de la
+        // app las descargue entera.
+        globIgnores: ['manual-img/**'],
         // El bundle principal pasó los 2 MiB que Workbox precachea por
         // defecto. La app tiene modo offline real (firmas y sincronización),
         // así que dejarlo fuera del precaché rompería justo eso: se sube el

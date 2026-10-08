@@ -1,67 +1,79 @@
 # Primeros pasos
 
-Este es el recorrido típico para poner una obra en marcha y empezar a operar. Síguelo en
-orden la primera vez; después podrás moverte libremente entre los módulos.
+Esta página explica cómo te mueves dentro de la plataforma y el recorrido típico para poner
+una obra en marcha.
 
-## 1. Iniciar sesión
+## Elegir dónde vas a trabajar
 
-Ingresa con tu **RUT y contraseña**. Si es tu primer ingreso, crea tu contraseña definitiva
-y define tu **PIN de firma**. Ver [Cómo ingresar](/guia-inicio/instalacion).
+Después de iniciar sesión, la plataforma te pregunta **en qué obra vas a trabajar**. Todo lo
+que veas después (actividades, firmas, incidentes, documentos) será **de esa obra**.
 
-## 2. Revisar tu empresa
+- Toca la obra en la que trabajas hoy. Si tienes muchas, usa **Buscar obra**.
+- Si administras la empresa, verás además **Gestionar la empresa** (*Obras, roles, cargos e
+  identidad*): es la **vista de empresa**, sin una obra elegida.
+- Si perteneces a **una sola obra** y no administras la empresa, la plataforma entra directo
+  a ella y no te pregunta.
 
-Si eres administrador, entra a **Mi Empresa** y revisa:
+![Pantalla de selección de obra con el buscador y la opción Gestionar la empresa](/img/guia-inicio/seleccion-obra.png)
 
-- Los **datos** de la empresa (razón social, logo, color).
-- Los **roles** que usarás para tu equipo.
-- El catálogo de **cargos** (oficios de obra).
+Para cambiar de obra más tarde, abre el menú de **tres puntos** (abajo en el menú lateral, junto
+a tu nombre) y toca **Cambiar de obra**. El nombre de la obra en la que estás aparece siempre
+arriba, en la barra superior.
 
-Ver [Mi Empresa](/modulos/tenants).
+## El menú lateral
 
-## 3. Registrar a las personas
+El menú cambia según dónde estés:
 
-Da de alta a las personas de tu empresa (prevencionista, supervisores, trabajadores). Para
-cada una define su **rol** (qué puede hacer) y su **cargo** (su oficio en obra), y a qué
-**obras** se asigna.
+| Dentro de una obra | En la vista de empresa |
+| --- | --- |
+| **Inicio** — tus pendientes del día | **Inicio** |
+| **Detalle de obra** — cumplimiento DS 44 | **Obras** — todas las obras de la empresa |
+| **Personas** — el equipo de la obra | **Personas** — todo el personal de la empresa |
+| **Repositorio** — documentos de la obra | **Mi Empresa** — identidad, roles, cargos, EPP y datos personales |
+| **Actividades** — charlas y capacitaciones | **Onboarding** — qué exige el DS 44 a cada cargo |
+| **Encuestas** | **Catálogos** — temas, riesgos y medidas para las charlas |
+| **Mis firmas** | |
+| **Incidentes** | |
+| **Prescripciones** — medidas que te ordenaron implementar | |
 
-Ver [Personas](/modulos/personas).
+Solo verás las opciones que tu rol permite. En la barra superior están además:
 
-## 4. Crear tu primera obra
+- **Ayuda** (el signo de pregunta): abre la página de este manual que corresponde a la
+  pantalla en la que estás.
+- **Modo claro / oscuro**.
+- **Notificaciones** (la campana): tus avisos y mensajes. Ver
+  [Notificaciones](/modulos/bandeja-entrada).
 
-Crea la obra. Al guardarla, la plataforma **prepara automáticamente los documentos
-obligatorios** del DS 44 según las características que marcaste. No tienes que crearlos uno
-por uno.
+En el teléfono, el menú se abre con el botón de **tres líneas** arriba a la izquierda.
 
-Ver [Obras](/modulos/obras).
+## Poner una obra en marcha
 
-## 5. Cargar y firmar documentos
+Este es el orden recomendado la primera vez. Los pasos 1 y 2 se hacen en la **vista de
+empresa**; el resto, **dentro de la obra**.
 
-- Sube los archivos a los documentos obligatorios de la obra.
-- Asigna los documentos a las personas que correspondan.
-- Cada persona recibe el aviso y **firma con su PIN**.
-
-Ver [Documentos](/modulos/documentos) y [Firmas Digitales](/modulos/firmas).
-
-## 6. Programar actividades
-
-Programa las charlas y capacitaciones, y registra la **asistencia firmada** de los
-trabajadores y del relator.
-
-Ver [Actividades](/modulos/actividades).
-
-## 7. Hacer seguimiento desde el Dashboard
-
-Revisa tus pendientes, el avance del cumplimiento y los incidentes recientes desde el
-[Dashboard](/modulos/dashboard).
-
-## Flujo resumido
+1. **Revisa tu empresa** en [Mi Empresa](/modulos/tenants): logo y color, **representante
+   legal**, roles, cargos y el catálogo de **EPP**.
+2. **Registra a las personas** en [Personas](/modulos/personas), una a una o con **Carga
+   masiva**. Para cada una defines su **rol** (qué puede hacer en la plataforma) y su **cargo**
+   (su oficio en obra, que define qué le exige el DS 44).
+3. **Crea la obra** en [Obras](/modulos/obras). Al guardarla, la plataforma prepara los
+   requisitos del DS 44 que le corresponden.
+4. **Arma el equipo de la obra** en **Personas** (con la obra elegida): suma a quienes
+   trabajan ahí y ordénalos por cuadrilla. Al sumarlos empieza su **onboarding**: los
+   documentos y capacitaciones que su cargo exige.
+5. **Sube los documentos** de la obra en **Detalle de obra** (matriz de riesgos, programa de
+   trabajo preventivo, procedimientos…) y asígnalos a quienes deben firmarlos.
+6. **Programa las actividades** del mes en [Actividades](/modulos/actividades): charlas
+   diarias, capacitaciones e inspecciones, con su asistencia firmada.
+7. **Haz seguimiento**: el **Detalle de obra** muestra el avance del cumplimiento requisito
+   por requisito, e **Inicio** muestra a cada persona lo que tiene pendiente.
 
 ```
-Iniciar sesión → Revisar empresa → Registrar personas → Crear obra
-   → Cargar y firmar documentos → Programar actividades → Hacer seguimiento
+Mi Empresa → Personas → Crear obra → Equipo de la obra
+   → Documentos y firmas → Actividades → Seguimiento del cumplimiento
 ```
 
-> **Avance del cumplimiento:** cuando completes lo que pide cada fase de la obra
-> (Planificar → Hacer → Verificar → Actuar), podrás avanzar a la siguiente. La plataforma
-> verifica que no queden pendientes obligatorios antes de dejarte avanzar. Ver
-> [Obras](/modulos/obras).
+## Tu pantalla de Inicio
+
+Cada vez que entras a una obra, **Inicio** te muestra lo que tienes que hacer: firmas
+pendientes, encuestas por responder y las actividades del día. Ver [Inicio](/modulos/dashboard).
