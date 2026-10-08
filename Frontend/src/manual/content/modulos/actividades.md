@@ -11,8 +11,9 @@ capacitación efectivamente se realizó (una exigencia clave del DS 44, Art. 16)
 En el menú lateral, haz clic en **Actividades**. Se abrirá la pantalla **"Actividades y
 capacitación"**.
 
-> Las actividades son **de una obra**. Si ves *"No hay una obra activa"*, elige la obra con
-> **Cambiar de obra** (menú de tres puntos, abajo en el menú lateral).
+> Las actividades son **de una obra**. Esta pantalla no tiene un botón para cambiar de obra: si
+> ves *"No hay una obra activa"*, abre el menú de **tres puntos** abajo en el menú lateral (junto
+> a tu nombre) y toca **Cambiar de obra**.
 
 La pantalla ofrece **dos vistas**, que alternas con **Lista** y **Calendario**:
 
@@ -20,7 +21,7 @@ La pantalla ofrece **dos vistas**, que alternas con **Lista** y **Calendario**:
   mensual a los que les falta el detalle del día), **Hoy** (lo programado para hoy, listo para
   registrar asistencia) e **Historial** (lo ya realizado, con filtros por fecha: 7 días, 30
   días o un rango).
-- **Calendario** — el mes completo de un vistazo (ver
+- **Calendario** — el mes completo de un vistazo. Toca el botón **Calendario** (ver
   [El calendario mensual](#el-calendario-mensual)).
 
 Arriba están **Planificar mes** y **Nueva actividad**, y un buscador para hoy y el
@@ -130,10 +131,16 @@ Los responsables ven sus borradores en la sección **Del plan, por completar** y
 calendario (con borde punteado y el símbolo ◌). Para completar uno:
 
 1. Toca **Completar** en la lista, o ábrelo desde el calendario o el panel del día.
-2. Rellena el detalle de la jornada: título, tema del día, **relator**, horario, ubicación y
-   asistentes.
-3. Guarda. El borrador pasa a **programada** y los asistentes convocados reciben el aviso
-   en sus notificaciones.
+
+   ![Borradores del plan con el botón Completar](/img/actividades/completar-borrador.png)
+
+2. Se abre **Completar actividad planificada**. Rellena el detalle de la jornada: título, tema
+   del día, **relator**, horario, ubicación y asistentes.
+
+   ![Formulario Completar actividad planificada con el campo Relator](/img/actividades/completar-formulario.png)
+
+3. Toca **Guardar y programar**. El borrador pasa a **programada** y los asistentes convocados
+   reciben el aviso en sus notificaciones.
 
 El campo **Relator** viene precargado con la persona que la planificación mensual asignó a
 ese día, pero **puedes cambiarlo** si quien dicta la charla es otro (licencia, vacaciones,
@@ -151,7 +158,10 @@ planificación del mes no vuelve a generar el borrador del responsable original.
 
 ## El calendario mensual
 
-La vista **Calendario** muestra el mes completo:
+Toca **Calendario**, arriba junto a **Lista**, para ver el mes completo:
+
+![Vista Calendario de Actividades, con el botón Calendario marcado](/img/actividades/calendario.png)
+
 
 - Cada actividad aparece como una **etiqueta de color según su tipo** (la leyenda está al
   pie del calendario).
@@ -311,7 +321,7 @@ lista de **asistentes** con su estado de firma.
 
 **No veo ninguna actividad.**
 Las actividades se muestran **por obra**. Revisa en la barra superior en qué obra estás y, si
-no es la correcta, usa **Cambiar de obra**.
+no es la correcta, usa **Cambiar de obra** en el menú de tres puntos, abajo en el menú lateral.
 
 **Programé la capacitación pero no aparece como cumplida.**
 Necesita **asistencia firmada** y, si es una capacitación con mínimo de horas, la **duración

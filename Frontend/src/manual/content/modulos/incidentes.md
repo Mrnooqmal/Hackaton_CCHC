@@ -9,9 +9,14 @@ registros que exige el DS 44.
 
 ## Entrar al módulo
 
-En el menú lateral, toca **Incidentes**. Es de la obra elegida: si ves *"No hay una obra
-activa"*, usa **Cambiar de obra**. También puedes reportar desde el acceso **Reportar
+En el menú lateral, toca **Incidentes**. También puedes reportar desde el acceso **Reportar
 incidente** de [Inicio](/modulos/dashboard).
+
+Los incidentes son **de la obra en la que estás**. En esta pantalla no hay un botón para
+cambiar de obra: si ves *"No hay una obra activa"* o necesitas otra obra, abre el menú de **tres
+puntos** abajo en el menú lateral (junto a tu nombre) y toca **Cambiar de obra**.
+
+![Menú de tres puntos con la opción Cambiar de obra](/img/guia-inicio/cambiar-obra.png)
 
 La pantalla **Incidentes y hallazgos** tiene dos pestañas, según tus permisos:
 

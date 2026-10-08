@@ -20,6 +20,8 @@ Para cambiar de obra más tarde, abre el menú de **tres puntos** (abajo en el m
 a tu nombre) y toca **Cambiar de obra**. El nombre de la obra en la que estás aparece siempre
 arriba, en la barra superior.
 
+![Menú de tres puntos con la opción Cambiar de obra](/img/guia-inicio/cambiar-obra.png)
+
 ## El menú lateral
 
 El menú cambia según dónde estés:

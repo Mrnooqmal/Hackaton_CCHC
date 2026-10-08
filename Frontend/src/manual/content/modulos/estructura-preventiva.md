@@ -30,10 +30,23 @@ obligatorio**, o **Mandato vencido** si ya pasó su período.
 Constituir y administrar órganos requiere los permisos **Crear obra** o **Ver Mi Empresa** (por
 defecto, Administrador y Jefe de Obra).
 
-Toca **Constituir** en el órgano que corresponde (si no es obligatorio, el botón dice
-**Constituir de todas formas**; si el mandato venció, **Renovar**). Son tres pasos:
+Para llegar, en la obra entra a **Detalle de obra**, abre la pestaña **Cumplimiento DS 44**, elige
+la fase **Planificar** y, en **Módulos de Planificar**, toca **Estructura preventiva**:
 
-1. **Datos** — la **fecha de constitución** (no puede ser futura) y el **término del mandato**.
+![Módulo Estructura preventiva en la fase Planificar de la obra](/img/estructura/acceso.png)
+
+Se abre el panel con los órganos de la obra. Toca **Constituir** en el que corresponde (si no es
+obligatorio, el botón dice **Constituir de todas formas**; si el mandato venció, **Renovar**):
+
+![Panel de estructura preventiva con el botón para constituir](/img/estructura/constituir.png)
+
+Se abre el formulario, en tres pasos:
+
+![Formulario para constituir el órgano, paso Datos](/img/estructura/formulario.png)
+
+
+1. **Datos** — la **fecha de elección de los representantes**, la **fecha de constitución**
+   (ninguna puede ser futura) y el **término del mandato**.
    En el comité paritario, el mandato dura **2 años** desde la elección (Art. 23): la plataforma
    lo calcula, y solo se puede acortar, nunca extender.
 2. **Integrantes** — para cada persona: su **estamento** (*Entidad empleadora*, designado, o
@@ -44,7 +57,6 @@ Toca **Constituir** en el órgano que corresponde (si no es obligatorio, el bot�
    acta de constitución, comprobante de registro en la Dirección del Trabajo, registro Seremi del
    experto, designación del encargado o capacitación del organismo administrador.
 
-![Constituir un comité paritario](/img/estructura/constituir.png)
 
 > La plataforma **no verifica** que las personas cumplan los requisitos legales del cargo ni que
 > la designación sea válida: eso es responsabilidad de la empresa. Aquí se registra quién

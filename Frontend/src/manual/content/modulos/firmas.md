@@ -55,8 +55,19 @@ abre la firma en **su** equipo y le pasa el teléfono a la persona:
 
 1. Con la obra elegida, entra a **Personas**, toca a la persona y elige **Firmar asistido**
    (en la vista de lista, **Firma asistida**).
-2. Aparecen sus documentos pendientes. Ábrelos con ella para que los lea.
-3. **La persona escribe su propio PIN.** Quien asiste nunca lo conoce.
+
+   ![Menú de la persona con la opción Firmar asistido](/img/personas/menu-persona.png)
+
+2. Se abre **Documentos pendientes**, con lo que esa persona tiene por firmar. Toca **Firmar**
+   en el documento.
+
+   ![Documentos pendientes de la persona, con el botón Firmar](/img/firmas/firma-asistida.png)
+
+3. Revisa el documento con ella para que lo lea (**Ver**). Luego **la persona escribe su propio
+   PIN** (quien asiste nunca lo conoce), marca *El trabajador declara haber leído
+   conscientemente este documento antes de firmarlo* y toca **Confirmar firma**.
+
+   ![Firma asistida: la persona escribe su PIN](/img/firmas/firma-asistida-pin.png)
 
 Queda registrado que la persona declaró haber leído el documento antes de firmar.
 

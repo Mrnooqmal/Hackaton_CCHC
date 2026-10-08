@@ -47,7 +47,7 @@ programado para hoy, verás **Lo próximo**: la siguiente actividad que viene.
 
 **Veo "Todo al día", pero creo que tengo cosas pendientes.**
 Inicio muestra lo de **la obra en la que estás**. Si trabajas en varias, revisa la obra en la
-barra superior y usa **Cambiar de obra**.
+barra superior y usa **Cambiar de obra** en el menú de tres puntos, abajo en el menú lateral.
 
 **¿Dónde veo el avance del DS 44 de la obra?**
 En **Detalle de obra → Cumplimiento DS 44**. Ver [Obras](/modulos/obras#cumplimiento-ds-44).
