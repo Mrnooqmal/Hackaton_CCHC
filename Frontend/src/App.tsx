@@ -117,7 +117,7 @@ const RUTAS_SIN_AMBITO = new Set([
 ]);
 
 function AppContent() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { scopeElegido } = useObraContext();
   const { isMobileMenuOpen, closeMobileMenu, isSidebarCollapsed } = useLayout();
   const { setLogo, setPrimaryColor } = useBrand();
@@ -222,6 +222,16 @@ function AppContent() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+
+  // Mientras se revalida el token de una recarga no se sabe aún qué mostrar:
+  // una sola pantalla de carga evita que asome el login y luego la app.
+  if (authLoading && localStorage.getItem('auth_token')) {
+    return (
+      <div className="app-boot" role="status" aria-label="Cargando">
+        <div className="spinner" />
+      </div>
+    );
+  }
 
   if (isBlockingStep) {
     return (

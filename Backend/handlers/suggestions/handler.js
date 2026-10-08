@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand } = require('@aws-sdk/lib-dynamodb');
-const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+const { enviarCorreo } = require('../../lib/correo');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { created, error } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
@@ -8,10 +8,7 @@ const { conSesion } = require('../../lib/auth/sesion');
 const { escaparHtml } = require('../../lib/escaparHtml');
 
 const SUGGESTIONS_TABLE = process.env.SUGGESTIONS_TABLE || 'Suggestions';
-const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'noreply@buildandserve.cl';
 const SUGGESTIONS_RECIPIENT = 'thecodecookers@gmail.com';
-
-const sesClient = new SESClient({ region: 'us-east-1' });
 
 const ROUTE_LABELS = {
     '/': 'Dashboard',
@@ -111,18 +108,8 @@ const sendSuggestionEmail = async ({ userName, interfaceLabel, message, createdA
 </html>`.trim();
 
     try {
-        await sesClient.send(new SendEmailCommand({
-            Source: SENDER_EMAIL,
-            Destination: { ToAddresses: [SUGGESTIONS_RECIPIENT] },
-            Message: {
-                Subject: { Data: subject, Charset: 'UTF-8' },
-                Body: {
-                    Html: { Data: htmlBody, Charset: 'UTF-8' },
-                    Text: { Data: textBody, Charset: 'UTF-8' },
-                },
-            },
-        }));
-        console.log(`Suggestion email sent to ${SUGGESTIONS_RECIPIENT}`);
+        const r = await enviarCorreo({ para: SUGGESTIONS_RECIPIENT, asunto: subject, html: htmlBody, texto: textBody });
+        console.log(r.enviado ? 'Suggestion email sent' : `Suggestion email not sent: ${r.suprimida}`);
     } catch (err) {
         console.error('Error sending suggestion email:', err);
     }

@@ -46,8 +46,8 @@ const marcarAlerta = async (activityId, campo) => {
 
 /**
  * Lambda programada (EventBridge, cada 30 min). Revisa las actividades de HOY y
- * genera avisos al inbox de los responsables (sin SMS: senderRol 'system' +
- * prioridad 'normal'):
+ * genera avisos al inbox de los responsables (senderRol 'system' + prioridad
+ * 'normal'):
  *   - Ítem 2: la actividad superó su hora de término (horaFin) y no se ha cerrado.
  *   - Ítem 4: a mediodía, aún hay convocados sin firmar (excluye ausentes).
  * Es idempotente: cada aviso se envía una sola vez por actividad/día (flags en

@@ -85,6 +85,13 @@
   min-width: 0;
 }
 
+.sgsst-row { align-items: flex-start; }
+.sgsst-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
 /* DS44 - Barra de progreso
    El relleno lo pinta el componente, porque el color depende del porcentaje y
    ese corte ya vive en un solo lugar (`colorProgreso`). */

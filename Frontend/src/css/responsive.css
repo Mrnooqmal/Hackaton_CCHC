@@ -28,11 +28,6 @@
     display: block;
   }
 
-  /* Show Close Button on Mobile */
-  .sidebar-mobile-close {
-    display: flex;
-  }
-
   /* Adjust Main Content */
   .main-content {
     margin-left: 0;

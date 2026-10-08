@@ -18,12 +18,13 @@
  */
 
 const crypto = require('crypto');
-const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { error } = require('../utils/response');
 
 const SESSIONS_TABLE = process.env.SESSIONS_TABLE || 'Sessions';
 const TOKEN_INDEX = 'tokenHash-index';
+const PERSONA_INDEX = 'personaId-index';
 
 /** SHA-256 del token. No lleva salt a propósito: el token ya son 32 bytes
  *  aleatorios, así que no hay espacio de búsqueda que precalcular. */
@@ -62,6 +63,56 @@ async function sesionDesdeToken(token) {
     if (new Date(sesion.expiresAt) < new Date()) return null;
 
     return sesion;
+}
+
+/**
+ * Revoca todas las sesiones de estas personas.
+ *
+ * Se llama cada vez que cambia una contraseña: una sesión abierta con la
+ * contraseña anterior no puede seguir valiendo. Con la contraseña inicial
+ * (D-13) no es teórico: quien conoce el RUT puede entrar antes que la persona,
+ * y si su sesión sobrevive al cambio, deja de ser provisional y queda completa.
+ * Ver D-26.
+ *
+ * Recibe varias personas porque la contraseña es una para toda la identidad:
+ * cambiarla en una empresa la cambia en las fichas hermanas.
+ *
+ * Lanza si no puede: quien la llama no debe responder que todo salió bien con
+ * sesiones anteriores vivas. Las respuestas del autorizador ya cacheadas siguen
+ * hasta 60 segundos, igual que un cierre de sesión.
+ *
+ * @returns {Promise<number>} cuántas sesiones se revocaron
+ */
+async function revocarSesionesDe(personaIds) {
+    let revocadas = 0;
+    for (const personaId of new Set(personaIds.filter(Boolean))) {
+        let inicio;
+        do {
+            // El índice proyecta solo claves: da el `sessionId`, nada más.
+            const res = await docClient.send(new QueryCommand({
+                TableName: SESSIONS_TABLE,
+                IndexName: PERSONA_INDEX,
+                KeyConditionExpression: 'personaId = :p',
+                ExpressionAttributeValues: { ':p': personaId },
+                ExclusiveStartKey: inicio,
+            }));
+            for (const { sessionId } of res.Items || []) {
+                await docClient.send(new UpdateCommand({
+                    TableName: SESSIONS_TABLE,
+                    Key: { sessionId },
+                    UpdateExpression: 'SET activa = :f, revocadaEn = :ahora',
+                    // Sin esto, una sesión que el TTL ya borró reaparecería como
+                    // un ítem a medias con solo la clave.
+                    ConditionExpression: 'attribute_exists(sessionId)',
+                    ExpressionAttributeValues: { ':f': false, ':ahora': new Date().toISOString() },
+                })).then(() => { revocadas += 1; }, (err) => {
+                    if (err.name !== 'ConditionalCheckFailedException') throw err;
+                });
+            }
+            inicio = res.LastEvaluatedKey;
+        } while (inicio);
+    }
+    return revocadas;
 }
 
 /**
@@ -188,9 +239,11 @@ module.exports = {
     RUTAS_CON_CREDENCIAL_PROVISIONAL,
     SESSIONS_TABLE,
     TOKEN_INDEX,
+    PERSONA_INDEX,
     hashToken,
     tokenDelEvento,
     sesionDesdeToken,
+    revocarSesionesDe,
     conSesion,
     tenantIdDeSesion,
     sesionPuede,

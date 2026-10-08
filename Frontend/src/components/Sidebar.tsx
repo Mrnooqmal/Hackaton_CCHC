@@ -11,7 +11,6 @@ import {
     FiBriefcase,
     FiAlertTriangle,
     FiCheckSquare,
-    FiX,
     FiLogOut,
     FiList,
     FiClipboard,
@@ -267,17 +266,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             />
 
             <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
-                {/* Mobile close button */}
-                {onClose && (
-                    <button
-                        className="sidebar-mobile-close"
-                        onClick={onClose}
-                        aria-label="Cerrar menú"
-                    >
-                        <FiX />
-                    </button>
-                )}
-
                 <nav className="sidebar-nav">
                     {navSections.map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
@@ -340,17 +328,24 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                     return (
                         <div className="sidebar-footer">
                             <div className="sidebar-user">
-                                <div className="sidebar-user-avatar">
-                                    {user.fotoPerfil
-                                        ? <img src={user.fotoPerfil} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                                        : initials}
-                                </div>
-                                <div className="sidebar-user-meta">
-                                    <span className="sidebar-user-name">
-                                        {user.nombre} {user.apellido}
+                                <button
+                                    type="button"
+                                    className="sidebar-user-link"
+                                    onClick={handleIrAConfiguracion}
+                                    title="Ir a la configuración de tu cuenta"
+                                >
+                                    <span className="sidebar-user-avatar">
+                                        {user.fotoPerfil
+                                            ? <img src={user.fotoPerfil} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                            : initials}
                                     </span>
-                                    <span className="sidebar-user-role">{roleLabel}</span>
-                                </div>
+                                    <span className="sidebar-user-meta">
+                                        <span className="sidebar-user-name">
+                                            {user.nombre} {user.apellido}
+                                        </span>
+                                        <span className="sidebar-user-role">{roleLabel}</span>
+                                    </span>
+                                </button>
 
                                 <div className="sidebar-session" ref={sessionMenuRef}>
                                     <button

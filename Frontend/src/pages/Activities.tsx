@@ -2112,8 +2112,9 @@ const activitiesStyles = `
 .act-filterbar-select .ui-select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 @media (max-width: 720px) {
-    .act-filterbar { flex-direction: column; height: auto; max-width: none; }
-    .act-filterbar-search { height: var(--act-ctl-h); }
+    /* .tbar pasa a columna bajo 560px: el flex-basis de 460px se volvería alto */
+    .act-filterbar { flex: 0 0 auto; flex-direction: column; height: auto; width: 100%; min-width: 0; max-width: none; }
+    .act-filterbar-search { flex: 0 0 var(--act-ctl-h); height: var(--act-ctl-h); }
     .act-filterbar-divider { width: auto; height: 1px; }
     .act-filterbar-select { flex: 0 0 var(--act-ctl-h); }
     .act-toolbar .ui-segmented { width: 100%; }

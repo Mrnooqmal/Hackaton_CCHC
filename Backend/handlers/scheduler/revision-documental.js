@@ -6,8 +6,8 @@
  * acerca (o supera) los 12 meses desde su última publicación, para que publiquen
  * una nueva versión revisada (con participantes, ver el versionado del RI).
  *
- * Sigue la misma convención que estructura-alertas: el aviso va SOLO al inbox
- * (senderRol 'system', sin SMS) y es idempotente para no repetirse a diario.
+ * Sigue la misma convención que estructura-alertas: el aviso va al inbox como
+ * mensaje del sistema (senderRol 'system') y es idempotente para no repetirse a diario.
  */
 const { ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');

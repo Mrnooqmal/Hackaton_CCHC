@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FiAlertTriangle, FiCheckCircle, FiClock, FiUploadCloud, FiUsers } from 'react-icons/fi';
-import { Badge } from './ui';
+import { Badge, EstructuraPreventivaSkeleton } from './ui';
 import { estructuraApi, type ResumenEstructura } from '../api/estructura.api';
 import { documentsApi, type Document } from '../api/documents.api';
 import { uploadsApi } from '../api/uploads.api';
@@ -100,7 +100,7 @@ export default function EstructuraPreventivaPanel({
     useEffect(() => { void cargar(); }, [cargar]);
 
     if (cargando) {
-        return <div className="text-muted" style={{ fontSize: '0.85rem' }}>Cargando estructura preventiva…</div>;
+        return <EstructuraPreventivaSkeleton />;
     }
     if (error) {
         return (

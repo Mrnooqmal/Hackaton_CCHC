@@ -28,6 +28,7 @@ interface AuthContextType {
     completarLoginConTenant: (selectionToken: string, tenantId: string) => Promise<LoginResult>;
     logout: () => Promise<void>;
     updateUser: (userData: Partial<User>) => void;
+    reemplazarSesion: (data: Pick<LoginSuccess, 'token' | 'sessionId' | 'expiresAt' | 'user'>) => void;
     hasPermission: (permission: string) => boolean;
 }
 
@@ -149,7 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Aplica una sesión ya creada por el backend (login directo o tras elegir
     // empresa): guarda localStorage + estado de React. Compartido por login()
     // (caso de una sola empresa) y completarLoginConTenant().
-    const aplicarSesion = (data: LoginSuccess) => {
+    const aplicarSesion = (data: Pick<LoginSuccess, 'token' | 'sessionId' | 'expiresAt' | 'user'>) => {
         const { token, sessionId, user: userData, expiresAt } = data;
 
         localStorage.setItem('auth_token', token);
@@ -261,7 +262,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, error, sessionExpired, clearSessionExpired, login, completarLoginConTenant, logout, updateUser, hasPermission }}>
+        <AuthContext.Provider value={{ user, session, loading, error, sessionExpired, clearSessionExpired, login, completarLoginConTenant, logout, updateUser, reemplazarSesion: aplicarSesion, hasPermission }}>
             {children}
         </AuthContext.Provider>
     );

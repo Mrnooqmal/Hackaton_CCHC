@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LuKeyRound, LuShieldCheck, LuShieldAlert, LuCircleAlert, LuCheck } from 'react-icons/lu';
+import { LuShieldCheck, LuShieldAlert, LuCircleAlert, LuCheck } from 'react-icons/lu';
 import { Modal } from './ui';
 import PinInput from './PinInput';
 import { personasApi } from '../api/personas.api';
@@ -125,9 +125,10 @@ export default function PinDeFirma({ tenantId, persona, actorPersonaId, puedeRes
     return (
         <section className="pin-firma" aria-labelledby="pin-firma-titulo">
             <div className="pin-firma__cabecera">
-                <LuKeyRound size={16} aria-hidden />
                 <h3 id="pin-firma-titulo">PIN de firma</h3>
+                <span>Con él firma documentos y actividades</span>
             </div>
+            <div className="pin-firma__caja">
 
             {persona.pinConfigurado ? (
                 <p className="pin-firma__estado pin-firma__estado--ok">
@@ -163,6 +164,7 @@ export default function PinDeFirma({ tenantId, persona, actorPersonaId, puedeRes
                         </button>
                     )
                 )}
+            </div>
             </div>
 
             {/* Restablecer */}
@@ -300,13 +302,19 @@ export default function PinDeFirma({ tenantId, persona, actorPersonaId, puedeRes
             </Modal>
 
             <style>{`
-                .pin-firma { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--surface-border); }
-                .pin-firma__cabecera { display: flex; align-items: center; gap: 8px; color: var(--text-primary); }
-                .pin-firma__cabecera h3 { font-size: 0.95rem; font-weight: 600; margin: 0; }
-                .pin-firma__estado { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 0.86rem; color: var(--text-secondary); line-height: 1.5; }
+                .pin-firma { display: flex; flex-direction: column; min-width: 0; }
+                .pin-firma__cabecera {
+                    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 42px;
+                    padding-bottom: 9px; margin-bottom: 14px; border-bottom: 1px solid var(--surface-border);
+                }
+                .pin-firma__cabecera h3 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text-primary); }
+                .pin-firma__cabecera span { font-size: 11.5px; color: var(--text-secondary); }
+                .pin-firma__caja { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--surface-border); border-radius: 12px; }
+                .pin-firma__estado { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; }
                 .pin-firma__estado svg { flex-shrink: 0; margin-top: 3px; }
-                .pin-firma__estado--ok { color: var(--success-700, #15803d); }
-                .pin-firma__estado--pendiente { color: var(--warning-800, #92400e); }
+                .pin-firma__estado--ok { color: var(--text-primary); font-weight: 500; }
+                .pin-firma__estado--ok svg { color: var(--success-apagado); }
+                .pin-firma__estado--pendiente svg { color: var(--danger-alerta); }
                 .pin-firma__acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
                 .pin-firma__nota { margin: 0; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; max-width: 65ch; }
                 .pin-firma__pie { display: flex; justify-content: flex-end; gap: var(--space-2); width: 100%; }

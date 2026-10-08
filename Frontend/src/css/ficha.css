@@ -1,0 +1,163 @@
+/* Ficha de una persona: /personas/:rut y /configuracion.
+   Traducción del canvas "Detalle de persona" (PersonaDetalle*.dc.html):
+   secciones con título y regla, recuadros solo por lista, color reservado
+   para la acción principal y dos estados (✓ cumplido, alerta). La edición
+   ocurre en el lugar, con una barra fija abajo para guardar. */
+.pd-tab { display: flex; flex-direction: column; gap: 28px; }
+.pd-error { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-12) var(--space-6); text-align: center; color: var(--danger-alerta); }
+.pd-error h2 { margin: 0; font-size: var(--text-lg); color: var(--text-primary); }
+.pd-alerta {
+    display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-5); padding: 10px 14px; border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--danger-alerta) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger-alerta) 30%, transparent);
+    color: var(--danger-alerta); font-size: 13px;
+}
+
+/* Mismo alto con o sin botón a la derecha: así las reglas de dos secciones
+   vecinas quedan a la misma altura. */
+.pd-head {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 42px;
+    padding-bottom: 9px; margin-bottom: 14px; border-bottom: 1px solid var(--surface-border);
+}
+.pd-titulo { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.pd-hint { font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); }
+.pd-head-accion { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.pd-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--text-secondary); }
+.pd-vacio, .pd-vacio-linea { color: var(--text-muted); font-weight: 400; }
+.pd-vacio-linea { margin: 0; font-size: 13px; }
+.pd-ayuda { font-size: 11.5px; color: var(--text-muted); }
+.pd-mono { font-family: var(--font-mono); }
+.pd-texto-alerta { color: var(--danger-alerta) !important; }
+
+.pd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.pd-stat { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border: 1px solid var(--surface-border); border-radius: 12px; }
+.pd-stat-valor { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; color: var(--text-primary); }
+.pd-stat-sub { font-size: 12px; color: var(--text-secondary); }
+
+.pd-fila { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.pd-fila--asignaciones { grid-template-columns: minmax(0, 1fr) 360px; }
+.pd-seccion { min-width: 0; }
+.pd-rejilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+.pd-rejilla--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 16px; }
+.pd-columna { display: flex; flex-direction: column; }
+.pd-columna--gap { gap: 28px; }
+.pd-campo { display: flex; flex-direction: column; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--surface-hover); min-width: 0; }
+.pd-valor { font-size: 14px; font-weight: 500; color: var(--text-primary); word-break: break-word; }
+.pd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pd-chip, .pd-pildora {
+    display: inline-flex; align-items: center; padding: 2px 10px; border: 1px solid var(--surface-border);
+    border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--text-primary); white-space: nowrap;
+}
+.pd-ok { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--success-apagado); white-space: nowrap; }
+
+/* ── Edición en el lugar ─────────────────────────────────────────────────
+   Al entrar, la sección se enmarca con un pulso de acento, cada input entra
+   escalonado desde el valor que reemplaza y el grupo "Nombre y cargo" se
+   despliega. Lo que no se está editando se atenúa. */
+.pd-seccion--editando { position: relative; animation: pd-pulso 900ms ease-out 1; border-radius: 12px; }
+@keyframes pd-pulso {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+    100% { box-shadow: 0 0 0 14px transparent; }
+}
+.pd-input { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; min-width: 0; animation: pd-entra 260ms ease-out both; }
+@keyframes pd-entra { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.pd-input .form-input { background-color: var(--surface-elevated); }
+.pd-input .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.pd-identidad {
+    display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 8px; margin-bottom: 8px;
+    border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+    animation: pd-despliega 320ms ease-out both; overflow: hidden;
+}
+@keyframes pd-despliega { from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } to { opacity: 1; max-height: 260px; } }
+.pd-identidad-titulo { font-size: 11.5px; font-weight: 600; color: var(--accent-text); }
+.pd-solo-lectura { opacity: .6; }
+.pd-modo { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent-text); }
+.pd-modo-punto { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: ui-latido 1.4s ease-in-out infinite; }
+.pd-check { align-items: center; padding: 8px 0; cursor: pointer; font-size: 13.5px; }
+.pd-atenuada, .pd-tab--editando .pd-atenuable { opacity: .4; pointer-events: none; transition: opacity var(--transition-normal); }
+
+.pd-barra {
+    position: sticky; bottom: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin: 0 calc(-1 * var(--space-2)); padding: 14px var(--space-2);
+    background: var(--surface-bg); border-top: 1px solid var(--surface-border);
+    box-shadow: 0 -12px 24px rgb(0 0 0 / .18);
+    animation: pd-sube 240ms ease-out both;
+}
+@keyframes pd-sube { from { transform: translateY(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+.pd-barra-texto { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.pd-barra-cambios { font-size: 12px; color: var(--text-secondary); }
+.pd-espacio { flex: 1; }
+
+/* ── Listas ── */
+.pd-lista { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 12px; overflow: hidden; }
+.pd-fila-lista {
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    border-bottom: 1px solid var(--surface-border); color: inherit; text-decoration: none;
+}
+.pd-fila-lista:last-child { border-bottom: none; }
+.pd-fila-link { transition: background var(--transition-fast); }
+.pd-fila-link:hover { background: var(--surface-elevated); }
+.pd-fila-lista--hecha .pd-fila-titulo { color: var(--text-secondary); font-weight: 400; }
+.pd-fila-texto { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.pd-fila-titulo { font-size: 13.5px; font-weight: 500; color: var(--text-primary); }
+.pd-fila-meta { font-size: 12px; color: var(--text-secondary); }
+.pd-fila-acciones { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.pd-fecha { width: 96px; flex-shrink: 0; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pd-icono-ok { flex-shrink: 0; color: var(--success-apagado); }
+.pd-icono-neutro { flex-shrink: 0; color: var(--text-muted); }
+.pd-tipo {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 32px; height: 32px; border-radius: 8px; background: var(--surface-hover); color: var(--text-secondary);
+}
+.pd-chevron { flex-shrink: 0; color: var(--text-muted); }
+.pd-subir { cursor: pointer; }
+.pd-ver-mas { margin-top: 10px; padding: 0; border: none; background: none; font-family: inherit; font-size: 12.5px; color: var(--accent-text); cursor: pointer; }
+.pd-ver-mas:hover { text-decoration: underline; }
+
+.pd-pct { font-size: 20px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.pd-barra-progreso { display: block; height: 6px; margin-bottom: 16px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
+.pd-barra-progreso span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 300ms; }
+.pd-mini { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.pd-mini-barra { display: block; width: 46px; height: 4px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
+.pd-mini-barra span { display: block; height: 100%; background: var(--accent); }
+
+.pd-asignar { display: flex; flex-direction: column; gap: 8px; }
+.pd-asignar-item {
+    display: flex; align-items: center; gap: 10px; padding: 11px 14px;
+    border: 1px solid var(--surface-border); border-radius: 10px;
+    color: var(--text-primary); font-size: 13px; font-weight: 500; text-decoration: none;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.pd-asignar-item > svg:first-child { color: var(--text-secondary); }
+.pd-asignar-item span { flex: 1; }
+.pd-asignar-item:hover { border-color: var(--accent); background: var(--surface-elevated); }
+
+.pd-cv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+.pd-subtitulo { display: block; margin-bottom: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
+.pd-cv-lista { display: flex; flex-direction: column; gap: 10px; }
+.pd-cv-item { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--text-primary); text-decoration: none; }
+.pd-cv-link:hover { color: var(--accent-text); }
+
+.pd-peligro {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 16px 18px;
+    border: 1px solid color-mix(in srgb, var(--danger-alerta) 30%, transparent); border-radius: 12px;
+}
+.pd-btn-alerta {
+    background: none; color: var(--danger-alerta);
+    border: 1px solid color-mix(in srgb, var(--danger-alerta) 40%, transparent);
+}
+.pd-btn-alerta:hover { background: color-mix(in srgb, var(--danger-alerta) 10%, transparent); }
+
+@media (max-width: 1080px) {
+    .pd-fila, .pd-fila--asignaciones { grid-template-columns: minmax(0, 1fr); }
+    .pd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+    .pd-rejilla, .pd-rejilla--4, .pd-cv { grid-template-columns: minmax(0, 1fr); }
+    .pd-fecha { width: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pd-seccion--editando, .pd-input, .pd-identidad, .pd-barra, .pd-modo-punto { animation: none; }
+}

@@ -202,6 +202,29 @@ Las herramientas de verificación fueron de uso puntual y no se agregaron al rep
 - **Cambios pendientes de otras ramas sobre `App.css`** chocan al integrar, porque el archivo
   ya no existe: el cambio hay que llevarlo al archivo que corresponda según §2.
 
+## 6.1 Integración de `pruebas` (8 de octubre de 2026)
+
+`pruebas` avanzó 27 commits mientras la rama esperaba, y seis tocaron CSS. El único conflicto
+fue `App.css` (eliminado acá, modificado allá). Sus cambios se llevaron a mano:
+
+| Cambio en `pruebas` | Destino |
+|---|---|
+| `min-height: 100dvh` en `.app-layout`; nueva `.app-boot` | `layout.css` |
+| Se retira `.sidebar-mobile-close` (las tres definiciones) | `layout.css` y `responsive.css` |
+| `overscroll-behavior` en `.sidebar-nav`; `.sidebar-user` con `.sidebar-user-link` | `layout.css` |
+| Ícono animado de la hamburguesa (`.header-hamburger-icon`) | `layout.css` |
+| Sidebar móvil bajo el header completo, con `bottom: 0` | `layout.css` |
+| `.sgsst-row`, `.sgsst-row-main` | `ds44.css` |
+
+`AuthCard.css` y `ficha.css` son nuevos de `pruebas` y se importan desde sus páginas, así que
+quedan antes de los globales en el bundle, igual que antes (R6).
+
+Verificación contra el CSS que genera `npm run build` de `pruebas`: ningún valor ganador cambia y
+no aparece ninguna regla nueva. Todo lo que desaparece pertenece a clases que ya no usa ningún
+componente, incluidas las que agregaron los commits de `pruebas`. Quedan dos avisos de orden entre
+`.hidden` y `.signature-pad`/`.survey-firma-resumen` que ya venían del refactor: ningún elemento
+combina esas clases.
+
 ## 7. Dónde poner un estilo nuevo
 
 1. ¿Es de una pantalla o módulo? Va en su archivo (`encuestas.css`, `incidentes.css`…) o en uno

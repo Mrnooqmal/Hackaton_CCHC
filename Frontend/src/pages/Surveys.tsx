@@ -393,6 +393,7 @@ export default function Surveys() {
                 {pestana === 'created' && (
                     <SegmentedControl
                         ariaLabel="Mostrar"
+                        fullWidth={false}
                         value={showOnlyMine ? 'mias' : 'todas'}
                         onChange={(v) => setShowOnlyMine(v === 'mias')}
                         options={[

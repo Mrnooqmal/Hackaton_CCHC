@@ -43,7 +43,7 @@ function statements() {
     return res;
 }
 
-const tocaHistorial = (st) => st.recursos.some((r) => /GobernanzaHistorialTable|gobernanza-historial/.test(r)
+const tocaHistorial = (st) => st.recursos.some((r) => /GobernanzaHistorialTable|gobernanza-historial|AuditoriaAccesosTable|auditoria-accesos/.test(r)
     || /table\/\$\{self:service\}-\*/.test(r));
 const escribe = (a) => !/^dynamodb:(Query|GetItem|BatchGetItem|Scan|DescribeTable)$/.test(a);
 
@@ -76,4 +76,27 @@ test('el historial se conserva aunque se borre el stack, en todo ambiente', () =
     const bloque = YML.slice(YML.indexOf('    GobernanzaHistorialTable:'), YML.indexOf('    GobernanzaHistorialTable:') + 400);
     assert.match(bloque, /DeletionPolicy: Retain/);
     assert.match(bloque, /UpdateReplacePolicy: Retain/);
+});
+
+test('borrar versiones de S3 con bypass de la retención solo lo puede RolSupresion', () => {
+    const inicio = YML.indexOf('    RolSupresion:');
+    assert.ok(inicio > 0, 'existe RolSupresion');
+    const resto = YML.slice(inicio + 10);
+    const fin = inicio + 10 + resto.search(/\n {4}[A-Za-z]+:\n {6}Type:/);
+    const lineaDe = (i) => YML.slice(0, i).split('\n').length;
+    const [desde, hasta] = [lineaDe(inicio), lineaDe(fin)];
+    const peligrosos = statements().filter((s) => s.efecto === 'Allow'
+        && s.acciones.some((a) => /BypassGovernanceRetention|DeleteObjectVersion|s3:\*/.test(a)));
+    assert.ok(peligrosos.length >= 1);
+    for (const s of peligrosos) assert.ok(s.linea > desde && s.linea < hasta, `línea ${s.linea}: permiso de borrado con bypass fuera de RolSupresion`);
+});
+
+test('RolSupresion lo usa una sola función: la de lotes', () => {
+    const usos = YML.split('\n').filter((l) => /^\s+role: RolSupresion\s*$/.test(l));
+    assert.equal(usos.length, 1);
+});
+
+test('la auditoría de accesos a salud se conserva siempre', () => {
+    const bloque = YML.slice(YML.indexOf('    AuditoriaAccesosTable:'), YML.indexOf('    AuditoriaAccesosTable:') + 400);
+    assert.match(bloque, /DeletionPolicy: Retain/);
 });

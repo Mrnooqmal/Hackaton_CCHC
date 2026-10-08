@@ -133,6 +133,7 @@ const cuerpoValido = (token, cambios = {}) => ({
         rut: '15.111.222-6',
         nombre: 'María',
         apellidoPaterno: 'Soto',
+        fechaNacimiento: '1985-03-14',
         password: 'Obra2026segura',
         confirmarPassword: 'Obra2026segura',
         ...(cambios.admin || {}),
@@ -299,6 +300,71 @@ test('un RUT ya registrado no quema el enlace', async () => {
     assert.match(JSON.parse(res.body).error, /ya está registrado/);
     assert.equal(almacen.licencias.get(hashLicencia(token)).estado, 'emitida', 'el enlace no se gastó');
     assert.equal(almacen.tenants.length, 0);
+});
+
+// ─── Fecha de nacimiento e identidad ─────────────────────────────────────────
+
+const noConsumida = (token) => {
+    assert.equal(almacen.licencias.get(hashLicencia(token)).estado, 'emitida', 'el enlace sigue sirviendo');
+    assert.equal(almacen.tenants.length, 0);
+};
+
+test('sin fecha de nacimiento no se crea la empresa ni se quema el enlace', async () => {
+    const { token } = await emitir();
+    const res = await completar(cuerpoValido(token, { admin: { fechaNacimiento: '' } }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /fecha de nacimiento/);
+    noConsumida(token);
+});
+
+test('una fecha imposible o de un menor de edad no pasa', async () => {
+    const { token } = await emitir();
+    const imposible = await completar(cuerpoValido(token, { admin: { fechaNacimiento: '1990-02-30' } }));
+    assert.equal(imposible.statusCode, 400);
+
+    const hace10 = `${new Date().getUTCFullYear() - 10}-01-01`;
+    const menor = await completar(cuerpoValido(token, { admin: { fechaNacimiento: hace10 } }));
+    assert.equal(menor.statusCode, 400);
+    assert.match(JSON.parse(menor.body).error, /18 años/);
+    noConsumida(token);
+});
+
+test('la fecha de nacimiento queda en la ficha del administrador', async () => {
+    const { token } = await emitir();
+    assert.equal((await completar(cuerpoValido(token))).statusCode, 201);
+    assert.equal(almacen.personas[0].fechaNacimiento, '1985-03-14');
+});
+
+test('el color elegido en el alta queda en las preferencias de la empresa', async () => {
+    const { token } = await emitir();
+    const updates = [];
+    const original = docClient.send;
+    docClient.send = async (cmd) => {
+        if ((cmd.input?.TableName || '').includes('tenants') && cmd.constructor.name === 'UpdateCommand') {
+            updates.push(cmd.input.ExpressionAttributeValues || {});
+        }
+        return original(cmd);
+    };
+
+    const res = await completar(cuerpoValido(token, { raiz: { identidad: { colorPrimario: '#047857' } } }));
+    docClient.send = original;
+
+    assert.equal(res.statusCode, 201);
+    const prefs = updates.flatMap((v) => Object.values(v)).filter((x) => x && typeof x === 'object' && 'colorPrimario' in x);
+    assert.ok(prefs.some((p) => p.colorPrimario === '#047857'), 'se guardó el color');
+});
+
+test('un color o un logo inválidos no queman el enlace', async () => {
+    const { token } = await emitir();
+    const color = await completar(cuerpoValido(token, { raiz: { identidad: { colorPrimario: 'rojo' } } }));
+    assert.equal(color.statusCode, 400);
+
+    const logo = await completar(cuerpoValido(token, {
+        raiz: { identidad: { logoBase64: 'data:application/pdf;base64,JVBERi0=' } },
+    }));
+    assert.equal(logo.statusCode, 400);
+    assert.match(JSON.parse(logo.body).error, /PNG, JPG/);
+    noConsumida(token);
 });
 
 // ─── Traza ───────────────────────────────────────────────────────────────────

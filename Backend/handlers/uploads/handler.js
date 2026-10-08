@@ -7,7 +7,8 @@ const { success, error } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
-const { TIPOS_SALUD } = require('../../lib/documentos-salud');
+const { TIPOS_SALUD, TIPOS_CON_SALUD } = require('../../lib/documentos-salud');
+const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const { registrarFallo } = require('../../lib/degradacion');
 const almacenamiento = require('../../lib/almacenamiento');
 
@@ -130,8 +131,16 @@ const puedeLeerClave = (clave, sesion, mapaDocs) => {
     if (!esDelPrefijo && doc.tenantId !== sesion.tenantId) return false;
 
     if (doc && TIPOS_SALUD.has(doc.tipo)) {
-        if (sesionPuede(sesion, PERMISSIONS.PERSONA_VIGILANCIA_SALUD)) return true;
-        return (doc.asignaciones || []).some((a) => a.personaId === sesion.personaId);
+        const titulares = (doc.asignaciones || []).map((a) => a.personaId).filter(Boolean);
+        const puede = sesionPuede(sesion, PERMISSIONS.PERSONA_VIGILANCIA_SALUD) || titulares.includes(sesion.personaId);
+        // La descarga de un archivo de salud queda en la auditoría (sin el contenido).
+        if (puede) anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.DESCARGA, titulares, documentos: [doc.documentId], claves: [clave] });
+        return puede;
+    }
+    // Trae salud de varias personas sin tener el resguardo (H-15): se entrega,
+    // pero queda en la auditoría.
+    if (doc && TIPOS_CON_SALUD.has(doc.tipo)) {
+        anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.DESCARGA, documentos: [doc.documentId], claves: [clave] });
     }
     return true;
 };
@@ -254,7 +263,7 @@ module.exports.getUploadUrl = async (event) => {
  *   fileKey: string        // Key del archivo en S3
  * }
  */
-module.exports.getDownloadUrl = async (event) => {
+module.exports.getDownloadUrl = conAuditoriaSalud(async (event) => {
     try {
         // Estuvo cerrado (403) mientras la API no tenía autenticación: emitía una
         // URL de lectura para CUALQUIER clave que le pasaran. Se reabre con el
@@ -298,7 +307,7 @@ module.exports.getDownloadUrl = async (event) => {
         console.error('Error generating download URL:', err);
         return error(err.message, 500);
     }
-};
+});
 
 /**
  * POST /uploads/confirm - Confirmar que el archivo fue subido exitosamente
@@ -444,7 +453,7 @@ module.exports.deleteFile = async (event) => {
  *   fileKeys: string[]
  * }
  */
-module.exports.getBatchDownloadUrls = async (event) => {
+module.exports.getBatchDownloadUrls = conAuditoriaSalud(async (event) => {
     try {
         // Estuvo cerrado (403) por el mismo motivo que `/uploads/download-url`, y
         // agravado: como recibe un ARREGLO de claves, emitía en una sola llamada
@@ -499,4 +508,4 @@ module.exports.getBatchDownloadUrls = async (event) => {
         console.error('Error generating batch download URLs:', err);
         return error(err.message, 500);
     }
-};
+});

@@ -27,11 +27,20 @@ custom:
   # dirección debe confirmar la suscripción por correo antes de recibir nada.
   destinatarioAlertas: ${env:ALERTAS_EMAIL, 'atorres@thecodecookers.cl'}
 
+  # Cada backend acepta el frontend de su ambiente (D-20). El de dev sale de la
+  # salida del stack del frontend, así que ese stack se despliega primero. Dev ya
+  # no acepta la URL de producción: QA prueba en su distribución.
+  # Producción sale en su dominio (D-21). La URL de CloudFront sigue aceptada
+  # durante la transición: quien tenga un enlace viejo o la app abierta.
+  frontendUrl:
+    prod: https://buildandserve.cl
+    dev: https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
   corsOrigins:
     prod:
+      - https://buildandserve.cl
       - https://d30jksx91fodea.cloudfront.net
     dev:
-      - https://d30jksx91fodea.cloudfront.net
+      - https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
       - http://localhost:5173
       - http://localhost:3000
 
@@ -62,6 +71,13 @@ provider:
   # CI se fijan en `.nvmrc` y en `engines` de cada package.json: las tres deben
   # moverse juntas.
   runtime: nodejs24.x
+  # Sin versiones de Lambda. Serverless crea un AWS::Lambda::Version por función
+  # en cada deploy (77 recursos), y el stack llegó a 512 contra el máximo de 500
+  # de CloudFormation. Nada las usa: no hay alias ni concurrencia aprovisionada,
+  # nadie referencia un ARN calificado, y `serverless rollback` vuelve a un
+  # artefacto de S3, no a una versión. Tenían DeletionPolicy: Retain, así que
+  # sacarlas del stack no borra ninguna. Ver D-16.
+  versionFunctions: false
   region: us-east-1
   stage: ${opt:stage, 'dev'}
   environment:
@@ -84,6 +100,7 @@ provider:
     AUSENCIAS_TABLE: ${self:service}-ausencias-${self:provider.stage}
     GOBERNANZA_TABLE: ${self:service}-gobernanza-${self:provider.stage}
     GOBERNANZA_HISTORIAL_TABLE: ${self:service}-gobernanza-historial-${self:provider.stage}
+    AUDITORIA_ACCESOS_TABLE: ${self:service}-auditoria-accesos-${self:provider.stage}
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
     # --- Storage ---
@@ -91,15 +108,21 @@ provider:
     TRABAJO_BUCKET: ${self:custom.trabajoBucketName}
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
-    SES_SENDER_EMAIL: 'thecodecookers@gmail.com'
-    # SMS (AWS SNS). SMS_ENABLED=false apaga el envío sin tocar código (útil en
-    # sandbox de SNS, que solo permite enviar a números verificados).
-    SMS_ENABLED: ${env:SMS_ENABLED, 'true'}
-    SMS_SENDER_ID: ${env:SMS_SENDER_ID, 'BuildServe'}
+    # Correo (lib/correo.js, D-21): remitente del dominio verificado, respuestas
+    # a la casilla de contacto (reenvío de Cloudflare), y todo envío con el
+    # conjunto de configuración que publica rebotes y quejas.
+    SES_SENDER_EMAIL: no-responder@buildandserve.cl
+    SES_REPLY_TO: contacto@buildandserve.cl
+    SES_CONFIGURATION_SET: ${self:service}-${self:provider.stage}
+    CORREOS_SUPRIMIDOS_TABLE: ${self:service}-correos-suprimidos-${self:provider.stage}
+    # Colas de trabajo (lib/cola.js): carga masiva (D-24) y avisos del EventBus (D-25).
+    CARGAS_TABLE: ${self:service}-cargas-${self:provider.stage}
+    CARGAS_QUEUE_URL: !Ref CargasQueue
+    EVENTOS_QUEUE_URL: !Ref EventosQueue
     # URL del frontend para construir enlaces (ej. recuperación de contraseña).
     # No es secreto (URL pública), así que el default apunta a la demo en CloudFront
     # para que funcione aunque no se cargue el .env. Overridable por env var.
-    FRONTEND_URL: ${env:FRONTEND_URL, 'https://d30jksx91fodea.cloudfront.net'}
+    FRONTEND_URL: ${env:FRONTEND_URL, self:custom.frontendUrl.${self:provider.stage}}
     # --- Credenciales (PIN y contraseña) ---
     # El PIN y la contraseña se guardan con scrypt. `ln` es log2 del costo: 15
     # son 32 MB y ~180 ms por verificación en esta Lambda (medido, ver
@@ -231,6 +254,23 @@ provider:
             - ses:SendEmail
             - ses:SendRawEmail
           Resource: "*"
+        # Encolar avisos del EventBus y filas de la carga masiva (D-24, D-25).
+        # Consumirlas (Receive/Delete) lo hace el mapeo de eventos del trabajador.
+        - Effect: Allow
+          Action: [sqs:SendMessage]
+          Resource:
+            - !GetAtt CargasQueue.Arn
+            - !GetAtt EventosQueue.Arn
+        - Effect: Allow
+          Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query, dynamodb:BatchWriteItem]
+          Resource:
+            - !GetAtt CargasTable.Arn
+            - !Sub ${CargasTable.Arn}/index/*
+        # Antes de cada envío: ¿la dirección rebotó o se quejó? Solo leer; marcar
+        # lo hace únicamente la función de eventos de correo, con su rol.
+        - Effect: Allow
+          Action: [dynamodb:GetItem]
+          Resource: !GetAtt CorreosSuprimidosTable.Arn
         # Gobernanza (Ley 21.719): solicitudes y planes se crean y se actualizan,
         # pero NO se borran. El historial, además, tampoco se actualiza: solo se
         # le agregan eventos. Es la evidencia de que la empresa cumplió, y la
@@ -244,6 +284,9 @@ provider:
           Action: [dynamodb:Query, dynamodb:PutItem]
           Resource:
             - !GetAtt GobernanzaHistorialTable.Arn
+            # Auditoría de acceso a datos de salud (D-18): solo agregar y leer.
+            - !GetAtt AuditoriaAccesosTable.Arn
+            - !Sub ${AuditoriaAccesosTable.Arn}/index/*
         # Evidencia: se escribe y se lee, pero NO se borra. El permiso de borrado
         # no está por omisión y no por olvido: el bloqueo de objetos lo impediría
         # igual, y así el intento falla donde se entiende por qué.
@@ -288,14 +331,6 @@ provider:
             - sns:Publish
           Resource:
             - !Ref IncidentNotificationTopic
-        # SMS directo a número (sin topic): SNS exige Resource "*" porque no hay
-        # ARN de topic. SetSMSAttributes permite fijar atributos de cuenta si se
-        # requiere (ej. tipo de mensaje por defecto / sender ID).
-        - Effect: Allow
-          Action:
-            - sns:Publish
-            - sns:SetSMSAttributes
-          Resource: "*"
 
 package:
   individually: false
@@ -638,7 +673,7 @@ functions:
 
   # Scheduler de alertas de asistencia (§6): avisa al inbox de los responsables
   # cuando una charla superó su hora de término sin cerrarse, y a mediodía si
-  # aún hay convocados sin firmar. Solo inbox (sin SMS). Idempotente por día.
+  # aún hay convocados sin firmar. Idempotente por día.
   checkActivityAlerts:
     handler: handlers/scheduler/handler.checkActivityAlerts
     events:
@@ -1144,6 +1179,65 @@ functions:
             name: sesionUsuario
       - httpApi:
           path: /gobernanza/{proxy+}
+          method: POST
+          authorizer:
+            name: sesionUsuario
+
+  # Trabajador de las colas (D-24, D-25): avisos del EventBus y filas de la
+  # carga masiva. Reporta por mensaje: SQS reintenta solo lo que falló.
+  trabajadorCola:
+    handler: handlers/cola/trabajador.handler
+    timeout: 60
+    memorySize: 1024
+    events:
+      - sqs:
+          arn: !GetAtt EventosQueue.Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          maximumConcurrency: 5
+      - sqs:
+          arn: !GetAtt CargasQueue.Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          maximumConcurrency: 5
+
+  # Rebotes y quejas de SES (D-21): marca la dirección para no volver a
+  # escribirle. Rol propio: es la única que escribe en la tabla de suprimidas.
+  correoEventos:
+    handler: handlers/correo/eventos.handler
+    role: RolCorreoEventos
+    timeout: 30
+    events:
+      - sns:
+          arn: !Ref CorreoEventosTopic
+          topicName: ${self:service}-correo-eventos-${self:provider.stage}
+
+  # Lotes de supresión (D-15, D-17): proponer, aprobar y ejecutar, dos personas.
+  # Rol propio: RolSupresion es el ÚNICO que puede borrar datos personales y
+  # versiones de S3 con bypass de la retención, y solo esta función lo usa.
+  gobernanzaLotes:
+    handler: handlers/gobernanza/lotes.handler
+    role: RolSupresion
+    timeout: 300
+    memorySize: 1024
+    events:
+      - httpApi:
+          path: /gobernanza/lotes
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/lotes
+          method: POST
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/lotes/{proxy+}
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /gobernanza/lotes/{proxy+}
           method: POST
           authorizer:
             name: sesionUsuario
@@ -1840,6 +1934,260 @@ resources:
                   Action: [s3:GetObjectRetention, s3:PutObjectRetention]
                   Resource: !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
 
+    # ─── Colas de trabajo (D-24, D-25) ───────────────────────────────────────
+    # Visibilidad = 6 veces el timeout del trabajador (60 s), como recomienda
+    # AWS. Lo que falla 6 veces va a la cola de mensajes fallidos, que tiene
+    # alarma; las filas de una carga quedan antes `fallidas` con su motivo
+    # (lib/cargas.js, al cuarto intento).
+    EventosQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-eventos-${self:provider.stage}
+        VisibilityTimeout: 360
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt ColaFallidos.Arn
+          maxReceiveCount: 6
+
+    CargasQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-cargas-${self:provider.stage}
+        VisibilityTimeout: 360
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt ColaFallidos.Arn
+          maxReceiveCount: 6
+
+    ColaFallidos:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-cola-fallidos-${self:provider.stage}
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+
+    ColaFallidosAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-cola-fallidos-${self:provider.stage}
+        AlarmDescription: >-
+          Un aviso del EventBus o un paso de una carga masiva falló seis veces y
+          quedó en la cola de mensajes fallidos. Un aviso ahí es una notificación
+          que no llegó: revisar el mensaje, corregir la causa y devolverlo a su
+          cola (redrive).
+        Namespace: AWS/SQS
+        MetricName: ApproximateNumberOfMessagesVisible
+        Dimensions:
+          - Name: QueueName
+            Value: !GetAtt ColaFallidos.QueueName
+        Statistic: Maximum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
+    # Una carga (ítem CARGA) y sus filas (FILA#000001…). Las filas guardan los
+    # datos del Excel hasta crearse; todo vence a los 30 días (D-24).
+    CargasTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.CARGAS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: cargaId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: creadaEn
+            AttributeType: S
+        KeySchema:
+          - AttributeName: cargaId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        # Disperso: solo el ítem CARGA lleva tenantId y creadaEn, así que el
+        # índice nunca contiene filas con datos del Excel.
+        GlobalSecondaryIndexes:
+          - IndexName: tenantId-creadaEn-index
+            KeySchema:
+              - AttributeName: tenantId
+                KeyType: HASH
+              - AttributeName: creadaEn
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: expira
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    # ─── Correo: rebotes y quejas (D-21) ─────────────────────────────────────
+    CorreosSuprimidosTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.CORREOS_SUPRIMIDOS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: correoHmac
+            AttributeType: S
+        KeySchema:
+          - AttributeName: correoHmac
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expira
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    ConjuntoCorreo:
+      Type: AWS::SES::ConfigurationSet
+      Properties:
+        Name: ${self:provider.environment.SES_CONFIGURATION_SET}
+        ReputationOptions:
+          ReputationMetricsEnabled: true
+        SendingOptions:
+          SendingEnabled: true
+
+    # Sin cifrado propio: SES no puede publicar en un tópico cifrado con la
+    # llave administrada de SNS, y el mensaje no se guarda (se entrega y se va).
+    CorreoEventosTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-correo-eventos-${self:provider.stage}
+
+    PoliticaCorreoEventosTopic:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        Topics: [!Ref CorreoEventosTopic]
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            # Solo SES de esta cuenta, y solo desde el conjunto de este ambiente.
+            - Effect: Allow
+              Principal: { Service: ses.amazonaws.com }
+              Action: sns:Publish
+              Resource: !Ref CorreoEventosTopic
+              Condition:
+                StringEquals:
+                  AWS:SourceAccount: !Ref AWS::AccountId
+                ArnLike:
+                  AWS:SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${self:provider.environment.SES_CONFIGURATION_SET}'
+
+    DestinoEventosCorreo:
+      Type: AWS::SES::ConfigurationSetEventDestination
+      DependsOn: PoliticaCorreoEventosTopic
+      Properties:
+        ConfigurationSetName: !Ref ConjuntoCorreo
+        EventDestination:
+          Name: rebotes-y-quejas
+          Enabled: true
+          MatchingEventTypes: [bounce, complaint, reject]
+          SnsDestination:
+            TopicARN: !Ref CorreoEventosTopic
+
+    RolCorreoEventos:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal: { Service: lambda.amazonaws.com }
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: correo-eventos
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: [dynamodb:UpdateItem]
+                  Resource: !GetAtt CorreosSuprimidosTable.Arn
+                # La llave de HMAC (el correo se guarda por HMAC).
+                - Effect: Allow
+                  Action: [ssm:GetParameter]
+                  Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/campo-hmac-key'
+                - Effect: Allow
+                  Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                  Resource: !GetAtt ClaveDatos.Arn
+
+    RolSupresion:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal: { Service: lambda.amazonaws.com }
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: gobernanza-supresion
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                # Leer todas las tablas: recalcular el contenido de un lote.
+                - Effect: Allow
+                  Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:BatchGetItem, dynamodb:Scan]
+                  Resource:
+                    - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}'
+                    - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:service}-*-${self:provider.stage}/index/*'
+                # Borrar y anonimizar SOLO en las tablas del inventario con datos
+                # de personas; nunca empresas, obras, sesiones ni la gobernanza.
+                - Effect: Allow
+                  Action: [dynamodb:DeleteItem, dynamodb:UpdateItem]
+                  Resource:
+                    - !GetAtt PersonasTable.Arn
+                    - !GetAtt DocumentsTable.Arn
+                    - !GetAtt SignaturesTable.Arn
+                    - !GetAtt SignatureRequestsTable.Arn
+                    - !GetAtt ActivitiesTable.Arn
+                    - !GetAtt IncidentsTable.Arn
+                    - !GetAtt SurveysTable.Arn
+                    - !GetAtt AusenciasTable.Arn
+                    - !GetAtt EstructuraPreventivaTable.Arn
+                    - !GetAtt InboxTable.Arn
+                    - !GetAtt SuggestionsTable.Arn
+                # Los lotes: crear y cambiar de estado (no borrar).
+                - Effect: Allow
+                  Action: [dynamodb:PutItem, dynamodb:UpdateItem]
+                  Resource: !GetAtt GobernanzaTable.Arn
+                # El historial: solo agregar.
+                - Effect: Allow
+                  Action: [dynamodb:PutItem]
+                  Resource: !GetAtt GobernanzaHistorialTable.Arn
+                - Effect: Allow
+                  Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                  Resource: !GetAtt ClaveDatos.Arn
+                # Borrar versiones de archivos, pasando por encima del bloqueo en
+                # modo gobernanza. Es el único rol que puede.
+                - Effect: Allow
+                  Action: [s3:ListBucketVersions]
+                  Resource:
+                    - !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}'
+                    - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}'
+                - Effect: Allow
+                  Action: [s3:DeleteObject, s3:DeleteObjectVersion, s3:BypassGovernanceRetention]
+                  Resource:
+                    - !Sub 'arn:aws:s3:::${self:custom.evidenciaBucketName}/*'
+                    - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}/*'
+
     # Gobernanza del dato personal (Ley 21.719): planes de retención, lotes de
     # supresión pendientes de aprobación, solicitudes de titulares y bloqueos.
     # PK = tenantId, SK con prefijo por tipo (PLAN#, LOTE#, SOLICITUD#…). Nada
@@ -1893,6 +2241,45 @@ resources:
             KeyType: HASH
           - AttributeName: sk
             KeyType: RANGE
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
+    # Auditoría de acceso a datos de salud (D-18): quién vio o descargó datos de
+    # salud de otra persona, cuándo y desde dónde; nunca el contenido. Como el
+    # historial de gobernanza, solo se le agregan ítems (ningún rol puede
+    # actualizar ni borrar) y se conserva siempre. El índice por actor responde
+    # "a qué accedió esta cuenta" (informe de brecha, D-19).
+    AuditoriaAccesosTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        TableName: ${self:provider.environment.AUDITORIA_ACCESOS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: actorId
+            AttributeType: S
+          - AttributeName: en
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: actorId-en-index
+            KeySchema:
+              - AttributeName: actorId
+                KeyType: HASH
+              - AttributeName: en
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
         PointInTimeRecoverySpecification:
           PointInTimeRecoveryEnabled: true
 
@@ -2265,6 +2652,8 @@ resources:
             AttributeType: S
           - AttributeName: tokenHash
             AttributeType: S
+          - AttributeName: personaId
+            AttributeType: S
         KeySchema:
           - AttributeName: sessionId
             KeyType: HASH
@@ -2284,6 +2673,15 @@ resources:
                 - tenantId
                 - expiresAt
                 - activa
+          # Todas las sesiones de una persona, para revocarlas cuando cambia su
+          # contraseña (D-26). Solo claves, como los índices de personas (D-6):
+          # sirve para encontrar la sesión, no para tener otra copia de ella.
+          - IndexName: personaId-index
+            KeySchema:
+              - AttributeName: personaId
+                KeyType: HASH
+            Projection:
+              ProjectionType: KEYS_ONLY
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true

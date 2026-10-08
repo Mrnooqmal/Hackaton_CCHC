@@ -35,6 +35,7 @@ test('cada fuente declara qué datos guarda, para qué, su clase y qué pasa al 
         assert.ok(clases.has(f.clase), `${f.tabla}: clase inválida`);
         assert.ok(alVencer.has(f.alVencer), `${f.tabla}: alVencer inválido`);
         if (f.alVencer === AL_VENCER.ANONIMIZAR) assert.ok(f.camposPersonales?.length, `${f.tabla}: qué campos se anonimizan`);
+        assert.equal(typeof f.contieneSalud, 'boolean', `${f.tabla}: declarar si puede traer datos de salud`);
     }
 });
 

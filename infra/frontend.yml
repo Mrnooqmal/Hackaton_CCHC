@@ -16,7 +16,15 @@ Description: >-
 # Cambios: se editan ACÁ y se aplican con `infra/desplegar-infra-frontend.sh`.
 # Publicar una versión del frontend es otra cosa: `infra/desplegar-frontend.sh`.
 #
-# Una sola distribución, que sirve producción. El TLS mínimo (hoy TLSv1) no se
+# Producción sale en buildandserve.cl (DNS en Cloudflare, sin proxy) desde el
+# 29 de septiembre de 2026, con www redirigido a la raíz (D-21).
+#
+# Dos distribuciones: la de producción (importada, la de siempre) y la de dev
+# (creada el 29 de septiembre de 2026), cada una con su bucket y su política de
+# cabeceras, porque la CSP de cada una autoriza solo la API de su ambiente. QA
+# prueba en dev; la URL de producción sirve solo el build de producción (ver
+# D-20 en docs/gobernanza-y-seguridad-de-datos.md). Comparten el OAC: es solo la
+# forma de firmar, y cada bucket admite únicamente a su distribución. El TLS mínimo (hoy TLSv1) no se
 # puede subir con el certificado por defecto de cloudfront.net: requiere dominio
 # propio con certificado de ACM (ver D-14 en docs/gobernanza-y-seguridad-de-datos.md).
 
@@ -39,8 +47,43 @@ Parameters:
       Cabecera Reporting-Endpoints para `report-to` (Chrome). Va junto con la CSP
       en modo solo reporte.
 
+  CertificadoProd:
+    Type: String
+    Default: ''
+    Description: >-
+      ARN del certificado de ACM (us-east-1) de buildandserve.cl y
+      www.buildandserve.cl. Vacío = la distribución sigue solo en cloudfront.net.
+      Lo pasa infra/desplegar-infra-frontend.sh cuando el certificado está emitido.
+
+  Publicadores:
+    Type: CommaDelimitedList
+    Default: 'arn:aws:iam::772706200162:user/Adrean,arn:aws:iam::772706200162:user/Benjamin'
+    Description: Personas designadas que pueden asumir el rol de publicación (con MFA).
+
+  ExigirRolPublicador:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      'true' = solo el rol de publicación escribe en los buckets del frontend e
+      invalida las distribuciones. Se activa cuando los publicadores tienen MFA.
+
+  NombreBucketDev:
+    Type: String
+    Default: buildandserve-frontend-dev
+  CspSoloReporteDev:
+    Type: String
+    Default: ''
+    Description: La CSP en modo solo reporte de la distribución de dev (API de dev).
+  ReportingEndpointsDev:
+    Type: String
+    Default: ''
+
 Conditions:
   ConCspSoloReporte: !Not [!Equals [!Ref CspSoloReporte, '']]
+  ConCspSoloReporteDev: !Not [!Equals [!Ref CspSoloReporteDev, '']]
+  ConDominio: !Not [!Equals [!Ref CertificadoProd, '']]
+  ExigeRol: !Equals [!Ref ExigirRolPublicador, 'true']
 
 Resources:
 
@@ -94,6 +137,18 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: 'false'
+          # Solo el rol de publicación escribe o borra lo que se sirve (D-22).
+          - !If
+            - ExigeRol
+            - Sid: SoloElRolDePublicacion
+              Effect: Deny
+              Principal: '*'
+              Action: [s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion, s3:PutObjectAcl]
+              Resource: !Sub 'arn:aws:s3:::${NombreBucket}/*'
+              Condition:
+                ArnNotEquals:
+                  aws:PrincipalArn: !GetAtt RolPublicador.Arn
+            - !Ref AWS::NoValue
 
   AccesoOrigen:
     Type: AWS::CloudFront::OriginAccessControl
@@ -145,6 +200,38 @@ Resources:
                 Override: true
           - !Ref AWS::NoValue
 
+  # www.buildandserve.cl -> https://buildandserve.cl, con la ruta y la consulta.
+  # Una sola URL canónica: los enlaces de los correos, el CORS y las cookies
+  # hablan de la raíz (D-21).
+  RedireccionWww:
+    Type: AWS::CloudFront::Function
+    Condition: ConDominio
+    Properties:
+      Name: buildandserve-www-a-raiz
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Redirige www a la raiz del dominio
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var req = event.request;
+          var host = req.headers.host ? req.headers.host.value : '';
+          if (host !== 'www.buildandserve.cl') return req;
+          // Igual si CloudFront entrega la consulta codificada o decodificada.
+          function cod(x) { try { return encodeURIComponent(decodeURIComponent(x)); } catch (e) { return encodeURIComponent(x); } }
+          var qs = [];
+          for (var k in req.querystring) {
+            var v = req.querystring[k];
+            if (v.multiValue) { v.multiValue.forEach(function (m) { qs.push(cod(k) + '=' + cod(m.value)); }); }
+            else { qs.push(v.value === '' ? cod(k) : cod(k) + '=' + cod(v.value)); }
+          }
+          return {
+            statusCode: 301,
+            statusDescription: 'Moved Permanently',
+            headers: { location: { value: 'https://buildandserve.cl' + req.uri + (qs.length ? '?' + qs.join('&') : '') } }
+          };
+        }
+
   Distribucion:
     Type: AWS::CloudFront::Distribution
     DeletionPolicy: Retain
@@ -152,6 +239,7 @@ Resources:
     Properties:
       DistributionConfig:
         Comment: CF for buildandserve-frontend
+        Aliases: !If [ConDominio, [buildandserve.cl, www.buildandserve.cl], !Ref AWS::NoValue]
         Enabled: true
         DefaultRootObject: index.html
         HttpVersion: http2
@@ -178,7 +266,151 @@ Resources:
           # Administrada por AWS: CachingOptimized.
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           ResponseHeadersPolicyId: !GetAtt CabecerasSeguridad.Id
+          FunctionAssociations: !If
+            - ConDominio
+            - - EventType: viewer-request
+                FunctionARN: !GetAtt RedireccionWww.FunctionMetadata.FunctionARN
+            - !Ref AWS::NoValue
         # SPA: toda ruta desconocida sirve index.html.
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+        # Con dominio propio: su certificado, SNI y TLS 1.2 como mínimo (D-14,
+        # D-21). Sin él, el certificado de cloudfront.net, que no permite subirlo.
+        ViewerCertificate: !If
+          - ConDominio
+          - AcmCertificateArn: !Ref CertificadoProd
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+            MinimumProtocolVersion: TLSv1
+
+  # ─── Dev ──────────────────────────────────────────────────────────────────
+  # Misma configuración que producción salvo nombres y CSP. Sin Retain en la
+  # distribución ni en las cabeceras (se recrean sin perder nada); sí en el
+  # bucket, para que borrar el stack no falle por un bucket con contenido.
+
+  BucketFrontendDev:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref NombreBucketDev
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  PoliticaBucketFrontendDev:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BucketFrontendDev
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${NombreBucketDev}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistribucionDev}'
+          - Sid: SoloConTLS
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${NombreBucketDev}'
+              - !Sub 'arn:aws:s3:::${NombreBucketDev}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - !If
+            - ExigeRol
+            - Sid: SoloElRolDePublicacion
+              Effect: Deny
+              Principal: '*'
+              Action: [s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion, s3:PutObjectAcl]
+              Resource: !Sub 'arn:aws:s3:::${NombreBucketDev}/*'
+              Condition:
+                ArnNotEquals:
+                  aws:PrincipalArn: !GetAtt RolPublicador.Arn
+            - !Ref AWS::NoValue
+
+  CabecerasSeguridadDev:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: buildandserve-cabeceras-seguridad-dev
+        Comment: Iguales a las de producción; la CSP autoriza la API de dev.
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: false
+            Preload: false
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            Override: true
+            FrameOption: DENY
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: "frame-ancestors 'none'"
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: strict-origin-when-cross-origin
+        CustomHeadersConfig: !If
+          - ConCspSoloReporteDev
+          - Items:
+              - Header: Content-Security-Policy-Report-Only
+                Value: !Ref CspSoloReporteDev
+                Override: true
+              - Header: Reporting-Endpoints
+                Value: !Ref ReportingEndpointsDev
+                Override: true
+          - !Ref AWS::NoValue
+
+  DistribucionDev:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: CF for buildandserve-frontend-dev (QA)
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3-buildandserve-frontend-dev
+            DomainName: !Sub '${NombreBucketDev}.s3.${AWS::Region}.amazonaws.com'
+            OriginAccessControlId: !GetAtt AccesoOrigen.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: S3-buildandserve-frontend-dev
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [HEAD, GET]
+          CachedMethods: [HEAD, GET]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !GetAtt CabecerasSeguridadDev.Id
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 200
@@ -192,10 +424,81 @@ Resources:
           CloudFrontDefaultCertificate: true
           MinimumProtocolVersion: TLSv1
 
+  # ─── Publicación (D-22) ────────────────────────────────────────────────────
+  # El único que publica el frontend: subir a los buckets e invalidar. Lo
+  # asumen solo las personas designadas, con MFA, y lo asume
+  # infra/desplegar-frontend.sh DESPUÉS de sus verificaciones (commit
+  # pusheado, build limpio, API del ambiente). Siguiente etapa: GitHub Actions
+  # por OIDC, y nadie a mano.
+  RolPublicador:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BuildAndServe-publicador-frontend
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref Publicadores
+            Action: sts:AssumeRole
+            Condition:
+              Bool:
+                aws:MultiFactorAuthPresent: 'true'
+      Policies:
+        - PolicyName: publicar-frontend
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:ListBucket]
+                Resource:
+                  - !Sub 'arn:aws:s3:::${NombreBucket}'
+                  - !Sub 'arn:aws:s3:::${NombreBucketDev}'
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource:
+                  - !Sub 'arn:aws:s3:::${NombreBucket}/*'
+                  - !Sub 'arn:aws:s3:::${NombreBucketDev}/*'
+              - Effect: Allow
+                Action: [cloudfront:CreateInvalidation, cloudfront:GetInvalidation]
+                Resource:
+                  - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribucion}'
+                  - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistribucionDev}'
+
+  # CloudFront no tiene políticas de recurso: invalidar se niega en la
+  # identidad de las personas. Con la negación de los buckets, publicar a mano
+  # deja de ser posible sin pasar por el rol.
+  SinPublicacionDirecta:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: ExigeRol
+    Properties:
+      ManagedPolicyName: BuildAndServe-sin-publicacion-directa
+      Description: Publicar el frontend solo a traves de BuildAndServe-publicador-frontend.
+      Users: [Adrean, Benjamin]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Action: [cloudfront:CreateInvalidation]
+            Resource:
+              - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribucion}'
+              - !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${DistribucionDev}'
+
 Outputs:
+  RolPublicador:
+    Value: !GetAtt RolPublicador.Arn
+  ExigeRolPublicador:
+    Value: !Ref ExigirRolPublicador
   DistribucionId:
     Value: !Ref Distribucion
   DominioDistribucion:
     Value: !GetAtt Distribucion.DomainName
   Bucket:
     Value: !Ref BucketFrontend
+  DistribucionDevId:
+    Value: !Ref DistribucionDev
+  DominioDistribucionDev:
+    Value: !GetAtt DistribucionDev.DomainName
+  BucketDev:
+    Value: !Ref BucketFrontendDev

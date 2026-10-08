@@ -70,7 +70,7 @@ documentos firmables con trazabilidad.
 - **Auth:** JWT + Bcrypt; firma digital por **PIN** (hash con `personaId`)
 - **IA:** Google Gemini (`lib/ai/gemini.js`), solo para transcribir audio al
   reportar un incidente
-- **Notificaciones:** SMS (`lib/services/SmsService.js`), email, e inbox interno
+- **Notificaciones:** email e inbox interno (el SMS se abandonó el 2026-09-29)
 - **EventBus** interno (`lib/events/EventBus.js`) para notificaciones
   desacopladas (p.ej. `document.assigned` → mensaje en inbox)
 
@@ -265,8 +265,7 @@ Los **procedimientos** de obra (tipos en `TIPOS_PROCEDIMIENTO`: `PROCEDIMIENTO_T
   avisa por **inbox** con prioridad `high` a la **línea de mando** del tenant
   (`resolverLineaMando`: roles `admin`, `jefe_obra`, `supervisor`, `prevencionista`)
   y una **tarea de re-firma** (`normal`) a los firmantes previos (sin duplicar a
-  quien ya es mando; excluye al que publicó). El SMS **no se usa** por ahora: se
-  deja la prioridad `high` para que se enganche solo cuando se reactive el canal.
+  quien ya es mando; excluye al que publicó).
 - **Frontend** (`components/obra/NuevaVersion.tsx`): panel "Publicar nueva
   versión" con archivo, `motivo` obligatorio, fecha y participantes de la revisión
   (FUF 51) y caducidad. Se abre desde la fila del requisito en la obra
@@ -555,7 +554,7 @@ Sobre el módulo de actividades (`handlers/activities/handler.js` + `Frontend/sr
   marcar/quitar ausente con motivo (permiso/licencia/falta/vacaciones/otro).
 - **Alertas programadas (§6, ítems 2 y 4-push):** `handlers/scheduler/handler.js`
   (`checkActivityAlerts`, EventBridge `rate(30 minutes)`) avisa **al inbox** de los
-  responsables (sin SMS: `senderRol='system'` + prioridad `normal`) cuando una charla
+  responsables (`senderRol='system'` + prioridad `normal`) cuando una charla
   superó su `horaFin` sin cerrarse, y a mediodía (12:00–12:30 Chile) si aún hay
   convocados sin firmar (excluye ausentes). **Idempotente** por día (flags en
   `activity.alertas.{horaLimiteAvisada,mediodiaAvisada}`).
@@ -604,7 +603,6 @@ como proyecto y se retiró en el commit `e9b0d89`.
 - **`EppService.js`** — entrega EPP validada Art. 13 (flujo de 4 pasos).
 - **`RegistroService.js`** — registros/trazabilidad.
 - **`PdfStampingService.js`** — estampado de firmas en PDF (pie de firma).
-- **`SmsService.js`** — notificaciones SMS.
 - Modelos: `lib/models/{Tenant,Obra,Persona}.js` (entidades con métodos de dominio,
   p.ej. `obra.getFaseSiguiente()`).
 - `lib/health/healthSurvey.js` — encuesta de salud.
@@ -706,7 +704,7 @@ reflejadas aquí). Estructura S3: un bucket con aislamiento por prefijo
   §11); onboarding por cambio de cargo (`reconcileCargoDocs`); permisos de
   asignación de docs; resumen de firmas que cuenta también firmados; transferencia
   de personas entre obras con historial/currículum; carga masiva con supervisor;
-  parametrización de service dev/prod; notificaciones SMS; multi-cargo.
+  parametrización de service dev/prod; multi-cargo.
 
 ## 11. Specs de diseño y estado de implementación
 

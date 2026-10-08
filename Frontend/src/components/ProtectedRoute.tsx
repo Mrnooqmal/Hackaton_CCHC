@@ -19,7 +19,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     if (loading) {
         return (
             <div className="flex items-center justify-center h-screen">
-                <div className="spinner-lg" />
+                <div className="spinner" />
             </div>
         );
     }

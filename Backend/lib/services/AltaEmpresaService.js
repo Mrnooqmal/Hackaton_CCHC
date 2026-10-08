@@ -18,6 +18,7 @@ const { TenantService } = require('./TenantService');
 const { PersonaService } = require('./PersonaService');
 const { validateRut } = require('../utils/validation');
 const { buildDefaultCargoCatalog } = require('../ds44');
+const { subirLogoEmpresa, problemaLogo } = require('./LogoEmpresa');
 
 /** Mínimo exigible a la contraseña que el administrador elige en el onboarding. */
 const MIN_PASSWORD = 8;
@@ -32,6 +33,32 @@ const politicaPassword = (password) => {
     return null;
 };
 
+/** Edad del administrador: quien firma por la empresa tiene que ser mayor de edad. */
+const EDAD_MINIMA_ADMIN = 18;
+const EDAD_MAXIMA = 110;
+
+/**
+ * Fecha de nacimiento en AAAA-MM-DD, real (sin 31 de febrero) y con una edad
+ * plausible. Devuelve el problema, o null si sirve.
+ */
+const problemaFechaNacimiento = (fecha) => {
+    const m = typeof fecha === 'string' && fecha.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return 'La fecha de nacimiento no es válida';
+    const [anio, mes, dia] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const d = new Date(Date.UTC(anio, mes - 1, dia));
+    if (d.getUTCFullYear() !== anio || d.getUTCMonth() !== mes - 1 || d.getUTCDate() !== dia) {
+        return 'La fecha de nacimiento no es válida';
+    }
+    const hoy = new Date();
+    let edad = hoy.getUTCFullYear() - anio;
+    if (hoy.getUTCMonth() + 1 < mes || (hoy.getUTCMonth() + 1 === mes && hoy.getUTCDate() < dia)) edad -= 1;
+    if (edad < EDAD_MINIMA_ADMIN) return `Quien administra la empresa debe tener al menos ${EDAD_MINIMA_ADMIN} años`;
+    if (edad > EDAD_MAXIMA) return 'La fecha de nacimiento no es válida';
+    return null;
+};
+
+const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
+
 class AltaEmpresaService {
     /**
      * Valida los datos y comprueba conflictos, SIN escribir.
@@ -41,7 +68,7 @@ class AltaEmpresaService {
      *
      * @returns {Promise<{valido: boolean, errores: string[], slug: string, rutEmpresa: string, rutAdmin: string}>}
      */
-    static async revisar({ nombre, rutEmpresa, admin = {}, password = null }) {
+    static async revisar({ nombre, rutEmpresa, admin = {}, password = null, identidad = null }) {
         const errores = [];
 
         if (!nombre || !String(nombre).trim()) errores.push('Falta el nombre de la empresa');
@@ -51,6 +78,18 @@ class AltaEmpresaService {
         if (!persona.valid) errores.push(`El RUT del administrador no es válido: ${admin.rut || '(vacío)'}`);
         if (!admin.nombre || !String(admin.nombre).trim()) errores.push('Falta el nombre del administrador');
         if (!admin.email) errores.push('Falta el correo del administrador');
+        // Opcional para el script del operador; el onboarding la exige antes de llegar acá.
+        if (admin.fechaNacimiento) {
+            const problema = problemaFechaNacimiento(admin.fechaNacimiento);
+            if (problema) errores.push(problema);
+        }
+        if (identidad?.colorPrimario && !COLOR_HEX.test(identidad.colorPrimario)) {
+            errores.push('El color principal no es válido');
+        }
+        if (identidad?.logoBase64) {
+            const problema = problemaLogo(identidad.logoBase64);
+            if (problema) errores.push(problema);
+        }
 
         if (password !== null) {
             const problema = politicaPassword(password);
@@ -90,10 +129,12 @@ class AltaEmpresaService {
      * @param {string|null} datos.password - si viene, el administrador queda con
      *        SU contraseña y sin paso de cambio obligatorio. Si no, se genera una
      *        temporal (camino del script del operador).
+     * @param {object|null} datos.identidad - `{ colorPrimario, logoBase64 }`
+     *        elegidos en el onboarding; los mismos campos que edita Mi Empresa.
      * @returns {Promise<{tenant, persona, passwordTemporal: string|null}>}
      */
-    static async crear({ nombre, rutEmpresa, admin, password = null, creadoPor = null }) {
-        const revision = await this.revisar({ nombre, rutEmpresa, admin, password });
+    static async crear({ nombre, rutEmpresa, admin, password = null, identidad = null, creadoPor = null }) {
+        const revision = await this.revisar({ nombre, rutEmpresa, admin, password, identidad });
         if (!revision.valido) {
             const err = new Error(revision.errores[0]);
             err.codigo = 'ALTA_INVALIDA';
@@ -116,12 +157,28 @@ class AltaEmpresaService {
         const reglas = { ...(tenant.reglas || {}), cargos: buildDefaultCargoCatalog() };
         await tenantService.updateConfig(tenant.tenantId, { reglas });
 
+        // 2b. Identidad elegida en el alta. El logo es accesorio: si S3 falla,
+        //     la empresa se crea igual y el logo se sube después desde Mi Empresa.
+        if (identidad?.colorPrimario || identidad?.logoBase64) {
+            const preferencias = { ...(tenant.preferencias || {}) };
+            if (identidad.colorPrimario) preferencias.colorPrimario = identidad.colorPrimario.toLowerCase();
+            if (identidad.logoBase64) {
+                try {
+                    preferencias.logoKey = await subirLogoEmpresa(identidad.logoBase64, tenant.tenantId);
+                } catch (logoErr) {
+                    console.error('No se pudo subir el logo en el alta:', logoErr);
+                }
+            }
+            await tenantService.updateConfig(tenant.tenantId, { preferencias });
+        }
+
         // 3. Administrador.
         const { persona, passwordTemporal } = await personaService.crear(tenant.tenantId, {
             rut: revision.rutAdmin,
             nombre: admin.nombre,
             apellidoPaterno: admin.apellidoPaterno || '',
             apellidoMaterno: admin.apellidoMaterno || '',
+            fechaNacimiento: admin.fechaNacimiento || null,
             email: admin.email,
             rol: 'admin',
             tieneAccesoWeb: true,
@@ -138,4 +195,4 @@ class AltaEmpresaService {
     }
 }
 
-module.exports = { AltaEmpresaService, politicaPassword, MIN_PASSWORD };
+module.exports = { AltaEmpresaService, politicaPassword, problemaFechaNacimiento, MIN_PASSWORD };

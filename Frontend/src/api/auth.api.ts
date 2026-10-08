@@ -54,8 +54,9 @@ export const authApi = {
             body: JSON.stringify({ selectionToken, tenantId }),
         }),
 
+    // Devuelve una sesión nueva: la anterior queda revocada (D-26).
     changePassword: (data: ChangePasswordData) =>
-        apiRequest<{ message: string }>('/auth/change-password', {
+        apiRequest<{ message: string } & Partial<Omit<LoginSuccess, 'requiereCambioPassword' | 'requiereEnrolamiento'>>>('/auth/change-password', {
             method: 'POST',
             body: JSON.stringify(data),
         }),

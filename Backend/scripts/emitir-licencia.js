@@ -79,11 +79,12 @@ if (!process.env.AWS_PROFILE && !process.env.AWS_ACCESS_KEY_ID) {
     salir('Falta AWS_PROFILE (o credenciales en el entorno): la autorización de este script es IAM.');
 }
 
+// Tablas, parámetros y correo: los de la Lambda del ambiente (scripts/entorno.js).
+require('./entorno').cargarEntornoDe(stage);
 process.env.AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 process.env.LICENCIAS_TABLE = `${SERVICIO}-licencias-${stage}`;
 process.env.TENANTS_TABLE = `${SERVICIO}-tenants-${stage}`;
 process.env.PERSONAS_TABLE = `${SERVICIO}-personas-${stage}`;
-process.env.SES_SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'thecodecookers@gmail.com';
 
 // La URL del frontend arma el enlace. Es la misma que usa la recuperación de
 // contraseña, así que un ambiente bien configurado ya la tiene.

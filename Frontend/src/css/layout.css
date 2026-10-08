@@ -5,6 +5,10 @@
 .app-layout {
   display: flex;
   min-height: 100vh;
+  /* En móvil 100vh mide el viewport con la barra del navegador oculta: el
+     contenedor quedaba más alto que el login (100dvh) y, al centrarlo, asomaba
+     una franja del fondo arriba y abajo. */
+  min-height: 100dvh;
 }
 
 .main-content {
@@ -47,6 +51,16 @@
     padding-bottom: var(--space-4);
     padding-top: calc(var(--mobile-header-height) + var(--space-12));
   }
+}
+
+/* Pantalla de carga mientras se revalida la sesión al recargar */
+.app-boot {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-base);
 }
 
 .auth-mode {
@@ -127,36 +141,11 @@
   opacity: 1;
 }
 
-/* Mobile Close Button */
-
-.sidebar-mobile-close {
-  display: none;
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-hover);
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: 20px;
-  cursor: pointer;
-  z-index: 101;
-  transition: all var(--transition-fast);
-}
-
-.sidebar-mobile-close:hover {
-  background: var(--surface-elevated);
-  transform: rotate(90deg);
-}
-
 .sidebar-nav {
   flex: 1;
   padding: var(--space-4) 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   /* Scroll discreto: aparece solo al pasar el cursor */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -271,16 +260,34 @@
   padding: var(--space-3);
 }
 
-/* Identidad: solo informa quién está dentro. Antes era además un botón hacia
-   configuración; ahora ese destino es una opción del menú y la ficha deja de
-   hacer dos trabajos a la vez. */
+/* Identidad: quién está dentro, y el acceso directo a su configuración
+   (también está en el menú de tres puntos, junto a las acciones de sesión). */
 
 .sidebar-user {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-2) 0;
 }
+
+.sidebar-user-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  margin: calc(-1 * var(--space-1)) 0 calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sidebar-user-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .sidebar-user-avatar {
   width: 34px;
@@ -534,6 +541,34 @@
   color: var(--accent);
 }
 
+.header-hamburger-icon {
+  position: relative;
+  width: 18px;
+  height: 14px;
+}
+
+.header-hamburger-icon > span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: transform var(--sidebar-transition), opacity var(--sidebar-transition), top var(--sidebar-transition);
+}
+
+.header-hamburger-icon > span:nth-child(1) { top: 0; }
+.header-hamburger-icon > span:nth-child(2) { top: 6px; }
+.header-hamburger-icon > span:nth-child(3) { top: 12px; }
+
+.header-hamburger.is-open .header-hamburger-icon > span:nth-child(1) { top: 6px; transform: rotate(45deg); }
+.header-hamburger.is-open .header-hamburger-icon > span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.header-hamburger.is-open .header-hamburger-icon > span:nth-child(3) { top: 6px; transform: rotate(-45deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .header-hamburger-icon > span { transition: none; }
+}
+
 /* ── Marca (logo, ahora en el header tipo consola) ── */
 
 .header-brand {
@@ -702,9 +737,12 @@
   }
 
   /* En tablet/móvil el sidebar pasa a ser un panel deslizable bajo el header */
+  /* Bajo el header completo (franja + barra) y hasta el borde visible: con
+     bottom: 0 en vez de 100vh, la barra del navegador móvil no tapa el pie. */
   .sidebar {
-    top: var(--mobile-header-height);
-    height: calc(100vh - var(--mobile-header-height));
+    top: calc(var(--topbar-height) + var(--mobile-header-height));
+    bottom: 0;
+    height: auto;
     transform: translateX(-100%);
     box-shadow: none;
   }
@@ -716,10 +754,6 @@
 
   .sidebar-overlay {
     display: block;
-  }
-
-  .sidebar-mobile-close {
-    display: flex;
   }
 }
 

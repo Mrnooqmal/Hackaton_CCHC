@@ -1,7 +1,18 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth, type TenantOpcion } from '../context/AuthContext';
-import { FiArrowRight, FiUser, FiLock, FiEye, FiEyeOff, FiBriefcase, FiChevronRight } from 'react-icons/fi';
+import '../css/AuthCard.css';
+import { monograma, colorMonograma } from '../utils/identidadEmpresa';
+import { FiArrowRight, FiArrowLeft, FiUser, FiLock, FiEye, FiEyeOff, FiChevronRight } from 'react-icons/fi';
+
+// Nombre legible del rol que la persona tiene en cada empresa.
+const ROL_LABEL: Record<string, string> = {
+    admin: 'Administrador',
+    jefe_obra: 'Jefe de Obra',
+    supervisor: 'Supervisor',
+    prevencionista: 'Prevencionista',
+    trabajador: 'Trabajador',
+};
 
 export default function Login() {
     const { login, completarLoginConTenant, error: authError } = useAuth();
@@ -79,447 +90,126 @@ export default function Login() {
             {/* Fondo fotografía */}
             <div className="lp-bg" aria-hidden="true" />
 
-            {/* Card centrado */}
-            <div className="lp-card" role="main">
-                {/* Logo */}
-                <div className="lp-logo" aria-label="Build and Serve">
-                    <span className="lp-logo-build">Build</span>
-                    <span className="lp-logo-amp">&amp;</span>
-                    <span className="lp-logo-serve">Serve</span>
+            {/* Tarjeta: mismo ancho en todos los pasos. El ingreso mide lo que su
+                formulario; elegir empresa usa el alto fijo del flujo (lp-card--fija)
+                y, si hay muchas, es la lista la que hace scroll. */}
+            <main className={`lp-card${seleccion ? ' lp-card--fija' : ''}`}>
+                <div className="lp-head">
+                    <div className="lp-logo" aria-label="Build and Serve">
+                        <span className="lp-logo-build">Build</span>
+                        <span className="lp-logo-amp">&amp;</span>
+                        <span className="lp-logo-serve">Serve</span>
+                    </div>
+                    <div className="lp-divider" aria-hidden="true" />
                 </div>
-
-                <div className="lp-divider" aria-hidden="true" />
 
                 {seleccion ? (
                     <>
-                        <h1 className="lp-title">Elige tu empresa</h1>
-                        <p className="lp-select-hint">Tu cuenta pertenece a más de una empresa. Selecciona con cuál quieres ingresar.</p>
-                        <div className="lp-tenant-list">
-                            {seleccion.opciones.map((op) => (
-                                <button
-                                    key={op.tenantId}
-                                    type="button"
-                                    className="lp-tenant-option"
-                                    disabled={loading}
-                                    onClick={() => handleSeleccionarTenant(op.tenantId)}
-                                >
-                                    <span className="lp-tenant-icon"><FiBriefcase size={16} /></span>
-                                    <span className="lp-tenant-info">
-                                        <span className="lp-tenant-nombre">{op.tenantNombre}</span>
-                                        <span className="lp-tenant-rol">{op.rol}</span>
-                                    </span>
-                                    <FiChevronRight size={16} />
-                                </button>
-                            ))}
+                        <div className="lp-body">
+                            <h1 className="lp-title">Elige tu empresa</h1>
+                            <p className="lp-hint">Tu cuenta pertenece a más de una empresa. ¿Con cuál entras hoy?</p>
+                            <div className="lp-tenant-list">
+                                {seleccion.opciones.map((op) => (
+                                    <button
+                                        key={op.tenantId}
+                                        type="button"
+                                        className="lp-tenant-option"
+                                        disabled={loading}
+                                        onClick={() => handleSeleccionarTenant(op.tenantId)}
+                                    >
+                                        <span
+                                            className="lp-tenant-mono"
+                                            style={{ background: colorMonograma(op.tenantId) }}
+                                            aria-hidden="true"
+                                        >
+                                            {monograma(op.tenantNombre)}
+                                        </span>
+                                        <span className="lp-tenant-info">
+                                            <span className="lp-tenant-nombre">{op.tenantNombre}</span>
+                                            <span className="lp-tenant-rol">{ROL_LABEL[op.rol] ?? op.rol}</span>
+                                        </span>
+                                        <FiChevronRight size={17} className="lp-caret" />
+                                    </button>
+                                ))}
+                            </div>
+                            {error && <p className="lp-error" role="alert">{error}</p>}
                         </div>
-                        {error && <p className="lp-error" role="alert">{error}</p>}
-                        <button type="button" className="lp-back-link" disabled={loading} onClick={() => { setSeleccion(null); setError(''); }}>
-                            Volver
-                        </button>
+                        <div className="lp-foot">
+                            <button type="button" className="lp-foot-link" disabled={loading} onClick={() => { setSeleccion(null); setError(''); }}>
+                                <FiArrowLeft size={14} /> Volver
+                            </button>
+                            <span className="lp-foot-meta">RUT {rut}</span>
+                        </div>
                     </>
                 ) : (
                     <>
-                        <h1 className="lp-title">Iniciar sesión</h1>
+                        <div className="lp-body">
+                            <h1 className="lp-title">Iniciar sesión</h1>
 
-                        <form className="lp-form" onSubmit={handleLogin} noValidate>
-                            <div className="lp-field">
-                                <label className="lp-label" htmlFor="lp-rut">RUT</label>
-                                <div className="lp-input-wrap">
-                                    <span className="lp-input-icon"><FiUser size={14} /></span>
-                                    <input
-                                        id="lp-rut"
-                                        type="text"
-                                        className="lp-input"
-                                        placeholder="12.345.678-9"
-                                        value={rut}
-                                        onChange={(e) => setRut(rutFormat(e.target.value))}
-                                        autoComplete="username"
-                                        autoFocus
-                                    />
+                            <form className="lp-form" onSubmit={handleLogin} noValidate>
+                                <div className="lp-field">
+                                    <label className="lp-label" htmlFor="lp-rut">RUT</label>
+                                    <div className="lp-input-wrap">
+                                        <span className="lp-input-icon"><FiUser size={15} /></span>
+                                        <input
+                                            id="lp-rut"
+                                            type="text"
+                                            inputMode="text"
+                                            className="lp-input"
+                                            placeholder="12.345.678-9"
+                                            value={rut}
+                                            onChange={(e) => setRut(rutFormat(e.target.value))}
+                                            autoComplete="username"
+                                            autoFocus
+                                        />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="lp-field">
-                                <label className="lp-label" htmlFor="lp-password">Contraseña</label>
-                                <div className="lp-input-wrap">
-                                    <span className="lp-input-icon"><FiLock size={14} /></span>
-                                    <input
-                                        id="lp-password"
-                                        type={showPassword ? 'text' : 'password'}
-                                        className="lp-input lp-input--password"
-                                        placeholder="••••••••"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        autoComplete="current-password"
-                                    />
-                                    <button
-                                        type="button"
-                                        className="lp-eye-btn"
-                                        onClick={() => setShowPassword(v => !v)}
-                                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                                    >
-                                        {showPassword ? <FiEyeOff size={14} /> : <FiEye size={14} />}
-                                    </button>
+                                <div className="lp-field">
+                                    <label className="lp-label" htmlFor="lp-password">Contraseña</label>
+                                    <div className="lp-input-wrap">
+                                        <span className="lp-input-icon"><FiLock size={15} /></span>
+                                        <input
+                                            id="lp-password"
+                                            type={showPassword ? 'text' : 'password'}
+                                            className="lp-input lp-input--password"
+                                            placeholder="••••••••"
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            autoComplete="current-password"
+                                        />
+                                        <button
+                                            type="button"
+                                            className="lp-eye-btn"
+                                            onClick={() => setShowPassword(v => !v)}
+                                            aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                                        >
+                                            {showPassword ? <FiEyeOff size={15} /> : <FiEye size={15} />}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
 
-                            {error && <p className="lp-error" role="alert">{error}</p>}
+                                {error && <p className="lp-error" role="alert">{error}</p>}
 
-                            <p className="lp-register-hint">
-                                <Link to="/recuperar-clave" className="lp-register-link">
-                                    ¿Olvidaste tu contraseña?
-                                </Link>
-                            </p>
-
-                            <button type="submit" className="lp-submit" disabled={loading}>
-                                {loading ? (
-                                    <div className="lp-spinner" />
-                                ) : (
-                                    <>
-                                        <span>Ingresar</span>
-                                        <FiArrowRight size={15} />
-                                    </>
-                                )}
-                            </button>
-                        </form>
+                                <button type="submit" className="lp-submit" disabled={loading}>
+                                    {loading ? (
+                                        <div className="lp-spinner" />
+                                    ) : (
+                                        <>
+                                            <span>Ingresar</span>
+                                            <FiArrowRight size={15} />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        </div>
+                        <div className="lp-foot">
+                            <Link to="/recuperar-clave" className="lp-foot-link">¿Olvidaste tu contraseña?</Link>
+                        </div>
                     </>
                 )}
-            </div>
+            </main>
 
-            <style>{`
-                /* ── Root — ocupa toda la pantalla ── */
-                .lp-root {
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 24px 16px;
-                    position: relative;
-                    overflow: hidden;
-                }
-
-                /* ── Fotografía de fondo ── */
-                .lp-bg {
-                    position: absolute;
-                    inset: 0;
-                    background: url('/fondoLogin.png') center center / cover no-repeat;
-                    z-index: 0;
-                }
-
-                /* ── Card ── */
-                .lp-card {
-                    position: relative;
-                    z-index: 1;
-                    width: 100%;
-                    max-width: 440px;
-                    background: #ffffff;
-                    border-radius: 16px;
-                    padding: 48px 48px 44px;
-                    box-shadow:
-                        0 2px 4px rgba(0,0,0,0.08),
-                        0 8px 24px rgba(0,0,0,0.18),
-                        0 32px 64px rgba(0,0,0,0.28);
-                    animation: lp-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-                    box-sizing: border-box;
-                }
-
-                @keyframes lp-rise {
-                    from { opacity: 0; transform: translateY(20px) scale(0.98); }
-                    to   { opacity: 1; transform: translateY(0) scale(1); }
-                }
-
-                /* ── Logo ── */
-                .lp-logo {
-                    display: flex;
-                    align-items: baseline;
-                    justify-content: center;
-                    gap: 6px;
-                    font-family: var(--font-display);
-                    font-size: 2.25rem;
-                    font-weight: 600;
-                    line-height: 1;
-                    letter-spacing: -0.01em;
-                    margin-bottom: 20px;
-                }
-
-                .lp-logo-build { color: #003b75; }
-                .lp-logo-amp   { color: #df3601; font-weight: 500; }
-                .lp-logo-serve { color: #006edc; }
-
-                /* ── Divisor ── */
-                .lp-divider {
-                    height: 1px;
-                    background: #e8edf3;
-                    margin-bottom: 24px;
-                }
-
-                /* ── Título ── */
-                .lp-title {
-                    font-size: 22px;
-                    font-weight: 700;
-                    color: #0f172a;
-                    margin: 0 0 24px 0;
-                    letter-spacing: -0.02em;
-                }
-
-                /* ── Formulario ── */
-                .lp-form {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 14px;
-                }
-
-                .lp-field {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 5px;
-                }
-
-                .lp-label {
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: #64748b;
-                    letter-spacing: 0.06em;
-                    text-transform: uppercase;
-                }
-
-                .lp-input-wrap {
-                    position: relative;
-                }
-
-                .lp-input-icon {
-                    position: absolute;
-                    left: 11px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: #94a3b8;
-                    display: flex;
-                    align-items: center;
-                    pointer-events: none;
-                    z-index: 1;
-                }
-
-                .lp-input {
-                    width: 100%;
-                    height: 40px;
-                    padding: 0 12px 0 34px;
-                    background: #f8fafc;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    color: #0f172a;
-                    font-size: 13.5px;
-                    font-family: inherit;
-                    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-                    outline: none;
-                    box-sizing: border-box;
-                }
-
-                .lp-input--password { padding-right: 38px; }
-
-                .lp-eye-btn {
-                    position: absolute;
-                    right: 10px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    background: none;
-                    border: none;
-                    padding: 4px;
-                    cursor: pointer;
-                    color: #94a3b8;
-                    display: flex;
-                    align-items: center;
-                    border-radius: 4px;
-                    transition: color 0.15s ease;
-                    line-height: 0;
-                }
-
-                .lp-eye-btn:hover { color: #006edc; }
-
-                .lp-input::placeholder { color: #b0bec5; }
-
-                .lp-input:focus {
-                    border-color: #006edc;
-                    background: #fff;
-                    box-shadow: 0 0 0 3px rgba(0, 110, 220, 0.12);
-                }
-
-                /* ── Error ── */
-                .lp-error {
-                    font-size: 12px;
-                    color: #df3601;
-                    font-weight: 500;
-                    margin: 0;
-                    padding: 8px 10px;
-                    background: rgba(223, 54, 1, 0.06);
-                    border-radius: 6px;
-                    border-left: 2px solid #df3601;
-                }
-
-                /* ── Selección de empresa ── */
-                .lp-select-hint {
-                    font-size: 12.5px;
-                    color: #64748b;
-                    margin: 0 0 18px;
-                    line-height: 1.5;
-                }
-
-                .lp-tenant-list {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
-                }
-
-                .lp-tenant-option {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    width: 100%;
-                    padding: 12px 14px;
-                    background: #f8fafc;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    text-align: left;
-                    font-family: inherit;
-                    color: #0f172a;
-                    transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
-                }
-
-                .lp-tenant-option:not(:disabled):hover {
-                    border-color: #006edc;
-                    background: #fff;
-                    transform: translateY(-1px);
-                }
-
-                .lp-tenant-option:disabled { opacity: 0.6; cursor: not-allowed; }
-
-                .lp-tenant-icon {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 32px;
-                    height: 32px;
-                    flex-shrink: 0;
-                    border-radius: 8px;
-                    background: rgba(0, 110, 220, 0.1);
-                    color: #006edc;
-                }
-
-                .lp-tenant-info {
-                    flex: 1;
-                    min-width: 0;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 2px;
-                }
-
-                .lp-tenant-nombre {
-                    font-size: 13.5px;
-                    font-weight: 600;
-                    color: #0f172a;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-
-                .lp-tenant-rol {
-                    font-size: 11.5px;
-                    color: #94a3b8;
-                    text-transform: capitalize;
-                }
-
-                .lp-back-link {
-                    margin-top: 16px;
-                    background: none;
-                    border: none;
-                    padding: 0;
-                    font-size: 12.5px;
-                    font-weight: 500;
-                    color: #006edc;
-                    cursor: pointer;
-                    font-family: inherit;
-                }
-
-                .lp-back-link:hover { text-decoration: underline; }
-                .lp-back-link:disabled { opacity: 0.6; cursor: not-allowed; }
-
-                /* ── Registro ── */
-                .lp-register-hint {
-                    font-size: 12px;
-                    color: #94a3b8;
-                    margin: 0;
-                    line-height: 1.4;
-                }
-
-                .lp-register-link {
-                    color: #006edc;
-                    font-weight: 500;
-                    text-decoration: none;
-                    transition: color 0.15s ease;
-                }
-
-                .lp-register-link:hover {
-                    color: #0052a3;
-                    text-decoration: underline;
-                }
-
-                /* ── Botón ── */
-                .lp-submit {
-                    margin-top: 4px;
-                    width: 100%;
-                    height: 42px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    background: #002855;
-                    color: #fff;
-                    border: none;
-                    border-radius: 8px;
-                    font-size: 13.5px;
-                    font-weight: 600;
-                    font-family: inherit;
-                    cursor: pointer;
-                    letter-spacing: 0.02em;
-                    transition: background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
-                }
-
-                .lp-submit:not(:disabled):hover {
-                    background: #006edc;
-                    transform: translateY(-1px);
-                    box-shadow: 0 6px 20px rgba(0, 110, 220, 0.3);
-                }
-
-                .lp-submit:not(:disabled):active {
-                    transform: translateY(0);
-                    box-shadow: none;
-                }
-
-                .lp-submit:disabled {
-                    opacity: 0.6;
-                    cursor: not-allowed;
-                }
-
-                /* ── Spinner ── */
-                .lp-spinner {
-                    width: 17px;
-                    height: 17px;
-                    border: 2px solid rgba(255,255,255,0.3);
-                    border-top-color: #fff;
-                    border-radius: 50%;
-                    animation: lp-spin 0.7s linear infinite;
-                }
-
-                @keyframes lp-spin { to { transform: rotate(360deg); } }
-
-                /* ── Responsive ── */
-                @media (max-width: 500px) {
-                    .lp-root { min-height: 100dvh; padding: 24px 16px; align-items: center; }
-                    .lp-card { padding: 36px 24px 32px; border-radius: 12px; }
-                    .lp-logo { font-size: 1.9rem; }
-                    .lp-title { font-size: 20px; }
-                }
-            `}</style>
         </div>
     );
 }

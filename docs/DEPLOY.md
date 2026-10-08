@@ -1,3 +1,5 @@
+> **OBSOLETO desde el 29 de septiembre de 2026.** Este documento describe un esquema anterior (dos services de Serverless, `deploy:testeo`) que ya no existe. Hoy se despliega solo con los scripts de `infra/` y desde commits pusheados: ver `docs/estado-actual.md`. No sigas las instrucciones de abajo.
+
 # Deploy del backend — LEER ANTES DE DEPLOYAR
 
 Hay **dos backends** (dos "services" de Serverless). El `stage` es `dev` en ambos;

@@ -81,6 +81,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 3.4 | Tokens de recuperación almacenados hasheados | **Implementado** | `hashResetToken()` con SHA-256; nunca se guarda el token en claro. |
 | 3.5 | El cambio de contraseña actúa sobre la sesión, no sobre el cuerpo | **Implementado** | `changePassword` tomaba el `personaId` del cuerpo: con la contraseña temporal de cualquiera —que el propio sistema devolvía al resetear— se le cambiaba la contraseña a otra persona. |
 | 3.6 | El alta de empresas no es un endpoint | **Implementado** | Era pública, tras un código compartido que además estaba vacío en los dos ambientes. La ejecuta el operador con `Backend/scripts/crear-empresa.js`: autorización por IAM y trazabilidad en CloudTrail. |
+| 3.7 | Cambiar la contraseña revoca las sesiones abiertas | **Implementado (en el árbol)** | Al cambiarla, al restablecerla por correo y al restablecerla un administrador se revocan todas las sesiones de la persona, en todas sus empresas; el cambio con sesión emite una nueva. Antes no se revocaba ninguna: una sesión abierta con la contraseña inicial por quien conoce el RUT quedaba completa al cambiarla su dueña. `Backend/tests/cambio-password-sesiones.test.js`. Ver D-26. |
 
 ### 2.4 Integridad y trazabilidad documental
 
@@ -118,7 +119,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
-| 6.1 | Cifrado en tránsito | **Implementado, con una brecha aceptada** | API: solo TLS 1.2 y 1.3, sin puerto 80. Frontend: CloudFront redirige HTTP a HTTPS y envía HSTS (un año). Buckets: todos rechazan accesos sin TLS. Brecha: CloudFront acepta TLS 1.0 porque usa el certificado por defecto de `cloudfront.net`; se resuelve con el dominio propio. Ver D-14. |
+| 6.1 | Cifrado en tránsito | **Implementado; la brecha se cierra con el dominio propio** | API: solo TLS 1.2 y 1.3, sin puerto 80. Frontend: CloudFront redirige HTTP a HTTPS y envía HSTS (un año). Buckets: todos rechazan accesos sin TLS. En `buildandserve.cl` el mínimo es TLS 1.2 (certificado propio de ACM, D-21). La URL de `cloudfront.net` acepta TLS 1.0 mientras dure la transición. |
 | 6.10 | Los buckets se gobiernan desde el stack | **Implementado** | Estaban **fuera** de CloudFormation, creados a mano: ningún despliegue podía comprobar ni corregir su configuración, y de ahí venían los dos hallazgos anteriores. Se incorporaron por `IMPORT` de CloudFormation —sin recrearlos ni tocar los 135 objetos de producción— con `DeletionPolicy: Retain`, que es la forma correcta de protegerlos de un `serverless remove`. |
 | 6.11 | **Bloqueo de objetos (Object Lock)** | **Pendiente, requiere migración** | No se puede activar sobre un bucket existente. Ver D-5. |
 | 6.2 | Cifrado en reposo declarado | **Implementado, salvo logs** | Buckets de evidencia y trabajo con la CMK de su ambiente (D-4); el del frontend, con `AES256`. Tablas DynamoDB: pasan a la CMK (`SSESpecification`) con el commit del 28 de septiembre de 2026; antes, las 17 usaban la llave propiedad de AWS. Grupos de logs: sin clave propia, postergado. Ver D-14. |
@@ -140,7 +141,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 7.1 | **Política de retención de datos personales** | **Implementada: cálculo y bloqueos. Pendiente: ejecutar la supresión** | Proceso diario (`retencionDiaria`) que calcula por empresa qué venció y qué se conserva, guarda el plan y extiende el Object Lock de la evidencia que debe seguir. Suprimir exige un lote aprobado por dos personas: siguiente etapa. Ver D-15. |
 | 7.2 | **Mecanismo de supresión a solicitud del titular** | **Parcial** | Implementado (API): solicitudes con canal de origen y fecha de recepción inmutable, bloqueo temporal real, prórroga solo a tiempo, respuesta con fundamento, avisos de plazo e historial que solo crece. Pendiente: pantalla y ejecución de la supresión en lotes aprobados por dos personas. Ver D-15. |
 | 7.3 | **Registro de tratamientos** | **Implementado** | Generado desde el inventario de datos (`lib/gobernanza/inventario.js`), que también recorre el proceso de retención: no pueden divergir. Una prueba falla si una tabla nueva no está clasificada. Ver D-15. |
-| 7.4 | **Procedimiento de notificación de brechas** | **Pendiente** | No hay protocolo definido. |
+| 7.4 | **Procedimiento de notificación de brechas** | **Parcial** | Hay con qué responder qué se expuso, de quién y de qué empresas (`scripts/informe-brecha.js`, D-19), apoyado en la auditoría de salud (D-18). Falta el protocolo: quién decide, plazos y canal de notificación a la Agencia y a los titulares (decisión de producto y legal). |
 | 7.5 | Minimización en las respuestas de la API | **Parcial** | El hash del PIN nunca sale, pero no hay una revisión sistemática de qué campos personales viajan en cada respuesta. |
 
 ---
@@ -425,12 +426,10 @@ medible (`lib/degradacion.js`) — un incidente que no se puede abrir es peor qu
 uno incompleto. Quien lee para LISTAR nunca une las dos partes; ahí está la
 ganancia: ningún listado paga ese costo y ningún índice contiene el dato.
 
-**Pendiente asociado:** documentos y solicitudes de firma también llevan RUT en
-el elemento listado (`asignaciones[]`, `solicitanteRut`, `trabajadores[]`) y
-siguen en `ProjectionType: ALL` sin resolver — están en la lista de las cinco
-tablas que tampoco caben en `INCLUDE` por volumen de atributos, no por mapas
-anidados. Se retoma junto con el cifrado de campo del RUT, porque en ese
-momento de todas formas se toca cómo se guarda y se busca el RUT.
+**Pendiente asociado (cerrado por D-23):** documentos y solicitudes de firma
+también llevan RUT en el elemento listado (`asignaciones[]`, `solicitanteRut`,
+`trabajadores[]`) y sus índices siguen en `ProjectionType: ALL`. Con el cifrado
+de campo del RUT, el índice solo copia texto cifrado; D-23 decide dejarlos así.
 
 **Ubicación:** `Backend/lib/traza-sensible.js`, `Backend/handlers/incidents-module/incidents.repository.js`, `Backend/handlers/signatures/handler.js`, `Backend/lib/services/FirmaService.js`
 
@@ -1155,7 +1154,7 @@ herramienta para registrar la solicitud y su canal de origen.
 
 | Categoría | Datos | Finalidad | Clase | Plazo | Al vencer |
 |---|---|---|---|---|---|
-| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, teléfono, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, telefono, contactoEmergencia, preferencias, notificacionesSms, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
+| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, teléfono, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, telefono, contactoEmergencia, preferencias, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
 | Documentos, asignaciones y firmas | Documentos de onboarding, procedimientos, entregas de EPP; a quién se asignaron, quién firmó (nombre, RUT e IP cifrados), difusiones, versiones anteriores con sus firmas. | Acreditar la entrega, difusión y firma de la documentación exigida por el DS 44. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
 | Registro de firmas | Quién firmó qué, cuándo, con qué método (PIN o vale), desde qué IP (cifrada), y los documentos firmados. | Prueba de la firma electrónica simple ante la autoridad. | evidencia | 5 años desde el término del vínculo | Se suprime |
 | Solicitudes de firma | Solicitante y trabajadores convocados (nombre, cargo, RUT cifrado), estado de cada firma. | Convocar y seguir las firmas de un documento o actividad. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
@@ -1172,6 +1171,365 @@ herramienta para registrar la solicitud y su canal de origen.
 | Empresa | Datos de la empresa; su representante legal (nombre y RUT) y el administrador. | Configurar la empresa en la plataforma. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
 | Obras | Datos de la obra; sin datos personales salvo referencias a responsables. | Gestionar las obras y su cumplimiento. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
 | Catálogo de EPP | Catálogo de elementos de protección; sin datos personales (las entregas son documentos). | Definir los EPP que entrega la empresa. | evidencia | 5 años desde el término del vínculo | No vence por personas (es de la empresa) |
+
+### D-16. Límite de 500 recursos del stack del backend
+**Estado: decidido el 29 de septiembre de 2026 (decisión técnica).**
+
+Al agregar los derechos del titular, la plantilla del backend llegó a 512
+recursos y CloudFormation la rechazó (máximo 500 por stack); el ambiente no
+cambió, porque la plantilla se rechaza completa antes de aplicar nada. 77 de
+esos recursos eran `AWS::Lambda::Version`, una por función, que Serverless crea
+en cada deploy y que nada usa: no hay alias, ni concurrencia aprovisionada, ni
+ARN calificados referenciados, y `serverless rollback` vuelve a un artefacto de
+S3. Se desactivó el versionado (`versionFunctions: false`): 435 recursos. Las
+versiones tenían `DeletionPolicy: Retain`, así que sacarlas del stack no borró
+ninguna.
+
+**Margen:** 65 recursos. Cada función HTTP nueva cuesta de 4 a 6 (función, log
+group, permiso, integración, rutas). `infra/desplegar-backend.sh` empaqueta y
+cuenta antes de desplegar: avisa sobre 450 y se niega sobre 490. Cuando haga
+falta más, la salida es agrupar rutas por módulo (una función con un router,
+como ya hacen personas, obras e inbox) antes que partir el stack.
+
+### D-17. Lotes de supresión: se aprueba y se ejecuta exactamente un contenido, con dos personas
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol).**
+
+Es la única forma de borrar datos personales en el sistema.
+
+- **Qué se aprueba**: el contenido exacto del lote —cada operación sobre una
+  tabla (qué ítem, suprimir, anonimizar o quitar qué campos, y su traza
+  sensible) y cada versión de cada archivo, con su `versionId`— y su huella
+  canónica (`lib/huella.js`). Quien aprueba envía la huella de lo que vio.
+- **Se ejecuta exactamente lo aprobado**: al aprobar y otra vez al ejecutar, el
+  contenido se recalcula desde los datos actuales; si la huella cambió, el lote
+  queda **desactualizado** y hay que proponerlo y aprobarlo de nuevo. Además se
+  verifica que el contenido **guardado** siga teniendo su huella: otros roles
+  pueden actualizar la tabla de gobernanza, y un contenido alterado con la
+  huella original no se aprueba ni se ejecuta.
+- **Dos personas**: quien aprueba no puede ejecutar (en las reglas y en la
+  condición de la escritura). Proponer no cuenta: el lote de plazos vencidos lo
+  propone quien lo pide, sobre el plan del sistema.
+- **Permiso propio** (`empresa.supresion_datos`, solo el administrador por
+  defecto), aparte del de derechos de los titulares: registrar solicitudes no es
+  lo mismo que borrar sin vuelta atrás. *Decisión técnica.*
+- **Rol propio** (`RolSupresion`): el único del sistema que puede borrar ítems de
+  las tablas con datos de personas y versiones de S3 con bypass de la
+  retención, y solo lo usa la función de lotes. Una prueba falla si el bypass o
+  el borrado de versiones aparece en otro rol.
+- **Qué suprime una solicitud acogida**: solo lo de conveniencia (campos de la
+  ficha con contenido real —no los valores por defecto—, bandeja y
+  sugerencias). La evidencia espera su plazo (D-2).
+- **Tamaño**: hasta 400 operaciones por lote (un ítem de DynamoDB tiene 400 KB).
+  Uno mayor se rechaza pidiendo dividirlo; los volúmenes actuales están muy por
+  debajo.
+- **Límite conocido**: si la función se corta a mitad de una ejecución, el lote
+  queda en `ejecutando`. Las operaciones son idempotentes (borrar lo que ya no
+  está no falla), pero hoy la reanudación es manual.
+
+### D-18. Auditoría de acceso a datos de salud
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol).**
+
+Queda registro de quién consultó o descargó datos de salud de **otra** persona:
+ficha de vigilancia y restricción laboral, documentos de salud (y sus archivos),
+respuestas de la ficha básica de salud, y los documentos que traen salud de
+varias personas (Registro AT/EP, investigación de accidente). Se guarda quién,
+cuándo, desde qué IP y navegador, por qué ruta, de qué titulares y qué
+documentos; **nunca el contenido**, y de los archivos solo la huella de su
+clave (la clave puede llevar el nombre de la persona).
+
+- Un evento por petición (`AsyncLocalStorage`): un listado de 80 fichas es un
+  registro, no 80.
+- **Sin registro no hay acceso** (*decisión técnica*): si el registro no se
+  puede escribir, la respuesta con salud no sale y se devuelve 503, medido con
+  `registrarFallo`. Para datos de salud, poder demostrar quién accedió pesa más
+  que la disponibilidad.
+- **No se registra el acceso a los propios datos**: es el derecho de acceso del
+  titular, y `/auth/me` en cada carga de página lo inundaría.
+- Un punto que entrega salud fuera de un handler auditado lanza un error: se ve
+  en las pruebas, no en una fiscalización.
+- `AuditoriaAccesosTable`: solo agregar y leer para todos los roles, `Retain`
+  siempre, con índice por actor y fecha (lo usa el informe de brecha, D-19).
+
+### D-19. Informe de brecha
+**Estado: implementado el 29 de septiembre de 2026 (en el árbol).**
+
+Ante un incidente, `scripts/informe-brecha.js` responde qué datos, de qué
+personas y de qué empresas quedaron expuestos. La lógica es pura
+(`lib/gobernanza/brecha.js`) y se apoya en el mismo inventario que la retención
+y el registro de tratamientos: una tabla nueva sin clasificar ya hace fallar las
+pruebas, así que tampoco puede faltar en el informe. Solo lee.
+
+Tres alcances, combinables:
+
+- **Cuenta comprometida** (`--actor`, `--desde`, `--hasta`): la salud a la que
+  accedió en la ventana sale **confirmada** de la auditoría (D-18); lo demás que
+  podía leer en su empresa se informa como **cota superior**, y el informe lo
+  dice, porque las lecturas que no son de salud no se auditan.
+- **Tabla expuesta** (`--tabla`, opcionalmente `--empresa`): todo lo que tiene,
+  por empresa y persona, con la marca de salud del inventario (`contieneSalud`).
+- **Archivos expuestos** (`--prefijo`): los archivos y de quién son, según los
+  registros que los mencionan. Esas tablas se cargan como contexto y **no** se
+  cuentan como expuestas; un archivo sin registro que lo mencione aparece como
+  tal, no se omite.
+
+Decisiones técnicas:
+
+- Lo corre la plataforma, como encargada: una brecha puede cruzar empresas, y
+  el informe separa lo de cada una para que cada responsable reciba lo suyo.
+- El informe trae **solo identificadores** (empresa, persona, documento) y
+  categorías; nunca nombres, RUT (ni su HMAC), correos ni teléfonos. Quien lo
+  lee, con acceso, resuelve nombres si la notificación lo exige. Así el informe
+  se puede circular sin volverse una segunda brecha.
+
+### D-20. QA prueba en dev: una distribución del frontend por ambiente
+**Estado: desplegado el 29 de septiembre de 2026. QA prueba en
+`https://d3pve67iu4s0dd.cloudfront.net`; producción volvió a servir su propio
+build el 30 de septiembre a las 02:34 UTC, y desde entonces la CSP no registró
+violaciones.**
+
+**Qué pasó.** El 29 de septiembre de 2026, a las 17:45 UTC, se publicó en la URL
+de producción (`d30jksx91fodea.cloudfront.net`) un build del frontend que
+apuntaba a la API de dev. Fue intencional: producción había quedado sin datos y
+QA necesitaba usuarios con qué probar. No hubo exposición de datos: dev no
+tiene datos reales y la API de producción no se tocó. Pero durante esas horas
+la URL de producción no servía producción, y se publicó a mano, sin
+`infra/desplegar-frontend.sh`, que lo habría rechazado. Se detectó por la CSP
+en modo solo reporte: 683 violaciones `connect-src`, todas contra la API de dev,
+desde un minuto después de la publicación.
+
+**Por qué pasó.** Había una sola distribución, la de producción: QA no tenía una
+URL propia contra dev, y la única forma de darle una era usar la de producción.
+Y nada impedía publicar a mano: cualquier credencial con acceso a la cuenta
+puede escribir en el bucket e invalidar la distribución.
+
+**Qué se decidió.**
+
+- Dos distribuciones en `infra/frontend.yml`: la de producción y una de dev
+  (bucket, política de cabeceras y CSP propios), para QA.
+- `infra/desplegar-frontend.sh <commit> <dev|prod>` publica un build solo en la
+  distribución de su ambiente, y se niega si el bundle contiene la API del otro
+  ambiente, cualquier otra API Gateway o `localhost`.
+- El backend de dev acepta el frontend de dev (CORS y enlaces de los correos),
+  leyendo su dominio de la salida del stack del frontend. La URL de producción
+  sigue aceptada en dev solo durante el traspaso de QA; se quita cuando
+  producción vuelve a servir su build.
+- Producción vuelve a `8eb344d`, el build que corresponde a su backend, **después**
+  de que QA tenga su URL, para no dejarlo sin dónde probar. Se confirma con la
+  métrica `CspViolaciones` en cero.
+- Pendiente: que publicar a mano no sea posible. Un rol de despliegue que sea
+  el único con escritura en los buckets del frontend y permiso de invalidar
+  (propuesto, sin implementar).
+
+### D-21. Producción en buildandserve.cl, y correo con rebotes y quejas
+**Estado: en producción desde el 30 de septiembre de 2026 (backend y frontend
+de `64adc40`). Verificado: prueba de punta a punta en `https://buildandserve.cl`
+con una empresa desechable borrada después; rebotes y quejas de punta a punta
+con el simulador de SES; recorrido en Chrome de las pantallas principales con
+sesión, sin violaciones de CSP. Pendiente: la salida de SES del sandbox.**
+
+**Dominio.** La distribución de producción sirve `buildandserve.cl` con un
+certificado de ACM (us-east-1) para la raíz y `www`, validado por DNS en
+Cloudflare. Los registros van **sin proxy de Cloudflare** (nube gris): el TLS lo
+termina CloudFront con su certificado, y un proxy delante rompería las
+cabeceras y la CSP que ya controla CloudFront. `www` redirige a la raíz (301,
+con ruta y consulta) con una CloudFront Function: una sola URL canónica para los
+enlaces de los correos y el CORS. Con certificado propio, el TLS mínimo sube a
+**1.2** (`TLSv1.2_2021`), lo que cierra la brecha de D-14. La URL de
+CloudFront sigue sirviendo y aceptada por el backend durante la transición.
+
+**Correo.** Todo envío pasa por `lib/correo.js` (una prueba falla si otro
+archivo usa SES):
+
+- remitente `no-responder@buildandserve.cl` (dominio verificado con DKIM, MAIL
+  FROM `mail.buildandserve.cl` y DMARC); respuestas a `contacto@buildandserve.cl`,
+  que reenvía Cloudflare;
+- conjunto de configuración por ambiente: rebotes, quejas y rechazos van a un
+  tópico de SNS al que solo publica SES de esta cuenta y desde ese conjunto;
+- `handlers/correo/eventos.js` marca la dirección ante un **rebote permanente**,
+  una **queja** o un **rechazo**; un rebote transitorio no marca (casilla llena:
+  dejarla fuera privaría a alguien de su restablecimiento de contraseña);
+- antes de cada envío se consulta la marca; a una dirección marcada no se le
+  escribe (`DIRECCION_SUPRIMIDA`). Además está activa la lista de supresión de
+  la cuenta de SES (rebotes y quejas).
+
+Decisiones técnicas:
+
+- La marca se guarda por **HMAC** de la dirección (minúsculas, con prefijo de
+  dominio distinto del del RUT), nunca la dirección: la tabla responde "¿está
+  suprimida esta?" y no sirve para listar correos. Tampoco van a los logs
+  (solo motivo y dominio).
+- La marca **vence a los dos años** (TTL): las casillas se reciclan, y si
+  vuelve a rebotar se marca de nuevo. Cada evento renueva el plazo.
+- Solo la función de eventos escribe en la tabla (rol propio); el rol
+  compartido solo la lee.
+- El tópico no lleva cifrado propio: SES no puede publicar en un tópico
+  cifrado con la llave administrada de SNS, y SNS no guarda el mensaje.
+
+### D-22. Rol de publicación del frontend
+**Estado: primera etapa aprobada e implementada el 29 de septiembre de 2026 (en
+el árbol). La negación se activa cuando los publicadores registren MFA.**
+
+Publicar el frontend (escribir en sus buckets e invalidar sus distribuciones)
+queda en manos de un rol, `BuildAndServe-publicador-frontend`:
+
+- lo asumen solo las personas designadas (hoy Adrean y Benjamin), **con MFA**;
+- `infra/desplegar-frontend.sh` lo asume **después** de sus verificaciones
+  (commit pusheado, build limpio, API del ambiente), con el commit en el nombre
+  de la sesión: CloudTrail dice qué se publicó y quién;
+- con `ExigirRolPublicador=true`, la política de cada bucket niega escribir o
+  borrar a cualquier otro principal, y una política administrada niega a las
+  personas invalidar las distribuciones (CloudFront no tiene políticas de
+  recurso).
+
+Por qué en dos pasos: al implementarlo, ningún usuario tenía MFA. Activar la
+negación ese día habría dejado a nadie en condiciones de publicar. Hasta
+activarla, el script publica con las credenciales propias y lo avisa.
+
+Límite conocido: un administrador puede cambiar la política del bucket; queda en
+CloudTrail, pero no se impide. La siguiente etapa, GitHub Actions por OIDC como
+único que asume el rol, cierra también la publicación a mano desde un equipo.
+
+### D-23. Índices de Documents, SignatureRequests y Signatures: se quedan en ALL
+**Estado: decidido el 30 de septiembre de 2026 (decisión técnica). Tema cerrado.**
+
+Los cinco índices de esas tres tablas (`tenantId-index` en las tres, más
+`requestId-index` y `personaId-index` en Signatures) proyectan `ALL`. A
+diferencia de las personas (D-6), no se reproyectan:
+
+- **Lo sensible ya viaja cifrado.** El RUT y la IP de quien firma, de quien
+  tiene asignado un documento y de los trabajadores convocados se guardan con
+  cifrado de campo (D-10, `lib/arregloSensible.js`); la traza sensible vive
+  aparte (D-8). El índice copia ese texto cifrado, que sin la llave de datos no
+  dice nada. El nombre queda en claro, igual que en cada pantalla que lo lista. En las personas, en cambio, el índice copiaba
+  hashes de credenciales y salud en claro dentro del ítem.
+- **Un índice no es una copia gobernada aparte.** DynamoDB propaga al índice
+  cada actualización y cada borrado de la tabla: la retención, la supresión por
+  lotes (D-17) y el bloqueo actúan sobre la tabla y el índice los sigue. No
+  quedan copias huérfanas, como sí quedarían en un respaldo o una exportación.
+- **No amplía quién puede leer.** Mismo cifrado (la CMK de datos) y todo rol con
+  acceso al índice tiene acceso a la tabla. `KEYS_ONLY` no le quitaría la
+  lectura a nadie.
+- **Lo que costaría:** cada listado pasaría a leer el índice y después la tabla
+  por lotes (el doble de lecturas y más latencia en las pantallas más usadas),
+  más una ventana sin índice al recrearlo y cambios en cada ruta de listado, sin
+  reducir la exposición.
+
+**Cuándo se revisa:** si un rol llega a leer un índice de estas tablas sin
+poder leer la tabla, o si se agrega a estos ítems un dato sensible en claro.
+Lo primero lo vigila `tests/indices-documentos.test.js`, que falla si pasa; lo
+segundo, el inventario (`lib/gobernanza/inventario.js`), que describe qué datos
+lleva cada tabla y se revisa con cada tabla o campo nuevo.
+
+### D-24. Carga masiva de personas en cola
+**Estado: implementado el 30 de septiembre de 2026 (en el árbol). Diseño
+aprobado antes; aquí se registra lo que se construyó.**
+
+Confirmar la carga ya no crea personas en la petición: crea una **carga** y la
+encola, un mensaje por fila (`lib/cargas.js`, `handlers/cola/trabajador.js`).
+Validar sigue siendo sincrónico y no escribe nada. La pantalla consulta el
+avance en `GET /personas/cargas/{id}` y se puede cerrar sin perder nada.
+
+- **Idempotencia por carga y RUT.** El `personaId` sale de ese par y la ficha
+  se escribe con condición. Antes de crear se busca la ficha por su clave con
+  lectura consistente. Un reintento de SQS no crea a nadie dos veces.
+- **Cada fila se cuenta una vez.** El paso a `creada` o `fallida`, los
+  contadores de la carga y el conteo de trabajadores de la empresa van en una
+  transacción condicionada a que la fila siga `procesando`. Una fila la
+  procesa un trabajador a la vez, con un arriendo que vence.
+- **Sin todo-o-nada.** Cada fila es su unidad. Las que fallan quedan con su
+  número de fila y su motivo. Las inválidas y las duplicadas no se
+  reintentan, porque se corrigen en la planilla. Las que fallaron por algo
+  transitorio se reintentan con un botón que re-encola solo esas.
+- **Fase 2 (supervisores) al terminar**, detectada con el contador y lectura
+  consistente; su cierre está condicionado a que no queden filas pendientes.
+- **Lo que revienta repetidamente** queda como fila fallida al cuarto intento
+  (antes de la cola de mensajes fallidos, que está al sexto y tiene alarma).
+  Si la persona ya existe y lo que falla es su onboarding, la fila cuenta como
+  creada con un aviso, porque la persona sí está en el sistema.
+- **Límite de 1.000 filas por carga.**
+- **Datos personales.** La fila guarda solo los campos de la plantilla. Al
+  crearse, se le quitan los datos y el RUT en claro (quedan en la ficha).
+  Todo vence a los 30 días (TTL). Tabla clasificada en el inventario.
+- **Se retiró `POST /personas/carga-masiva`** (flujo directo sin asistente):
+  nadie lo llamaba, no validaba antes de crear y corría entero en la petición.
+
+Hallazgo al hacerlo: el doble de DynamoDB de las pruebas no ordenaba las
+consultas por la clave de rango. Al corregirlo apareció que el historial de
+gobernanza mostraba el bloqueo antes que la solicitud que lo causó (dos eventos
+del mismo instante se ordenaban por su tipo). La clave del historial pasa a
+llevar el contador antes que el tipo. No había eventos guardados en dev ni en
+prod, así que no hubo que migrar nada.
+
+### D-25. Avisos del EventBus durables sobre la misma cola
+**Estado: implementado el 30 de septiembre de 2026 (en el árbol).**
+
+La razón es **durabilidad**, no velocidad: notificar a la línea de mando y a
+los representantes es parte de acreditar que se informó (Art. 7 inc. 9, Art. 57
+inc. 2), y un aviso que fallaba se perdía en silencio.
+
+- `emit` encola el evento con un `eventoId` y la petición responde. Si no se
+  puede encolar, se despacha en la petición como antes y queda un marcador
+  medible (`evento.encolar`).
+- El trabajador despacha en modo estricto: un suscriptor que falla hace fallar
+  el mensaje y SQS lo reintenta. Los suscriptores dejaron de tragarse sus
+  errores.
+- **Sin duplicados en el reintento.** Cada aviso de la bandeja tiene un id
+  derivado de `(eventoId, suscriptor)` y se escribe con condición: el
+  reintento completa a quien faltó y no repite a quien ya lo tenía. La
+  constancia de difusión queda una sola vez por evento.
+- **Sin "avisado a nadie".** Si no se puede leer la línea de mando o los
+  representantes, el evento falla y se reintenta (una prueba cubre cada caso). Antes se resolvía como "sin
+  destinatarios" y la difusión quedaba registrada como hecha. El nombre de la
+  obra sí puede faltar: es cosmético.
+- Al sexto intento el mensaje va a la cola de mensajes fallidos, que tiene
+  alarma. Un aviso ahí es una notificación que no llegó.
+- En pruebas y en local (sin cola) todo sigue corriendo en la petición.
+
+### D-26. Cambiar la contraseña revoca todas las sesiones y emite una nueva
+**Estado: implementado el 30 de septiembre de 2026 (en el árbol, sin desplegar).
+Reproducido en dev antes de corregir.**
+
+**El síntoma.** Tras cambiar la contraseña inicial, crear el PIN respondía
+"Debes cambiar tu contraseña inicial". El autorizador cachea su respuesta 60
+segundos por token, y el cambio no emitía token nuevo: durante ese minuto el
+autorizador seguía diciendo `credencialProvisional=true`, y el enrolamiento,
+que llega segundos después, caía siempre en esa ventana. En dev, con el mismo
+token y sin tocar el cliente: 403 a los 2 s del cambio, 200 a los 69 s. El
+frontend no era la causa.
+
+**Lo que había detrás.** Cambiar la contraseña no revocaba ninguna sesión. Con
+la contraseña inicial de D-13, quien conoce un RUT puede entrar antes que su
+dueña y dejar abierta esa sesión provisional. Cuando ella cambiaba la
+contraseña, la sesión ajena dejaba de ser provisional y quedaba completa por
+seis horas. Pasaba lo mismo con el restablecimiento por correo y por un
+administrador.
+
+**Qué se decidió.**
+
+- Cambiar la contraseña, restablecerla por correo y restablecerla un
+  administrador **revocan todas las sesiones de la persona** (`activa=false`,
+  con `revocadaEn`). También las de sus fichas en otras empresas, porque
+  `propagarPassword` les cambia la contraseña.
+- El cambio con sesión responde con **una sesión nueva** (token, `sessionId`,
+  vencimiento y usuario), y el frontend la adopta en el acto. Se revoca antes de
+  emitirla: al revés, se revocaría también la nueva.
+- Si no se pueden revocar, el cambio responde 503 y no entrega sesión nueva:
+  informar que todo salió bien con las sesiones anteriores vivas es justo lo que
+  esto cierra. Queda medido como `auth.revocarSesiones`.
+- Para encontrar las sesiones, la tabla tiene un índice nuevo,
+  `personaId-index`, que proyecta solo claves (como en D-6).
+- No se bajó el caché del autorizador. Sigue siendo de 60 s, y una sesión
+  revocada puede seguir respondiendo hasta ese minuto, igual que un cierre de
+  sesión. En la práctica, lo que pueda haber quedado cacheado para la sesión
+  provisional solo sirve para cambiar la contraseña, y eso exige conocer la
+  nueva.
+
+**Despliegue.** El índice va en un commit propio que se despliega primero.
+Mientras DynamoDB llena un índice nuevo, no se lo puede consultar, y si el
+código llegara en el mismo despliegue, un cambio de contraseña en esa ventana
+respondería 503. El backend y el frontend van juntos (regla 4). Con el frontend
+anterior, el token viejo queda revocado y la persona vuelve a la pantalla de
+ingreso.
 
 ## 4. Hallazgos priorizados
 
@@ -1412,6 +1770,37 @@ Al armar el inventario aparecieron dos cosas:
   la supresión no tenían cómo encontrar los incidentes de alguien sin descifrar
   todos. Ahora se guarda `afectadoRutHmac`, el mismo HMAC con que se busca a la
   persona en su ficha, y la migración lo calcula para los existentes.
+
+### H-15. El Registro AT/EP y la investigación de accidentes traen salud sin el resguardo de los documentos de salud
+**Severidad: media — ABIERTO (decisión de producto pendiente)**
+
+El Registro AT/EP guardado como evidencia lista, por persona en vigilancia, sus
+protocolos y su aptitud laboral; el informe de investigación describe las
+lesiones del accidente. Ninguno de los dos tipos está entre los documentos de
+salud (`lib/documentos-salud.js`), así que los ve y descarga cualquiera con
+acceso a los documentos de la empresa, sin el permiso de vigilancia que exigen
+los exámenes. Desde el 29 de septiembre de 2026 su lectura y descarga quedan en
+la auditoría (D-18), pero quién debe poder verlos es una decisión de producto:
+restringirlos al permiso de vigilancia, o sacar del registro el detalle por
+persona y dejar solo los conteos.
+
+### H-16. Cualquier sesión lista todo el personal de su empresa
+**Severidad: media — ABIERTO, espera decisión de producto. Encontrado el 30 de
+septiembre de 2026 por la prueba de punta a punta, en dev.**
+
+`GET /personas` solo exige sesión: no pide `personas.ver`. Una persona con rol
+`trabajador`, recién enrolada, recibe la lista completa del personal de su
+empresa con RUT, correo y fecha de nacimiento de cada una. Los datos de salud no
+viajan (5.2b), y el aislamiento entre empresas se mantiene. Aun así, es
+bastante más de lo que una trabajadora necesita (checklist 7.5).
+
+No se corrigió en el acto porque unas quince pantallas usan ese listado,
+algunas de uso posible en terreno (por ejemplo, el reporte de incidentes).
+Exigir el permiso sin revisarlas puede dejar a una trabajadora sin poder
+reportar. Hay que decidir qué necesita ver cada rol: probablemente un listado
+mínimo (nombre y cargo) para elegir personas, y la ficha completa solo con
+`personas.ver`. Cuando se decida, la prueba de punta a punta agrega la
+comprobación (hoy verifica solo que la trabajadora no puede dar de alta).
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

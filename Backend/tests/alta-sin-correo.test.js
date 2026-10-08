@@ -140,19 +140,27 @@ test('alta manual sin correo: 201, y la contraseña inicial vuelve a quien la re
 });
 
 test('carga masiva con filas sin correo: se crean todas', async () => {
-    const res = await pedir('POST', '/personas/carga-masiva/confirmar', {
-        filas: [
-            { filaExcel: 2, rut: RUT_SIN_CORREO, nombre: 'Juan', apellidoPaterno: 'Soto', rol: 'Persona trabajadora' },
-            { filaExcel: 3, rut: RUT_SIN_CORREO_2, nombre: 'Pedro', apellidoPaterno: 'Díaz', rol: 'Persona trabajadora', email: '' },
-            { filaExcel: 4, rut: RUT_CON_CORREO, nombre: 'Rosa', apellidoPaterno: 'Vera', rol: 'Persona trabajadora', email: 'rosa@ejemplo.cl' },
-        ],
-    });
-    assert.equal(res.statusCode, 200, res.body);
-    const r = JSON.parse(res.body).data.resultados;
-    assert.equal(r.creados.length, 3, JSON.stringify(r.errores));
-    assert.equal(r.errores.length, 0);
-    const sinCorreo = doble.items('PERSONAS_TABLE').filter((i) => i.rol === 'Persona trabajadora' && !('email' in i));
-    assert.equal(sinCorreo.length, 2);
+    const cola = require('./doble-cola').crearDobleCola();
+    try {
+        const res = await pedir('POST', '/personas/carga-masiva/confirmar', {
+            filas: [
+                { filaExcel: 2, rut: RUT_SIN_CORREO, nombre: 'Juan', apellidoPaterno: 'Soto', rol: 'Persona trabajadora' },
+                { filaExcel: 3, rut: RUT_SIN_CORREO_2, nombre: 'Pedro', apellidoPaterno: 'Díaz', rol: 'Persona trabajadora', email: '' },
+                { filaExcel: 4, rut: RUT_CON_CORREO, nombre: 'Rosa', apellidoPaterno: 'Vera', rol: 'Persona trabajadora', email: 'rosa@ejemplo.cl' },
+            ],
+        });
+        assert.equal(res.statusCode, 202, res.body);
+        const { cargaId } = JSON.parse(res.body).data;
+        await cola.drenar();
+        const estado = JSON.parse((await pedir('GET', `/personas/cargas/${cargaId}`)).body).data;
+        assert.equal(estado.creadas, 3, JSON.stringify(estado.filasFallidas));
+        assert.equal(estado.fallidas, 0);
+        assert.equal(estado.estado, 'completada');
+        const sinCorreo = doble.items('PERSONAS_TABLE').filter((i) => i.rol === 'Persona trabajadora' && !('email' in i));
+        assert.equal(sinCorreo.length, 2);
+    } finally {
+        cola.restaurar();
+    }
 });
 
 // ─── Entrar y recuperar ──────────────────────────────────────────────────────

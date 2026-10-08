@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { FiCamera, FiCheckCircle } from 'react-icons/fi';
+import type { PageHeaderTab } from './PageHeader';
 
 export interface IdentityMetaItem {
     label: string;
@@ -40,6 +41,14 @@ export interface IdentityPanelProps {
     actions?: React.ReactNode;
     /** Presente = la imagen es editable desde esta pantalla. */
     photo?: IdentityPhotoControl;
+    /**
+     * Secciones de la ficha. Van en la misma línea que las acciones, apoyadas
+     * en la regla inferior de la credencial, como en el PageHeader con pestañas.
+     */
+    tabs?: PageHeaderTab[];
+    activeTab?: string;
+    onTabChange?: (id: string) => void;
+    tabsLabel?: string;
 }
 
 /**
@@ -57,17 +66,32 @@ export interface IdentityPanelProps {
  */
 export default function IdentityPanel({
     eyebrow, title, image, fallback, media = 'portrait',
-    status, meta = [], actions, photo,
+    status, meta = [], actions, photo, tabs, activeTab, onTabChange, tabsLabel,
 }: IdentityPanelProps) {
+    const conTabs = !!tabs && tabs.length > 0;
     const fileRef = useRef<HTMLInputElement>(null);
     const [hover, setHover] = useState(false);
     const editable = !!photo;
     const busy = !!photo?.saving;
 
     const changeLabel = photo?.changeLabel ?? 'Cambiar foto';
-    const removeLabel = photo?.removeLabel ?? 'Quitar foto';
+    const removeLabel = photo?.removeLabel ?? 'Eliminar foto';
 
     const pick = () => { if (editable && !busy) fileRef.current?.click(); };
+
+    // La foto se cambia tocando el retrato (lo dice el ícono de cámara); como
+    // botón aparte solo queda eliminarla, que no tiene otro gesto.
+    const quitar = editable && image && photo?.onRemove;
+    const acciones = (actions || quitar) ? (
+        <div className="idp-actions">
+            {quitar && (
+                <button type="button" className="btn btn-ghost btn-sm idp-remove" onClick={photo!.onRemove} disabled={busy}>
+                    {busy ? 'Guardando…' : removeLabel}
+                </button>
+            )}
+            {actions}
+        </div>
+    ) : null;
 
     const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -76,7 +100,7 @@ export default function IdentityPanel({
     };
 
     return (
-        <header className="idp">
+        <header className={`idp${conTabs ? ' idp--con-tabs' : ''}`}>
             <div className="idp-main">
                 {/* ── Retrato ── */}
                 <div
@@ -93,6 +117,9 @@ export default function IdentityPanel({
                         {image
                             ? <img src={image} alt={`Imagen de ${title}`} className="idp-portrait-img" />
                             : <span className="idp-portrait-fallback" aria-hidden="true">{fallback}</span>}
+                        {editable && !busy && (
+                            <span className="idp-portrait-badge" aria-hidden="true"><FiCamera size={13} /></span>
+                        )}
                         {editable && (
                             <span className={`idp-portrait-overlay${hover || busy || photo?.success ? ' is-visible' : ''}`}>
                                 {busy
@@ -128,23 +155,31 @@ export default function IdentityPanel({
                         </dl>
                     )}
 
-                    {(actions || editable) && (
-                        <div className="idp-actions">
-                            {editable && (
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={pick} disabled={busy}>
-                                    <FiCamera size={13} /> {busy ? 'Guardando…' : changeLabel}
-                                </button>
-                            )}
-                            {editable && image && photo?.onRemove && (
-                                <button type="button" className="btn btn-ghost btn-sm idp-remove" onClick={photo.onRemove} disabled={busy}>
-                                    {removeLabel}
-                                </button>
-                            )}
-                            {actions}
-                        </div>
-                    )}
+                    {!conTabs && (acciones)}
                 </div>
             </div>
+
+            {conTabs && (
+                <div className="idp-bar">
+                    <div className="idp-tabs" role="tablist" aria-label={tabsLabel ?? 'Secciones'}>
+                        {tabs!.map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                role="tab"
+                                className="idp-tab"
+                                aria-selected={tab.id === activeTab}
+                                onClick={() => onTabChange?.(tab.id)}
+                            >
+                                {tab.icon}
+                                {tab.label}
+                                {tab.badge !== undefined && <span className="idp-tab-badge">{tab.badge}</span>}
+                            </button>
+                        ))}
+                    </div>
+                    {acciones}
+                </div>
+            )}
         </header>
     );
 }

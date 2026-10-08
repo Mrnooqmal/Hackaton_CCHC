@@ -4,6 +4,21 @@ const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired } = require('../../lib/utils/validation');
 const { ensureDefaultHealthSurvey, idEncuestaSalud } = require('../../lib/health/healthSurvey');
+const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
+
+/**
+ * Las respuestas de la ficha de salud que se entregan quedan en la auditoría.
+ * Cuenta solo a quien viaja CON respuestas: sin el permiso de vigilancia se
+ * quitan y queda `respondedAt`, que no es salud.
+ */
+const anotarRespuestasSalud = (encuestas, tenantId) => {
+    for (const e of encuestas) {
+        if (!e || e.surveyId !== idEncuestaSalud(tenantId)) continue;
+        const titulares = (e.recipients || []).filter((r) => r.responses).map((r) => r.personaId || r.workerId).filter(Boolean);
+        if (titulares.length) anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.RESPUESTAS, titulares, documentos: [e.surveyId] });
+    }
+    return encuestas;
+};
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { eventBus } = require('../../lib/events/EventBus');
@@ -346,7 +361,7 @@ module.exports.list = async (event) => {
 /**
  * GET /surveys/{id} - Obtener detalle de encuesta
  */
-module.exports.get = async (event) => {
+module.exports.get = conAuditoriaSalud(async (event) => {
     try {
         const ses = conSesion(event);
         if (!ses.ok) return ses.respuesta;
@@ -390,6 +405,7 @@ module.exports.get = async (event) => {
             });
         }
 
+        anotarRespuestasSalud([{ surveyId: encuesta.surveyId, recipients }], sesion.tenantId);
         return success({
             ...visible,
             recipients,
@@ -400,7 +416,7 @@ module.exports.get = async (event) => {
         console.error('Error getting survey:', err);
         return error(err.message || 'Error interno al obtener encuesta', 500);
     }
-};
+});
 
 /**
  * POST /surveys/{id}/responses/{workerId} - Actualizar estado/respuestas de un trabajador

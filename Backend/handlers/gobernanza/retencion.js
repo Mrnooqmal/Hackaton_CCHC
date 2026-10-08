@@ -134,15 +134,24 @@ async function extenderBloqueos({ bucket, tenantId, conservarHasta, aSuprimir = 
 const contar = (lista, clave) => lista.reduce((acc, x) => { const k = clave(x); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
 
 /** Plan y bloqueos de UNA empresa. Exportada para las pruebas. */
-async function procesarEmpresa(empresa, { hoy = new Date(), config = configDesdeEntorno() } = {}) {
-    const tenantId = empresa.tenantId;
-    const registros = await cargarEmpresa(tenantId);
+/**
+ * Solo el cálculo: carga la empresa y devuelve el plan, sin guardar nada ni
+ * tocar bloqueos. Lo usan este proceso y los lotes de supresión, que lo
+ * recalculan al aprobar y al ejecutar para verificar que nada cambió.
+ */
+async function calcularPlan(empresa, { hoy = new Date(), config = configDesdeEntorno() } = {}) {
+    const registros = await cargarEmpresa(empresa.tenantId);
     const previo = planDeRetencion({ personas: registros.PERSONAS_TABLE, registros, empresa, hoy, config });
     const vencidas = previo.personas.filter((p) => p.estado === 'vencida').map((p) => p.personaId);
-    if (vencidas.length) registros.INBOX_TABLE = await cargarBandeja(vencidas);
-    const plan = vencidas.length
-        ? planDeRetencion({ personas: registros.PERSONAS_TABLE, registros, empresa, hoy, config })
-        : previo;
+    if (!vencidas.length) return previo;
+    registros.INBOX_TABLE = await cargarBandeja(vencidas);
+    return planDeRetencion({ personas: registros.PERSONAS_TABLE, registros, empresa, hoy, config });
+}
+
+async function procesarEmpresa(empresa, { hoy = new Date(), config = configDesdeEntorno() } = {}) {
+    const tenantId = empresa.tenantId;
+    const plan = await calcularPlan(empresa, { hoy, config });
+    const vencidas = plan.personas.filter((p) => p.estado === 'vencida').map((p) => p.personaId);
 
     const bloqueos = await extenderBloqueos({
         bucket: process.env.EVIDENCIA_BUCKET, tenantId, conservarHasta: plan.archivos.conservarHasta, aSuprimir: plan.archivos.suprimir, hoy, config,
@@ -212,4 +221,5 @@ module.exports.retencionDiaria = async () => {
     return resultado;
 };
 
+module.exports.calcularPlan = calcularPlan;
 module.exports._interno = { procesarEmpresa, cargarEmpresa, extenderBloqueos, LECTURA, FUENTES };
