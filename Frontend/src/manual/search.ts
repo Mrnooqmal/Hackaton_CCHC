@@ -9,6 +9,8 @@
 import MiniSearch from 'minisearch';
 import GithubSlugger from 'github-slugger';
 import { allDocs } from './content';
+import { permisoDePagina } from './manualNav';
+import { permisosDeLinea, cierraSeccion, type Permisos } from './filtro';
 
 export interface SearchResult {
     /** Página (ruta relativa a /manual). */
@@ -29,6 +31,9 @@ interface Seccion {
     titulo: string;
     pagina: string;
     text: string;
+    /** Permisos de la página y de la sección: hay que pasar los dos filtros. */
+    permisoPagina: Permisos;
+    permisoSeccion: Permisos;
 }
 
 // Quita marcas markdown para el índice y los snippets (texto plano legible).
@@ -51,8 +56,10 @@ const textoEncabezado = (md: string) => md.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1
 function seccionesDe(slug: string, pagina: string, body: string): Seccion[] {
     const slugger = new GithubSlugger();
     const secciones: Seccion[] = [];
-    let actual = { anchor: null as string | null, titulo: pagina, lineas: [] as string[] };
+    const permisoPagina = permisoDePagina(slug);
+    let actual = { anchor: null as string | null, titulo: pagina, lineas: [] as string[], permiso: undefined as Permisos };
     let enCodigo = false;
+    let solo: Permisos;
 
     const cerrar = () => {
         const text = toPlain(actual.lineas.join('\n'));
@@ -60,17 +67,22 @@ function seccionesDe(slug: string, pagina: string, body: string): Seccion[] {
             secciones.push({
                 id: actual.anchor ? `${slug}#${actual.anchor}` : slug,
                 slug, anchor: actual.anchor, titulo: actual.titulo, pagina, text,
+                permisoPagina, permisoSeccion: actual.permiso,
             });
         }
     };
 
     for (const linea of body.split('\n')) {
         if (/^```/.test(linea.trim())) enCodigo = !enCodigo;
+        // Secciones restringidas: el subtítulo que abre adentro hereda el permiso.
+        const permisos = !enCodigo && permisosDeLinea(linea);
+        if (permisos) { solo = permisos; continue; }
+        if (!enCodigo && cierraSeccion(linea)) { solo = undefined; continue; }
         const m = !enCodigo && /^(#{2,3})\s+(.+?)\s*$/.exec(linea);
         if (m) {
             cerrar();
             const titulo = textoEncabezado(m[2]);
-            actual = { anchor: slugger.slug(titulo), titulo, lineas: [] };
+            actual = { anchor: slugger.slug(titulo), titulo, lineas: [], permiso: solo };
             continue;
         }
         // El título de la página (H1) ya va en `pagina`.
@@ -113,12 +125,20 @@ function makeSnippet(s: Seccion, query: string): string {
     return (start > 0 ? '…' : '') + text.slice(start, start + 140).trim() + '…';
 }
 
-export function searchManual(query: string, limit = 10): SearchResult[] {
+/**
+ * @param puede filtro de permisos del manual (ver `filtro.tsx`): las secciones que
+ *              la persona no ve tampoco aparecen como resultado.
+ */
+export function searchManual(query: string, limit = 10, puede: (p: Permisos) => boolean = () => true): SearchResult[] {
     const q = query.trim();
     if (q.length < 2) return [];
+    const visible = (r: { id: string }) => {
+        const s = porId.get(r.id)!;
+        return puede(s.permisoPagina) && puede(s.permisoSeccion);
+    };
     // Si ninguna sección tiene todas las palabras, se aceptan las que tengan alguna.
-    let hits = mini.search(q);
-    if (hits.length === 0) hits = mini.search(q, { combineWith: 'OR' });
+    let hits = mini.search(q).filter(visible);
+    if (hits.length === 0) hits = mini.search(q, { combineWith: 'OR' }).filter(visible);
     return hits.slice(0, limit).map((r) => {
         const s = porId.get(r.id as string)!;
         return { slug: s.slug, anchor: s.anchor, title: s.titulo, page: s.pagina, snippet: makeSnippet(s, q) };

@@ -6,6 +6,11 @@ export interface NavItem {
     text: string;
     /** Ruta relativa a /manual, sin barra inicial. '' = portada de la sección. */
     link: string;
+    /**
+     * Permisos con los que la página aparece en el menú y el buscador (basta con
+     * uno). Sin permiso, la ven todos. Ver `filtro.tsx`.
+     */
+    permiso?: readonly string[];
 }
 
 export interface NavSection {
@@ -27,7 +32,7 @@ export const MANUAL_SECTIONS: NavSection[] = [
             { text: '¿Qué es Build & Serve?', link: 'guia-inicio/' },
             { text: 'Cómo ingresar', link: 'guia-inicio/instalacion' },
             { text: 'Primeros pasos', link: 'guia-inicio/primeros-pasos' },
-            { text: 'Registro de una empresa', link: 'guia-inicio/onboarding' },
+            { text: 'Registro de una empresa', link: 'guia-inicio/onboarding', permiso: ['empresa.ver'] },
         ],
     },
     {
@@ -50,20 +55,20 @@ export const MANUAL_SECTIONS: NavSection[] = [
         items: [
             { text: 'Resumen de módulos', link: 'modulos/' },
             { text: 'Inicio', link: 'modulos/dashboard' },
-            { text: 'Obras', link: 'modulos/obras' },
-            { text: 'Personas', link: 'modulos/personas' },
-            { text: 'Repositorio', link: 'modulos/documentos' },
-            { text: 'Actividades', link: 'modulos/actividades' },
+            { text: 'Obras', link: 'modulos/obras', permiso: ['obras.ver', 'obras.detalle'] },
+            { text: 'Personas', link: 'modulos/personas', permiso: ['personas.ver'] },
+            { text: 'Repositorio', link: 'modulos/documentos', permiso: ['repositorio.ver'] },
+            { text: 'Actividades', link: 'modulos/actividades', permiso: ['actividades.ver'] },
             { text: 'Encuestas', link: 'modulos/encuestas' },
             { text: 'Firmas', link: 'modulos/firmas' },
             { text: 'Incidentes', link: 'modulos/incidentes' },
-            { text: 'Prescripciones', link: 'modulos/prescripciones' },
-            { text: 'Estructura preventiva', link: 'modulos/estructura-preventiva' },
+            { text: 'Prescripciones', link: 'modulos/prescripciones', permiso: ['repositorio.ver'] },
+            { text: 'Estructura preventiva', link: 'modulos/estructura-preventiva', permiso: ['obras.detalle', 'empresa.ver'] },
             { text: 'Notificaciones', link: 'modulos/bandeja-entrada' },
-            { text: 'Mi Empresa', link: 'modulos/tenants' },
-            { text: 'Onboarding por cargo', link: 'modulos/onboarding-cargos' },
-            { text: 'Catálogos', link: 'modulos/catalogos' },
-            { text: 'Datos personales', link: 'modulos/datos-personales' },
+            { text: 'Mi Empresa', link: 'modulos/tenants', permiso: ['empresa.ver'] },
+            { text: 'Onboarding por cargo', link: 'modulos/onboarding-cargos', permiso: ['cargos.gestionar'] },
+            { text: 'Catálogos', link: 'modulos/catalogos', permiso: ['cargos.gestionar'] },
+            { text: 'Datos personales', link: 'modulos/datos-personales', permiso: ['empresa.derechos_titulares', 'empresa.supresion_datos'] },
             { text: 'Configuración', link: 'modulos/configuracion' },
         ],
     },
@@ -86,4 +91,13 @@ export const MANUAL_SECTIONS: NavSection[] = [
 export function sectionForPath(relPath: string): NavSection | undefined {
     const slug = relPath.split('/').filter(Boolean)[0] || '';
     return MANUAL_SECTIONS.find((s) => s.slug === slug);
+}
+
+/** Permisos de una página (ruta relativa a /manual), o undefined si la ven todos. */
+export function permisoDePagina(relPath: string): readonly string[] | undefined {
+    const rel = relPath.replace(/^\/+|\/+$/g, '');
+    for (const sec of MANUAL_SECTIONS) {
+        for (const it of sec.items) if (it.link.replace(/\/+$/, '') === rel) return it.permiso;
+    }
+    return undefined;
 }

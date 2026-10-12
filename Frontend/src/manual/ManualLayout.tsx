@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FiSearch, FiBookOpen, FiArrowLeft, FiMenu, FiX } from 'react-icons/fi';
-import { MANUAL_SECTIONS } from './manualNav';
+import { MANUAL_SECTIONS, permisoDePagina } from './manualNav';
+import { filtrarMarkdown, useFiltroManual } from './filtro';
+import FiltroManualProvider from './FiltroManualProvider';
+import Callout from './Callout';
 import { getDoc } from './content';
 import { extractHeadings } from './headings';
 import { searchManual, type SearchResult } from './search';
@@ -20,7 +23,8 @@ function ManualSearch() {
     const [q, setQ] = useState('');
     const [open, setOpen] = useState(false);
     const boxRef = useRef<HTMLDivElement>(null);
-    const results: SearchResult[] = useMemo(() => (q ? searchManual(q) : []), [q]);
+    const { puede } = useFiltroManual();
+    const results: SearchResult[] = useMemo(() => (q ? searchManual(q, 10, puede) : []), [q, puede]);
 
     useEffect(() => {
         const onClick = (e: MouseEvent) => {
@@ -70,6 +74,28 @@ function ManualSearch() {
     );
 }
 
+/**
+ * Interruptor "Mi rol / Todo el manual". Solo con sesión: sin ella no hay rol
+ * con qué filtrar y se ve todo.
+ */
+function VerTodo() {
+    const { conSesion, verTodo, setVerTodo } = useFiltroManual();
+    if (!conSesion) return null;
+    return (
+        <div className="manual-vertodo">
+            <div className="manual-vertodo__opciones" role="group" aria-label="Qué parte del manual ver">
+                <button type="button" aria-pressed={!verTodo} onClick={() => setVerTodo(false)}>Mi rol</button>
+                <button type="button" aria-pressed={verTodo} onClick={() => setVerTodo(true)}>Todo el manual</button>
+            </div>
+            <p className="manual-vertodo__nota">
+                {verTodo
+                    ? 'Estás viendo el manual completo, también lo que tu rol no usa.'
+                    : 'Solo lo que tu rol puede hacer.'}
+            </p>
+        </div>
+    );
+}
+
 function Sidebar({
     activePath,
     open,
@@ -79,6 +105,7 @@ function Sidebar({
     open: boolean;
     onNavigate: () => void;
 }) {
+    const { puede } = useFiltroManual();
     return (
         <nav
             className={`manual-sidebar${open ? ' is-open' : ''}`}
@@ -93,11 +120,14 @@ function Sidebar({
                 <FiX aria-hidden="true" />
             </button>
             <ManualSearch />
-            {MANUAL_SECTIONS.map((sec) => (
+            <VerTodo />
+            {MANUAL_SECTIONS.map((sec) => ({ sec, items: sec.items.filter((it) => puede(it.permiso)) }))
+                .filter(({ items }) => items.length > 0)
+                .map(({ sec, items }) => (
                 <div key={sec.slug} className="manual-sidebar__group">
                     <p className="manual-sidebar__group-title">{sec.text}</p>
                     <ul>
-                        {sec.items.map((it) => {
+                        {items.map((it) => {
                             const rel = it.link.replace(/\/+$/, '');
                             const active = rel === activePath;
                             return (
@@ -115,16 +145,29 @@ function Sidebar({
                         })}
                     </ul>
                 </div>
-            ))}
+                ))}
         </nav>
     );
 }
 
 export default function ManualLayout() {
+    return (
+        <FiltroManualProvider>
+            <ManualLayoutContenido />
+        </FiltroManualProvider>
+    );
+}
+
+function ManualLayoutContenido() {
     const rel = useRelPath();
     const { hash, pathname } = useLocation();
+    const { puede } = useFiltroManual();
     const doc = rel ? getDoc(rel) : undefined;
-    const headings = useMemo(() => (doc ? extractHeadings(doc.body) : []), [doc]);
+    // El cuerpo ya sin las secciones que la persona no ve: de él salen la página
+    // y el índice "En esta página", para que no apunte a secciones ocultas.
+    const body = useMemo(() => (doc ? filtrarMarkdown(doc.body, puede) : ''), [doc, puede]);
+    const headings = useMemo(() => (doc ? extractHeadings(body) : []), [doc, body]);
+    const paginaOculta = Boolean(doc) && !puede(permisoDePagina(rel));
     const contentRef = useRef<HTMLDivElement>(null);
     const [menuOpen, setMenuOpen] = useState(false);
 
@@ -208,7 +251,19 @@ export default function ManualLayout() {
                     {!rel ? (
                         <ManualHome />
                     ) : doc ? (
-                        <ManualPage doc={doc} />
+                        <>
+                            {paginaOculta && (
+                                <div className="manual-prose">
+                                    <Callout type="info" title="Esta página no es de tu rol">
+                                        <p>
+                                            Describe funciones que tu rol no tiene, por eso no aparece en el menú.
+                                            Si las necesitas, pídele el permiso al administrador de tu empresa.
+                                        </p>
+                                    </Callout>
+                                </div>
+                            )}
+                            <ManualPage doc={doc} body={body} />
+                        </>
                     ) : (
                         <div className="manual-prose">
                             <h1>Página no encontrada</h1>

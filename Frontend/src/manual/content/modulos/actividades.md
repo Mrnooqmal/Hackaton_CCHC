@@ -42,6 +42,7 @@ calendario.
 | Simulacro de Emergencia | Simulacros programados |
 | Otra actividad | Casos no contemplados; el detalle va en el título y la descripción |
 
+:::: solo actividades.crear
 ## Programar una actividad nueva
 
 1. Toca **Nueva actividad**. Se abre una pantalla completa con varias secciones.
@@ -103,7 +104,9 @@ marcar uno se despliega su permiso, con:
 ![Permiso de trabajo en altura con su lista de verificación](/img/actividades/permiso-trabajo.png)
 
 El permiso queda guardado en la actividad y aparece en su reporte.
+::::
 
+:::: solo actividades.planificar
 ## Planificar el mes completo
 
 En lugar de crear las actividades una a una, quien tenga el permiso **Planificar el mes**
@@ -131,6 +134,7 @@ Los **sábados y domingos se excluyen automáticamente** (días no trabajados).
 > Cada borrador es **independiente**: el detalle de un día no se copia a los demás. Así,
 > la charla del lunes puede tratar un tema distinto a la del martes. Si vuelves a generar el
 > plan sobre el mismo rango, los días ya planificados no se duplican.
+::::
 
 ### Completar un borrador (el responsable)
 

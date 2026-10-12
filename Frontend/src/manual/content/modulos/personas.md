@@ -16,6 +16,7 @@ Lo que ves en **Personas** depende de dónde estás:
 
 ![Directorio de personas con los botones Nueva persona y Carga masiva](/img/personas/listado.png)
 
+:::: solo personas.crear
 ## Agregar una persona
 
 1. En la vista de empresa, toca **Nueva persona**.
@@ -41,7 +42,9 @@ de firma. Si no tiene correo, no recibe ningún aviso: **díselo en persona**.
 > **Rol ≠ Cargo.** El **rol** es el nivel de acceso en la plataforma. El **cargo** es su oficio
 > en obra y define qué documentos y capacitaciones de seguridad le corresponden. Una persona
 > tiene un rol y puede tener uno o más cargos.
+::::
 
+:::: solo personas.crear
 ## Carga masiva
 
 Para registrar a muchas personas de una vez, en la vista de empresa toca **Carga masiva**. Son
@@ -62,6 +65,7 @@ tres pasos:
 Abajo, **Cargas recientes** muestra las cargas anteriores.
 
 ![Carga masiva: descargar la plantilla y subir el archivo](/img/personas/carga-masiva.png)
+::::
 
 ## El equipo de una obra
 
@@ -115,6 +119,7 @@ Arriba están **Editar** y **Exportar ficha**.
 
 ![Ficha de una persona](/img/personas/ficha.png)
 
+:::: solo persona.epp
 ### Registrar una entrega de EPP
 
 La entrega de elementos de protección personal sigue el **Art. 13** del DS 44 y **no la declara
@@ -135,25 +140,32 @@ el trabajador**:
 
 Si el catálogo de EPP está vacío, primero agrega los elementos en
 [Mi Empresa → EPP](/modulos/tenants#epp).
+::::
 
+:::: solo persona.vigilancia_salud
 ### Vigilancia de salud
 
 Quien tiene el permiso **Editar vigilancia de salud** registra si la persona está **En
 vigilancia**, sus **Protocolos** (por ejemplo PLANESI, ruido, sílice), el **Último examen**, su
 **Aptitud laboral** y sus **Restricciones**. Son datos de salud: los ve solo quien tiene ese
 permiso.
+::::
 
+:::: solo persona.restablecer_pin
 ### Restablecer el PIN
 
 Si la persona olvidó su PIN, quien tiene el permiso **Restablecer PIN de firma** (por defecto,
 solo el administrador) toca **Restablecer PIN** en la ficha y escribe el **motivo**. La persona
 recibe un aviso con tu nombre y el motivo, y crea uno nuevo desde **Configuración**.
+::::
 
+:::: solo persona.desvincular
 ### Eliminar a alguien de la empresa
 
 **Eliminar persona** la desvincula de la empresa y de todas sus obras. **No se puede
 deshacer**, y por eso pide escribir una confirmación. Sus firmas y documentos se conservan para
 una eventual fiscalización.
+::::
 
 ## Preguntas frecuentes
 

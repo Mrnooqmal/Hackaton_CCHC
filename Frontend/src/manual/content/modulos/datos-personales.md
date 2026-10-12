@@ -16,6 +16,7 @@ plazo**. En la plataforma eso se hace en **Mi Empresa**, en dos pestañas:
 Ambos permisos se pueden delegar, por ejemplo a Recursos Humanos, desde
 [Mi Empresa → Roles y permisos](/modulos/tenants#roles-y-permisos).
 
+:::: solo empresa.derechos_titulares
 ## Solicitudes de los titulares
 
 ![Solicitudes de los titulares](/img/tenants/datos-personales.png)
@@ -67,7 +68,9 @@ Si la respuesta implica borrar datos, toca **Proponer lote de supresión**: los 
 bloqueados hasta que el borrado se ejecute en un lote aprobado por dos personas.
 
 El **Historial** de cada solicitud registra cada paso y **no se puede editar ni borrar**.
+::::
 
+:::: solo empresa.supresion_datos
 ## Supresiones
 
 Borrar datos personales es **irreversible**, incluidos los archivos y todas sus versiones. Por
@@ -90,6 +93,7 @@ Los estados de un lote son: **Por aprobar**, **Aprobado, por ejecutar**, **Ejecu
 > Si los datos **cambian** entre que se propone y se ejecuta, el lote queda **Desactualizado**:
 > no se puede aprobar ni ejecutar, y hay que proponer uno nuevo. Así se borra exactamente lo
 > que se aprobó.
+::::
 
 ## Preguntas frecuentes
 

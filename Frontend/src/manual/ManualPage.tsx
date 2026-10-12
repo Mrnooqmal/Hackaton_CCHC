@@ -51,8 +51,9 @@ const components = {
     },
 };
 
-export default function ManualPage({ doc }: { doc: ManualDoc }): ReactNode {
-    const md = normalizeVitepressContainers(doc.body);
+/** `body`: el markdown ya filtrado según el rol (ver `filtro.tsx`); si falta, el completo. */
+export default function ManualPage({ doc, body }: { doc: ManualDoc; body?: string }): ReactNode {
+    const md = normalizeVitepressContainers(body ?? doc.body);
     return (
         <article className="manual-prose">
             <ReactMarkdown

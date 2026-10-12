@@ -35,6 +35,7 @@ respuestas, y puedes tocar **Actualizar respuesta** (se vuelve a firmar).
 
 > Para enviar la respuesta necesitas conexión, porque se firma con tu PIN.
 
+:::: solo encuestas.crear
 ## Crear una encuesta (gestor)
 
 1. Entra a **Encuestas** y haz clic en **Nueva encuesta**.
@@ -54,7 +55,9 @@ respuestas, y puedes tocar **Actualizar respuesta** (se vuelve a firmar).
 3. Toca **Crear encuesta**. Cada destinatario recibe el aviso en sus notificaciones.
 
 ![Nueva encuesta con información general, audiencia y preguntas](/img/encuestas/nueva-encuesta.png)
+::::
 
+:::: solo encuestas.crear
 ## Revisar resultados
 
 En **Encuestas creadas** verás un resumen con indicadores:
@@ -74,6 +77,7 @@ la lista de destinatarios con quién respondió y cuándo.
 ![Encuestas creadas con sus indicadores y el botón Ver detalles](/img/encuestas/creadas.png)
 
 ![Detalle de una encuesta con los resultados por pregunta](/img/encuestas/resultados.png)
+::::
 
 ## La Ficha Básica de Salud
 

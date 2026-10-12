@@ -25,6 +25,7 @@ pueden constituir igual, como voluntarios.
 Cada órgano aparece con su estado: **Obligatorio · pendiente** si falta constituirlo, **No
 obligatorio**, o **Mandato vencido** si ya pasó su período.
 
+:::: solo obras.crear empresa.ver
 ## Constituir un órgano
 
 Constituir y administrar órganos requiere los permisos **Crear obra** o **Ver Mi Empresa** (por
@@ -61,6 +62,7 @@ Se abre el formulario, en tres pasos:
 > La plataforma **no verifica** que las personas cumplan los requisitos legales del cargo ni que
 > la designación sea válida: eso es responsabilidad de la empresa. Aquí se registra quién
 > integra el órgano.
+::::
 
 ## La ficha del órgano
 

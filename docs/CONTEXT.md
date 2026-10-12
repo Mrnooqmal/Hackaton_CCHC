@@ -702,6 +702,14 @@ reflejadas aquí). Estructura S3: un bucket con aislamiento por prefijo
   `docs/manual-usuario`): si cambias una pantalla, revisa su página. La ayuda contextual
   del header (`MANUAL_SECTION` en `components/Header.tsx`) lleva de cada ruta a su página.
   Capturas en `Frontend/public/manual-img/` (convenciones en su `LEEME.txt`).
+  **El manual se filtra según los permisos de quien lo ve** (`manual/filtro.ts`,
+  `FiltroManualProvider.tsx`): por permiso y no por nombre de rol, porque cada empresa
+  ajusta sus roles. Solo oculta (menú, buscador, "En esta página" y la sección dentro de
+  la página); nada se bloquea, una página oculta abierta por enlace se ve con un aviso.
+  Interruptor "Mi rol / Todo el manual" (se recuerda en `localStorage`); sin sesión se ve
+  todo. Página: `permiso` en `manualNav.ts`. Sección: envolverla, desde su subtítulo, en
+  `:::: solo permiso.uno permiso.dos` … `::::` (cuatro dos puntos para no chocar con los
+  avisos `:::`; basta con uno de los permisos; no se anidan).
 - **Historia reciente relevante** (git): planificación diaria de charlas (spec, ver
   §11); onboarding por cambio de cargo (`reconcileCargoDocs`); permisos de
   asignación de docs; resumen de firmas que cuenta también firmados; transferencia

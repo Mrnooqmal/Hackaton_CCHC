@@ -49,6 +49,7 @@ otras firmas del mismo documento. Desde ahí puedes **Descargar comprobante**.
 
 ![Detalle de una firma del historial, con su comprobante](/img/firmas/historial.png)
 
+:::: solo obra.firma_asistida
 ## Firma asistida
 
 Hay personas que no firman desde su propio equipo, por ejemplo en terreno. En ese caso, quien
@@ -72,6 +73,7 @@ abre la firma en **su** equipo y le pasa el teléfono a la persona:
    ![Firma asistida: la persona escribe su PIN](/img/firmas/firma-asistida-pin.png)
 
 Queda registrado que la persona declaró haber leído el documento antes de firmar.
+::::
 
 ## Firma del relator
 

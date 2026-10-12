@@ -62,6 +62,7 @@ y quién falta), la **difusión** y el historial de **versiones**. Desde ahí ta
 
 El botón de **exportar** abre el reporte imprimible del formulario en una pestaña nueva.
 
+:::: solo repositorio.subir
 ## Subir un documento
 
 Quien tiene permiso para subir documentos ve el botón **Subir documento**:
@@ -79,7 +80,9 @@ procedimientos, actas) conviene cargarlos desde **Detalle de obra**, en el requi
 corresponde: así quedan asociados a ese requisito, con su fecha y sus firmantes. Ver
 [Obras](/modulos/obras#cargar-un-documento-y-pedir-las-firmas).
 :::
+::::
 
+:::: solo repositorio.subir obra.subir_documentos
 ## Publicar una nueva versión
 
 Los documentos que se revisan periódicamente (matriz de riesgos, procedimientos, reglamento
@@ -103,6 +106,7 @@ Al publicar:
   [Mis firmas](/modulos/firmas).
 - Se avisa a la **línea de mando** (administración, jefatura de obra, supervisión y
   prevención) y a los **representantes de los trabajadores** (comité paritario, delegado).
+::::
 
 ## Vigencia
 

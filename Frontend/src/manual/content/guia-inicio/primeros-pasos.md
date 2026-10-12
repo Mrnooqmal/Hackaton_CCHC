@@ -48,6 +48,7 @@ Solo verás las opciones que tu rol permite. En la barra superior están además
 
 En el teléfono, el menú se abre con el botón de **tres líneas** arriba a la izquierda.
 
+:::: solo empresa.ver obras.crear
 ## Poner una obra en marcha
 
 Este es el orden recomendado la primera vez. Los pasos 1 y 2 se hacen en la **vista de
@@ -74,6 +75,7 @@ empresa**; el resto, **dentro de la obra**.
 Mi Empresa → Personas → Crear obra → Equipo de la obra
    → Documentos y firmas → Actividades → Seguimiento del cumplimiento
 ```
+::::
 
 ## Tu pantalla de Inicio
 

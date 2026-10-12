@@ -22,6 +22,7 @@ El estado **no se elige a mano**: sale del plazo y de la evidencia. Puedes filtr
 > Si no hay prescripciones registradas, el requisito correspondiente del formulario de
 > fiscalización (ítem 58) está **cumplido**: no hay nada pendiente de implementar.
 
+:::: solo obras.crear empresa.ver
 ## Registrar una prescripción
 
 1. Toca **Registrar prescripción**.
@@ -35,7 +36,9 @@ El estado **no se elige a mano**: sale del plazo y de la evidencia. Puedes filtr
 3. Toca **Registrar**.
 
 ![Registrar prescripción](/img/prescripciones/registrar.png)
+::::
 
+:::: solo obras.crear empresa.ver
 ## Registrar la implementación
 
 1. En la prescripción, toca **Registrar implementación**.
@@ -45,6 +48,7 @@ El estado **no se elige a mano**: sale del plazo y de la evidencia. Puedes filtr
 
 > **Sin evidencia adjunta no se puede dar por implementada.** La plataforma guarda el respaldo;
 > que demuestre la implementación es responsabilidad de quien lo sube.
+::::
 
 ## Preguntas frecuentes
 

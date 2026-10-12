@@ -21,6 +21,7 @@ y alternar entre vista de **tarjetas** y de **tabla**.
 
 Si todavía no hay obras, verás *"Sin obras registradas"* con un botón para crear la primera.
 
+:::: solo obras.crear
 ## Crear una obra
 
 1. En **Obras**, toca **Nueva obra**.
@@ -43,6 +44,7 @@ Si todavía no hay obras, verás *"Sin obras registradas"* con un botón para cr
 
 > Si una característica cambia, la puedes corregir después: desde **Editar obra** o
 > respondiendo **Sí / No** en el requisito correspondiente del DS 44.
+::::
 
 ## La ficha de la obra
 
@@ -113,6 +115,7 @@ certificado de una capacitación externa, puedes programarla en
 
 Los estados se explican en [Estados de cumplimiento](/ds44/fases-obra#estados-de-cada-requisito).
 
+:::: solo obra.subir_documentos
 ### Cargar un documento y pedir las firmas
 
 Al tocar **Cargar** en un requisito:
@@ -129,6 +132,7 @@ Al tocar **Cargar** en un requisito:
 
 **Subir el archivo no es firmarlo**: mientras falten firmas, el requisito queda como
 *Pendiente de firma*.
+::::
 
 ### Módulos de cada fase
 
@@ -145,6 +149,7 @@ obra.
 
 ![Panel de un módulo de la fase Hacer](/img/obras/modulo-fase.png)
 
+:::: solo obra.subir_documentos
 ### Registrar un envío
 
 Algunos documentos no basta con tenerlos: el DS 44 exige **remitirlos** a ciertos destinatarios
@@ -160,6 +165,7 @@ En esos requisitos, **Registrar** abre las **Constancias de envío**:
   observación y el **respaldo** (el acuse de recibo, el acta o la captura del correo).
 
 ![Constancias de envío de un documento](/img/obras/registrar-envio.png)
+::::
 
 ## El equipo de la obra
 

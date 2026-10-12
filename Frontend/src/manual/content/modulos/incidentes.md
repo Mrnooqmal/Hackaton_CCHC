@@ -62,6 +62,7 @@ Busca por descripción y filtra por **gravedad**, **estado de cierre** (abiertos
 Al tocar un evento ves su detalle: etapa, días perdidos, trabajador afectado, evidencias
 fotográficas, quién lo reportó y las investigaciones asociadas.
 
+:::: solo incidentes.reportar incidentes.calificar_accidente
 ### Gestionar un evento
 
 Quien tiene permiso ve la sección **Gestionar**:
@@ -71,6 +72,7 @@ Quien tiene permiso ve la sección **Gestionar**:
   **Estado de cierre** y un comentario de cierre.
 - **Marcar como accidente** — califica un incidente como accidente. Requiere el permiso
   **Calificar accidente**.
+::::
 
 ### Investigaciones
 
@@ -79,6 +81,7 @@ medidas correctivas (Art. 71). Se registran desde **Detalle de obra → Cumplimi
 Verificar → Investigaciones AT/EP**, y sus medidas se siguen en **Actuar → Medidas
 correctivas**. Ver [Obras](/modulos/obras#módulos-de-cada-fase).
 
+:::: solo incidentes.estadisticas
 ## Estadísticas
 
 La pestaña **Estadísticas** muestra el **Consolidado estadístico** de la obra:
@@ -93,6 +96,7 @@ La pestaña **Estadísticas** muestra el **Consolidado estadístico** de la obra
 Puedes descargar el consolidado en **CSV** o **PDF**.
 
 ![Pestaña Estadísticas de Incidentes](/img/incidentes/estadisticas.png)
+::::
 
 ## Preguntas frecuentes
 
