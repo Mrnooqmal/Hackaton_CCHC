@@ -47,6 +47,8 @@ En **Historial**, toca una firma para ver su detalle: estado (**Válida**, o **D
 alguien la cuestionó), fecha y hora, quién la solicitó, el **token de verificación** y las
 otras firmas del mismo documento. Desde ahí puedes **Descargar comprobante**.
 
+![Detalle de una firma del historial, con su comprobante](/img/firmas/historial.png)
+
 ## Firma asistida
 
 Hay personas que no firman desde su propio equipo, por ejemplo en terreno. En ese caso, quien

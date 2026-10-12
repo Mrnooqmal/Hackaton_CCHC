@@ -68,36 +68,41 @@ calendario.
 
 ### Planificación diaria (charlas y ART)
 
-Cuando el tipo es **Charla 5 Minutos** o **ART**, el formulario agrega la sección de
-**planificación diaria**, que estructura el contenido de la jornada:
+Cuando el tipo es **Charla 5 Minutos** o **ART**, el formulario agrega la sección
+**Planificación del día**, que ordena el contenido de la jornada:
 
 - **Tema tratado** *(obligatorio)* — desplegable estandarizado (fraguado, hormigonado,
-  trabajos en altura, etc.), con opción **"Otro"** para temas fuera del catálogo.
-- **Recursos utilizados** *(opcional)* — equipos y herramientas (betonera, andamio,
-  esmeril angular…).
-- **Riesgos comunes** *(opcional)* — caída a desnivel, contacto eléctrico, exposición a
-  sílice, etc.
-- **Medidas de prevención** — uso de EPP, señalización, bloqueo de energías (LOTO), etc.
-- **Tipo de trabajo** (interior/exterior) y **condición climática**. Si el trabajo es
-  **exterior**, aparece el campo de **aplicación de protector solar** (entre septiembre y
-  marzo verás además un aviso de temporada de alta radiación UV).
-- **Observaciones o participación y consulta** — disponible en todos los tipos; en las
-  reuniones del Comité Paritario toma el nombre *"Participación y consulta"*.
+  trabajos en altura…). Si el tema no está, elige **Otro…** y escríbelo.
+- **Recursos utilizados** — equipos y herramientas (betonera, andamio, esmeril angular…).
+- **Riesgos identificados** — caída a desnivel, contacto eléctrico, exposición a sílice…
+- **Medidas de prevención** — uso de EPP, señalización, bloqueo de energías…
+- **Tipo de trabajo** (*Interior* o *Exterior*) y **Condición climática** (*Despejado*,
+  *Parcialmente nublado*, *Nublado* o *Lluvia*). Si el trabajo es **exterior**, aparece
+  **Aplicación de protector solar**; entre septiembre y marzo verás además el aviso
+  *Temporada de alta radiación UV*.
+- **Observaciones** — en las reuniones del Comité Paritario se llama *Participación y
+  consulta*.
+
+![Sección Planificación del día de una charla](/img/actividades/planificacion-dia.png)
 
 > Los desplegables de tema, recursos, riesgos y medidas se alimentan de los
 > [catálogos configurables de tu empresa](#catálogos-de-actividad).
 
 ### Permisos de trabajo especiales
 
-En la misma sección puedes marcar si la jornada involucra **trabajos en altura**,
-**espacios confinados** o **trabajo en caliente**. Al marcar uno, se despliega
-automáticamente su **formulario de permiso de trabajo** con:
+También en charlas y ART está la sección **Permisos de trabajo especiales**, para cuando la
+jornada incluye **Trabajo en altura**, **Espacio confinado** o **Trabajo en caliente**. Al
+marcar uno se despliega su permiso, con:
 
-- Checklist específico del riesgo (ej. altura: arnés inspeccionado, puntos de anclaje
-  definidos, examen de altura vigente…).
-- **Responsable** del permiso, horario y ubicación.
+- **Responsable del permiso** *(obligatorio)*.
+- **Válido desde** y **Válido hasta** *(obligatorios)*.
+- **Ubicación específica** (por ejemplo, *losa piso 4*).
+- **Lista de verificación** *(obligatoria)* del riesgo: arnés inspeccionado, puntos de anclaje
+  definidos, examen de altura vigente… Cada punto se marca, o **N/A** si no aplica.
 
-El permiso queda embebido en la actividad y aparece en el reporte posterior.
+![Permiso de trabajo en altura con su lista de verificación](/img/actividades/permiso-trabajo.png)
+
+El permiso queda guardado en la actividad y aparece en su reporte.
 
 ## Planificar el mes completo
 
@@ -117,6 +122,8 @@ mes**:
    - **Título base**, **hora** y **ubicación** por defecto *(opcionales)* — quedan
      pre-llenados en cada día.
 3. Toca **Generar planificación**.
+
+![Planificar el mes con sus ítems y responsables](/img/actividades/planificar-mes.png)
 
 El sistema crea una actividad en estado **borrador** por cada día hábil y responsable.
 Los **sábados y domingos se excluyen automáticamente** (días no trabajados).
@@ -181,12 +188,15 @@ o **crear una nueva** para ese día.
 Una actividad solo cuenta como **realizada** cuando queda registrada la asistencia de los
 trabajadores. Hay dos formas:
 
-- **Registrar asistencia** (el relator o quien gestiona) — abre la lista de convocados y
-  cada trabajador firma con **su propio PIN**, uno por uno, en ese mismo equipo. Puedes
-  saltar a quien no esté presente. Cuando todos firmaron, verás *"Todos los convocados
-  firmaron."*
+- **Registrar asistencia** (el relator o quien gestiona) — abre la lista **Citados a esta
+  actividad**, donde quien ya firmó aparece como **Ya firmó**. Marca a los presentes (o
+  **Seleccionar todos**) y toca **Firmar N asistencia(s) con PIN**: cada trabajador firma con
+  **su propio PIN**, uno por uno, en ese mismo equipo. Con **Saltar este trabajador** pasas a
+  quien no esté presente. Cuando todos firmaron, verás *"Todos los convocados firmaron."*
 - **Firmar mi asistencia** (el propio trabajador) — cada persona confirma su asistencia con
   su firma desde su cuenta.
+
+![Registrar asistencia: cada trabajador firma con su PIN](/img/actividades/registrar-asistencia.png)
 
 > La firma de asistencia es la evidencia legal de la capacitación. Sin asistencia firmada,
 > la actividad queda como pendiente y **no cuenta** para el cumplimiento de la obra.
@@ -208,6 +218,8 @@ cierre automática. Esto permite registrar a los **trabajadores que llegan más 
 Registrar asistencia y **cerrar** la actividad son dos acciones distintas: firmar no la
 cierra. Cuando terminas, el relator o quien gestiona la cierra con **Cerrar actividad**, en el
 detalle de la actividad. Al cerrarla pasa a **Realizada**.
+
+![Detalle de una actividad con el botón Cerrar actividad](/img/actividades/detalle.png)
 
 Para poder cerrar, la actividad debe cumplir dos condiciones (si no, el botón aparece
 deshabilitado e indica el motivo):
@@ -241,6 +253,8 @@ y elige el **motivo**: Permiso, Licencia médica, Falta, Vacaciones u Otro.
 Quedará registrado como ausente **y dejará de contar como pendiente** (ya no aparece en
 rojo). Puedes **quitar** la ausencia si te equivocaste.
 
+![Quién falta por firmar, con la opción de justificar](/img/actividades/pendientes.png)
+
 **Avisos automáticos.** El sistema avisa en las **Notificaciones** de los responsables
 cuando:
 
@@ -261,6 +275,8 @@ En el **detalle** de una actividad realizada encontrarás el **reporte de asiste
   medidas, protector solar, observaciones) y los permisos de trabajo con su checklist.
 
 Usa **Ver reporte** para verlo en pantalla y **Descargar reporte** para bajarlo en PDF.
+
+![Reporte de asistencia con la etiqueta Atraso](/img/actividades/reporte.png)
 
 ### Completar el registro después de la charla
 

@@ -19,12 +19,14 @@ Hay dos miradas del módulo:
    [Notificaciones](/modulos/bandeja-entrada). El aviso te lleva directo a la encuesta.
 2. También la encuentras en **Encuestas → Mis encuestas asignadas**, en el grupo
    **Pendientes**. Cada fila dice cuántas preguntas tiene y hace cuánto te la asignaron.
-3. Tócala para abrir la pantalla de respuesta. Responde cada pregunta; las marcadas como
-   **Obligatoria** no se pueden dejar en blanco.
-4. Toca **Firmar y enviar** e ingresa tu **PIN**. La respuesta queda firmada a tu nombre.
+3. Tócala: se abre la pantalla para responderla.
+4. Responde cada pregunta; las marcadas como obligatorias no se pueden dejar en blanco.
+5. Toca **Firmar y enviar** e ingresa tu **PIN**. La respuesta queda firmada a tu nombre.
 
-Las que ya respondiste pasan al grupo **Respondidas**. Si abres una, ves tus respuestas y
-puedes **actualizar tu respuesta** (se vuelve a firmar).
+   ![Responder encuesta con el botón Firmar y enviar](/img/encuestas/responder.png)
+
+Las que ya respondiste pasan al grupo **Respondidas**. Si abres una, ves su detalle con tus
+respuestas, y puedes tocar **Actualizar respuesta** (se vuelve a firmar).
 
 ![Mis encuestas asignadas, con los grupos Pendientes y Respondidas](/img/encuestas/mis-encuestas.png)
 
@@ -40,13 +42,15 @@ puedes **actualizar tu respuesta** (se vuelve a firmar).
    - **Información general** — el **Título** *(obligatorio)* y una **Descripción**
      *(opcional)* que diga para qué sirve.
    - **Audiencia destino** — a quién le llega:
-     - **Toda la organización**: todas las personas de la empresa.
-     - **Por cargo**: todas las personas con el cargo que elijas.
-     - **Lista personalizada**: eliges a las personas una por una.
-   - **Preguntas** — al menos una. Para cada pregunta eliges el **tipo de respuesta**:
-     **Selección múltiple** (con sus opciones; escribe una nueva en *"+ Agregar opción"*),
-     **Escala 1–N** (defines el valor máximo) o **Pregunta abierta** (respuesta libre).
-     Marca **Obligatoria** si no se puede dejar en blanco.
+     - **Toda la organización**: todos los trabajadores activos **de esta obra**.
+     - **Por cargo**: todas las personas con el **Cargo destino** que elijas.
+     - **Lista personalizada**: eliges a las personas una por una, por nombre o RUT.
+   - **Preguntas** — al menos una. Para cada pregunta escribe su **Título** y elige el **Tipo de
+     respuesta**: **Selección múltiple** (con sus opciones; escribe una nueva en *"+ Agregar
+     opción"*), **Escala (1 a N)** (defines el **Valor máximo**) o **Pregunta abierta** (respuesta
+     libre). Marca **Obligatoria** si no se puede dejar en blanco. Con **Agregar pregunta** sumas
+     otra. Debajo de cada pregunta ves la **Vista previa para el trabajador**: cómo la verá quien
+     responda.
 3. Toca **Crear encuesta**. Cada destinatario recibe el aviso en sus notificaciones.
 
 ![Nueva encuesta con información general, audiencia y preguntas](/img/encuestas/nueva-encuesta.png)
@@ -66,6 +70,10 @@ las tuyas, y con el buscador encuentras una específica.
 Toca **Ver detalles** para abrir la encuesta: ahí están sus preguntas, los resultados de cada
 una (cuántos eligieron cada opción, el promedio de las escalas y las respuestas abiertas) y
 la lista de destinatarios con quién respondió y cuándo.
+
+![Encuestas creadas con sus indicadores y el botón Ver detalles](/img/encuestas/creadas.png)
+
+![Detalle de una encuesta con los resultados por pregunta](/img/encuestas/resultados.png)
 
 ## La Ficha Básica de Salud
 

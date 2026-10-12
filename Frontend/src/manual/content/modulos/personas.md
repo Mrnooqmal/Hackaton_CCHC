@@ -49,7 +49,8 @@ tres pasos:
 
 1. **Subir** — toca **Descargar plantilla Excel**: trae los roles, cargos y obras de tu empresa
    como desplegables. Complétala (una fila por persona; el supervisor de la cuadrilla se indica
-   por su RUT) y súbela. **Subir el archivo no crea a nadie todavía.**
+   por su RUT), arrástrala o búscala en tu equipo y toca **Revisar el archivo**. **Subir el
+   archivo no crea a nadie todavía.**
 2. **Revisar y corregir** — ves cada fila marcada como **Listo**, **Con advertencia** o **Con
    error**. Con **Solo con problemas** te enfocas en lo que hay que arreglar. Si quieres, marca
    **Enviar credenciales por email**.
@@ -59,6 +60,8 @@ tres pasos:
    corrigen en la planilla y se vuelven a cargar.
 
 Abajo, **Cargas recientes** muestra las cargas anteriores.
+
+![Carga masiva: descargar la plantilla y subir el archivo](/img/personas/carga-masiva.png)
 
 ## El equipo de una obra
 
@@ -79,7 +82,7 @@ equipo. Al sumarla eliges su **cargo en esta obra**: de él depende su onboardin
 
 > Para armar cuadrillas, primero tiene que haber al menos un **Supervisor** en la obra.
 
-Cada persona muestra si está **Apta** para ingresar a terreno y su avance de **Onboarding DS
+Cada persona muestra si está **Apto** para ingresar a terreno y su avance de **Onboarding DS
 44**. Lo que puedes hacer con ella depende de la vista:
 
 - **En cuadrícula**, toca a la persona y se abre un menú con **Ver perfil**, **Editar**,
@@ -127,6 +130,8 @@ el trabajador**:
 5. Quien tiene el permiso toca **Validar**. Pasa a **Falta firma**.
 6. **Recién entonces** el trabajador firma la recepción con su PIN, en
    [Mis firmas](/modulos/firmas). Queda **Firmado**.
+
+![Nueva entrega de EPP con la capacitación de uso](/img/personas/entrega-epp.png)
 
 Si el catálogo de EPP está vacío, primero agrega los elementos en
 [Mi Empresa → EPP](/modulos/tenants#epp).

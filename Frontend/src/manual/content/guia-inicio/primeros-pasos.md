@@ -79,3 +79,11 @@ Mi Empresa → Personas → Crear obra → Equipo de la obra
 
 Cada vez que entras a una obra, **Inicio** te muestra lo que tienes que hacer: firmas
 pendientes, encuestas por responder y las actividades del día. Ver [Inicio](/modulos/dashboard).
+
+## Enviar una sugerencia
+
+Abajo a la derecha, en todas las pantallas, está el botón redondo de **sugerencias**. Tócalo,
+escribe tu idea, problema o comentario y envíalo: le llega al equipo de Build & Serve y nos ayuda
+a mejorar la plataforma.
+
+![Buzón de sugerencias abierto](/img/guia-inicio/sugerencias.png)

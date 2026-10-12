@@ -24,9 +24,12 @@ seguridad). Se suben o renuevan aquí **una sola vez**.
 A la izquierda está la lista de cargos. Al elegir uno ves su kit: cada **ítem** es algo que el
 DS 44 exige a ese cargo. Puedes **Agregar ítem**, editarlo o eliminarlo.
 
+![Edición de un ítem del kit de onboarding](/img/onboarding/item.png)
+
 Cada ítem tiene:
 
-- **Título** y, si lo usas, un **código** interno (por ejemplo *PR-PO-08*).
+- **Título** y, si lo usas, un **Código EBCO** (por ejemplo *PR-PO-08*).
+- **Naturaleza** — *Procedimiento corporativo*, *Derivado del MIPER* o *Evidencia individual*.
 - **Acción de onboarding** — qué tiene que pasar para darlo por cumplido:
 
   | Acción | Qué significa |
@@ -48,7 +51,8 @@ Cada ítem tiene:
 - **Matriz de EPP** *(en ítems de entrega de EPP)* — los elementos que corresponden al cargo.
   Marca como **Crítico** el que debe entregarse antes de entrar a la obra.
 
-Con **Subir documento** cargas el archivo de un ítem de alcance empresa.
+Guarda el ítem con **Guardar ítem**. Con **Subir documento** cargas el archivo de un ítem de
+alcance empresa.
 
 ## Crear, duplicar y eliminar cargos
 

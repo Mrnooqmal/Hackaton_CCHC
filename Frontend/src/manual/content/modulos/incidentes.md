@@ -92,6 +92,8 @@ La pestaña **Estadísticas** muestra el **Consolidado estadístico** de la obra
 
 Puedes descargar el consolidado en **CSV** o **PDF**.
 
+![Pestaña Estadísticas de Incidentes](/img/incidentes/estadisticas.png)
+
 ## Preguntas frecuentes
 
 **¿Cuál es la diferencia entre hallazgo, incidente y accidente?**

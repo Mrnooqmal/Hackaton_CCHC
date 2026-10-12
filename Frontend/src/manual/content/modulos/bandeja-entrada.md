@@ -30,6 +30,8 @@ Al abrir un mensaje ves su contenido completo. Desde ahí puedes **Marcar como n
 **Archivar** o **Eliminar**. Muchos avisos de la plataforma traen un acceso directo a lo que
 tienes que hacer (por ejemplo, a la encuesta o al documento por firmar).
 
+![Un mensaje abierto, con Archivar y Eliminar](/img/bandeja-entrada/mensaje.png)
+
 ## Enviar un mensaje
 
 1. Toca **Nuevo mensaje**.

@@ -33,7 +33,9 @@ Cuando una persona pide algo sobre sus datos (por correo, carta, en persona en o
    - **Cuándo llegó** — el plazo de respuesta parte **cuando llegó la solicitud**, no cuando se
      registra. **Esta fecha no se puede corregir después.**
    - **Detalle** *(opcional)* — qué pide, en sus palabras.
-3. Guarda.
+3. Toca **Registrar**.
+
+![Registrar la solicitud de un titular](/img/tenants/datos-registrar.png)
 
 ::: warning Algunas solicitudes bloquean los datos
 Si la persona pide **rectificar**, **suprimir**, **oponerse** o **bloquear**, sus datos quedan
@@ -72,9 +74,11 @@ Borrar datos personales es **irreversible**, incluidos los archivos y todas sus 
 eso exige **dos personas**: una **aprueba** el lote viendo exactamente qué se va a borrar, y
 **otra distinta** lo **ejecuta**.
 
-1. Se **propone** un lote. Las supresiones que pide un titular se proponen desde su solicitud;
-   las que corresponden porque venció el plazo de conservación de los datos las propone la
-   plataforma.
+![Pestaña Supresiones](/img/tenants/supresiones.png)
+
+1. Se **propone** un lote. Las supresiones que pide un titular se proponen desde su solicitud.
+   Las que corresponden porque venció el plazo de conservación de los datos se proponen con
+   **Proponer lote de plazos vencidos**.
 2. Quien aprueba revisa las **personas afectadas** y el contenido, y toca **Aprobar este
    contenido**.
 3. **Otra persona** toca **Ejecutar la supresión** y escribe la confirmación.

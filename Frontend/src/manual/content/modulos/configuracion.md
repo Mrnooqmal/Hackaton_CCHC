@@ -17,6 +17,8 @@ Ves tu **RUT**, **Cargo**, **Rol** y **Fecha de nacimiento**. Con **Editar** pue
 
 Mientras editas aparece **Modo edición**; guarda o toca **Cancelar**.
 
+![Edición de tus datos en Configuración](/img/configuracion/editar.png)
+
 El RUT, el cargo y el rol los define tu empresa: si alguno está mal, pídele al administrador que
 lo corrija.
 

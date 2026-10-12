@@ -120,8 +120,12 @@ Al tocar **Cargar** en un requisito:
 1. Selecciona o arrastra el **Archivo** (PDF o imagen, hasta 10 MB).
 2. Indica la **Fecha del hecho**: cuándo ocurrió lo que el documento acredita (la
    capacitación, el simulacro), no el día en que lo subes. Y su fecha de **caducidad**.
-3. Elige a **quiénes firman**. Cada persona elegida lo recibe en
-   [Mis firmas](/modulos/firmas) y lo firma con su PIN.
+3. *(Opcional)* Elige **quiénes deben firmarlo**: personas de la obra, una por una, o **Todas
+   las personas de la obra**. Cada persona elegida lo recibe en [Mis firmas](/modulos/firmas) y
+   lo firma con su PIN.
+4. Toca **Cargar documento**.
+
+![Cargar el documento de un requisito, con fecha y firmantes](/img/obras/cargar.png)
 
 **Subir el archivo no es firmarlo**: mientras falten firmas, el requisito queda como
 *Pendiente de firma*.
@@ -139,15 +143,23 @@ obra.
 | **Verificar** | **Consolidado del período** (siniestralidad, investigaciones, medidas, vigilancia) e **Investigaciones AT/EP** (informes de incidentes graves y fatales, Art. 71). |
 | **Actuar** | **Medidas correctivas**, **Actualizaciones hacia Planificar** (MIPER, programa y reglamento que toca revisar) y **Prescripciones** (Art. 70). |
 
+![Panel de un módulo de la fase Hacer](/img/obras/modulo-fase.png)
+
 ### Registrar un envío
 
 Algunos documentos no basta con tenerlos: el DS 44 exige **remitirlos** a ciertos destinatarios
 (personas trabajadoras, comité paritario o delegado, organizaciones sindicales, línea de mando o
 departamento de prevención, según el documento). Por ejemplo, el reglamento interno se remite
 con anticipación a su entrada en vigencia.
-En esos requisitos, **Registrar** abre las **Constancias de envío**: para cada destinatario
-anotas el **medio**, la **fecha del envío**, una observación y el **respaldo** (el acuse de
-recibo, el acta o la captura del correo).
+En esos requisitos, **Registrar** abre las **Constancias de envío**:
+
+- **Vigencia** — con **Declarar fecha** indicas desde cuándo rige el documento; de esa fecha
+  depende el plazo de anticipación del envío.
+- **Destinatarios** — cada uno aparece como *Sin constancia*, *Enviado*, *Fuera de plazo* o *No
+  aplica*. Con el botón de enviar de cada uno anotas el **medio**, la **fecha del envío**, una
+  observación y el **respaldo** (el acuse de recibo, el acta o la captura del correo).
+
+![Constancias de envío de un documento](/img/obras/registrar-envio.png)
 
 ## El equipo de la obra
 
@@ -156,7 +168,10 @@ El equipo no se arma en la ficha: está en **Personas**, con la obra elegida. Ve
 
 ## Editar, pausar o finalizar
 
-Con **Editar obra** cambias el nombre, el **Estado** y las características DS 44:
+Con **Editar obra** cambias el **Nombre**, el **Estado** y las características DS 44, y guardas
+con **Guardar cambios**:
+
+![Editar obra: nombre, estado y características DS 44](/img/obras/editar.png)
 
 - **Pausada** — los trabajos se detienen temporalmente. Se conserva todo.
 - **Finalizada** — el proyecto terminó. Se conserva todo para consulta.

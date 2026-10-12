@@ -15,6 +15,8 @@ Build & Serve. No hay un formulario público de registro: el enlace es la invita
 
 Al abrir el enlace verás **Activa tu empresa**, en cuatro pasos:
 
+![Activa tu empresa, paso Tus datos](/img/guia-inicio/activar-empresa.png)
+
 1. **Tus datos** — serás quien administre la empresa: nombres, apellidos, tu RUT y fecha de
    nacimiento.
 2. **Empresa** — la **razón social** y el **RUT de la empresa**.

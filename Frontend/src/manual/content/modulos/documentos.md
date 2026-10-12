@@ -42,8 +42,11 @@ subir el archivo.
 ## La carpeta DS44 · Cumplimiento
 
 Muestra el formulario con el que fiscaliza la Dirección del Trabajo, sección por sección. Para
-cada requisito ves su estado y el documento que lo acredita. Puedes buscar por documento o por
-ítem y filtrar por estado.
+cada requisito ves su estado y el documento que lo acredita. Con **Esta obra / Empresa** alternas
+entre los requisitos de la obra y los de la empresa, y puedes buscar por documento o por ítem y
+filtrar por estado.
+
+![Carpeta DS44 · Cumplimiento, ordenada por sección del formulario](/img/documentos/ds44.png)
 
 Al abrir un documento se despliega su detalle: qué requisito **acredita**, la **fecha del
 hecho**, su **vigencia**, la **versión** vigente y quién la subió, las **firmas** (quién firmó
@@ -55,6 +58,8 @@ y quién falta), la **difusión** y el historial de **versiones**. Desde ahí ta
 - **Registrar envío**, cuando el DS 44 obliga a remitir el documento a alguien (por ejemplo,
   el reglamento interno a los sindicatos).
 
+![Detalle de un documento con sus firmas y versiones](/img/documentos/detalle.png)
+
 El botón de **exportar** abre el reporte imprimible del formulario en una pestaña nueva.
 
 ## Subir un documento
@@ -64,7 +69,9 @@ Quien tiene permiso para subir documentos ve el botón **Subir documento**:
 1. Elige el **Tipo de documento**.
 2. Escribe un **Título** y, si quieres, una **Descripción**.
 3. Selecciona el **Archivo** (hasta 10 MB; de preferencia PDF).
-4. Confirma.
+4. Toca **Guardar**.
+
+![Subir documento](/img/documentos/subir.png)
 
 ::: tip Los documentos del DS 44 se cargan desde la obra
 Los documentos que acreditan un requisito (matriz de riesgos, programa preventivo,
@@ -81,10 +88,13 @@ interno) no se reemplazan: se **versionan**. Al tocar **Publicar nueva versión*
 1. Sube el **archivo de la nueva versión**.
 2. Escribe el **motivo** (obligatorio). Por ejemplo: *revisión anual* o *se incorporó el
    riesgo de sílice tras el cambio de faena*.
-3. Indica la **fecha de la revisión**, su **caducidad** y, si corresponde, los
-   **participantes de la revisión**. En el reglamento interno, sin participantes la revisión
-   queda incompleta.
+3. Indica la **fecha de la revisión**, su **caducidad** y marca los **participantes de la
+   revisión** (Departamento de Prevención, Comité Paritario, Delegado SST, organizaciones
+   sindicales). En el reglamento interno, sin participantes la revisión queda incompleta.
 4. Revisa los **firmantes**: por defecto son los de la versión anterior, y puedes agregar más.
+5. Toca **Publicar v2** (o el número de la versión que corresponda).
+
+![Publicar una nueva versión, con el motivo obligatorio](/img/documentos/nueva-version.png)
 
 Al publicar:
 

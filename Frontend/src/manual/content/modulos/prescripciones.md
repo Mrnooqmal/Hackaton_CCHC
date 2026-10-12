@@ -32,7 +32,9 @@ El estado **no se elige a mano**: sale del plazo y de la evidencia. Puedes filtr
    - **La prescripción indica un plazo** — márcalo e indica la fecha. Sin plazo, la medida
      queda pendiente pero no vence.
    - **Documento que la origina** *(opcional)* — el acta, el informe o la carta.
-3. Guarda.
+3. Toca **Registrar**.
+
+![Registrar prescripción](/img/prescripciones/registrar.png)
 
 ## Registrar la implementación
 

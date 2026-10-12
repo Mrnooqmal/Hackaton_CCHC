@@ -47,6 +47,8 @@ Los cinco componentes que el **Art. 22** exige como contenido mínimo:
 Algunos se acreditan subiendo un documento aquí mismo; los otros se acreditan en su módulo y
 aquí solo se enlazan (**Ver**).
 
+![Organizaciones sindicales y Sistema de Gestión en Mi Empresa](/img/tenants/sindicatos-sgsst.png)
+
 ### Estructura preventiva y cumplimiento
 
 Más abajo están la **Estructura preventiva** de la empresa (los órganos que le corresponden
@@ -92,10 +94,14 @@ uno aparece como **Predefinido** (viene de fábrica), **Personalizado** (lo cre�
 Lo que el DS 44 exige a cada cargo (su **kit de onboarding**) se edita en **Onboarding por
 cargo**, el botón de esta pestaña. Ver [Onboarding por cargo](/modulos/onboarding-cargos).
 
+![Pestaña Cargos con el botón Onboarding por cargo](/img/tenants/cargos.png)
+
 ## EPP
 
 El catálogo de **elementos de protección personal** de la empresa. Las entregas de EPP solo
 pueden incluir elementos de este catálogo.
+
+![Pestaña EPP con el catálogo y el botón Nuevo elemento](/img/tenants/epp.png)
 
 1. Toca **Nuevo elemento**.
 2. Escribe el **Nombre del elemento** y, si quieres, una descripción.
@@ -103,15 +109,19 @@ pueden incluir elementos de este catálogo.
    - **Certificado de calidad o registro ISP**.
    - **Instructivo de uso y mantención** (uso, mantenimiento, reposición o recambio).
 
-Puedes guardar un elemento sin sus respaldos, pero quedará marcado como **incompleto** en el
-catálogo y en cada entrega que lo incluya.
+Toca **Guardar elemento**. Puedes guardarlo sin sus respaldos, pero quedará marcado como
+**incompleto** en el catálogo y en cada entrega que lo incluya.
+
+![Nuevo elemento de EPP con sus respaldos obligatorios](/img/tenants/epp-nuevo.png)
 
 ## Ficha de salud
 
-Activa o desactiva la **Ficha Básica de Salud**: un cuestionario de antecedentes de salud que
+Con **Habilitar** o **Deshabilitar** activas o apagas la **Ficha Básica de Salud**: un cuestionario de antecedentes de salud que
 se envía a todo el personal (y a cada persona nueva) como una encuesta más. Las respuestas se
 guardan cifradas y solo las ve quien tiene el permiso de vigilancia de la salud. Ver
 [Encuestas](/modulos/encuestas#la-ficha-básica-de-salud).
+
+![Pestaña Ficha de salud](/img/tenants/ficha-salud.png)
 
 El **Historial** muestra quién la habilitó o deshabilitó y cuándo. No se puede editar.
 
