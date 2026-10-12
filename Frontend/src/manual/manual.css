@@ -190,6 +190,13 @@
 
 .manual-search__results button:hover { background: var(--accent-tint); }
 .manual-search__title { display: block; font-weight: 600; font-size: 0.88rem; }
+.manual-search__page {
+    display: block;
+    margin-top: 0.1rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--accent-text, var(--primary-600));
+}
 .manual-search__snippet {
     display: block;
     font-size: 0.78rem;
@@ -208,6 +215,11 @@
 .manual-prose > *:first-child { margin-top: 0; }
 
 .manual-prose h1 { font-size: 2rem; font-weight: 800; margin: 0 0 1.25rem; line-height: 1.2; }
+/* Al saltar a una sección (buscador, "En esta página"), el subtítulo no queda
+   bajo la barra superior fija del manual. */
+.manual-prose h2,
+.manual-prose h3 { scroll-margin-top: 72px; }
+
 .manual-prose h2 {
     font-size: 1.5rem;
     font-weight: 700;

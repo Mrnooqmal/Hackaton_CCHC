@@ -30,9 +30,9 @@ function ManualSearch() {
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
 
-    const go = (slug: string) => {
+    const go = (r: SearchResult) => {
         setQ(''); setOpen(false);
-        navigate(`/manual/${slug}`);
+        navigate(`/manual/${r.slug}${r.anchor ? `#${r.anchor}` : ''}`);
     };
 
     return (
@@ -45,15 +45,17 @@ function ManualSearch() {
                 value={q}
                 onChange={(e) => { setQ(e.target.value); setOpen(true); }}
                 onFocus={() => setOpen(true)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && results[0]) go(results[0]); if (e.key === 'Escape') setOpen(false); }}
                 aria-label="Buscar en el manual"
             />
             {open && results.length > 0 && (
                 <ul className="manual-search__results">
                     {results.map((r) => (
-                        <li key={r.slug}>
-                            <button type="button" onClick={() => go(r.slug)}>
+                        <li key={`${r.slug}#${r.anchor ?? ''}`}>
+                            <button type="button" onClick={() => go(r)}>
                                 <span className="manual-search__title">{r.title}</span>
-                                <span className="manual-search__snippet">{r.snippet}</span>
+                                {r.anchor && <span className="manual-search__page">{r.page}</span>}
+                                {r.snippet && <span className="manual-search__snippet">{r.snippet}</span>}
                             </button>
                         </li>
                     ))}
@@ -130,7 +132,22 @@ export default function ManualLayout() {
     useEffect(() => {
         if (hash) {
             const el = document.getElementById(decodeURIComponent(hash.slice(1)));
-            if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Las capturas que están sobre la sección cargan después del salto y
+                // empujan el contenido hacia abajo: se vuelve a alinear mientras el
+                // contenido cambia de tamaño, hasta que la persona mueva la página.
+                const alinear = () => el.scrollIntoView({ block: 'start' });
+                const ro = new ResizeObserver(alinear);
+                if (contentRef.current) ro.observe(contentRef.current);
+                const soltar = () => {
+                    ro.disconnect();
+                    ['wheel', 'touchstart', 'keydown'].forEach((t) => window.removeEventListener(t, soltar));
+                };
+                ['wheel', 'touchstart', 'keydown'].forEach((t) => window.addEventListener(t, soltar, { passive: true }));
+                const fin = window.setTimeout(soltar, 2500);
+                return () => { window.clearTimeout(fin); soltar(); };
+            }
         }
         contentRef.current?.scrollTo?.({ top: 0 });
         window.scrollTo({ top: 0 });
