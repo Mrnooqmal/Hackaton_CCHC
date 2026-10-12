@@ -1,50 +1,32 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authApi } from '../api/client';
-import { FiEye, FiEyeOff, FiCheck, FiX, FiAlertCircle } from 'react-icons/fi';
-import { OnboardingShell } from '../components/ui';
-import type { StepperStep } from '../components/ui';
+import {
+  FiEye, FiEyeOff, FiCheck, FiLock, FiUser, FiArrowRight, FiArrowUp, FiLogOut,
+  FiMonitor, FiEdit2, FiKey,
+} from 'react-icons/fi';
+import { AlertBanner, FieldSection, FormPage, PageHeader } from '../components/ui';
+import '../css/AuthCard.css';
+import '../css/cambio-password.css';
 
-const ONBOARDING_STEPS: StepperStep[] = [
-  { id: 'pass', label: 'Contraseña' },
-  { id: 'enroll', label: 'Enrolamiento' },
+// Misma regla que valida el backend (POST /auth/change-password).
+const MIN_PASSWORD = 6;
+
+const PASOS_PRIMER_INGRESO = [
+  { id: 'password', label: 'Contraseña' },
+  { id: 'firma', label: 'Tu firma' },
 ];
 
-function StrengthBar({ password }: { password: string }) {
-  const score = (() => {
-    if (!password) return 0;
-    let s = 0;
-    if (password.length >= 6) s++;
-    if (password.length >= 10) s++;
-    if (/[A-Z]/.test(password)) s++;
-    if (/[0-9]/.test(password)) s++;
-    if (/[^A-Za-z0-9]/.test(password)) s++;
-    return s;
-  })();
-  const label = ['', 'Muy débil', 'Débil', 'Regular', 'Buena', 'Fuerte'][score];
-  const color = ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#16a34a'][score];
-  return (
-    <div className="cp-strength">
-      <div className="cp-strength-bars">
-        {[1, 2, 3, 4, 5].map(i => (
-          <div key={i} className="cp-strength-bar" style={{ background: i <= score ? color : undefined }} />
-        ))}
-      </div>
-      {label && <span className="cp-strength-label" style={{ color }}>{label}</span>}
-    </div>
-  );
-}
+type Campo = 'passwordActual' | 'passwordNuevo' | 'confirmarPassword';
 
-function RuleCheck({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span className={`cp-rule${ok ? ' ok' : ''}`}>
-      {ok ? <FiCheck size={12} strokeWidth={3} /> : <FiX size={12} strokeWidth={3} />}
-      {label}
-    </span>
-  );
-}
-
+/**
+ * Cambio de contraseña con dos caras:
+ *  - Primer ingreso (contraseña temporal o sin enrolar): pantalla completa con la
+ *    tarjeta de acceso, como el login y el alta de empresa. No pide la actual.
+ *  - Desde Configuración: página dentro del sistema, con secciones de formulario.
+ * La lógica (validación, llamada y reemplazo de sesión) es la misma para ambas.
+ */
 export default function ChangePassword() {
   const { user, logout, updateUser, reemplazarSesion } = useAuth();
   const navigate = useNavigate();
@@ -52,30 +34,40 @@ export default function ChangePassword() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorActual, setErrorActual] = useState('');
   const [success, setSuccess] = useState(false);
-  const [show, setShow] = useState({ actual: false, nuevo: false, confirmar: false });
+  const [show, setShow] = useState({ passwordActual: false, passwordNuevo: false, confirmarPassword: false });
   const [capsLock, setCapsLock] = useState(false);
   const [form, setForm] = useState({ passwordActual: '', passwordNuevo: '', confirmarPassword: '' });
 
-  const newRef = useRef<HTMLInputElement>(null);
-
-  const minLen = form.passwordNuevo.length >= 6;
+  const minLen = form.passwordNuevo.length >= MIN_PASSWORD;
   const match = form.passwordNuevo === form.confirmarPassword && form.confirmarPassword !== '';
   // En el primer ingreso no se pide la contraseña actual (ya se validó al iniciar sesión).
-  const canSubmit = (isFirstEntry || form.passwordActual) && minLen && match;
+  const canSubmit = Boolean((isFirstEntry || form.passwordActual) && minLen && match);
+  const requisitos = [
+    { label: `${MIN_PASSWORD} caracteres o más`, ok: minLen },
+    { label: 'Coinciden', ok: match },
+  ];
 
   const handleCaps = (e: React.KeyboardEvent) => setCapsLock(e.getModifierState('CapsLock'));
 
+  const cambiar = (campo: Campo, valor: string) => {
+    setForm((f) => ({ ...f, [campo]: valor }));
+    if (error) setError('');
+    if (campo === 'passwordActual' && errorActual) setErrorActual('');
+    if (success) setSuccess(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
-    if (form.passwordNuevo !== form.confirmarPassword) { setError('Las contraseñas no coinciden'); return; }
-    if (form.passwordNuevo.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return; }
-    setLoading(true); setError('');
+    if (!canSubmit || loading) return;
+    setLoading(true); setError(''); setErrorActual('');
+    // Se toma antes del cambio: al reemplazar la sesión el usuario se recalcula.
+    const debeEnrolarse = !user?.habilitado;
     try {
       const response = await authApi.changePassword({
         personaId: user?.personaId || user?.userId || '',
-        ...form
+        ...form,
       });
       if (response.success) {
         const d = response.data;
@@ -87,149 +79,254 @@ export default function ChangePassword() {
         } else {
           updateUser({ passwordTemporal: false } as Parameters<typeof updateUser>[0]);
         }
+        if (isFirstEntry) {
+          // El siguiente paso del primer ingreso es crear la firma.
+          navigate(debeEnrolarse ? '/enroll-me' : '/', { replace: true });
+          return;
+        }
+        setForm({ passwordActual: '', passwordNuevo: '', confirmarPassword: '' });
+        setShow({ passwordActual: false, passwordNuevo: false, confirmarPassword: false });
         setSuccess(true);
-        setTimeout(() => {
-          if (!user?.habilitado) {
-            navigate('/enroll-me', { replace: true });
-          } else {
-            navigate('/', { replace: true });
-          }
-        }, 1800);
+      } else if (response.error === 'Contraseña actual incorrecta') {
+        setErrorActual('No es tu contraseña actual. Revisa mayúsculas y vuelve a intentarlo.');
       } else {
-        setError(response.error || 'Error al cambiar la contraseña');
+        setError(response.error || 'No se pudo cambiar la contraseña.');
       }
     } catch {
-      setError('Error de conexión con el servidor');
+      setError('No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <OnboardingShell
-      user={user}
-      steps={ONBOARDING_STEPS}
-      currentIndex={success ? 1 : 0}
-      completed={success ? ['pass'] : []}
-      sideHint={isFirstEntry
-        ? 'Crea una contraseña segura para proteger tu cuenta. Este paso es obligatorio.'
-        : 'Actualiza tu contraseña de acceso cuando lo necesites.'}
+  const ojo = (campo: Campo) => (
+    <button
+      type="button"
+      className={isFirstEntry ? 'lp-eye-btn' : 'cpw-ojo'}
+      onClick={() => setShow((s) => ({ ...s, [campo]: !s[campo] }))}
+      aria-label={show[campo] ? 'Ocultar contraseña' : 'Mostrar contraseña'}
     >
-          <div className="cp-form-header">
-            <h1 className="cp-title">
-              {isFirstEntry ? 'Crea tu contraseña' : 'Cambio de contraseña'}
-            </h1>
-            <p className="cp-subtitle">
-              {isFirstEntry
-                ? 'Tu contraseña actual es temporal. Por seguridad, debes crear una nueva.'
-                : 'Ingresa tu contraseña actual y la nueva.'}
-            </p>
+      {show[campo] ? <FiEyeOff size={15} /> : <FiEye size={15} />}
+    </button>
+  );
+
+  const inputProps = (campo: Campo, autoComplete: string) => ({
+    type: show[campo] ? 'text' : 'password',
+    value: form[campo],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => cambiar(campo, e.target.value),
+    onKeyDown: handleCaps,
+    onKeyUp: handleCaps,
+    onBlur: () => setCapsLock(false),
+    autoComplete,
+  });
+
+  const listaRequisitos = (className: string) => (
+    <ul className={className} aria-label="Requisitos de la contraseña">
+      {requisitos.map((r) => (
+        <li key={r.label} className={r.ok ? 'onb-req onb-req--ok' : 'onb-req'}>
+          {r.ok ? <FiCheck size={11} strokeWidth={3} /> : <span className="onb-req-punto" />}
+          {r.label}
+          <span className="sr-only">{r.ok ? ' (cumplido)' : ' (pendiente)'}</span>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const Mayus = capsLock ? (
+    <span className="cpw-mayus" role="status"><FiArrowUp size={11} strokeWidth={2.6} /> Bloq Mayús activado</span>
+  ) : null;
+
+  // ── Primer ingreso: tarjeta de acceso a pantalla completa ──────────────────
+  if (isFirstEntry) {
+    return (
+      <div className="lp-root">
+        <div className="lp-bg" aria-hidden="true" />
+        <main className="lp-card">
+          <div className="lp-head">
+            <div className="lp-logo" aria-label="Build and Serve">
+              <span className="lp-logo-build">Build</span>
+              <span className="lp-logo-amp">&amp;</span>
+              <span className="lp-logo-serve">Serve</span>
+            </div>
+            <div className="lp-divider" aria-hidden="true" />
           </div>
 
-          {success ? (
-            <div className="cp-success">
-              <div className="cp-success-icon"><FiCheck size={28} strokeWidth={3} /></div>
-              <p className="cp-success-title">¡Contraseña actualizada!</p>
-              <p className="cp-success-sub">
-                {isFirstEntry ? 'Continuando con el enrolamiento…' : 'Redirigiendo…'}
-              </p>
-            </div>
-          ) : (
-            <form className="cp-form" onSubmit={handleSubmit} noValidate>
-              {capsLock && (
-                <div className="cp-capslock">
-                  <FiAlertCircle size={14} /> Bloq Mayús activado
-                </div>
-              )}
+          <div className="lp-body">
+            <ol className="onb-steps" style={{ gridTemplateColumns: `repeat(${PASOS_PRIMER_INGRESO.length}, minmax(0, 1fr))` }}
+              aria-label="Pasos de tu primer ingreso">
+              {PASOS_PRIMER_INGRESO.map((p, i) => (
+                <li key={p.id} className={`onb-step onb-step--${i === 0 ? 'actual' : 'pendiente'}`}
+                  aria-current={i === 0 ? 'step' : undefined}>
+                  <span className="onb-step-bar" />
+                  <span className="onb-step-label"><span className="onb-step-num">{i + 1}.</span>{p.label}</span>
+                </li>
+              ))}
+            </ol>
 
-              {!isFirstEntry && (
-                <div className="form-group">
-                  <label className="form-label">Contraseña actual</label>
-                  <div className="cp-field">
-                    <input
-                      type={show.actual ? 'text' : 'password'}
-                      className="form-input"
-                      value={form.passwordActual}
-                      onChange={e => setForm({ ...form, passwordActual: e.target.value })}
-                      onKeyDown={handleCaps}
-                      onKeyUp={handleCaps}
-                      required
-                      autoComplete="current-password"
-                    />
-                    <button type="button" className="cp-toggle" onClick={() => setShow(s => ({ ...s, actual: !s.actual }))} tabIndex={-1} aria-label={show.actual ? 'Ocultar' : 'Mostrar'}>
-                      {show.actual ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                    </button>
+            <h1 className="lp-title">Crea tu contraseña</h1>
+            <p className="lp-hint">La que recibiste es temporal. Elige una propia para entrar desde ahora con tu RUT.</p>
+
+            <form className="lp-form onb-form" onSubmit={handleSubmit} noValidate>
+              <div className="lp-field">
+                <label className="lp-label" htmlFor="cp-rut">Tu RUT</label>
+                <div className="lp-input-wrap">
+                  <span className="lp-input-icon"><FiUser size={15} /></span>
+                  <input id="cp-rut" className="lp-input onb-input-fijo" type="text" readOnly
+                    value={user?.rut || ''} autoComplete="username" />
+                  <span className="onb-input-candado"><FiLock size={15} /></span>
+                </div>
+              </div>
+              <div className="onb-row">
+                <div className="lp-field">
+                  <label className="lp-label" htmlFor="cp-nueva">Contraseña</label>
+                  <div className="lp-input-wrap">
+                    <span className="lp-input-icon"><FiLock size={15} /></span>
+                    <input id="cp-nueva" className="lp-input lp-input--password" autoFocus
+                      {...inputProps('passwordNuevo', 'new-password')} />
+                    {ojo('passwordNuevo')}
                   </div>
                 </div>
-              )}
-
-              <div className="form-group">
-                <label className="form-label">Nueva contraseña</label>
-                <div className="cp-field">
-                  <input
-                    ref={newRef}
-                    type={show.nuevo ? 'text' : 'password'}
-                    className="form-input"
-                    value={form.passwordNuevo}
-                    onChange={e => setForm({ ...form, passwordNuevo: e.target.value })}
-                    onKeyDown={handleCaps}
-                    onKeyUp={handleCaps}
-                    required
-                    autoComplete="new-password"
-                  />
-                  <button type="button" className="cp-toggle" onClick={() => setShow(s => ({ ...s, nuevo: !s.nuevo }))} tabIndex={-1} aria-label={show.nuevo ? 'Ocultar' : 'Mostrar'}>
-                    {show.nuevo ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                  </button>
-                </div>
-                {form.passwordNuevo && <StrengthBar password={form.passwordNuevo} />}
-                <div className="cp-rules">
-                  <RuleCheck ok={minLen} label="Mínimo 6 caracteres" />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Confirmar nueva contraseña</label>
-                <div className="cp-field">
-                  <input
-                    type={show.confirmar ? 'text' : 'password'}
-                    className="form-input"
-                    value={form.confirmarPassword}
-                    onChange={e => setForm({ ...form, confirmarPassword: e.target.value })}
-                    onKeyDown={handleCaps}
-                    onKeyUp={handleCaps}
-                    required
-                    autoComplete="new-password"
-                  />
-                  <button type="button" className="cp-toggle" onClick={() => setShow(s => ({ ...s, confirmar: !s.confirmar }))} tabIndex={-1} aria-label={show.confirmar ? 'Ocultar' : 'Mostrar'}>
-                    {show.confirmar ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                  </button>
-                </div>
-                {form.confirmarPassword && (
-                  <div className="cp-rules">
-                    <RuleCheck ok={match} label="Las contraseñas coinciden" />
+                <div className="lp-field">
+                  <label className="lp-label" htmlFor="cp-repetir">Repite la contraseña</label>
+                  <div className="lp-input-wrap">
+                    <span className="lp-input-icon"><FiLock size={15} /></span>
+                    <input id="cp-repetir" className="lp-input lp-input--password"
+                      {...inputProps('confirmarPassword', 'new-password')} />
+                    {ojo('confirmarPassword')}
                   </div>
-                )}
-              </div>
-
-              {error && (
-                <div className="cp-error" role="alert">
-                  <FiAlertCircle size={15} /> {error}
                 </div>
-              )}
-
-              <div className="cp-actions">
-                <button type="submit" className="btn btn-primary" disabled={loading || !canSubmit}>
-                  {loading ? <span className="spinner" /> : null}
-                  {loading ? 'Cambiando…' : 'Cambiar contraseña'}
-                </button>
-                {!isFirstEntry && (
-                  <button type="button" className="btn btn-ghost" onClick={() => logout()}>
-                    Cerrar sesión
-                  </button>
-                )}
               </div>
+              {listaRequisitos('onb-requisitos')}
+              {Mayus}
+
+              {error && <p className="lp-error" role="alert">{error}</p>}
+
+              <button type="submit" className="lp-submit" disabled={!canSubmit || loading}>
+                {loading ? <div className="lp-spinner" /> : <><span>Guardar contraseña</span><FiArrowRight size={15} /></>}
+              </button>
             </form>
-          )}
-    </OnboardingShell>
+          </div>
+
+          <div className="lp-foot">
+            <button type="button" className="lp-foot-link" onClick={() => logout()} disabled={loading}>
+              <FiLogOut size={14} /> Cerrar sesión
+            </button>
+            <span className="lp-foot-meta">Paso 1 de {PASOS_PRIMER_INGRESO.length}</span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ── Desde Configuración: página dentro del sistema ─────────────────────────
+  return (
+    <>
+      <div className="page-content">
+        <PageHeader
+          banner
+          title="Cambiar contraseña"
+          description="Es la que usas para entrar con tu RUT. Tu PIN de firma no cambia."
+        />
+      </div>
+
+      <FormPage
+        maxWidth={960}
+        onSubmit={handleSubmit}
+        className="cpw-page"
+        header={<></>}
+        actions={
+          <>
+            {error ? (
+              <span className="cpw-estado cpw-estado--error" role="alert">{error}</span>
+            ) : (
+              <span className="cpw-estado">
+                {canSubmit ? 'Lista para guardar' : !form.passwordActual ? 'Escribe tu contraseña actual' : 'Faltan requisitos'}
+              </span>
+            )}
+            <button type="button" className="btn btn-secondary" onClick={() => navigate('/configuracion')} disabled={loading}>
+              {success ? 'Volver a Configuración' : 'Cancelar'}
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={!canSubmit || loading}>
+              {loading ? 'Cambiando…' : 'Cambiar contraseña'}
+            </button>
+          </>
+        }
+      >
+        <div className="cpw-cols">
+          <div className="cpw-main">
+            {success && (
+              <AlertBanner variant="success" message="Contraseña actualizada"
+                onDismiss={() => setSuccess(false)}>
+                Cerramos tu sesión en los demás dispositivos. En este sigues conectado; usa la nueva desde tu próximo ingreso.
+              </AlertBanner>
+            )}
+
+            <FieldSection title="Tu acceso" description="Confirma que eres tú" inline>
+              <div className="form-group">
+                <label className="form-label" htmlFor="cpw-rut">RUT</label>
+                <div className="cpw-fijo">
+                  <input id="cpw-rut" className="form-input" value={user?.rut || ''} readOnly disabled
+                    autoComplete="username" title="El RUT no se puede modificar." />
+                  <FiLock size={13} aria-hidden="true" />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="cpw-actual">Contraseña actual</label>
+                <div className="cpw-pass">
+                  <input id="cpw-actual" className={`form-input${errorActual ? ' error' : ''}`}
+                    aria-invalid={errorActual ? true : undefined}
+                    aria-describedby={errorActual ? 'cpw-actual-error' : undefined}
+                    {...inputProps('passwordActual', 'current-password')} />
+                  {ojo('passwordActual')}
+                </div>
+                {errorActual && <span className="form-error" id="cpw-actual-error">{errorActual}</span>}
+              </div>
+            </FieldSection>
+
+            <FieldSection title="Nueva contraseña" description={`Mínimo ${MIN_PASSWORD} caracteres`} inline>
+              <div className="form-group">
+                <label className="form-label" htmlFor="cpw-nueva">Nueva contraseña</label>
+                <div className="cpw-pass">
+                  <input id="cpw-nueva" className="form-input" {...inputProps('passwordNuevo', 'new-password')} />
+                  {ojo('passwordNuevo')}
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="cpw-repetir">Repite la nueva</label>
+                <div className="cpw-pass">
+                  <input id="cpw-repetir" className="form-input" {...inputProps('confirmarPassword', 'new-password')} />
+                  {ojo('confirmarPassword')}
+                </div>
+              </div>
+              <div className="cpw-fila-completa">
+                {listaRequisitos('onb-requisitos cpw-requisitos')}
+                {Mayus}
+              </div>
+            </FieldSection>
+          </div>
+
+          <aside className="cpw-ayuda" aria-label="Qué pasa al cambiarla">
+            <span className="cpw-ayuda-rotulo">Al cambiarla</span>
+            <ul>
+              <li>
+                <FiMonitor size={16} aria-hidden="true" />
+                <div><b>Se cierran tus otras sesiones</b>
+                  <span>Si entraste desde otro teléfono o computador, ahí tendrás que volver a ingresar.</span></div>
+              </li>
+              <li>
+                <FiEdit2 size={16} aria-hidden="true" />
+                <div><b>Tu PIN de firma sigue igual</b>
+                  <span>Para cambiarlo usa “Cambiar PIN de firma” en Configuración.</span></div>
+              </li>
+              <li>
+                <FiKey size={16} aria-hidden="true" />
+                <div><b>¿No recuerdas la actual?</b>
+                  <span>Cierra sesión y entra con “¿Olvidaste tu contraseña?”; te llega un enlace a tu correo.</span></div>
+              </li>
+            </ul>
+          </aside>
+        </div>
+      </FormPage>
+    </>
   );
 }
