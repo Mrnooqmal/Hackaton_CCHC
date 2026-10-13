@@ -15,6 +15,7 @@ import {
     FiX,
     FiEye,
     FiDownload,
+    FiTrash2,
 } from 'react-icons/fi';
 import {
     activitiesApi,
@@ -124,6 +125,9 @@ export default function Activities() {
     const [completeForm, setCompleteForm] = useState({ titulo: '', descripcion: '', relatorId: '', horaInicio: '', horaFin: '', ubicacion: '', asistentesRequeridos: [] as string[] });
     const [completeSubmitting, setCompleteSubmitting] = useState(false);
     const [completeAttendeeSearch, setCompleteAttendeeSearch] = useState('');
+    // Eliminar el borrador: se confirma dentro del mismo modal.
+    const [confirmarEliminar, setConfirmarEliminar] = useState(false);
+    const [eliminando, setEliminando] = useState(false);
 
     // Check if user is a worker (can self-sign)
     const canSelfSign = user?.rol === 'trabajador' && user?.personaId;
@@ -242,7 +246,35 @@ export default function Activities() {
             asistentesRequeridos: a.asistentesRequeridos || [],
         });
         setCompleteAttendeeSearch('');
+        setConfirmarEliminar(false);
         setShowCompleteModal(true);
+    };
+
+    // Un borrador todavía no avisó a nadie ni tiene firmas: se puede borrar del
+    // todo. Volver a generar el plan sobre ese día lo crea de nuevo.
+    const handleEliminarBorrador = async () => {
+        if (eliminando || !completeActivity) return;
+        setEliminando(true);
+        try {
+            const response = await activitiesApi.remove(completeActivity.activityId);
+            if (response.success) {
+                const id = completeActivity.activityId;
+                setActivities(prev => prev.filter(a => a.activityId !== id));
+                toast.success('Borrador eliminado');
+                setShowCompleteModal(false);
+                setCompleteActivity(null);
+                setConfirmarEliminar(false);
+                loadData();
+            } else {
+                toast.error(response.error || 'No se pudo eliminar el borrador');
+                setConfirmarEliminar(false);
+            }
+        } catch (error) {
+            console.error('Error deleting draft:', error);
+            toast.error('No se pudo eliminar el borrador');
+        } finally {
+            setEliminando(false);
+        }
     };
 
     const toggleCompleteAttendee = (personaId: string) =>
@@ -1934,20 +1966,37 @@ export default function Activities() {
                 {/* Completar borrador: rellenar el detalle del día */}
                 <Modal
                     isOpen={showCompleteModal && !!completeActivity}
-                    onClose={() => !completeSubmitting && setShowCompleteModal(false)}
-                    preventClose={completeSubmitting}
+                    onClose={() => !completeSubmitting && !eliminando && setShowCompleteModal(false)}
+                    preventClose={completeSubmitting || eliminando}
                     icon={<FiEdit3 size={20} />}
                     title="Completar actividad planificada"
                     subtitle={completeActivity ? `${ACTIVITY_TYPES[completeActivity.tipo]?.label || completeActivity.tipo} · ${new Date(`${completeActivity.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}` : undefined}
                     size="lg"
-                    footer={
+                    footer={confirmarEliminar && completeActivity ? (
+                        <div className="act-eliminar-confirmar" role="alertdialog" aria-label="Confirmar eliminación">
+                            <span className="act-eliminar-texto">
+                                ¿Eliminar la {ACTIVITY_TYPES[completeActivity.tipo]?.label || completeActivity.tipo} del{' '}
+                                {new Date(`${completeActivity.fecha}T00:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}?
+                                {' '}Nadie fue avisado todavía, así que no se notifica a nadie.
+                            </span>
+                            <span className="act-eliminar-botones">
+                                <button type="button" className="btn btn-secondary" disabled={eliminando} onClick={() => setConfirmarEliminar(false)}>Volver</button>
+                                <button type="button" className="btn btn-danger" disabled={eliminando} onClick={handleEliminarBorrador} autoFocus>
+                                    {eliminando ? 'Eliminando…' : 'Eliminar'}
+                                </button>
+                            </span>
+                        </div>
+                    ) : (
                         <>
+                            <button type="button" className="btn btn-ghost act-eliminar-btn" disabled={completeSubmitting} onClick={() => setConfirmarEliminar(true)}>
+                                <FiTrash2 size={15} /> Eliminar borrador
+                            </button>
                             <button type="button" className="btn btn-secondary" disabled={completeSubmitting} onClick={() => setShowCompleteModal(false)}>Cancelar</button>
                             <button type="submit" form="complete-form" className="btn btn-primary" disabled={completeSubmitting}>
                                 {completeSubmitting ? 'Guardando…' : 'Guardar y programar'}
                             </button>
                         </>
-                    }
+                    )}
                 >
                     <form id="complete-form" onSubmit={handleCompleteBorrador}>
                         <div className="alert alert-info mb-4">
@@ -2071,6 +2120,15 @@ export default function Activities() {
 }
 
 const activitiesStyles = `
+/* Eliminar un borrador: a la izquierda del pie, lejos de «Guardar y programar». */
+.act-eliminar-btn { margin-right: auto; color: var(--danger-alerta); gap: 6px; }
+.act-eliminar-btn:hover:not(:disabled) { color: var(--danger-alerta); background: rgba(223, 54, 1, 0.08); }
+.act-eliminar-confirmar { display: flex; align-items: center; gap: var(--space-4); width: 100%; flex-wrap: wrap; }
+.act-eliminar-texto { flex: 1 1 260px; min-width: 0; font-size: var(--text-sm); color: var(--text-primary); line-height: 1.45; }
+.act-eliminar-botones { display: flex; gap: var(--space-3); margin-left: auto; }
+@media (max-width: 480px) {
+  .act-eliminar-btn { margin-right: 0; width: 100%; justify-content: center; order: 3; }
+}
 /* ── Barra de filtros ────────────────────────────────────────────────────── */
 /* Buscar y filtrar por tipo son la misma pregunta: van en un solo control, y los
    tres elementos de la barra comparten altura para que la fila lea pareja. */
