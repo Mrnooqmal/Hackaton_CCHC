@@ -159,6 +159,32 @@ reemplazo). Al elegir a alguien distinto, bajo el campo aparece un aviso indican
 lo asignaba el plan: ese dato **queda guardado** como constancia del reemplazo, y la
 planificación del mes no vuelve a generar el borrador del responsable original.
 
+### Eliminar un borrador
+
+Si una actividad planificada ya no se va a hacer (por ejemplo, ese día no hay faena), puedes
+eliminarla antes de programarla:
+
+1. Abre el borrador con **Completar**, igual que para completarlo.
+2. En el pie del formulario toca **Eliminar borrador**.
+
+   ![Botón Eliminar borrador en Completar actividad planificada](/img/actividades/eliminar-borrador.png)
+
+3. Confirma con **Eliminar**. Si te arrepientes, toca **Volver** y el formulario queda como estaba.
+
+   ![Confirmación para eliminar el borrador](/img/actividades/eliminar-confirmar.png)
+
+El borrador desaparece de la lista y del calendario. Como todavía no estaba programado, nadie
+había recibido aviso y no se notifica a nadie.
+
+::: tip Solo borradores
+Únicamente se pueden eliminar actividades planificadas que **aún no se programan**. Una
+actividad programada o realizada es parte del registro del DS 44 y no se borra.
+:::
+
+::: warning Si vuelves a planificar el mes
+Volver a usar **Planificar el mes** sobre esa fecha crea el borrador de nuevo.
+:::
+
 > El relator solo se puede cambiar **mientras la actividad no tenga firmas**. Una vez que
 > alguien firmó, el relator forma parte del acta y queda congelado junto con el resto del
 > contenido.
