@@ -12,24 +12,28 @@ import { AlertBanner, Modal } from './ui';
 import type { CollectionMode } from './ui';
 import { PERMISSIONS } from '../permissions';
 import FirmaAsistidaModal from './FirmaAsistidaModal';
+import AgregarACuadrillaDrawer, { type GrupoCandidatos } from './AgregarACuadrillaDrawer';
 import { EquipoObraSkeleton } from './ui/Skeletons';
 import {
     FiSearch, FiUserPlus, FiCheck, FiX, FiChevronDown, FiChevronRight,
     FiChevronUp, FiMoreHorizontal, FiPlus,
     FiAlertTriangle, FiUsers, FiEdit2, FiList, FiGrid,
-    FiUser, FiPenTool, FiArrowRight, FiClipboard,
+    FiUser, FiPenTool, FiArrowRight, FiClipboard, FiCheckSquare, FiInfo,
 } from 'react-icons/fi';
 import { LuCircleCheck, LuClock, LuShieldAlert } from 'react-icons/lu';
 
 const GESTION_CONTAINER = '__gestion__';
 const SIN_CUADRILLA_CONTAINER = '__sin_cuadrilla__';
+// Regla del backend (POST /personas/:id/asignaciones): si la obra ya tiene
+// supervisores, una persona trabajadora no puede quedar sin cuadrilla.
+const MSG_EXIGE_CUADRILLA = 'En esta obra cada trabajador debe estar en una cuadrilla. Elige la cuadrilla de un supervisor.';
 
 const initials = (nombre: string, apellido?: string) =>
     `${nombre[0] ?? ''}${apellido?.[0] ?? nombre[1] ?? ''}`.toUpperCase();
 
 /** Retrato de la persona; las iniciales son el respaldo cuando no hay foto. */
 function PersonaAvatar({ w, className, onClick, title }: {
-    w: any; className: string; onClick?: () => void; title?: string;
+    w: any; className: string; onClick?: (e: React.MouseEvent) => void; title?: string;
 }) {
     return (
         <div className={className} onClick={onClick} title={title}>
@@ -292,6 +296,14 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const [mode, setMode] = useState<CollectionMode>('grid');
     const [dragPersonaId, setDragPersonaId] = useState<string | null>(null);
     const [dragOverContainerId, setDragOverContainerId] = useState<string | null>(null);
+    // Selección masiva: mover a varias personas de cuadrilla sin arrastrarlas una a una.
+    const [seleccionando, setSeleccionando] = useState(false);
+    const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+    const ultimaMarcada = useRef<string | null>(null);
+    const [destinoLote, setDestinoLote] = useState('');
+    const [lote, setLote] = useState<{ hechas: number; total: number } | null>(null);
+    // Cuadrilla (id del supervisor) a la que se están agregando personas desde el panel.
+    const [agregarA, setAgregarA] = useState<string | null>(null);
     const [gestionModalPersona, setGestionModalPersona] = useState<any | null>(null);
     const [cardAction, setCardAction] = useState<{ worker: any; rect: DOMRect } | null>(null);
     const [poolCardAction, setPoolCardAction] = useState<{ worker: any; rect: DOMRect } | null>(null);
@@ -489,11 +501,12 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         setUpdating(w.personaId);
         try {
             const cargos = cargosActuales(w);
-            await workersApi.setAsignacion(w.personaId, obraId, cargos, user?.personaId || user?.userId, supervisorDe(w));
+            const res = await workersApi.setAsignacion(w.personaId, obraId, cargos, user?.personaId || user?.userId, supervisorDe(w));
+            if (!res.success) throw new Error(res.error);
             await workersApi.update(w.personaId, { estado: 'activo' } as any);
             await reloadWorkers();
             showToast(`${w.nombre} reactivado`);
-        } catch { setError('No se pudo reactivar'); }
+        } catch (e: any) { setError(e?.message || 'No se pudo reactivar'); }
         finally { setUpdating(null); }
     };
 
@@ -502,11 +515,12 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         setUpdating(w.personaId);
         try {
             const cargos = assignCargos[w.personaId] ?? cargosActuales(w);
-            await workersApi.setAsignacion(w.personaId, obraId, cargos, user?.personaId || user?.userId);
+            const res = await workersApi.setAsignacion(w.personaId, obraId, cargos, user?.personaId || user?.userId);
+            if (!res.success) throw new Error(res.error);
             await reloadWorkers();
             setAssignCargos((p) => { const n = { ...p }; delete n[w.personaId]; return n; });
             showToast('Cargo actualizado');
-        } catch { setError('No se pudo actualizar el cargo'); }
+        } catch (e: any) { setError(e?.message || 'No se pudo actualizar el cargo'); }
         finally { setUpdating(null); }
     };
 
@@ -523,6 +537,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
     const handleSupervisorChange = async (w: any, supervisorId: string) => {
         if (!obraId || supervisorId === (supervisorDe(w) || '')) return;
+        if (!supervisorId && exigeCuadrilla(w)) { setError(MSG_EXIGE_CUADRILLA); return; }
         const prevWorkers = workers;
         const cargos = cargosActuales(w);
 
@@ -539,9 +554,11 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
         setUpdating(w.personaId);
         try {
-            await workersApi.setAsignacion(
+            const res = await workersApi.setAsignacion(
                 w.personaId, obraId, cargos, user?.personaId || user?.userId, supervisorId || null,
             );
+            // La API no lanza: un rechazo llega como { success: false }.
+            if (!res.success) throw new Error(res.error);
             showToast(supervisorId ? 'Cuadrilla actualizada' : 'Supervisor quitado');
             reloadWorkers(); // sync silently — no await to avoid visual flash
         } catch (e: any) {
@@ -573,9 +590,10 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         try {
             // supervisorPersonaId undefined → se conserva (un supervisor no está en
             // cuadrilla); solo se fija el prevencionista.
-            await workersApi.setAsignacion(
+            const res = await workersApi.setAsignacion(
                 sup.personaId, obraId, cargos, user?.personaId || user?.userId, undefined, prevencionistaId || null,
             );
+            if (!res.success) throw new Error(res.error);
             showToast(prevencionistaId ? 'Prevencionista asignado' : 'Prevencionista quitado');
             reloadWorkers();
         } catch (e: any) {
@@ -640,8 +658,17 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const prevencionistaSelectOptions = prevencionistas.map((p) => ({ value: p.personaId, label: `${p.nombre} ${p.apellido || ''}`.trim() }));
 
     // ── Drag and drop ─────────────────────────────────────────────────────────
+    // Con la selección activa, arrastrar una tarjeta marcada lleva a todas las marcadas.
+    const idsArrastrados = (personaId: string | null): string[] => {
+        if (!personaId) return [];
+        if (seleccionando && seleccion.has(personaId)) return [personaId, ...[...seleccion].filter((x) => x !== personaId)];
+        return [personaId];
+    };
+    const dragIds = idsArrastrados(dragPersonaId);
+
     const handleDragStart = (e: React.DragEvent, w: any) => {
         e.dataTransfer.setData('personaId', w.personaId);
+        e.dataTransfer.setData('personaIds', idsArrastrados(w.personaId).join(','));
         e.dataTransfer.effectAllowed = 'move';
         setDragPersonaId(w.personaId);
     };
@@ -659,9 +686,23 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         },
         onDrop: async (e: React.DragEvent) => {
             e.preventDefault();
+            // El estado del arrastre se limpia AL SOLTAR: la tarjeta cambia de
+            // cuadrilla y se desmonta, así que su «dragend» nunca llega y la
+            // vista quedaba atenuada.
             setDragOverContainerId(null);
+            setDragPersonaId(null);
             const personaId = e.dataTransfer.getData('personaId');
             if (!personaId) return;
+
+            const varios = (e.dataTransfer.getData('personaIds') || '').split(',').filter(Boolean);
+            if (varios.length > 1) {
+                if (containerId === GESTION_CONTAINER) {
+                    setError('El equipo de gestión no acepta trabajadores de cuadrilla.');
+                    return;
+                }
+                await moverEnLote(varios, containerId);
+                return;
+            }
 
             // Pool worker dragged into a container → add to obra
             const poolWorker = unassigned.find((w) => w.personaId === personaId);
@@ -697,6 +738,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             containerId !== GESTION_CONTAINER && containerId !== SIN_CUADRILLA_CONTAINER
                 ? containerId
                 : null;
+        if (esTrabajador && !supervisorId && exigeCuadrilla(worker)) { setError(MSG_EXIGE_CUADRILLA); return; }
         const cargos = assignCargos[worker.personaId] || (worker.cargo ? [worker.cargo] : []);
         const newAsignacion = {
             obraId,
@@ -722,10 +764,11 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
         setUpdating(worker.personaId);
         try {
-            await workersApi.setAsignacion(
+            const res = await workersApi.setAsignacion(
                 worker.personaId, obraId, cargos, user?.personaId || user?.userId,
                 esTrabajador ? supervisorId : null,
             );
+            if (!res.success) throw new Error(res.error);
             if (worker.estado === 'inactivo') await workersApi.update(worker.personaId, { estado: 'activo' } as any);
             showToast(`${worker.nombre} ${worker.apellido || ''} agregado a la obra`);
             reloadWorkers(); // sync silently
@@ -743,6 +786,101 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         setGestionModalPersona(null);
         await handleSupervisorChange(w, '');
         showToast(`${w.nombre} removido de su cuadrilla. Para asignarlo al equipo de gestión, edita su rol en el perfil.`);
+    };
+
+    // ── Selección masiva ──────────────────────────────────────────────────────
+    // Solo los trabajadores entran a una cuadrilla; supervisores y gestión no se marcan.
+    const seleccionable = (w: any) => canAsignar && rolTipoDe(w) === 'trabajador';
+    const exigeCuadrilla = (w: any) => rolTipoDe(w) === 'trabajador' && supervisores.length > 0;
+
+    const salirDeSeleccion = () => {
+        setSeleccionando(false);
+        setSeleccion(new Set());
+        ultimaMarcada.current = null;
+    };
+
+    // Shift + clic marca todo lo que hay entre la última tarjeta marcada y esta,
+    // en el orden en que se ven en pantalla.
+    const alternarSeleccion = (personaId: string, rango: boolean) => {
+        // El rango se calcula aquí y no dentro del actualizador: React lo corre
+        // después, cuando `ultimaMarcada` ya apunta a esta tarjeta.
+        const desde = ultimaMarcada.current;
+        let tramo: string[] | null = null;
+        if (rango && desde && desde !== personaId) {
+            const orden = Array.from(document.querySelectorAll<HTMLElement>('.eq2-page [data-sel-id]'))
+                .map((el) => el.dataset.selId as string);
+            const a = orden.indexOf(desde);
+            const b = orden.indexOf(personaId);
+            if (a >= 0 && b >= 0) tramo = orden.slice(Math.min(a, b), Math.max(a, b) + 1);
+        }
+        ultimaMarcada.current = personaId;
+        setSeleccion((prev) => {
+            const next = new Set(prev);
+            if (tramo) tramo.forEach((id) => next.add(id));
+            else if (next.has(personaId)) next.delete(personaId);
+            else next.add(personaId);
+            return next;
+        });
+    };
+
+    const alternarGrupo = (personas: any[]) => setSeleccion((prev) => {
+        const next = new Set(prev);
+        const ids = personas.filter(seleccionable).map((w) => w.personaId);
+        const todas = ids.every((id) => next.has(id));
+        ids.forEach((id) => (todas ? next.delete(id) : next.add(id)));
+        return next;
+    });
+
+    useEffect(() => {
+        if (!seleccionando) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !lote && !agregarA) salirDeSeleccion(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [seleccionando, lote, agregarA]);
+
+    /**
+     * Mueve a varias personas a una cuadrilla (o a «Sin cuadrilla»). No hay
+     * endpoint de lote: se guarda una a una con la misma llamada que el arrastre,
+     * mostrando el avance. Quien no está en la obra se suma a ella ahí mismo.
+     * Si alguna falla, las demás quedan guardadas y se avisa cuáles faltaron.
+     */
+    const moverEnLote = async (ids: string[], destino: string) => {
+        if (!obraId || ids.length === 0 || lote) return;
+        const supervisorId = destino === SIN_CUADRILLA_CONTAINER ? null : destino;
+        if (!supervisorId && supervisores.length > 0) { setError(MSG_EXIGE_CUADRILLA); return; }
+        const solicitante = user?.personaId || user?.userId;
+        const fallidas: string[] = [];
+        let hechas = 0;
+        setLote({ hechas: 0, total: ids.length });
+        for (const id of ids) {
+            const w = workers.find((x) => x.personaId === id);
+            if (!w) continue;
+            try {
+                const enObra = Array.isArray(w.obraIds) && w.obraIds.includes(obraId);
+                if (!enObra) {
+                    const cargos = assignCargos[w.personaId] || (w.cargo ? [w.cargo] : []);
+                    const res = await workersApi.setAsignacion(id, obraId, cargos, solicitante, supervisorId);
+                    if (!res.success) throw new Error(res.error);
+                    if (w.estado === 'inactivo') await workersApi.update(id, { estado: 'activo' } as any);
+                } else if ((supervisorDe(w) || null) !== supervisorId) {
+                    const res = await workersApi.setAsignacion(id, obraId, cargosActuales(w), solicitante, supervisorId);
+                    if (!res.success) throw new Error(res.error);
+                }
+            } catch {
+                fallidas.push(`${w.nombre} ${w.apellido || ''}`.trim());
+            }
+            hechas += 1;
+            setLote({ hechas, total: ids.length });
+        }
+        await reloadWorkers();
+        setLote(null);
+        setSeleccion(new Set());
+        ultimaMarcada.current = null;
+        const ok = hechas - fallidas.length;
+        const sup = supervisorId ? workers.find((x) => x.personaId === supervisorId) : null;
+        const donde = sup ? `a la Cuadrilla de ${sup.nombre} ${sup.apellido || ''}`.trim() : 'a Sin cuadrilla';
+        if (ok > 0) showToast(`${ok} persona${ok !== 1 ? 's' : ''} movida${ok !== 1 ? 's' : ''} ${donde}`);
+        if (fallidas.length) setError(`No se pudo mover a: ${fallidas.join(', ')}. Inténtalo de nuevo.`);
     };
 
     // ── Onboarding DS 44 ──────────────────────────────────────────────────────
@@ -929,11 +1067,14 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         const { isSup = false, isDraggable = false } = opts;
         const currCargos = cargosActuales(w);
         const cargoLabels = currCargos.map((c) => cargoOptions.find((o) => o.value === c)?.label || c);
-        const isDragging = dragPersonaId === w.personaId;
+        const isDragging = dragIds.includes(w.personaId);
         const isMenuOpen = cardAction?.worker.personaId === w.personaId;
+        const selPuede = seleccionando && seleccionable(w);
+        const marcada = selPuede && seleccion.has(w.personaId);
 
         const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
             e.stopPropagation();
+            if (seleccionando) { if (selPuede) alternarSeleccion(w.personaId, e.shiftKey); return; }
             if (isMenuOpen) { setCardAction(null); return; }
             const rect = e.currentTarget.getBoundingClientRect();
             setCardAction({ worker: w, rect });
@@ -942,12 +1083,20 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         return (
             <div
                 key={w.personaId}
-                className={`eq2-card${isSup ? ' eq2-card--sup' : ''}${isDraggable ? ' eq2-card--draggable' : ''}${isDragging ? ' eq2-card--dragging' : ''}${isMenuOpen ? ' eq2-card--open' : ''}`}
+                className={`eq2-card${isSup ? ' eq2-card--sup' : ''}${isDraggable ? ' eq2-card--draggable' : ''}${isDragging ? ' eq2-card--dragging' : ''}${isMenuOpen ? ' eq2-card--open' : ''}${marcada ? ' eq2-card--marcada' : ''}${seleccionando && !selPuede ? ' eq2-card--fija' : ''}`}
                 draggable={isDraggable}
                 onDragStart={isDraggable ? (e) => handleDragStart(e, w) : undefined}
                 onDragEnd={isDraggable ? handleDragEnd : undefined}
                 onClick={handleCardClick}
+                data-sel-id={selPuede ? w.personaId : undefined}
+                role={selPuede ? 'checkbox' : undefined}
+                aria-checked={selPuede ? marcada : undefined}
+                tabIndex={selPuede ? 0 : undefined}
+                onKeyDown={selPuede ? (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); alternarSeleccion(w.personaId, e.shiftKey); } } : undefined}
             >
+                {selPuede && (
+                    <span className="eq2-sel-marca" aria-hidden="true">{marcada && <FiCheck size={12} strokeWidth={3.2} />}</span>
+                )}
                 <PersonaAvatar w={w} className="eq2-card-avatar" />
                 <span className="eq2-card-body">
                     {isSup && <span className="eq2-sup-badge">{w.rolNombre || 'Supervisor'}</span>}
@@ -968,11 +1117,14 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
     // ── Pool card (unassigned worker, grid mode) ──────────────────────────────
     const renderPoolCard = (w: any) => {
-        const isDragging = dragPersonaId === w.personaId;
+        const isDragging = dragIds.includes(w.personaId);
         const isOpen = poolCardAction?.worker.personaId === w.personaId;
+        const selPuede = seleccionando && seleccionable(w);
+        const marcada = selPuede && seleccion.has(w.personaId);
         // El menú se ancla a la tarjeta, se abra desde ella o desde «Agregar».
         const handleClick = (e: React.MouseEvent<HTMLElement>) => {
             e.stopPropagation();
+            if (seleccionando) { if (selPuede) alternarSeleccion(w.personaId, e.shiftKey); return; }
             if (isOpen) { setPoolCardAction(null); return; }
             const card = (e.currentTarget as HTMLElement).closest('.eq2-card') ?? e.currentTarget;
             setPoolCardAction({ worker: w, rect: card.getBoundingClientRect() });
@@ -980,36 +1132,49 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         return (
             <div
                 key={w.personaId}
-                className={`eq2-card eq2-card--pool${isDragging ? ' eq2-card--dragging' : ''}${isOpen ? ' eq2-card--open' : ''}`}
+                className={`eq2-card eq2-card--pool${isDragging ? ' eq2-card--dragging' : ''}${isOpen ? ' eq2-card--open' : ''}${marcada ? ' eq2-card--marcada' : ''}${seleccionando && !selPuede ? ' eq2-card--fija' : ''}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, w)}
                 onDragEnd={handleDragEnd}
                 onClick={handleClick}
+                data-sel-id={selPuede ? w.personaId : undefined}
+                role={selPuede ? 'checkbox' : undefined}
+                aria-checked={selPuede ? marcada : undefined}
+                tabIndex={selPuede ? 0 : undefined}
+                onKeyDown={selPuede ? (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); alternarSeleccion(w.personaId, e.shiftKey); } } : undefined}
             >
+                {selPuede && (
+                    <span className="eq2-sel-marca" aria-hidden="true">{marcada && <FiCheck size={12} strokeWidth={3.2} />}</span>
+                )}
                 <PersonaAvatar w={w} className="eq2-card-avatar" />
                 <span className="eq2-card-body">
                     <span className="eq2-card-name">{w.nombre} {w.apellido || ''}</span>
                     <span className="eq2-card-rut">{w.rut}</span>
                     <span className="eq2-card-cargo">{w.rolNombre || w.rol || '—'}</span>
                 </span>
-                <button
-                    type="button"
-                    className="eq2-pool-add"
-                    disabled={updating === w.personaId}
-                    onClick={handleClick}
-                >
-                    Agregar
-                </button>
+                {!seleccionando && (
+                    <button
+                        type="button"
+                        className="eq2-pool-add"
+                        disabled={updating === w.personaId}
+                        onClick={handleClick}
+                    >
+                        Agregar
+                    </button>
+                )}
             </div>
         );
     };
 
     // ── Pool row (unassigned worker, list mode) ───────────────────────────────
     const renderPoolRow = (w: any) => {
-        const isDragging = dragPersonaId === w.personaId;
+        const isDragging = dragIds.includes(w.personaId);
         const isOpen = poolCardAction?.worker.personaId === w.personaId;
+        const selPuede = seleccionando && seleccionable(w);
+        const marcada = selPuede && seleccion.has(w.personaId);
         const handleClick = (e: React.MouseEvent) => {
             e.stopPropagation();
+            if (seleccionando) { if (selPuede) alternarSeleccion(w.personaId, e.shiftKey); return; }
             if (isOpen) { setPoolCardAction(null); return; }
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setPoolCardAction({ worker: w, rect });
@@ -1017,25 +1182,34 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         return (
             <div
                 key={w.personaId}
-                className={`eq2-row eq-pool-row${isDragging ? ' eq2-row--dragging' : ''}${isOpen ? ' eq-pool-row--open' : ''}`}
+                className={`eq2-row eq-pool-row${isDragging ? ' eq2-row--dragging' : ''}${isOpen ? ' eq-pool-row--open' : ''}${seleccionando ? ' eq2-row--sel' : ''}${marcada ? ' eq2-row--marcada' : ''}`}
                 draggable
                 onDragStart={(e) => handleDragStart(e, w)}
                 onDragEnd={handleDragEnd}
                 onClick={handleClick}
+                data-sel-id={selPuede ? w.personaId : undefined}
             >
+                {seleccionando && (
+                    <input type="checkbox" className="eq2-sel-check" checked={!!marcada} disabled={!selPuede}
+                        aria-label={`Seleccionar a ${w.nombre} ${w.apellido || ''}`.trim()}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => alternarSeleccion(w.personaId, (e.nativeEvent as MouseEvent).shiftKey)} />
+                )}
                 <PersonaAvatar w={w} className="eq2-row-avatar" />
                 <div className="eq2-row-info">
                     <span className="eq2-row-name">{w.nombre} {w.apellido || ''}</span>
                     <span className="eq2-row-rut">{w.rut} · {w.rolNombre || w.rol}</span>
                 </div>
-                <button
-                    type="button"
-                    className="eq2-pool-add"
-                    disabled={updating === w.personaId}
-                    onClick={(e) => { e.stopPropagation(); handleClick(e); }}
-                >
-                    Agregar
-                </button>
+                {!seleccionando && (
+                    <button
+                        type="button"
+                        className="eq2-pool-add"
+                        disabled={updating === w.personaId}
+                        onClick={(e) => { e.stopPropagation(); handleClick(e); }}
+                    >
+                        Agregar
+                    </button>
+                )}
             </div>
         );
     };
@@ -1053,12 +1227,19 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         const roleId = currentRoleId(w);
         const sup = supervisorDe(w) || '';
         const cargoLabels = currCargos.map((c) => cargoOptions.find((o) => o.value === c)?.label || c);
-        const isDragging = dragPersonaId === w.personaId;
+        const isDragging = dragIds.includes(w.personaId);
+        const selPuede = seleccionando && seleccionable(w);
+        const marcada = selPuede && seleccion.has(w.personaId);
+        // En modo selección la fila marca en vez de abrir la ficha.
+        const abrirFicha = (e: React.MouseEvent) => {
+            if (seleccionando) { e.stopPropagation(); if (selPuede) alternarSeleccion(w.personaId, e.shiftKey); return; }
+            navigate(`/personas/${encodeURIComponent(w.rut)}`);
+        };
 
         return (
             <div
                 key={w.personaId}
-                className={`eq2-row${isSup ? ' eq2-row--sup' : ''}${isExpanded ? ' eq2-row--expanded' : ''}${isDragging ? ' eq2-row--dragging' : ''}${isDraggable ? ' eq2-row--draggable' : ''}`}
+                className={`eq2-row${isSup ? ' eq2-row--sup' : ''}${isExpanded ? ' eq2-row--expanded' : ''}${isDragging ? ' eq2-row--dragging' : ''}${isDraggable ? ' eq2-row--draggable' : ''}${seleccionando ? ' eq2-row--sel' : ''}${marcada ? ' eq2-row--marcada' : ''}`}
             >
                 <div
                     className="eq2-row-bar"
@@ -1066,14 +1247,21 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                     onDragStart={isDraggable ? (e) => handleDragStart(e, w) : undefined}
                     onDragEnd={isDraggable ? handleDragEnd : undefined}
                     title={isDraggable ? 'Arrastra la fila para cambiarla de cuadrilla' : undefined}
+                    data-sel-id={selPuede ? w.personaId : undefined}
                 >
+                    {seleccionando && (
+                        <input type="checkbox" className="eq2-sel-check" checked={!!marcada} disabled={!selPuede}
+                            aria-label={`Seleccionar a ${w.nombre} ${w.apellido || ''}`.trim()}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => alternarSeleccion(w.personaId, (e.nativeEvent as MouseEvent).shiftKey)} />
+                    )}
                     <PersonaAvatar
                         w={w}
                         className={`eq2-row-avatar${isSup ? ' eq2-row-avatar--sup' : ''}`}
-                        onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}
+                        onClick={abrirFicha}
                     />
 
-                    <div className="eq2-row-info" onClick={() => navigate(`/personas/${encodeURIComponent(w.rut)}`)}>
+                    <div className="eq2-row-info" onClick={abrirFicha}>
                         <span className="eq2-row-name">{w.nombre} {w.apellido || ''}</span>
                         <span className="eq2-row-rut">{w.rut}</span>
                     </div>
@@ -1228,8 +1416,11 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         const isDimmed = !!dragPersonaId && !isDragOver;
         const dropProps = makeContainerDropProps(id);
         const visibles = crewWorkers.filter(matchesSearch);
-        // La persona arrastrada solo «entra» si viene de otra cuadrilla o del pool.
-        const entra = !isGestion && isDragOver && !!dragWorker && !crewWorkers.some((w) => w.personaId === dragPersonaId);
+        // Las personas arrastradas solo «entran» si vienen de otra cuadrilla o del pool.
+        const entrantes = !isGestion && isDragOver ? dragIds.filter((pid) => !crewWorkers.some((w) => w.personaId === pid)) : [];
+        const entra = entrantes.length > 0 && !!dragWorker;
+        const marcables = seleccionando && !isGestion ? visibles.filter(seleccionable) : [];
+        const todasMarcadas = marcables.length > 0 && marcables.every((w) => seleccion.has(w.personaId));
 
         if (count === 0 && !supervisor && !isSinCuadrilla) return null;
         if ((isSinCuadrilla || isGestion) && visibles.length === 0) return null;
@@ -1242,24 +1433,42 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 {...dropProps}
             >
                 <div className="eq2-crew-head">
-                    <span className="eq2-crew-title">{title}</span>
-                    <span className="eq2-crew-count">{entra ? `${count} → ${count + 1}` : count}</span>
+                    <span className="eq2-crew-title">
+                        {supervisor || (!isGestion && !isSinCuadrilla)
+                            ? <><span className="eq2-crew-de">Cuadrilla de</span> {title}</>
+                            : title}
+                    </span>
+                    <span className="eq2-crew-count">{entra ? `${count} → ${count + entrantes.length}` : count}</span>
                     {isDragWarn ? (
                         <span className="eq2-crew-hint eq2-crew-hint--warn">
                             Este equipo no acepta trabajadores de cuadrilla.
                         </span>
                     ) : isDragOver ? (
                         <span className="eq2-crew-hint eq2-crew-hint--drop">
-                            {isSinCuadrilla ? 'Soltar para dejarlo sin supervisor' : 'Soltar para sumar a esta cuadrilla'}
+                            {isSinCuadrilla
+                                ? (entrantes.length > 1 ? 'Soltar para dejarlos sin supervisor' : 'Soltar para dejarlo sin supervisor')
+                                : (entrantes.length > 1 ? `Soltar para sumar a las ${entrantes.length} a esta cuadrilla` : 'Soltar para sumar a esta cuadrilla')}
                         </span>
                     ) : isSinCuadrilla ? (
                         <span className="eq2-crew-hint">
-                            {mode === 'grid'
-                                ? 'Arrástralos a una cuadrilla para asignarles supervisor.'
-                                : 'Asígnales supervisor desde el menú de cada fila.'}
+                            {canAsignar
+                                ? 'Usa «Agregar personas» en una cuadrilla o selecciónalos para asignarles supervisor.'
+                                : mode === 'grid'
+                                    ? 'Arrástralos a una cuadrilla para asignarles supervisor.'
+                                    : 'Asígnales supervisor desde el menú de cada fila.'}
                         </span>
                     ) : null}
                     <span className="eq2-crew-spacer" />
+                    {marcables.length > 1 && (
+                        <button type="button" className="eq2-crew-accion" onClick={() => alternarGrupo(visibles)}>
+                            {todasMarcadas ? 'Quitar selección' : `Seleccionar todos (${marcables.length})`}
+                        </button>
+                    )}
+                    {supervisor && canAsignar && !seleccionando && (
+                        <button type="button" className="eq2-crew-agregar" onClick={() => setAgregarA(supervisor.personaId)}>
+                            <FiPlus size={13} /> Agregar personas
+                        </button>
+                    )}
                     {/* Prevencionista a cargo de esta cuadrilla: define el scope de las
                         charlas del supervisor. Solo se ofrece si la obra tiene alguno. */}
                     {supervisor && prevencionistaSelectOptions.length > 0 && (
@@ -1285,9 +1494,13 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         {entra && dragWorker && (
                             <div className="eq2-slot" aria-hidden="true">
                                 <FiPlus size={22} />
-                                <span className="eq2-slot-name">{dragWorker.nombre} {dragWorker.apellido || ''}</span>
+                                <span className="eq2-slot-name">
+                                    {entrantes.length > 1 ? `${entrantes.length} personas` : `${dragWorker.nombre} ${dragWorker.apellido || ''}`}
+                                </span>
                                 <span className="eq2-slot-sub">
-                                    {isSinCuadrilla ? 'queda sin cuadrilla' : 'entra a esta cuadrilla'}
+                                    {isSinCuadrilla
+                                        ? (entrantes.length > 1 ? 'quedan sin cuadrilla' : 'queda sin cuadrilla')
+                                        : (entrantes.length > 1 ? 'entran a esta cuadrilla' : 'entra a esta cuadrilla')}
                                 </span>
                             </div>
                         )}
@@ -1347,6 +1560,17 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         </span>
                     </div>
                     <div className="eq2-toolbar-right">
+                        {canAsignar && (
+                            <button
+                                type="button"
+                                className={`eq2-sel-btn${seleccionando ? ' eq2-sel-btn--on' : ''}`}
+                                aria-pressed={seleccionando}
+                                onClick={() => (seleccionando ? salirDeSeleccion() : setSeleccionando(true))}
+                                disabled={!!lote}
+                            >
+                                <FiCheckSquare size={15} /> {seleccionando ? 'Terminar selección' : 'Seleccionar'}
+                            </button>
+                        )}
                         <div className="eq2-mode-toggle" role="group" aria-label="Vista">
                             <button
                                 className={`eq2-mode-btn${mode === 'grid' ? ' eq2-mode-btn--active' : ''}`}
@@ -1367,6 +1591,17 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         </div>
                     </div>
                 </div>
+
+                {seleccionando && (
+                    <div className="eq2-sel-ayuda">
+                        <FiInfo size={15} style={{ flexShrink: 0 }} />
+                        <span>
+                            Toca a los trabajadores que quieras mover. Con <strong>Shift + clic</strong> marcas todos
+                            los que hay entre dos, y «Seleccionar todos» marca una cuadrilla entera. Después elige el
+                            destino abajo.
+                        </span>
+                    </div>
+                )}
 
                 {assigned.length === 0 ? (
                     <div className="eq-empty-state">
@@ -1394,8 +1629,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                             isSinCuadrilla: true,
                         })}
 
-                        {/* Una cuadrilla se nombra por su supervisor, sin el rodeo
-                            de «Equipo de»: el rótulo ya está en contexto. */}
+                        {/* Cada cuadrilla se rotula «Cuadrilla de» su supervisor. */}
                         {supervisores.map((sup) => {
                             const crew = cuadrillaDe(sup.personaId);
                             const visibleCrew = crew.filter(matchesSearch);
@@ -1454,11 +1688,20 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         <div className="eq-section-head">
                             <span className="eq-section-title">Personas de la empresa</span>
                             <span className="eq-section-sub">
-                                {mode === 'grid'
-                                    ? 'No están en esta obra. Arrástralas a una cuadrilla o usa Agregar.'
-                                    : 'No están en esta obra. Usa Agregar para sumarlas.'}
+                                {seleccionando
+                                    ? 'No están en esta obra. Las que marques se suman a ella en la cuadrilla que elijas.'
+                                    : mode === 'grid'
+                                        ? 'No están en esta obra. Arrástralas a una cuadrilla o usa Agregar.'
+                                        : 'No están en esta obra. Usa Agregar para sumarlas.'}
                             </span>
                             <span className="eq2-crew-spacer" />
+                            {seleccionando && filteredUnassigned.filter(seleccionable).length > 1 && (
+                                <button type="button" className="eq2-crew-accion" onClick={() => alternarGrupo(filteredUnassigned)}>
+                                    {filteredUnassigned.filter(seleccionable).every((w) => seleccion.has(w.personaId))
+                                        ? 'Quitar selección'
+                                        : `Seleccionar todos (${filteredUnassigned.filter(seleccionable).length})`}
+                                </button>
+                            )}
                             <label className="eq-search-wrap" style={{ maxWidth: 240, flex: '0 0 auto' }}>
                                 <FiSearch size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                                 <input
@@ -1688,7 +1931,16 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             >
                 {addToObraModal && (
                     <div className="eq-team-list">
+                        {/* Un trabajador en una obra con supervisores solo puede entrar a una cuadrilla. */}
+                        {exigeCuadrilla(addToObraModal.worker) && (
+                            <div className="eq-sup-warn">
+                                <FiAlertTriangle size={14} style={{ flexShrink: 0 }} />
+                                <span>En esta obra cada trabajador debe estar en una cuadrilla. Elige la de un supervisor.</span>
+                            </div>
+                        )}
+
                         {/* Equipo de gestión */}
+                        {!exigeCuadrilla(addToObraModal.worker) && (
                         <button
                             className="eq-team-btn"
                             disabled={updating === addToObraModal.worker.personaId}
@@ -1704,6 +1956,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                 <span className="eq-team-meta">{gestion.length} persona{gestion.length !== 1 ? 's' : ''}</span>
                             </div>
                         </button>
+                        )}
 
                         {/* Cuadrillas por supervisor */}
                         {supervisores.map((sup) => (
@@ -1726,6 +1979,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         ))}
 
                         {/* Sin cuadrilla */}
+                        {!exigeCuadrilla(addToObraModal.worker) && (
                         <button
                             className="eq-team-btn eq-team-btn--muted"
                             disabled={updating === addToObraModal.worker.personaId}
@@ -1741,6 +1995,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                 <span className="eq-team-meta">Agregar sin asignar supervisor</span>
                             </div>
                         </button>
+                        )}
                     </div>
                 )}
             </Modal>
@@ -1851,10 +2106,95 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 />
             )}
 
+            {/* Barra de selección: cuántas, adónde y mover */}
+            {seleccionando && (seleccion.size > 0 || lote) && (() => {
+                const elegidas = [...seleccion].map((id) => workers.find((w) => w.personaId === id)).filter(Boolean) as any[];
+                const nombres = elegidas.map((w) => `${w.nombre} ${(w.apellido || '').split(' ')[0]}`.trim());
+                const nuevas = elegidas.filter((w) => !(Array.isArray(w.obraIds) && w.obraIds.includes(obraId))).length;
+                const destino = destinoLote || supervisores[0]?.personaId || SIN_CUADRILLA_CONTAINER;
+                return (
+                    <div className="eq2-sel-barra" role="region" aria-label="Personas seleccionadas">
+                        <div className="eq2-sel-cuantas">
+                            <strong>{lote ? `Moviendo ${Math.min(lote.hechas + 1, lote.total)} de ${lote.total}…` : `${seleccion.size} seleccionada${seleccion.size !== 1 ? 's' : ''}`}</strong>
+                            {!lote && (
+                                <span>
+                                    {nombres.length > 2 ? `${nombres.slice(0, 2).join(', ')} y ${nombres.length - 2} más` : nombres.join(' y ')}
+                                    {nuevas > 0 && ` · ${nuevas} se suma${nuevas !== 1 ? 'n' : ''} a la obra`}
+                                </span>
+                            )}
+                        </div>
+                        {!lote && (
+                            <>
+                                <label className="eq2-sel-destino">
+                                    <span>Mover a</span>
+                                    <select className="form-input" value={destino} onChange={(e) => setDestinoLote(e.target.value)}>
+                                        {supervisores.map((sup) => (
+                                            <option key={sup.personaId} value={sup.personaId}>
+                                                Cuadrilla de {`${sup.nombre} ${sup.apellido || ''}`.trim()}
+                                            </option>
+                                        ))}
+                                        {supervisores.length === 0 && <option value={SIN_CUADRILLA_CONTAINER}>Sin cuadrilla</option>}
+                                    </select>
+                                </label>
+                                <button type="button" className="btn btn-primary btn-sm" onClick={() => moverEnLote([...seleccion], destino)}>
+                                    Mover <FiArrowRight size={14} />
+                                </button>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={salirDeSeleccion}>Cancelar</button>
+                            </>
+                        )}
+                        {lote && <span className="spinner" aria-hidden="true" />}
+                    </div>
+                );
+            })()}
+
+            {/* Armar una cuadrilla sin arrastrar */}
+            {agregarA && (() => {
+                const sup = supervisores.find((x) => x.personaId === agregarA);
+                if (!sup) return null;
+                const grupos: GrupoCandidatos[] = [
+                    { clave: 'sin', titulo: 'Sin cuadrilla', personas: sinCuadrilla, origen: () => 'en la obra' },
+                    {
+                        clave: 'fuera', titulo: 'Fuera de la obra', nueva: true,
+                        personas: unassigned.filter(seleccionable), origen: () => 'se suma a la obra',
+                    },
+                    {
+                        clave: 'otras', titulo: 'En otras cuadrillas',
+                        personas: trabajadores.filter((w) => { const s2 = supervisorDe(w); return !!s2 && supervisorIds.has(s2) && s2 !== agregarA; }),
+                        origen: (w) => {
+                            const s2 = supervisores.find((x) => x.personaId === supervisorDe(w));
+                            return s2 ? `de ${s2.nombre} ${(s2.apellido || '').split(' ')[0]}`.trim() : '';
+                        },
+                    },
+                ];
+                return (
+                    <AgregarACuadrillaDrawer
+                        key={agregarA}
+                        isOpen
+                        cuadrilla={`${sup.nombre} ${sup.apellido || ''}`.trim()}
+                        grupos={grupos}
+                        onClose={() => setAgregarA(null)}
+                        onConfirm={(ids) => { setAgregarA(null); moverEnLote(ids, sup.personaId); }}
+                        cargoDe={(w) => {
+                            const cs = cargosActuales(w);
+                            return cs.length
+                                ? cs.map((c) => cargoOptions.find((o) => o.value === c)?.label || c).join(' · ')
+                                : (w.rolNombre || '');
+                        }}
+                    />
+                );
+            })()}
+
+            {/* Avance de «Agregar personas» (sin barra de selección a la vista) */}
+            {lote && !seleccionando && (
+                <div className="eq2-lote-aviso" role="status">
+                    <span className="spinner" aria-hidden="true" /> Agregando {Math.min(lote.hechas + 1, lote.total)} de {lote.total}…
+                </div>
+            )}
+
             {/* Toast */}
             {toast && (
                 <div style={{
-                    position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+                    position: 'fixed', bottom: seleccionando && seleccion.size > 0 ? 96 : 24, right: 24, zIndex: 9999,
                     background: 'var(--cchc-navy, #002952)', color: '#fff',
                     padding: '12px 20px', borderRadius: 'var(--radius-md)',
                     boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
@@ -1999,6 +2339,79 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 .eq2-crew-hint--drop { color: var(--accent-text); font-weight: 500; }
                 .eq2-crew-hint--warn { color: var(--danger-alerta); font-weight: 500; }
                 .eq2-crew-spacer { flex: 1; min-width: 0; }
+                .eq2-crew-de { font-weight: 400; color: var(--text-secondary); }
+                .eq2-crew-accion {
+                    border: 0; background: none; padding: 4px 6px; border-radius: var(--radius-sm);
+                    color: var(--accent-text); font-size: 12px; font-weight: 500; cursor: pointer;
+                }
+                .eq2-crew-accion:hover { background: var(--accent-tint); }
+                .eq2-crew-agregar {
+                    display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+                    border: 1px solid var(--surface-border); border-radius: 8px; background: none;
+                    color: var(--accent-text); font-size: 12.5px; font-weight: 600; cursor: pointer;
+                    transition: background 0.12s, border-color 0.12s;
+                }
+                .eq2-crew-agregar:hover { background: var(--accent-tint); border-color: var(--accent); }
+
+                /* ── Selección masiva ───────────────────────── */
+                .eq2-sel-btn {
+                    display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px;
+                    border: 1px solid var(--surface-border); border-radius: 8px; background: none;
+                    color: var(--text-primary); font-size: 13px; font-weight: 500; cursor: pointer;
+                }
+                .eq2-sel-btn:hover:not(:disabled) { background: var(--surface-hover); }
+                .eq2-sel-btn--on { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-text); }
+                .eq2-sel-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+                .eq2-sel-ayuda {
+                    display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px;
+                    background: var(--accent-tint); color: var(--accent-text); font-size: 12.5px; line-height: 1.45;
+                }
+                .eq2-card--marcada { border-color: var(--accent); background: var(--accent-tint); }
+                .eq2-card--fija { opacity: 0.55; cursor: default; }
+                .eq2-card--fija:hover { transform: none; border-color: var(--surface-border); }
+                .eq2-sel-marca {
+                    position: absolute; top: 10px; left: 10px; width: 20px; height: 20px; box-sizing: border-box;
+                    display: flex; align-items: center; justify-content: center; border-radius: 6px;
+                    border: 1.5px solid var(--surface-border); background: var(--surface-bg); color: #fff;
+                }
+                .eq2-card--marcada .eq2-sel-marca { background: var(--accent); border-color: var(--accent); }
+                .eq2-sel-check { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+                .eq2-row--sel .eq2-row-bar { grid-template-columns: 20px 34px minmax(0, 1fr) 180px 120px 32px; cursor: pointer; }
+                .eq-pool-row.eq2-row--sel { grid-template-columns: 20px 34px minmax(0, 1fr); }
+                .eq2-row--marcada .eq2-row-bar, .eq-pool-row.eq2-row--marcada { background: var(--accent-tint); }
+                @media (max-width: 760px) {
+                    .eq2-row--sel .eq2-row-bar { grid-template-columns: 20px 34px minmax(0, 1fr) 32px; }
+                    .eq2-row--sel .eq2-row-chips, .eq2-row--sel .eq2-row-ob { grid-column: 3 / 4; }
+                }
+                .eq2-sel-barra {
+                    position: fixed; z-index: 900; left: 50%; transform: translateX(-50%);
+                    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+                    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+                    width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box;
+                    padding: 10px 12px 10px 16px; border-radius: 14px;
+                    background: var(--surface-elevated); border: 1px solid var(--surface-border);
+                    box-shadow: var(--shadow-xl);
+                }
+                .eq2-sel-cuantas { display: flex; flex-direction: column; min-width: 0; }
+                .eq2-sel-cuantas strong { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+                .eq2-sel-cuantas span {
+                    font-size: 11.5px; color: var(--text-secondary); max-width: 300px;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                }
+                .eq2-sel-destino { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+                .eq2-sel-destino select { height: 34px; padding-top: 0; padding-bottom: 0; max-width: 280px; font-size: 13px; }
+                .eq2-lote-aviso {
+                    position: fixed; z-index: 900; right: 24px; bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+                    display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: var(--radius-md);
+                    background: var(--surface-elevated); border: 1px solid var(--surface-border); box-shadow: var(--shadow-lg);
+                    font-size: var(--text-sm); color: var(--text-primary);
+                }
+                @media (max-width: 640px) {
+                    .eq2-sel-barra { left: 16px; right: 16px; transform: none; width: auto; max-width: none; }
+                    .eq2-sel-destino { flex-basis: 100%; }
+                    .eq2-sel-destino select { flex: 1; max-width: none; }
+                    .eq2-crew-agregar { height: 28px; padding: 0 10px; }
+                }
                 .eq2-crew-prev { display: flex; align-items: center; gap: var(--space-2); min-width: 220px; }
                 .eq2-crew-empty-grid, .eq2-crew-empty-list {
                     font-size: var(--text-xs); color: var(--text-muted); font-style: italic;
