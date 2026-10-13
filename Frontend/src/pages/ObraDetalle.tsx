@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
 import { CATEGORIA_EVIDENCIA_DS44 } from '../api/uploads.api';
@@ -448,9 +448,13 @@ export default function ObraDetalle() {
     loadData();
   }, [obraId, reloadTick]);
 
+  // Un enlace puede pedir un módulo abierto (state.modulo): entonces la fase la
+  // fija Ds44Fases según dónde esté ese módulo, y no se pisa con la fase actual.
+  const moduloPedido = (useLocation().state as { modulo?: string } | null)?.modulo;
   useEffect(() => {
+    if (moduloPedido) return;
     setSelectedDemingPhase(faseDeming);
-  }, [faseDeming]);
+  }, [faseDeming, moduloPedido]);
 
   useEffect(() => {
     if (!obraToast) return;
@@ -2141,6 +2145,7 @@ export default function ObraDetalle() {
             onRecargar={recargarDs44}
             onVerDocumento={(d) => handlePreviewDoc(d as any)}
             onAgendarActividad={abrirAgendaDesdeFuf}
+            moduloInicial={moduloPedido}
             onIrAModulo={irAModuloDs44}
             onDeclarar={handleSetObraFlag}
           />

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     LuArrowRight, LuCalendar, LuChevronRight, LuEye, LuFilePen, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers,
 } from 'react-icons/lu';
@@ -46,6 +46,8 @@ export interface Ds44FasesProps {
     onIrAModulo: (modulo: string) => void;
     /** Guarda la condición y recalcula el cumplimiento. */
     onDeclarar: (campo: 'faenaCompartida' | 'tieneMaquinaria' | 'agentesFQB', valor: boolean) => Promise<void> | void;
+    /** Módulo a dejar abierto al entrar (su `key`), con su fase seleccionada. */
+    moduloInicial?: string;
 }
 
 const FASES: Array<{ key: FaseDeming; nombre: string }> = [
@@ -112,7 +114,7 @@ const esEstadoExigible = (e: EstadoRequisito) => e !== 'NoAplica' && e !== 'Fuer
  */
 export default function Ds44Fases({
     tenantId, obraId, completitud, documentos, fase, faseActual, onFase, modulos, personas,
-    onRecargar, onVerDocumento, onAgendarActividad, onIrAModulo, onDeclarar,
+    onRecargar, onVerDocumento, onAgendarActividad, onIrAModulo, onDeclarar, moduloInicial,
 }: Ds44FasesProps) {
     const [filtro, setFiltro] = useState<Filtro>('todos');
     // `undefined` = aún no elige: se abre el primer grupo con algo por resolver.
@@ -120,6 +122,19 @@ export default function Ds44Fases({
     // Se guarda con su fase: si algo dentro del panel cambia de fase ("Revisar
     // documento" lleva a Planificar), el panel de la fase anterior no queda encima.
     const [moduloAbierto, setModuloAbierto] = useState<{ key: string; fase: FaseDeming } | null>(null);
+    // Un enlace puede pedir un módulo abierto (p. ej. «Subir plantilla» desde la
+    // ficha de una persona). Se abre una sola vez, cuando el módulo ya existe:
+    // los módulos llegan después de cargar la obra.
+    const moduloInicialAplicado = useRef(false);
+    useEffect(() => {
+        if (!moduloInicial || moduloInicialAplicado.current) return;
+        const faseDelModulo = (Object.keys(modulos) as FaseDeming[])
+            .find((f) => (modulos[f] || []).some((m) => m.key === moduloInicial));
+        if (!faseDelModulo) return;
+        moduloInicialAplicado.current = true;
+        setModuloAbierto({ key: moduloInicial, fase: faseDelModulo });
+        if (faseDelModulo !== fase) onFase(faseDelModulo);
+    }, [moduloInicial, modulos, fase, onFase]);
     const [remisionDe, setRemisionDe] = useState<string | null>(null);
     // Formulario de carga (archivo, fecha, caducidad y firmantes) o de firmantes
     // de un documento ya cargado.

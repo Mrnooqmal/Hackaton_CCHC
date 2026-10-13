@@ -44,6 +44,7 @@ import { Modal, Select, IdentityPanel } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
 import PinDeFirma, { type PinRestablecido } from '../components/PinDeFirma';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
+import { useToast } from '../context/ToastContext';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
 import '../css/ficha.css';
@@ -108,7 +109,10 @@ export default function WorkerDetail() {
     // Editar datos sensibles de la persona (cargo, teléfono, etc.): mismo permiso
     // que gestionar/añadir personas.
     const canEditarDatos = hasPermission(PERMISSIONS.PERSONAS_CREAR);
-    const { options: cargoOptions } = useCargoCatalog();
+    const { options: cargoOptions, cargos: cargoCatalog } = useCargoCatalog();
+    const { toast } = useToast();
+    const canVerObra = hasPermission(PERMISSIONS.OBRAS_DETALLE);
+    const canGestionarCargos = hasPermission(PERMISSIONS.CARGOS_GESTIONAR);
 
     const [worker, setWorker] = useState<WorkerWithRole | null>(null);
     const [fotoSaving, setFotoSaving] = useState(false);
@@ -773,26 +777,64 @@ Generado por PrevencionApp
         URL.revokeObjectURL(url);
     };
 
+    // Solo se ofrece cuando el documento de la persona existe (ver `faltaPlantilla`):
+    // sin registro no hay dónde guardar el archivo. Cada paso se revisa, porque
+    // la API no lanza: un rechazo llega como { success: false }.
     const handleUploadWorkerDoc = async (tipo: string, file: File) => {
         const docRecord = docRecordMap[tipo];
-        if (!docRecord || !worker) return;
+        if (!worker) return;
+        if (!docRecord) {
+            toast.error('Este documento todavía no existe para esta persona: primero hay que subir su plantilla.');
+            return;
+        }
         setUploadingDocType(tipo);
         try {
             const uploadRes = await uploadsApi.getUploadUrl({
                 archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
                 categoria: 'trabajadores', empresaId: (worker as any).tenantId || (worker as any).empresaId || 'default'
             });
-            if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
+            if (!uploadRes.success || !uploadRes.data) throw new Error(uploadRes.error || 'No se pudo preparar la subida del archivo.');
+            const put = await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
+            if (!put.ok) throw new Error('No se pudo subir el archivo. Revisa tu conexión e inténtalo de nuevo.');
             const fileKey = uploadRes.data.fileKey;
-            await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
-            await documentsApi.update(docRecord.documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name } as any);
+            const conf = await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
+            if (!conf.success) throw new Error(conf.error || 'El archivo no pasó la verificación.');
+            const upd = await documentsApi.update(docRecord.documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name } as any);
+            if (!upd.success) throw new Error(upd.error || 'No se pudo guardar el archivo en el documento.');
+            toast.success(`${file.name} subido`);
             await loadWorkerData(); // Recargar datos
         } catch (err) {
             console.error('Error subiendo documento del trabajador:', err);
+            toast.error(err instanceof Error && err.message ? err.message : 'No se pudo subir el archivo.');
         } finally {
             setUploadingDocType(null);
         }
+    };
+
+    // Ítems del kit que esperan una plantilla: el backend no crea el documento de
+    // la persona hasta que se sube la plantilla (de la obra o de la empresa), y
+    // entonces lo asigna solo. Devuelve dónde se sube, para enlazar ahí.
+    const EMPRESA_DOC_TIPOS = ['REGLAMENTO_INTERNO', 'POLITICA_SSO'];
+    // 'fuera': la persona tiene un cargo con kit, pero ese kit no trae este tipo
+    // (p. ej. el kit EBCO de Carpintero usa sus propios procedimientos), así que
+    // el backend nunca creará ese documento.
+    const alcanceDe = (tipo?: string): 'obra' | 'tenant' | 'fuera' | 'otro' => {
+        if (!tipo) return 'otro';
+        if (EMPRESA_DOC_TIPOS.includes(tipo)) return 'tenant';
+        const codigos = [
+            (worker as any)?.cargo,
+            ...((worker as any)?.asignaciones || []).flatMap((a: any) => a.cargos || []),
+        ].filter(Boolean).map((c: string) => String(c).toUpperCase());
+        let tieneKit = false;
+        for (const c of cargoCatalog) {
+            if (!codigos.includes(String(c.codigo).toUpperCase())) continue;
+            tieneKit = tieneKit || (c.kit || []).length > 0;
+            const it = (c.kit || []).find((k) => k.tipo === tipo);
+            if (it?.alcancePlantilla === 'obra') return 'obra';
+            if (it?.alcancePlantilla === 'tenant') return 'tenant';
+            if (it) return 'otro';
+        }
+        return tieneKit ? 'fuera' : 'otro';
     };
 
     const cambiarTab = (id: string) => {
@@ -1207,7 +1249,31 @@ Generado por PrevencionApp
                                                                 </span>
                                                             )}
                                                         </span>
-                                                        {item.status === 'pending' && item.kind === 'document' && (
+                                                        {item.status === 'pending' && item.kind === 'document' && item.tipo && !docRecordMap[item.tipo] && (() => {
+                                                            const alcance = alcanceDe(item.tipo);
+                                                            const obraId = resolveTargetObraId(worker);
+                                                            return (
+                                                                <span className="pd-fila-acciones">
+                                                                    <span className="pd-pildora" title="El documento se asigna solo cuando se sube la plantilla.">
+                                                                        {alcance === 'obra' ? 'Falta la plantilla de la obra'
+                                                                            : alcance === 'tenant' ? 'Falta la plantilla de la empresa'
+                                                                                : alcance === 'fuera' ? 'No está en el kit de su cargo'
+                                                                                    : 'Sin documento asignado'}
+                                                                    </span>
+                                                                    {alcance === 'obra' && obraId && canVerObra && (
+                                                                        <Link className="btn btn-secondary btn-sm pd-subir" to={`/obras/${obraId}`} state={{ modulo: 'onboarding' }}>
+                                                                            <LuUpload size={13} /> Subir plantilla
+                                                                        </Link>
+                                                                    )}
+                                                                    {alcance === 'tenant' && canGestionarCargos && (
+                                                                        <Link className="btn btn-secondary btn-sm pd-subir" to="/cargos-onboarding">
+                                                                            <LuUpload size={13} /> Subir plantilla
+                                                                        </Link>
+                                                                    )}
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                        {item.status === 'pending' && item.kind === 'document' && item.tipo && docRecordMap[item.tipo] && (
                                                             <span className="pd-fila-acciones"><span className="pd-pildora">Pendiente de subir</span>{subir('Subir')}</span>
                                                         )}
                                                         {item.status === 'subido' && (
