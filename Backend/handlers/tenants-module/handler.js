@@ -13,7 +13,7 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const { FirmaRepresentanteService } = require('../../lib/services/FirmaRepresentanteService');
-const { subirLogoEmpresa } = require('../../lib/services/LogoEmpresa');
+const { subirLogoEmpresa, problemaLogo } = require('../../lib/services/LogoEmpresa');
 
 const tenantService = new TenantService();
 const personaService = new PersonaService();
@@ -141,8 +141,14 @@ module.exports.tenantsHandler = async (event) => {
                 if (!existing) return error('Tenant no encontrado', 404);
 
                 const logoBase64 = body.preferencias.logoBase64;
+                const logoOscuroBase64 = body.preferencias.logoOscuroBase64;
+                for (const logo of [logoBase64, logoOscuroBase64]) {
+                    const problema = logo ? problemaLogo(logo) : null;
+                    if (problema) return error(problema, 400);
+                }
                 const incoming = { ...body.preferencias };
                 delete incoming.logoBase64;
+                delete incoming.logoOscuroBase64;
 
                 const merged = { ...(existing.preferencias || {}), ...incoming };
                 if (logoBase64) {
@@ -150,6 +156,13 @@ module.exports.tenantsHandler = async (event) => {
                         merged.logoKey = await subirLogoEmpresa(logoBase64, tenantId);
                     } catch (logoErr) {
                         console.error('Logo upload failed on update:', logoErr);
+                    }
+                }
+                if (logoOscuroBase64) {
+                    try {
+                        merged.logoOscuroKey = await subirLogoEmpresa(logoOscuroBase64, tenantId, 'oscuro');
+                    } catch (logoErr) {
+                        console.error('Logo oscuro upload failed on update:', logoErr);
                     }
                 }
                 body.preferencias = merged;

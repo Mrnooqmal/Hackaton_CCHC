@@ -6,6 +6,7 @@ import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
+import LogoMarca from './LogoMarca';
 import { inboxApi } from '../api/client';
 
 interface Crumb {
@@ -123,7 +124,7 @@ export default function Header() {
     const { isMobileMenuOpen, toggleMobileMenu, toggleSidebarCollapsed } = useLayout();
     const { selectedObra, modoEmpresa, puedeGestionarEmpresa, isLoadingObras } = useObraContext();
     const { theme, toggleTheme } = useTheme();
-    const { logo } = useBrand();
+    const { logo, logoOscuro } = useBrand();
     const location = useLocation();
 
     // Badge de notificaciones no leidas en la campana del header.
@@ -191,7 +192,7 @@ export default function Header() {
 
                     {logo ? (
                         <Link to="/" className="header-brand" aria-label="Inicio">
-                            <img src={logo} alt="Logo empresa" className="header-brand-logo" />
+                            <LogoMarca claro={logo} oscuro={logoOscuro} alt="Logo empresa" className="header-brand-logo" />
                         </Link>
                     ) : (
                         <Link to="/" className="header-brand" aria-label="Build &amp; Serve — Inicio">

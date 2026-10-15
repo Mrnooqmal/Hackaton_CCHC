@@ -1,14 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { onboardingApi } from '../api/onboarding.api';
 import type { LicenciaValida } from '../api/onboarding.api';
 import {
     FiArrowRight, FiArrowLeft, FiCheck, FiCheckCircle, FiLock, FiEye, FiEyeOff, FiMail,
-    FiUpload, FiPlus, FiX,
+    FiPlus,
 } from 'react-icons/fi';
 import { LuLink2Off } from 'react-icons/lu';
 import '../css/AuthCard.css';
-import { SUGGESTED_COLORS, MAX_LOGO_BYTES, compressLogo, monograma } from '../utils/identidadEmpresa';
+import { SUGGESTED_COLORS, monograma } from '../utils/identidadEmpresa';
+import LogoModos from '../components/LogoModos';
+import type { LogosValor } from '../components/LogoModos';
 import { DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
 
 /**
@@ -123,9 +125,10 @@ export default function Onboarding() {
         password: '', confirmarPassword: '',
     });
     const [color, setColor] = useState(DEFAULT_PRIMARY_COLOR);
-    const [logo, setLogo] = useState<string | null>(null);
+    const [logos, setLogos] = useState<LogosValor>({ mismo: true, claro: null, oscuro: null });
     const [logoError, setLogoError] = useState('');
-    const logoInput = useRef<HTMLInputElement>(null);
+    const logo = logos.claro;
+    const logoOscuro = logos.mismo ? null : logos.oscuro;
 
     useEffect(() => {
         let vigente = true;
@@ -171,22 +174,6 @@ export default function Onboarding() {
     const indice = PASOS.findIndex((p) => p.id === paso);
     const irA = (p: Paso) => { setError(''); setPaso(p); };
 
-    const onLogo = (file: File | undefined) => {
-        if (!file) return;
-        if (!file.type.startsWith('image/')) { setLogoError('El logo debe ser una imagen (PNG, JPG, SVG o WebP).'); return; }
-        if (file.size > MAX_LOGO_BYTES) { setLogoError('El logo no puede pesar más de 2 MB.'); return; }
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                setLogo(await compressLogo(e.target?.result as string));
-                setLogoError('');
-            } catch {
-                setLogoError('No se pudo leer la imagen. Prueba con otra.');
-            }
-        };
-        reader.readAsDataURL(file);
-    };
-
     const enviar = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!datosOk || !empresaOk || !accesoOk || enviando) return;
@@ -208,6 +195,7 @@ export default function Onboarding() {
                 identidad: {
                     ...(colorOk ? { colorPrimario: color } : {}),
                     ...(logo ? { logoBase64: logo } : {}),
+                    ...(logo && logoOscuro ? { logoOscuroBase64: logoOscuro } : {}),
                 },
             });
             if (res.success) {
@@ -438,37 +426,10 @@ export default function Onboarding() {
                         <form className="lp-form onb-form" noValidate
                             onSubmit={(e) => { e.preventDefault(); if (colorOk) irA('acceso'); }}>
                             <div className="lp-field">
-                                <span className="lp-label" id="onb-logo-label">
+                                <span className="lp-label">
                                     Logo <span className="onb-opcional">· opcional</span>
                                 </span>
-                                {logo ? (
-                                    <div className="onb-logo onb-logo--listo">
-                                        <img src={logo} alt="Logo de la empresa" className="onb-logo-img" />
-                                        <span className="onb-logo-info">
-                                            <span className="onb-logo-titulo">Logo cargado</span>
-                                            <button type="button" className="onb-logo-accion" onClick={() => logoInput.current?.click()}>
-                                                Cambiar
-                                            </button>
-                                        </span>
-                                        <button type="button" className="onb-logo-quitar" aria-label="Quitar logo"
-                                            onClick={() => { setLogo(null); if (logoInput.current) logoInput.current.value = ''; }}>
-                                            <FiX size={16} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button type="button" className="onb-logo" aria-labelledby="onb-logo-label"
-                                        onClick={() => logoInput.current?.click()}
-                                        onDragOver={(e) => e.preventDefault()}
-                                        onDrop={(e) => { e.preventDefault(); onLogo(e.dataTransfer.files?.[0]); }}>
-                                        <span className="onb-logo-icono"><FiUpload size={20} /></span>
-                                        <span className="onb-logo-info">
-                                            <span className="onb-logo-titulo onb-logo-titulo--accion">Sube el logo de la empresa</span>
-                                            <span className="onb-logo-sub">PNG, JPG o SVG, hasta 2 MB. Si no subes uno, se muestra el nombre.</span>
-                                        </span>
-                                    </button>
-                                )}
-                                <input ref={logoInput} type="file" accept="image/*" hidden
-                                    onChange={(e) => onLogo(e.target.files?.[0])} />
+                                <LogoModos valor={logos} onChange={setLogos} onError={setLogoError} />
                                 {logoError && <span className="onb-field-hint onb-field-hint--error">{logoError}</span>}
                             </div>
 
@@ -504,20 +465,28 @@ export default function Onboarding() {
 
                             <div className="lp-field">
                                 <span className="lp-label">Vista previa</span>
-                                <div className="onb-preview" aria-hidden="true" style={{ ['--marca' as string]: color }}>
-                                    <div className="onb-preview-top">
-                                        <span className="onb-preview-marca">
-                                            {logo
-                                                ? <img src={logo} alt="" className="onb-preview-logo" />
-                                                : <><span className="onb-preview-mono">{monograma(nombreEmpresa)}</span>{nombreEmpresa}</>}
-                                        </span>
-                                        <span className="onb-preview-btn">Nueva actividad</span>
-                                    </div>
-                                    <div className="onb-preview-tabs">
-                                        <span className="onb-preview-tab onb-preview-tab--activa">Inicio</span>
-                                        <span className="onb-preview-tab">Personas</span>
-                                        <span className="onb-preview-tab">Actividades</span>
-                                    </div>
+                                <div className="onb-previews">
+                                    {(['claro', 'oscuro'] as const).map((modo) => {
+                                        const logoModo = modo === 'claro' ? logo : (logoOscuro || logo);
+                                        return (
+                                            <div className={`onb-preview onb-preview--${modo}`} key={modo} aria-hidden="true"
+                                                style={{ ['--marca' as string]: color }}>
+                                                <div className="onb-preview-top">
+                                                    <span className="onb-preview-marca">
+                                                        {logoModo
+                                                            ? <img src={logoModo} alt="" className="onb-preview-logo" />
+                                                            : <><span className="onb-preview-mono">{monograma(nombreEmpresa)}</span>{nombreEmpresa}</>}
+                                                    </span>
+                                                    <span className="onb-preview-btn">Nueva actividad</span>
+                                                </div>
+                                                <div className="onb-preview-tabs">
+                                                    <span className="onb-preview-tab onb-preview-tab--activa">Inicio</span>
+                                                    <span className="onb-preview-tab">Personas</span>
+                                                    <span className="onb-preview-tab">Actividades</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 

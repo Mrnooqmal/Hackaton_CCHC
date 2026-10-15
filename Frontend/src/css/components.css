@@ -1185,3 +1185,30 @@
     .ui-skel,
     .ob-skel { animation: none; }
 }
+
+/* ── Logo de la empresa con variante para modo oscuro ── */
+.logo-marca--claro { display: none !important; }
+.logo-marca--oscuro { display: block; }
+:root.theme-light .logo-marca--claro { display: block !important; }
+:root.theme-light .logo-marca--oscuro { display: none; }
+
+/* Selector de logo claro/oscuro (Mi empresa y alta de empresa) */
+.lm { display: flex; flex-direction: column; gap: 12px; }
+.lm-mismo { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-primary); cursor: pointer; width: fit-content; }
+.lm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lm-slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lm-slot-label { font-size: 12px; font-weight: 600; color: var(--text-secondary, var(--text-primary)); }
+.lm-tile {
+    display: flex; align-items: center; justify-content: center;
+    height: 84px; padding: 12px; border-radius: 10px;
+    border: 1px solid #d3dde9; font: inherit; width: 100%;
+}
+.lm-tile--claro { background: #ffffff; color: #475569; }
+.lm-tile--oscuro { background: #131d2a; border-color: #2a384a; color: #94a3b8; }
+button.lm-tile { cursor: pointer; border-style: dashed; transition: border-color .15s ease; }
+button.lm-tile:hover, button.lm-tile:focus-visible, button.lm-tile.dragging { outline: none; border-color: var(--primary-500); }
+.lm-tile img { max-height: 100%; max-width: 100%; object-fit: contain; }
+.lm-tile-vacio { display: flex; align-items: center; gap: 6px; font-size: 12px; text-align: center; }
+.lm-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.lm-hint { font-size: 12px; color: var(--text-muted, var(--text-secondary)); }
+@media (max-width: 480px) { .lm-grid { grid-template-columns: 1fr; } }

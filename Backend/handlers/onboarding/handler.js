@@ -77,7 +77,7 @@ module.exports.validarLicencia = async (event) => {
  * Body: { token, empresa: { nombre, rutEmpresa }, admin: { rut, nombre,
  *         apellidoPaterno, apellidoMaterno, fechaNacimiento (AAAA-MM-DD),
  *         password, confirmarPassword },
- *         identidad?: { colorPrimario, logoBase64 } }
+ *         identidad?: { colorPrimario, logoBase64, logoOscuroBase64 } }
  *
  * El orden importa y está elegido:
  *
@@ -133,6 +133,7 @@ module.exports.completar = async (event) => {
             identidad: {
                 colorPrimario: identidad.colorPrimario || null,
                 logoBase64: identidad.logoBase64 || null,
+                logoOscuroBase64: identidad.logoOscuroBase64 || null,
             },
         };
 

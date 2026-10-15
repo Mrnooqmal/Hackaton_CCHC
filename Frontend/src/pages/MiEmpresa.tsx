@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
     FiUpload, FiX, FiInfo, FiUsers, FiAlertTriangle, FiChevronRight,
-    FiCheck, FiImage, FiFile, FiEye, FiEdit3, FiHeart, FiSearch,
+    FiCheck, FiFile, FiFileText, FiEye, FiEdit3, FiHeart, FiSearch,
 } from 'react-icons/fi';
 import { LuHardHat } from 'react-icons/lu';
 import {
@@ -13,7 +13,9 @@ import {
 import type { CollectionMode } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBrand, DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
-import { SUGGESTED_COLORS, compressLogo, MAX_LOGO_BYTES } from '../utils/identidadEmpresa';
+import { SUGGESTED_COLORS } from '../utils/identidadEmpresa';
+import LogoModos from '../components/LogoModos';
+import type { LogosValor } from '../components/LogoModos';
 import { useToast } from '../context/ToastContext';
 import { tenantsApi, type Tenant, type TenantRole, type TenantCargo } from '../api/tenants.api';
 import { eppApi, CERTIFICADO_TIPO_LABEL, type EppElemento, type EppAdjunto, type CertificadoTipo } from '../api/epp.api';
@@ -83,7 +85,7 @@ function contrastVsWhite(hex: string): number | null {
 
 interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 
-type TabKey = 'identidad' | 'roles' | 'cargos' | 'epp' | 'salud' | 'datos' | 'supresiones';
+type TabKey = 'identidad' | 'ds44' | 'roles' | 'cargos' | 'epp' | 'salud' | 'datos' | 'supresiones';
 
 export default function MiEmpresa() {
     const { user, hasPermission, updateUser } = useAuth();
@@ -102,6 +104,7 @@ export default function MiEmpresa() {
     };
     const tabs: { key: TabKey; label: string; icon: any }[] = [
         ...(can.identidad ? [{ key: 'identidad' as const, label: 'Identidad', icon: FiBriefcase }] : []),
+        ...(can.identidad ? [{ key: 'ds44' as const, label: 'DS44', icon: FiFileText }] : []),
         ...(can.roles ? [{ key: 'roles' as const, label: 'Roles y permisos', icon: FiShield }] : []),
         ...(can.cargos ? [{ key: 'cargos' as const, label: 'Cargos', icon: FiTag }] : []),
         ...(can.epp ? [{ key: 'epp' as const, label: 'EPP', icon: LuHardHat }] : []),
@@ -109,7 +112,11 @@ export default function MiEmpresa() {
         ...(can.datos ? [{ key: 'datos' as const, label: 'Datos personales', icon: FiLock }] : []),
         ...(can.supresiones ? [{ key: 'supresiones' as const, label: 'Supresiones', icon: FiTrash2 }] : []),
     ];
-    const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'identidad');
+    // `?tab=ds44` deja enlazar directo a una pestaña (p. ej. desde el repositorio DS 44).
+    const [searchParams] = useSearchParams();
+    const tabPedida = searchParams.get('tab');
+    const [tab, setTab] = useState<TabKey>(
+        tabs.find((t) => t.key === tabPedida)?.key ?? tabs[0]?.key ?? 'identidad');
     // La acción principal de EPP vive en el encabezado; el modal, en la pestaña.
     const [eppNuevo, setEppNuevo] = useState(0);
 
@@ -144,7 +151,7 @@ export default function MiEmpresa() {
             <PageHeader
                 banner
                 title="Mi Empresa"
-                description="Identidad, roles, cargos, elementos de protección y ficha de salud de la empresa."
+                description="Identidad, DS44, roles, cargos, elementos de protección y ficha de salud de la empresa."
                 tabs={tabs.map((t) => {
                     const Icon = t.icon;
                     return { id: t.key, label: t.label, icon: <Icon size={15} /> };
@@ -171,6 +178,7 @@ export default function MiEmpresa() {
                 esqueleto. Cargos y EPP no la necesitan: arrancan su propia carga
                 en paralelo y se encargan de su esqueleto. */}
             {loading && tab === 'identidad' && can.identidad && <IdentidadSkeleton />}
+            {loading && tab === 'ds44' && can.identidad && <Ds44Skeleton />}
             {loading && tab === 'roles' && can.roles && <RolesSkeleton />}
             {loading && tab === 'salud' && can.salud && <FichaSaludSkeleton />}
 
@@ -183,6 +191,9 @@ export default function MiEmpresa() {
                     auth={{ user, updateUser }}
                     toast={toast}
                 />
+            )}
+            {!loading && tab === 'ds44' && can.identidad && tenant && (
+                <Ds44Tab tenant={tenant} personaId={user?.personaId || null} />
             )}
             {!loading && tab === 'roles' && can.roles && tenant && (
                 <RolesTab
@@ -352,24 +363,122 @@ function FichaSaludTab({ tenant, onSaved, toast }: {
 }
 
 // ── Identidad ─────────────────────────────────────────────────────────────────
+// ── DS 44 ─────────────────────────────────────────────────────────────────────
+//
+// Lo que la entidad empleadora debe acreditar ante la fiscalización del DS 44.
+// Antes vivía en Identidad, que es solo personalización (nombre, logo y color).
+function Ds44Tab({ tenant, personaId }: { tenant: Tenant; personaId: string | null }) {
+    const navigate = useNavigate();
+    return (
+        <div className="me-identity me-identity--solo">
+            <div className="me-stack">
+                {/* Art. 57 inc. 2: las organizaciones sindicales son destinatarias
+                    del Reglamento Interno. Va acá y no en el repositorio porque es
+                    un dato de la empresa, no del documento. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Organizaciones sindicales</h3>
+                        <p className="me-section-hint">
+                            A quiénes hay que remitir el Reglamento Interno además de las personas
+                            trabajadoras y del comité. Si no hay ninguna, declararlo evita que el
+                            requisito quede pendiente sin forma de cerrarse.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <OrganizacionesSindicales
+                            tenantId={tenant.tenantId}
+                            reglas={tenant.reglas}
+                            personaId={personaId}
+                        />
+                    ) : null}
+                </section>
+
+                {/* Art. 22: el SGSST es de la entidad empleadora, no de cada obra,
+                    así que vive acá y no en la obra. Va antes que la estructura
+                    preventiva porque ésta es uno de sus cinco componentes. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Sistema de Gestión de Seguridad y Salud en el Trabajo</h3>
+                        <p className="me-section-hint">
+                            Los cinco componentes que el Art. 22 exige como contenido mínimo.
+                            Tres se acreditan con un documento propio; los otros dos se
+                            acreditan en su módulo y aquí solo se enlazan.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <SgsstPanel
+                            tenantId={tenant.tenantId}
+                            onIrA={(enlace) => {
+                                if (enlace === 'estructura-preventiva') {
+                                    document.getElementById('estructura-preventiva')
+                                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                } else {
+                                    navigate('/documents-repository');
+                                }
+                            }}
+                        />
+                    ) : null}
+                </section>
+
+                {/* Estructura preventiva (DS 44 Arts. 23, 50, 65, 66). No bloquea nada:
+                    muestra qué corresponde según la dotación de la entidad y deja
+                    constituir también lo que no es obligatorio, como voluntario. */}
+                <section className="me-section" id="estructura-preventiva">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Estructura preventiva</h3>
+                        <p className="me-section-hint">
+                            Órganos que corresponden a la entidad empleadora según su dotación.
+                            El comité paritario y el delegado de cada obra se gestionan en la obra.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <EstructuraPreventivaPanel
+                            tenantId={tenant.tenantId}
+                            ambito={AMBITO.EMPRESA}
+                            onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=empresa&tipo=${tipo}`)}
+                            onVerOrgano={(organoId) => navigate(`/estructura/organos/${organoId}`)}
+                        />
+                    ) : null}
+                </section>
+
+                {/* Completitud del FUF a nivel entidad empleadora. El porcentaje se
+                    calcula sobre los requisitos EXIGIBLES: lo que no aplica sale del
+                    denominador en vez de penalizar. */}
+                <section className="me-section">
+                    <div className="me-section-head">
+                        <h3 className="me-section-title">Cumplimiento del Formulario Único de Fiscalización</h3>
+                        <p className="me-section-hint">
+                            Estado de los requisitos que cubre el módulo de estructura preventiva.
+                        </p>
+                    </div>
+                    {tenant?.tenantId ? (
+                        <CompletitudFufPanel tenantId={tenant.tenantId} ambito={AMBITO.EMPRESA} />
+                    ) : null}
+                </section>
+            </div>
+        </div>
+    );
+}
+
 function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
     tenant: Tenant;
     personas: PersonaResponse[];
     onSaved: (t: Tenant) => void;
-    brand: { setLogo: (l: string | null) => void; setPrimaryColor: (c: string) => void };
+    brand: { setLogo: (l: string | null, o?: string | null) => void; setPrimaryColor: (c: string) => void };
     auth: { user: any; updateUser: (u: any) => void };
     toast: ReturnType<typeof useToast>['toast'];
 }) {
-    const navigate = useNavigate();
     const [nombre, setNombre] = useState(tenant.nombre || '');
     const [color, setColor] = useState(tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR);
-    // Logo: vista previa actual (presignado vía branding) + base64 nuevo si se cambia.
-    const [logoPreview, setLogoPreview] = useState<string | null>(auth.user?.branding?.logoUrl || null);
-    const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
+    // Logos: lo guardado llega presignado vía branding; uno nuevo es un data URL.
+    const logosGuardados = (): LogosValor => ({
+        mismo: !auth.user?.branding?.logoOscuroUrl,
+        claro: auth.user?.branding?.logoUrl || null,
+        oscuro: auth.user?.branding?.logoOscuroUrl || null,
+    });
+    const [logos, setLogos] = useState<LogosValor>(logosGuardados);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
-    const [dragging, setDragging] = useState(false);
-    const fileRef = useRef<HTMLInputElement>(null);
 
     const [repLegalId, setRepLegalId] = useState(tenant.reglas?.representanteLegal?.personaId || '');
     const [savingRepLegal, setSavingRepLegal] = useState(false);
@@ -417,28 +526,23 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
     const rgb = hexToRgb(color);
     const colorValido = !!rgb;
 
-    const onFile = (file: File) => {
-        if (!file.type.startsWith('image/')) { setErr('El logo debe ser una imagen (PNG, JPG, SVG, WebP).'); return; }
-        if (file.size > MAX_LOGO_BYTES) { setErr('El logo no puede superar los 2 MB.'); return; }
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const compressed = await compressLogo(e.target?.result as string);
-                setLogoPreview(compressed); setLogoBase64(compressed); setErr('');
-            } catch { setErr('Error al procesar la imagen.'); }
-        };
-        reader.readAsDataURL(file);
-    };
+    // Qué mandar al servidor por cada logo: un data URL si es nuevo, '' si se
+    // quitó, nada si sigue igual. Con "mismo logo" no hay variante oscura.
+    const cambioLogo = (actual: string | null, guardado: string | null) =>
+        actual?.startsWith('data:') ? actual : (!actual && guardado ? '' : undefined);
+    const guardados = logosGuardados();
+    const oscuroFinal = logos.mismo ? null : logos.oscuro;
+    const logoBase64 = cambioLogo(logos.claro, guardados.claro);
+    const logoOscuroBase64 = cambioLogo(oscuroFinal, guardados.oscuro);
 
     const dirty = nombre.trim() !== (tenant.nombre || '')
         || color.toLowerCase() !== (tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR).toLowerCase()
-        || logoBase64 !== undefined;
+        || logoBase64 !== undefined || logoOscuroBase64 !== undefined;
 
     const descartar = () => {
         setNombre(tenant.nombre || '');
         setColor(tenant.preferencias?.colorPrimario || DEFAULT_PRIMARY_COLOR);
-        setLogoPreview(auth.user?.branding?.logoUrl || null);
-        setLogoBase64(undefined);
+        setLogos(logosGuardados());
         setErr('');
     };
 
@@ -448,22 +552,21 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
         setSaving(true); setErr('');
         try {
             const res = await tenantsApi.updateBranding(tenant.tenantId, {
-                nombre: nombre.trim(), colorPrimario: color, logoBase64,
+                nombre: nombre.trim(), colorPrimario: color, logoBase64, logoOscuroBase64,
             });
             if (res.success && res.data) {
                 // Aplicar identidad en vivo y reflejarla en la sesión.
                 brand.setPrimaryColor(color);
-                if (logoBase64) brand.setLogo(logoBase64);
-                else if (logoBase64 === '') brand.setLogo(null);
+                brand.setLogo(logos.claro, oscuroFinal);
                 auth.updateUser({
                     branding: {
                         ...(auth.user?.branding || {}),
                         colorPrimario: color,
-                        ...(logoBase64 ? { logoUrl: logoBase64 } : logoBase64 === '' ? { logoUrl: null } : {}),
+                        logoUrl: logos.claro,
+                        logoOscuroUrl: oscuroFinal,
                     },
                 });
                 onSaved(res.data.tenant);
-                setLogoBase64(undefined);
                 toast.success('Identidad de la empresa actualizada.');
             } else {
                 setErr(res.error || 'No se pudo guardar la identidad.');
@@ -532,41 +635,7 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                         <h3 className="me-section-title">Logo</h3>
                         <p className="me-section-hint">Reemplaza el nombre Build &amp; Serve en la barra superior.</p>
                     </div>
-                    <div className="me-logo">
-                        <input ref={fileRef} type="file" accept="image/*" hidden
-                            onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
-                        <button type="button"
-                            className={`me-dropzone ${dragging ? 'dragging' : ''} ${logoPreview ? 'has-logo' : ''}`}
-                            aria-label={logoPreview ? 'Cambiar el logo' : 'Subir un logo'}
-                            onClick={() => fileRef.current?.click()}
-                            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                            onDragLeave={() => setDragging(false)}
-                            onDrop={(e) => {
-                                e.preventDefault(); setDragging(false);
-                                const f = e.dataTransfer.files?.[0]; if (f) onFile(f);
-                            }}>
-                            {logoPreview
-                                ? <img src={logoPreview} alt="Logo de la empresa" />
-                                : <FiImage size={22} aria-hidden="true" />}
-                        </button>
-                        <div className="me-logo-info">
-                            <span className="me-logo-titulo">
-                                {logoPreview ? 'Logo cargado' : 'Arrastra tu logo o haz clic para subirlo'}
-                            </span>
-                            <span className="me-field-hint">PNG, JPG, SVG o WebP · Máx. 2 MB</span>
-                            <div className="me-logo-actions">
-                                <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>
-                                    <FiUpload size={13} /> {logoPreview ? 'Cambiar logo' : 'Subir logo'}
-                                </button>
-                                {logoPreview && (
-                                    <button className="btn btn-ghost btn-sm me-texto-alerta"
-                                        onClick={() => { setLogoPreview(null); setLogoBase64(''); }}>
-                                        <FiX size={13} /> Quitar
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                    <LogoModos valor={logos} onChange={setLogos} onError={setErr} />
                 </section>
 
                 <section className="me-section">
@@ -600,90 +669,6 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                     </div>
                 </section>
 
-                {/* Art. 57 inc. 2: las organizaciones sindicales son destinatarias
-                    del Reglamento Interno. Va acá y no en el repositorio porque es
-                    un dato de la empresa, no del documento. */}
-                <section className="me-section">
-                    <div className="me-section-head">
-                        <h3 className="me-section-title">Organizaciones sindicales</h3>
-                        <p className="me-section-hint">
-                            A quiénes hay que remitir el Reglamento Interno además de las personas
-                            trabajadoras y del comité. Si no hay ninguna, declararlo evita que el
-                            requisito quede pendiente sin forma de cerrarse.
-                        </p>
-                    </div>
-                    {tenant?.tenantId ? (
-                        <OrganizacionesSindicales
-                            tenantId={tenant.tenantId}
-                            reglas={tenant.reglas}
-                            personaId={auth?.user?.personaId || null}
-                        />
-                    ) : null}
-                </section>
-
-                {/* Art. 22: el SGSST es de la entidad empleadora, no de cada obra,
-                    así que vive acá y no en la obra. Va antes que la estructura
-                    preventiva porque ésta es uno de sus cinco componentes. */}
-                <section className="me-section">
-                    <div className="me-section-head">
-                        <h3 className="me-section-title">Sistema de Gestión de Seguridad y Salud en el Trabajo</h3>
-                        <p className="me-section-hint">
-                            Los cinco componentes que el Art. 22 exige como contenido mínimo.
-                            Tres se acreditan con un documento propio; los otros dos se
-                            acreditan en su módulo y aquí solo se enlazan.
-                        </p>
-                    </div>
-                    {tenant?.tenantId ? (
-                        <SgsstPanel
-                            tenantId={tenant.tenantId}
-                            onIrA={(enlace) => {
-                                if (enlace === 'estructura-preventiva') {
-                                    document.getElementById('estructura-preventiva')
-                                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                } else {
-                                    navigate('/documents-repository');
-                                }
-                            }}
-                        />
-                    ) : null}
-                </section>
-
-                {/* Estructura preventiva (DS 44 Arts. 23, 50, 65, 66). No bloquea nada:
-                    muestra qué corresponde según la dotación de la entidad y deja
-                    constituir también lo que no es obligatorio, como voluntario. */}
-                <section className="me-section" id="estructura-preventiva">
-                    <div className="me-section-head">
-                        <h3 className="me-section-title">Estructura preventiva</h3>
-                        <p className="me-section-hint">
-                            Órganos que corresponden a la entidad empleadora según su dotación.
-                            El comité paritario y el delegado de cada obra se gestionan en la obra.
-                        </p>
-                    </div>
-                    {tenant?.tenantId ? (
-                        <EstructuraPreventivaPanel
-                            tenantId={tenant.tenantId}
-                            ambito={AMBITO.EMPRESA}
-                            onConstituir={(tipo) => navigate(`/estructura/constituir?ambito=empresa&tipo=${tipo}`)}
-                            onVerOrgano={(organoId) => navigate(`/estructura/organos/${organoId}`)}
-                        />
-                    ) : null}
-                </section>
-
-                {/* Completitud del FUF a nivel entidad empleadora. El porcentaje se
-                    calcula sobre los requisitos EXIGIBLES: lo que no aplica sale del
-                    denominador en vez de penalizar. */}
-                <section className="me-section">
-                    <div className="me-section-head">
-                        <h3 className="me-section-title">Cumplimiento del Formulario Único de Fiscalización</h3>
-                        <p className="me-section-hint">
-                            Estado de los requisitos que cubre el módulo de estructura preventiva.
-                        </p>
-                    </div>
-                    {tenant?.tenantId ? (
-                        <CompletitudFufPanel tenantId={tenant.tenantId} ambito={AMBITO.EMPRESA} />
-                    ) : null}
-                </section>
-
                 {err && <AlertBanner variant="error" message={err} onDismiss={() => setErr('')} />}
                 {/* Fija al pie de la ventana: los cambios se hacen arriba y no hay que
                     bajar hasta el final del formulario para guardarlos. */}
@@ -705,37 +690,45 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
             <aside className="me-preview">
                 <span className="me-preview-eyebrow">Vista previa</span>
 
-                <div className="me-mock" aria-hidden="true">
-                    <div className="me-mock-topbar" style={{ background: navy }}>
-                        Cámara Chilena de la Construcción
-                    </div>
-                    <div className="me-mock-top">
-                        {logoPreview
-                            ? <img src={logoPreview} alt="" className="me-mock-logo" />
-                            : <span className="me-mock-wordmark">Build<i>&amp;</i>Serve</span>}
-                        <span className="me-mock-divider" />
-                        <span className="me-mock-crumb">{nombre.trim() || 'Tu empresa'}</span>
-                    </div>
-                    <div className="me-mock-body">
-                        <div className="me-mock-nav">
-                            <span className="me-mock-nav-item active"
-                                style={{ background: tint, borderColor: colorValido ? color : 'var(--surface-border)' }}>Obras</span>
-                            <span className="me-mock-nav-item">Personas</span>
-                            <span className="me-mock-nav-item">Documentos</span>
+                {(['claro', 'oscuro'] as const).map((modo) => {
+                    const logoModo = modo === 'claro' ? logos.claro : (logos.mismo ? logos.claro : logos.oscuro || logos.claro);
+                    return (
+                        <div className="me-mock-modo" key={modo}>
+                            <span className="me-mock-modo-label">Modo {modo}</span>
+                        <div className={`me-mock me-mock--${modo}`} aria-hidden="true">
+                            <div className="me-mock-topbar" style={{ background: navy }}>
+                                Cámara Chilena de la Construcción
+                            </div>
+                            <div className="me-mock-top">
+                                {logoModo
+                                    ? <img src={logoModo} alt="" className="me-mock-logo" />
+                                    : <span className="me-mock-wordmark">Build<i>&amp;</i>Serve</span>}
+                                <span className="me-mock-divider" />
+                                <span className="me-mock-crumb">{nombre.trim() || 'Tu empresa'}</span>
+                            </div>
+                            <div className="me-mock-body">
+                                <div className="me-mock-nav">
+                                    <span className="me-mock-nav-item active"
+                                        style={{ background: tint, borderColor: colorValido ? color : 'var(--surface-border)' }}>Obras</span>
+                                    <span className="me-mock-nav-item">Personas</span>
+                                    <span className="me-mock-nav-item">Documentos</span>
+                                </div>
+                                <div className="me-mock-lines">
+                                    <span /><span /><span />
+                                </div>
+                                <div className="me-mock-actions">
+                                    <span className="me-mock-btn" style={{ background: colorValido ? color : 'var(--surface-hover)' }}>
+                                        Guardar
+                                    </span>
+                                    <span className="me-mock-link" style={{ color: colorValido ? color : 'var(--text-muted)' }}>
+                                        Ver detalle
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                        <div className="me-mock-lines">
-                            <span /><span /><span />
                         </div>
-                        <div className="me-mock-actions">
-                            <span className="me-mock-btn" style={{ background: colorValido ? color : 'var(--surface-hover)' }}>
-                                Guardar
-                            </span>
-                            <span className="me-mock-link" style={{ color: colorValido ? color : 'var(--text-muted)' }}>
-                                Ver detalle
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                    );
+                })}
 
                 {ratio != null && (
                     <div className={`me-contrast ${contrasteOk ? 'ok' : 'warn'}`}>
@@ -1669,6 +1662,43 @@ function CampoSkel({ className, label = 90 }: { className?: string; label?: numb
     );
 }
 
+function Ds44Skeleton() {
+    return (
+        <div className="me-identity me-identity--solo" aria-busy="true" aria-live="polite" aria-label="Cargando el DS 44 de la empresa">
+            <div className="me-stack">
+                {/* Organizaciones sindicales llegan con la empresa; se reserva el
+                    alto de su forma más común: vacío + formulario para agregar. */}
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={170} hint={430} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                        <Sk w="100%" h={150} r={12} />
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+                            <div style={{ flex: '2 1 200px' }}><LabelSkel w={60} /><Sk w="100%" h={38} r={8} /></div>
+                            <div style={{ flex: '2 1 180px' }}><LabelSkel w={64} /><Sk w="100%" h={38} r={8} /></div>
+                            <Sk w={104} h={40} r={8} />
+                        </div>
+                    </div>
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={330} hint={380} />
+                    <SgsstSkeleton />
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={160} hint={420} />
+                    <EstructuraPreventivaSkeleton />
+                </section>
+
+                <section className="me-section">
+                    <SeccionHeadSkel titulo={340} hint={300} />
+                    <CompletitudFufSkeleton />
+                </section>
+            </div>
+        </div>
+    );
+}
+
 function IdentidadSkeleton() {
     return (
         <div className="me-identity" aria-busy="true" aria-live="polite" aria-label="Cargando la identidad de la empresa">
@@ -1708,35 +1738,6 @@ function IdentidadSkeleton() {
                             {Array.from({ length: SUGGESTED_COLORS.length }, (_, i) => <Sk key={i} w={26} h={26} r={8} />)}
                         </div>
                     </div>
-                </section>
-
-                {/* Organizaciones sindicales llegan con la empresa; se reserva el
-                    alto de su forma más común: vacío + formulario para agregar. */}
-                <section className="me-section">
-                    <SeccionHeadSkel titulo={170} hint={430} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        <Sk w="100%" h={150} r={12} />
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
-                            <div style={{ flex: '2 1 200px' }}><LabelSkel w={60} /><Sk w="100%" h={38} r={8} /></div>
-                            <div style={{ flex: '2 1 180px' }}><LabelSkel w={64} /><Sk w="100%" h={38} r={8} /></div>
-                            <Sk w={104} h={40} r={8} />
-                        </div>
-                    </div>
-                </section>
-
-                <section className="me-section">
-                    <SeccionHeadSkel titulo={330} hint={380} />
-                    <SgsstSkeleton />
-                </section>
-
-                <section className="me-section">
-                    <SeccionHeadSkel titulo={160} hint={420} />
-                    <EstructuraPreventivaSkeleton />
-                </section>
-
-                <section className="me-section">
-                    <SeccionHeadSkel titulo={340} hint={300} />
-                    <CompletitudFufSkeleton />
                 </section>
             </div>
 
@@ -1947,6 +1948,7 @@ const styles = `
 
 /* ── Identidad ─────────────────────────────────────────────────────────────── */
 .me-identity { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+.me-identity--solo { grid-template-columns: minmax(0, 1fr); }
 
 .me-datos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .me-datos .form-group { margin-bottom: 0; }
@@ -2007,6 +2009,20 @@ const styles = `
 }
 .me-preview-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
 .me-mock { border: 1px solid var(--surface-border); border-radius: 14px; overflow: hidden; }
+/* Cada vista previa fija sus propios colores de superficie: así se ven los dos
+   modos a la vez, sin depender del tema que tenga puesto quien edita. */
+.me-mock--claro {
+    --surface-card: #ffffff; --surface-elevated: #f7f9fc; --surface-hover: #e4ebf4; --surface-border: #d3dde9;
+    --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #64748b;
+    background: #ffffff;
+}
+.me-mock--oscuro {
+    --surface-card: #131d2a; --surface-elevated: #1a2533; --surface-hover: #212e3d; --surface-border: #2a384a;
+    --text-primary: #ffffff; --text-secondary: #cbd5e1; --text-muted: #94a3b8;
+    background: #131d2a;
+}
+.me-mock-modo { display: flex; flex-direction: column; gap: 6px; }
+.me-mock-modo-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
 .me-mock-topbar {
     height: 20px; display: flex; align-items: center; padding: 0 10px;
     font-size: 7.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;

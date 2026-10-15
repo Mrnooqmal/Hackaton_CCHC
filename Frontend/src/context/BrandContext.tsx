@@ -5,13 +5,16 @@ export const DEFAULT_PRIMARY_COLOR = '#006edc';
 
 interface BrandContextType {
   logo: string | null;
+  /** Logo de modo oscuro; null = se usa `logo` en ambos modos. */
+  logoOscuro: string | null;
   primaryColor: string;
-  setLogo: (logo: string | null) => void;
+  setLogo: (logo: string | null, logoOscuro?: string | null) => void;
   setPrimaryColor: (color: string) => void;
 }
 
 export const BrandContext = createContext<BrandContextType>({
   logo: null,
+  logoOscuro: null,
   primaryColor: DEFAULT_PRIMARY_COLOR,
   setLogo: () => {},
   setPrimaryColor: () => {},
@@ -81,10 +84,13 @@ export function applyPrimaryColor(hex: string) {
 
 export function BrandProvider({ children }: { children: ReactNode }) {
   const [logo, setLogoState] = useState<string | null>(null);
+  const [logoOscuro, setLogoOscuroState] = useState<string | null>(null);
   const [primaryColor, setPrimaryColorState] = useState(DEFAULT_PRIMARY_COLOR);
 
-  const setLogo = useCallback((newLogo: string | null) => {
+  // Sin segundo argumento el logo de modo oscuro se limpia: "mismo logo" es el caso base.
+  const setLogo = useCallback((newLogo: string | null, newLogoOscuro: string | null = null) => {
     setLogoState(newLogo);
+    setLogoOscuroState(newLogoOscuro);
   }, []);
 
   const setPrimaryColor = useCallback((color: string) => {
@@ -93,7 +99,7 @@ export function BrandProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <BrandContext.Provider value={{ logo, primaryColor, setLogo, setPrimaryColor }}>
+    <BrandContext.Provider value={{ logo, logoOscuro, primaryColor, setLogo, setPrimaryColor }}>
       {children}
     </BrandContext.Provider>
   );

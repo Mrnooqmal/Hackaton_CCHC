@@ -170,11 +170,14 @@ export const tenantsApi = {
     // Guarda la identidad de la empresa (nombre, color principal, logo). El logo
     // viaja como data URL en logoBase64; el backend lo sube a S3 y persiste logoKey.
     // logoBase64 === '' elimina el logo actual; undefined lo deja sin cambios.
-    updateBranding: (id: string, data: { nombre?: string; colorPrimario?: string; logoBase64?: string }) => {
+    // logoOscuroBase64 funciona igual para el logo de modo oscuro ('' = usar el mismo logo).
+    updateBranding: (id: string, data: { nombre?: string; colorPrimario?: string; logoBase64?: string; logoOscuroBase64?: string }) => {
         const preferencias: Record<string, unknown> = {};
         if (data.colorPrimario !== undefined) preferencias.colorPrimario = data.colorPrimario;
         if (data.logoBase64) preferencias.logoBase64 = data.logoBase64;
         else if (data.logoBase64 === '') preferencias.logoKey = null;
+        if (data.logoOscuroBase64) preferencias.logoOscuroBase64 = data.logoOscuroBase64;
+        else if (data.logoOscuroBase64 === '') preferencias.logoOscuroKey = null;
         return apiRequest<{ message: string; tenant: Tenant }>(`/tenants/${id}`, {
             method: 'PUT',
             body: JSON.stringify({

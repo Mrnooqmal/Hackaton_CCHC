@@ -13,7 +13,7 @@ export interface User {
     apellido: string;
     rol: PersonaRol;
     permisos?: string[];
-    branding?: { logoUrl?: string | null; colorPrimario?: string | null } | null;
+    branding?: { logoUrl?: string | null; logoOscuroUrl?: string | null; colorPrimario?: string | null } | null;
     /** Nombre de la empresa de la sesión (para pantallas previas a elegir obra). */
     empresaNombre?: string | null;
     email?: string;
