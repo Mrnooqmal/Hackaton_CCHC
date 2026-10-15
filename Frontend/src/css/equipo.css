@@ -1,0 +1,546 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+
+/* equipo.css — Página pública "The Code Cookers" (/equipo).
+   Vive fuera del layout de la app, pero usa sus tokens: el tema claro/oscuro,
+   los azules y el rojo CChC y la misma tipografía (Roboto). La única fuente
+   extra es Roboto Mono, solo para los rótulos tipo plano. */
+
+.eq-root {
+  --eq-bg: var(--surface-bg);
+  --eq-band: var(--surface-elevated);
+  --eq-ink: var(--text-primary);
+  --eq-ink-2: var(--text-secondary);
+  --eq-mute: #7d8ba1; /* --text-muted no llega a 4.5:1 sobre el fondo oscuro */
+  --eq-line: var(--surface-border);
+  --eq-accent: var(--accent);
+  --eq-accent-text: var(--accent-text);
+  --eq-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--eq-bg);
+  color: var(--eq-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+:root.theme-light .eq-root {
+  --eq-mute: var(--text-muted);
+}
+
+.eq-wrap {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 5vw, 56px);
+  box-sizing: border-box;
+}
+
+.eq-root a:focus-visible {
+  outline: 2px solid var(--eq-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ── Utilidades de texto ── */
+
+.eq-mono {
+  font-family: 'Roboto Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eq-mute);
+}
+
+.eq-h2 {
+  margin: 0 0 24px;
+  font-size: clamp(30px, 4.4vw, 56px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+}
+
+.eq-p {
+  margin: 0;
+  max-width: 560px;
+  font-size: clamp(15px, 1.3vw, 17px);
+  line-height: 1.7;
+  font-weight: 300;
+  color: var(--eq-ink-2);
+}
+
+.eq-p + .eq-p { margin-top: 16px; }
+.eq-p strong { font-weight: 500; color: var(--eq-ink); }
+
+/* ── Fondos fotográficos ──
+   La foto ocupa un costado y se funde con el azul marino mediante un degradado
+   horizontal; el texto queda del lado libre. Tiene un acercamiento muy lento.
+   El texto es siempre claro: lo que garantiza su contraste es el azul, no el
+   tema. */
+
+.eq-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #00203f;
+}
+
+.eq-bg img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: 50% 35%;
+  will-change: transform;
+}
+
+/* Portada: foto a la derecha, el degradado la funde hacia el texto */
+.eq-bg--hero {
+  /* Empieza 330px después del borde izquierdo del contenido, para que el título
+     quede en la zona que el degradado ya apagó, sea cual sea el ancho. */
+  left: calc(max(0px, 50% - 600px) + 56px + 330px);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 36%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 36%);
+}
+
+/* El acercamiento arranca al cargar */
+.eq-bg--hero img {
+  object-position: 45% 20%;
+  animation: eq-push 28s ease-out forwards;
+}
+
+/* Foto de sección: arranca cuando entra en pantalla */
+.eq-bg--view img {
+  object-position: 50% 40%;
+  transition: transform 22s ease-out;
+}
+
+.eq-bg--view.is-in img { transform: scale(1.07); }
+
+.eq-scrim { position: absolute; inset: 0; pointer-events: none; }
+
+/* ── Portada ── */
+
+.eq-hero {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background: #00203f;
+}
+
+.eq-hero .eq-scrim {
+  background:
+    linear-gradient(180deg, rgba(0, 20, 44, 0.62) 0%, rgba(0, 20, 44, 0.18) 34%, rgba(0, 20, 44, 0.9) 100%);
+}
+
+.eq-hero-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: max(660px, 100vh);
+  min-height: max(660px, 100dvh);
+  padding-bottom: clamp(24px, 4vw, 48px);
+}
+
+.eq-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 0;
+}
+
+.eq-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.eq-wordmark-build { color: #fff; }
+.eq-wordmark-amp { color: #ff6b3d; font-weight: 500; }
+.eq-wordmark-serve { color: #8cc4ff; }
+
+.eq-back {
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
+  padding-bottom: 2px;
+  background: linear-gradient(currentColor, currentColor) left bottom / 0 1px no-repeat;
+  transition: color 0.2s, background-size 0.35s var(--eq-ease);
+}
+
+.eq-back:hover { color: #fff; background-size: 100% 1px; }
+
+.eq-hero-copy { margin-top: auto; padding-top: 48px; }
+
+.eq-title {
+  margin: 0;
+  font-size: clamp(52px, 8vw, 104px);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+}
+
+.eq-title span { display: block; }
+
+.eq-lead {
+  margin: 24px 0 0;
+  max-width: 480px;
+  font-size: clamp(15px, 1.4vw, 18px);
+  line-height: 1.6;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.eq-lead strong { font-weight: 500; color: #fff; }
+
+/* ── Cuadro de rotulado ──
+   Como el de un plano: quién, qué y cuándo, en celdas separadas por líneas
+   finas (el gap de 1px deja ver el fondo, así siguen limpias al reacomodarse). */
+
+.eq-rotulo {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin: clamp(32px, 5vw, 56px) 0 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.eq-rotulo > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px 18px;
+  background: rgba(0, 22, 48, 0.62);
+  backdrop-filter: blur(10px);
+}
+
+.eq-rotulo dt { margin: 0; color: rgba(255, 255, 255, 0.66); }
+
+.eq-rotulo dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.eq-rotulo dd small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+/* ── Secciones ── */
+
+.eq-section {
+  padding: clamp(64px, 9vw, 128px) 0;
+}
+
+.eq-section--band {
+  background: var(--eq-band);
+  border-top: 1px solid var(--eq-line);
+  border-bottom: 1px solid var(--eq-line);
+}
+
+.eq-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(32px, 6vw, 88px);
+  align-items: center;
+}
+
+.eq-split--reverse {
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: start;
+}
+
+.eq-kicker { margin: 0 0 16px; color: var(--eq-accent-text); }
+
+/* Problema / solución / resultado: filas con líneas, sin tarjetas de color */
+
+.eq-facts { margin: 0; }
+
+.eq-facts > div {
+  padding: 22px 0;
+  border-top: 1px solid var(--eq-line);
+}
+
+.eq-facts > div:last-child { border-bottom: 1px solid var(--eq-line); }
+
+.eq-facts dt { margin: 0 0 8px; }
+
+.eq-facts dd {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  font-weight: 300;
+  color: var(--eq-ink);
+}
+
+/* ── Quiénes somos: foto de fondo ── */
+
+.eq-story {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  min-height: clamp(520px, 70vh, 760px);
+  padding: clamp(64px, 9vw, 112px) 0;
+  color: #fff;
+  background: #00203f;
+}
+
+.eq-story .eq-bg {
+  right: auto;
+  /* Hasta donde empieza la columna de texto (520px desde el borde derecho del
+     contenido), más 130px que el degradado funde bajo ella. */
+  width: calc(100% - max(0px, 50% - 600px) - 56px - 520px + 130px);
+  -webkit-mask-image: linear-gradient(270deg, transparent 0, #000 36%);
+  mask-image: linear-gradient(270deg, transparent 0, #000 36%);
+}
+
+.eq-story .eq-scrim { display: none; }
+
+/* Las personas se corren hacia la izquierda, lejos de la columna de texto */
+.eq-story .eq-bg--view img { object-position: 75% 40%; }
+
+.eq-story-inner { position: relative; }
+.eq-story-copy { max-width: 520px; margin-left: auto; }
+.eq-story .eq-kicker { color: #8cc4ff; }
+.eq-story .eq-p { color: rgba(255, 255, 255, 0.88); }
+.eq-story .eq-p strong { color: #fff; }
+
+.eq-story-caption {
+  position: absolute;
+  left: clamp(20px, 5vw, 56px);
+  bottom: -64px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Equipo ──
+   Cada integrante tiene su espacio de retrato. Mientras no haya foto se ve una
+   silueta; al agregar `foto` en la lista del componente, la reemplaza. */
+
+.eq-team {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(20px, 2.4vw, 32px);
+  margin: clamp(32px, 4vw, 56px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eq-member { display: flex; flex-direction: column; gap: 16px; }
+
+.eq-member-photo {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border: 1px solid var(--eq-line);
+  border-radius: var(--radius-lg);
+  background: var(--eq-band);
+}
+
+.eq-member-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.9s var(--eq-ease);
+}
+
+.eq-member:hover .eq-member-photo img { transform: scale(1.04); }
+
+.eq-member-silhouette { width: 66%; height: auto; fill: var(--eq-line); }
+
+.eq-member-name {
+  margin: 0;
+  font-size: clamp(17px, 1.7vw, 21px);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.eq-member-meta { display: flex; flex-direction: column; gap: 10px; }
+
+.eq-member-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  font-size: 14px;
+  color: var(--eq-ink-2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.eq-member-link span {
+  display: inline-block;
+  transition: transform 0.3s var(--eq-ease);
+}
+
+.eq-member-link:hover { color: var(--eq-accent-text); }
+.eq-member-link:hover span { transform: translate(2px, -2px); }
+
+/* ── Agradecimientos ── */
+
+.eq-quote {
+  margin: 0;
+  font-size: clamp(26px, 3.6vw, 44px);
+  font-weight: 500;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+}
+
+.eq-orgs { margin: 36px 0 0; }
+
+.eq-orgs > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--eq-line);
+}
+
+.eq-orgs > div:last-child { border-bottom: 1px solid var(--eq-line); }
+
+.eq-orgs dt { margin: 0; flex-shrink: 0; }
+.eq-orgs dd { margin: 0; font-size: 15px; font-weight: 500; text-align: right; }
+
+/* ── Pie ── */
+
+.eq-foot {
+  padding: 28px 0 40px;
+  border-top: 1px solid var(--eq-line);
+  font-size: 12.5px;
+  color: var(--eq-mute);
+}
+
+/* ── Movimiento ──
+   Al cargar, una sola secuencia: el título y el texto suben apenas, la foto se
+   despliega y el rótulo aparece celda por celda. Más abajo, cada bloque entra
+   una vez con un desplazamiento corto. */
+
+@keyframes eq-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes eq-push {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+
+.eq-load { opacity: 0; animation: eq-rise 0.7s var(--eq-ease) forwards; animation-delay: var(--eq-d, 0s); }
+
+.eq-in {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.7s var(--eq-ease), transform 0.7s var(--eq-ease);
+  transition-delay: var(--eq-d, 0s);
+}
+
+.eq-in.is-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .eq-load { animation: none; opacity: 1; }
+  .eq-bg--hero img { animation: none; }
+  .eq-bg--view img, .eq-member-photo img, .eq-member-link span, .eq-back { transition: none; }
+  .eq-bg--view.is-in img { transform: none; }
+  .eq-in { opacity: 1; transform: none; transition: none; }
+}
+
+/* ── Responsive ── */
+
+/* Pantallas medianas y angostas: la foto de "Quiénes somos" va arriba, sin
+   texto encima de los rostros. */
+
+@media (max-width: 1100px) {
+  .eq-story {
+    --eq-ph: min(80vw, 560px);
+    display: block;
+    min-height: 0;
+    padding: calc(var(--eq-ph) - 40px) 0 clamp(48px, 8vw, 72px);
+  }
+
+  .eq-story .eq-bg {
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: var(--eq-ph);
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .eq-story .eq-scrim { display: block; }
+  .eq-story-copy { margin-left: 0; }
+
+  .eq-story .eq-scrim {
+    background: linear-gradient(180deg, rgba(0, 20, 44, 0) 0, rgba(0, 20, 44, 0) calc(var(--eq-ph) - 160px), #00203f var(--eq-ph), #00203f 100%);
+  }
+
+  .eq-story-caption { position: static; margin-top: 24px; }
+}
+
+@media (max-width: 960px) {
+  .eq-split,
+  .eq-split--reverse { grid-template-columns: minmax(0, 1fr); }
+
+  .eq-rotulo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eq-rotulo > div:last-child { grid-column: 1 / -1; }
+
+  .eq-team { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Teléfono vertical: un fondo recortado dejaría fuera a casi todo el equipo.
+   La foto se ve completa arriba (proporción 1024:732) y se funde con el azul
+   donde empieza el texto. */
+
+@media (max-width: 1100px) {
+  .eq-bg--hero {
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 71.5vw;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .eq-bg--hero img { object-position: 50% 50%; }
+
+  .eq-hero .eq-scrim {
+    background: linear-gradient(180deg, rgba(0, 20, 44, 0.6) 0, rgba(0, 20, 44, 0) 90px, rgba(0, 20, 44, 0) calc(71.5vw - 120px), #00203f 71.5vw, #00203f 100%);
+  }
+
+  .eq-hero-inner { min-height: 0; }
+  .eq-title { font-size: clamp(52px, 17vw, 84px); }
+  .eq-hero-copy { margin-top: calc(71.5vw - 72px); padding-top: 0; }
+}
+
+@media (max-width: 560px) {
+  .eq-rotulo { grid-template-columns: minmax(0, 1fr); }
+  .eq-orgs > div { flex-direction: column; gap: 4px; }
+  .eq-orgs dd { text-align: left; }
+}

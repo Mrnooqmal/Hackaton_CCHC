@@ -179,6 +179,7 @@
   --topbar-height: 34px;          /* franja institucional superior */
   --mainbar-height: 60px;         /* barra principal: marca + migas + acciones */
   --header-height: 94px;          /* topbar + mainbar */
+  --footer-height: 75px;          /* igual al pie del sidebar: ambos bordes quedan a la misma altura */
   --max-content-width: 1400px;
 
   /* Breakpoints */
