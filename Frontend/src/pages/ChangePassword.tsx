@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { authApi } from '../api/client';
 import {
   FiEye, FiEyeOff, FiCheck, FiLock, FiUser, FiArrowRight, FiArrowUp, FiLogOut,
   FiMonitor, FiEdit2, FiKey,
 } from 'react-icons/fi';
-import { AlertBanner, FieldSection, FormPage, PageHeader } from '../components/ui';
+import { FieldSection, FormPage, PageHeader } from '../components/ui';
 import '../css/AuthCard.css';
 import '../css/cambio-password.css';
 
@@ -30,12 +31,12 @@ type Campo = 'passwordActual' | 'passwordNuevo' | 'confirmarPassword';
 export default function ChangePassword() {
   const { user, logout, updateUser, reemplazarSesion } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const isFirstEntry = user?.passwordTemporal === true || user?.habilitado === false;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [errorActual, setErrorActual] = useState('');
-  const [success, setSuccess] = useState(false);
   const [show, setShow] = useState({ passwordActual: false, passwordNuevo: false, confirmarPassword: false });
   const [capsLock, setCapsLock] = useState(false);
   const [form, setForm] = useState({ passwordActual: '', passwordNuevo: '', confirmarPassword: '' });
@@ -55,7 +56,6 @@ export default function ChangePassword() {
     setForm((f) => ({ ...f, [campo]: valor }));
     if (error) setError('');
     if (campo === 'passwordActual' && errorActual) setErrorActual('');
-    if (success) setSuccess(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,9 +84,9 @@ export default function ChangePassword() {
           navigate(debeEnrolarse ? '/enroll-me' : '/', { replace: true });
           return;
         }
-        setForm({ passwordActual: '', passwordNuevo: '', confirmarPassword: '' });
-        setShow({ passwordActual: false, passwordNuevo: false, confirmarPassword: false });
-        setSuccess(true);
+        toast.success('Contraseña actualizada. Cerramos tu sesión en los demás dispositivos.');
+        navigate('/configuracion', { replace: true });
+        return;
       } else if (response.error === 'Contraseña actual incorrecta') {
         setErrorActual('No es tu contraseña actual. Revisa mayúsculas y vuelve a intentarlo.');
       } else {
@@ -244,7 +244,7 @@ export default function ChangePassword() {
               </span>
             )}
             <button type="button" className="btn btn-secondary" onClick={() => navigate('/configuracion')} disabled={loading}>
-              {success ? 'Volver a Configuración' : 'Cancelar'}
+              Cancelar
             </button>
             <button type="submit" className="btn btn-primary" disabled={!canSubmit || loading}>
               {loading ? 'Cambiando…' : 'Cambiar contraseña'}
@@ -254,13 +254,6 @@ export default function ChangePassword() {
       >
         <div className="cpw-cols">
           <div className="cpw-main">
-            {success && (
-              <AlertBanner variant="success" message="Contraseña actualizada"
-                onDismiss={() => setSuccess(false)}>
-                Cerramos tu sesión en los demás dispositivos. En este sigues conectado; usa la nueva desde tu próximo ingreso.
-              </AlertBanner>
-            )}
-
             <FieldSection title="Tu acceso" description="Confirma que eres tú" inline>
               <div className="form-group">
                 <label className="form-label" htmlFor="cpw-rut">RUT</label>
