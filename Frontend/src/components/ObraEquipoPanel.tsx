@@ -2300,6 +2300,15 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 .eq2-toolbar-right { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
                 .eq2-count-text { font-size: 13px; color: var(--text-secondary); }
                 .eq2-count-text strong { font-weight: 600; color: var(--text-primary); }
+                /* En móvil la izquierda se encoge bajo el mínimo del buscador y éste
+                   se monta sobre los botones: se apila buscador → acciones → conteo. */
+                @media (max-width: 640px) {
+                    .eq2-toolbar { gap: var(--space-2); }
+                    .eq2-toolbar-left { display: contents; }
+                    .eq2-toolbar .eq-search-wrap { order: 1; flex: 1 1 100%; min-width: 0; max-width: none; }
+                    .eq2-toolbar-right { order: 2; flex: 1 1 100%; justify-content: space-between; }
+                    .eq2-count-text { order: 3; flex-basis: 100%; }
+                }
 
                 /* ── Cuadrícula / lista ────────────────────────── */
                 .eq2-mode-toggle {
