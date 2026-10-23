@@ -125,7 +125,7 @@ function AppContent() {
 
   useEffect(() => {
     if (!user?.branding) return;
-    if (user.branding.logoUrl)       setLogo(user.branding.logoUrl);
+    if (user.branding.logoUrl)       setLogo(user.branding.logoUrl, user.branding.logoOscuroUrl || null);
     if (user.branding.colorPrimario) setPrimaryColor(user.branding.colorPrimario);
   }, [user?.branding, setLogo, setPrimaryColor]);
 

@@ -625,6 +625,16 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Solo borradores del plan sin firmas; ver handler.remove.
+  deleteActivity:
+    handler: handlers/activities/handler.remove
+    events:
+      - httpApi:
+          path: /activities/{id}
+          method: DELETE
+          authorizer:
+            name: sesionUsuario
+
   registerActivityAttendance:
     handler: handlers/activities/handler.registerAttendance
     events:

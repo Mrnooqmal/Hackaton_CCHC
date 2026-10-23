@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile, horaChileHHMM } = require('../../lib/utils/fechaChile');
@@ -1238,6 +1238,75 @@ module.exports.patch = async (event) => {
         return success(actualizada);
     } catch (err) {
         console.error('Error patching activity:', err);
+        return error(err.message, 500);
+    }
+};
+
+/**
+ * DELETE /activities/{id} - Eliminar un borrador del plan.
+ *
+ * Solo borradores (`estado: 'borrador'`, generados por /activities/plan y aún
+ * no completados): nadie fue avisado todavía y no tienen firmas, así que no son
+ * registro DS 44. Una actividad programada, realizada o cancelada nunca se
+ * borra por esta vía.
+ *
+ * - Se rechaza (409) si tiene asistentes, firma del relator o un respaldo
+ *   cargado (evaluación o duración): borrarla dejaría el archivo huérfano.
+ * - El borrado lleva condición: si entre la lectura y el borrado alguien la
+ *   completó o firmó, DynamoDB lo rechaza y se responde 409.
+ * - Volver a generar el plan sobre esa fecha crea el borrador de nuevo: la
+ *   idempotencia del plan mira las actividades que existen.
+ * - Autorizado: el relator/responsables de la actividad o quien tenga el
+ *   permiso de crear actividades (misma regla que editarla).
+ */
+module.exports.remove = async (event) => {
+    try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+
+        const { id } = event.pathParameters || {};
+        if (!id) return error('ID de actividad requerido');
+
+        const activity = await actividadDelTenant(id, ses.sesion);
+        if (!activity) return error('Actividad no encontrada', 404);
+
+        const auth = await autorizarGestionActividad(ses.sesion, activity);
+        if (auth.error) return auth.error;
+
+        if (activity.estado !== 'borrador') {
+            return error('Solo se pueden eliminar actividades planificadas que todavía no se programan', 409);
+        }
+        const tieneFirmas = (activity.asistentes || []).length > 0 || !!activity.firmaRelator;
+        if (tieneFirmas) {
+            return error('No se puede eliminar: la actividad ya tiene firmas registradas', 409);
+        }
+        if (activity.evaluacion?.respaldo || activity.duracion?.respaldo) {
+            return error('No se puede eliminar: la actividad tiene un respaldo cargado', 409);
+        }
+
+        try {
+            await docClient.send(new DeleteCommand({
+                TableName: TABLE_NAME,
+                Key: { activityId: id },
+                // El plan crea los borradores con `firmaRelator: null` y `asistentes: []`.
+                // En DynamoDB un atributo nulo EXISTE: `attribute_not_exists` solo no
+                // basta, hay que aceptar también el tipo NULL.
+                ConditionExpression: '#estado = :borrador AND tenantId = :tenantId'
+                    + ' AND (attribute_not_exists(asistentes) OR attribute_type(asistentes, :nulo) OR size(asistentes) = :cero)'
+                    + ' AND (attribute_not_exists(firmaRelator) OR attribute_type(firmaRelator, :nulo))',
+                ExpressionAttributeNames: { '#estado': 'estado' },
+                ExpressionAttributeValues: { ':borrador': 'borrador', ':tenantId': ses.sesion.tenantId, ':cero': 0, ':nulo': 'NULL' },
+            }));
+        } catch (err) {
+            if (err.name === 'ConditionalCheckFailedException') {
+                return error('La actividad cambió mientras se eliminaba (se programó o se firmó). Vuelve a abrirla.', 409);
+            }
+            throw err;
+        }
+
+        return success({ activityId: id, eliminada: true });
+    } catch (err) {
+        console.error('Error deleting activity:', err);
         return error(err.message, 500);
     }
 };

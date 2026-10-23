@@ -1,4 +1,4 @@
-/* layout.css — Estructura de la app: contenedor principal, sidebar, header y migas de pan. */
+/* layout.css — Estructura de la app: contenedor principal, sidebar, header, migas de pan y footer. */
 
 /* Layout principal */
 
@@ -788,5 +788,225 @@
 @media (max-width: 640px) {
   .header-mainbar-right {
     gap: var(--space-1);
+  }
+}
+
+/* ======================================================
+   FOOTER — Pie de página con el mismo material que header y sidebar
+   ====================================================== */
+
+/* Rompe el padding de .main-content para llegar de borde a borde (el margen
+   izquierdo del sidebar ya lo pone .main-content). Su alto mínimo es el del pie
+   del sidebar: con la página al final de su scroll, los dos bordes superiores
+   coinciden. */
+
+.ft-root {
+  --ft-muted: #7d8ba1; /* --text-muted no llega a 4.5:1 sobre el fondo oscuro */
+  margin: var(--space-6) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  width: calc(100% + 2 * var(--space-6));
+  min-height: var(--footer-height);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-6);
+  background: var(--surface-card);
+  border-top: 1px solid var(--surface-border);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+:root.theme-light .ft-root {
+  --ft-muted: var(--text-muted);
+}
+
+/* Fila principal: marca y colaboración a la izquierda, enlaces a la derecha.
+   Si el ancho no alcanza (tablet) los enlaces bajan en vez de apretarse. */
+
+.ft-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  min-height: 24px;
+}
+
+.ft-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.ft-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.ft-brand-build { color: var(--logo-build); }
+.ft-brand-amp { color: var(--cchc-red); font-weight: 500; }
+.ft-brand-serve { color: var(--logo-serve); }
+
+.ft-sep {
+  width: 1px;
+  height: 18px;
+  flex-shrink: 0;
+  background: var(--surface-border);
+}
+
+.ft-collab {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Mismo rótulo que los títulos de sección del sidebar */
+
+.ft-collab-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 12px;
+  color: var(--ft-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  white-space: nowrap;
+}
+
+/* El logo claro es el predeterminado (el modo claro lo es en la app); el
+   oscuro es la versión en blanco para el fondo oscuro. */
+
+.ft-logo {
+  width: auto;
+  display: block;
+}
+
+.ft-logo--light { height: 20px; display: none; }
+.ft-logo--dark { height: 26px; }
+
+:root.theme-light .ft-logo--light { display: block; }
+:root.theme-light .ft-logo--dark { display: none; }
+
+.ft-links {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.ft-link {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--transition-fast);
+}
+
+.ft-link:hover { color: var(--accent-text); }
+
+.ft-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* En escritorio la línea legal lleva solo la autoría; el © aparece en móvil */
+
+.ft-copy { display: none; }
+
+.ft-legal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 var(--space-6);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ft-muted);
+}
+
+/* Los márgenes negativos siguen el padding de .main-content en cada tamaño */
+
+@media (max-width: 1024px) {
+  .ft-root {
+    margin-left: calc(-1 * var(--space-4));
+    margin-right: calc(-1 * var(--space-4));
+    margin-bottom: calc(-1 * var(--space-4));
+    width: calc(100% + 2 * var(--space-4));
+  }
+}
+
+@media (max-width: 480px) {
+  .ft-root {
+    margin-left: calc(-1 * var(--space-3));
+    margin-right: calc(-1 * var(--space-3));
+    margin-bottom: calc(-1 * var(--space-3));
+    width: calc(100% + 2 * var(--space-3));
+  }
+}
+
+/* Móvil: todo apilado. Marca a la izquierda y colaboración a la derecha, los
+   enlaces centrados en columna (40px de alto para tocarlos) y lo legal debajo. */
+
+@media (max-width: 768px) {
+  .ft-root {
+    min-height: 0;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  .ft-main {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: var(--space-3);
+  }
+
+  .ft-brand-group {
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-height: 40px;
+  }
+
+  .ft-sep { display: none; }
+
+  .ft-collab {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .ft-logo--dark { height: 24px; }
+
+  .ft-links {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .ft-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+  }
+
+  .ft-copy { display: inline; }
+
+  .ft-legal {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--surface-border);
   }
 }

@@ -239,7 +239,7 @@ export default function RepositorioDs44({
 
     // La estructura preventiva se gestiona en la obra (su panel) o en Mi Empresa.
     const rutaModulo = (modulo: string) => (modulo === 'estructura'
-        ? (ambito === 'obra' && obraId ? `/obras/${obraId}` : '/mi-empresa')
+        ? (ambito === 'obra' && obraId ? `/obras/${obraId}` : '/mi-empresa?tab=ds44')
         : RUTA_MODULO[modulo] || null);
 
     // Recordar reusa la misma llamada: a quien ya tiene la firma pendiente el

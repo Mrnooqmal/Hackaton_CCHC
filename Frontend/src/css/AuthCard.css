@@ -625,6 +625,15 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
     overflow: hidden;
 }
 
+.onb-previews { display: flex; flex-direction: column; gap: 10px; }
+
+/* Modo oscuro: mismos elementos sobre las superficies del tema oscuro */
+.onb-preview--oscuro { border-color: #2a384a; }
+.onb-preview--oscuro .onb-preview-top { background: #131d2a; border-bottom-color: #2a384a; }
+.onb-preview--oscuro .onb-preview-marca { color: #ffffff; }
+.onb-preview--oscuro .onb-preview-tabs { background: #1a2533; }
+.onb-preview--oscuro .onb-preview-tab { color: #94a3b8; }
+
 .onb-preview-top {
     display: flex;
     align-items: center;

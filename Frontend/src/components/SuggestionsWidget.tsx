@@ -4,6 +4,10 @@ import { suggestionsApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
+// El botón flotante era solo para el piloto: queda oculto sin quitar la
+// funcionalidad (modal, envío y API). Poner en true para volver a mostrarlo.
+const MOSTRAR_BOTON = false;
+
 export default function SuggestionsWidget() {
     const { user } = useAuth();
     const { toast } = useToast();
@@ -39,15 +43,17 @@ export default function SuggestionsWidget() {
     return (
         <>
             {/* ── FAB fijo abajo-derecha ── */}
-            <button
-                type="button"
-                className="sw-fab"
-                onClick={() => setOpen(true)}
-                aria-label="Déjanos tu sugerencia"
-            >
-                <FiMessageCircle size={17} className="sw-fab-icon" />
-                <span className="sw-fab-label">Déjanos tu sugerencia</span>
-            </button>
+            {MOSTRAR_BOTON && (
+                <button
+                    type="button"
+                    className="sw-fab"
+                    onClick={() => setOpen(true)}
+                    aria-label="Déjanos tu sugerencia"
+                >
+                    <FiMessageCircle size={17} className="sw-fab-icon" />
+                    <span className="sw-fab-label">Déjanos tu sugerencia</span>
+                </button>
+            )}
 
             {/* ── Modal ── */}
             {open && (

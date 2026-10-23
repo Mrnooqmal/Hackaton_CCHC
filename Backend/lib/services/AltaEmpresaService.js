@@ -86,8 +86,8 @@ class AltaEmpresaService {
         if (identidad?.colorPrimario && !COLOR_HEX.test(identidad.colorPrimario)) {
             errores.push('El color principal no es válido');
         }
-        if (identidad?.logoBase64) {
-            const problema = problemaLogo(identidad.logoBase64);
+        for (const logo of [identidad?.logoBase64, identidad?.logoOscuroBase64]) {
+            const problema = logo ? problemaLogo(logo) : null;
             if (problema) errores.push(problema);
         }
 
@@ -129,7 +129,7 @@ class AltaEmpresaService {
      * @param {string|null} datos.password - si viene, el administrador queda con
      *        SU contraseña y sin paso de cambio obligatorio. Si no, se genera una
      *        temporal (camino del script del operador).
-     * @param {object|null} datos.identidad - `{ colorPrimario, logoBase64 }`
+     * @param {object|null} datos.identidad - `{ colorPrimario, logoBase64, logoOscuroBase64 }`
      *        elegidos en el onboarding; los mismos campos que edita Mi Empresa.
      * @returns {Promise<{tenant, persona, passwordTemporal: string|null}>}
      */
@@ -159,7 +159,7 @@ class AltaEmpresaService {
 
         // 2b. Identidad elegida en el alta. El logo es accesorio: si S3 falla,
         //     la empresa se crea igual y el logo se sube después desde Mi Empresa.
-        if (identidad?.colorPrimario || identidad?.logoBase64) {
+        if (identidad?.colorPrimario || identidad?.logoBase64 || identidad?.logoOscuroBase64) {
             const preferencias = { ...(tenant.preferencias || {}) };
             if (identidad.colorPrimario) preferencias.colorPrimario = identidad.colorPrimario.toLowerCase();
             if (identidad.logoBase64) {
@@ -167,6 +167,13 @@ class AltaEmpresaService {
                     preferencias.logoKey = await subirLogoEmpresa(identidad.logoBase64, tenant.tenantId);
                 } catch (logoErr) {
                     console.error('No se pudo subir el logo en el alta:', logoErr);
+                }
+            }
+            if (identidad.logoOscuroBase64) {
+                try {
+                    preferencias.logoOscuroKey = await subirLogoEmpresa(identidad.logoOscuroBase64, tenant.tenantId, 'oscuro');
+                } catch (logoErr) {
+                    console.error('No se pudo subir el logo oscuro en el alta:', logoErr);
                 }
             }
             await tenantService.updateConfig(tenant.tenantId, { preferencias });

@@ -26,8 +26,12 @@ const problemaLogo = (dataUrl) => {
     return null;
 };
 
-/** Sube el logo y devuelve la clave de S3 que se guarda en `preferencias.logoKey`. */
-const subirLogoEmpresa = async (dataUrl, tenantId) => {
+/**
+ * Sube el logo y devuelve la clave de S3. La variante `claro` es el logo
+ * general (`preferencias.logoKey`); `oscuro` es el que se muestra en modo
+ * oscuro cuando la empresa no puede usar el mismo (`preferencias.logoOscuroKey`).
+ */
+const subirLogoEmpresa = async (dataUrl, tenantId, variante = 'claro') => {
     const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
     const contentType = match ? match[1] : 'image/png';
     const base64Data = match ? match[2] : dataUrl;
@@ -35,7 +39,7 @@ const subirLogoEmpresa = async (dataUrl, tenantId) => {
     // El logo se reemplaza cuando la empresa quiere: es material de trabajo, no
     // evidencia. En el bucket con bloqueo cada cambio habría dejado una versión
     // inmovilizada por cinco años.
-    const key = `tenants/${tenantId}/${almacenamiento.CATEGORIAS.logos.carpeta}/logo.png`;
+    const key = `tenants/${tenantId}/${almacenamiento.CATEGORIAS.logos.carpeta}/${variante === 'oscuro' ? 'logo-oscuro' : 'logo'}.png`;
     await s3Client.send(new PutObjectCommand({
         Bucket: almacenamiento.bucketDeClave(key),
         Key: key,

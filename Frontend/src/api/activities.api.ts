@@ -302,6 +302,15 @@ export const activitiesApi = {
             body: JSON.stringify(data),
         }),
 
+    /**
+     * Elimina un borrador del plan (aún no programado y sin firmas). El backend
+     * rechaza con 409 cualquier otra actividad: no se borran registros DS 44.
+     */
+    remove: (id: string) =>
+        apiRequest<{ activityId: string; eliminada: boolean }>(`/activities/${id}`, {
+            method: 'DELETE',
+        }),
+
     registerAttendance: (id: string, data: AttendanceData) =>
         apiRequest<AttendanceResult>(`/activities/${id}/attendance`, {
             method: 'POST',

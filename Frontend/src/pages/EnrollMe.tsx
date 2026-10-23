@@ -228,7 +228,7 @@ export default function EnrollMe() {
     const nombreCompleto = [user?.nombre, user?.apellidoPaterno || user?.apellido].filter(Boolean).join(' ');
     const empresa = user?.empresaNombre || '';
     const rolLabel = ROL_LABEL[user?.rol as string] ?? (user?.rol || '');
-    const logoEmpresa = user?.branding?.logoUrl || null;
+    const logoEmpresa = user?.branding?.logoOscuroUrl || user?.branding?.logoUrl || null; // la credencial es navy
 
     // ── Pasos ─────────────────────────────────────────────────────────────────
     const pasos: { id: EnrollmentStep; label: string }[] = isChangePin

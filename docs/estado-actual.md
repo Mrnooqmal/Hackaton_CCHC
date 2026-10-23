@@ -139,6 +139,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-24 | Carga masiva de personas en cola |
 | D-25 | Avisos del EventBus durables sobre la misma cola |
 | D-26 | Cambiar la contraseña revoca todas las sesiones y emite una nueva |
+| D-27 | Los borradores del plan de actividades se pueden eliminar |
 
 ### Hallazgos (sección 4)
 

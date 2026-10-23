@@ -39,6 +39,8 @@ export interface OnboardingData {
     identidad?: {
         colorPrimario?: string;
         logoBase64?: string;
+        /** Solo si la empresa usa un logo distinto en modo oscuro. */
+        logoOscuroBase64?: string;
     };
 }
 

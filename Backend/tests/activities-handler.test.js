@@ -42,6 +42,39 @@ const contextoSesion = (over) => {
     };
 };
 
+// Evalúa una ConditionExpression como DynamoDB, para las funciones que usa el
+// borrado: comparación, attribute_not_exists, attribute_type y size, con AND/OR
+// y paréntesis. Clave: un atributo con valor null EXISTE y es de tipo NULL.
+const tipoDynamo = (v) => (v === null ? 'NULL' : Array.isArray(v) ? 'L' : typeof v === 'string' ? 'S'
+    : typeof v === 'number' ? 'N' : typeof v === 'boolean' ? 'BOOL' : 'M');
+const evaluarCondicion = (item, expr, nombres = {}, valores = {}) => {
+    // Comparaciones primero (incluye `size(x) = :v`), después funciones y operadores.
+    const t = expr.match(/(?:size\([^)]*\)|[#:\w]+)\s*=\s*[#:\w]+|attribute_\w+\([^)]*\)|\(|\)|\bAND\b|\bOR\b/g);
+    let i = 0;
+    const atributo = (n) => nombres[n] || n;
+    const tiene = (a) => !!item && Object.prototype.hasOwnProperty.call(item, atributo(a));
+    const valorDe = (x) => {
+        if (x.startsWith(':')) return valores[x];
+        const m = x.match(/^size\((.+)\)$/);
+        if (m) { const v = item[atributo(m[1].trim())]; return v == null ? undefined : v.length; }
+        return item[atributo(x)];
+    };
+    const termino = () => {
+        const tok = t[i++];
+        if (tok === '(') { const v = o(); i++; return v; }
+        let m = tok.match(/^attribute_not_exists\((.+)\)$/);
+        if (m) return !tiene(m[1].trim());
+        m = tok.match(/^attribute_type\(([^,]+),\s*(:\w+)\)$/);
+        if (m) return tiene(m[1].trim()) && tipoDynamo(item[atributo(m[1].trim())]) === valores[m[2]];
+        m = tok.match(/^(.+?)\s*=\s*([#:\w]+)$/);
+        if (m) return valorDe(m[1].trim()) === valorDe(m[2]);
+        throw new Error('Token no soportado en la condición: ' + tok);
+    };
+    const y = () => { let v = termino(); while (t[i] === 'AND') { i++; const w = termino(); v = v && w; } return v; };
+    const o = () => { let v = y(); while (t[i] === 'OR') { i++; const w = y(); v = v || w; } return v; };
+    return o();
+};
+
 const ev = (over = {}) => ({
     pathParameters: {}, queryStringParameters: {}, body: '{}', headers: {},
     ...over,
@@ -55,6 +88,8 @@ beforeEach(() => {
         tenant: null,          // Item de tenant (getById)
         updates: [],           // UpdateCommand capturados
         puts: [],              // PutCommand capturados
+        deletes: [],           // DeleteCommand capturados
+        condicionFalla: false, // simula que la condición del borrado no se cumple
     };
     originalSend = docClient.send;
     docClient.send = async (cmd) => {
@@ -79,6 +114,16 @@ beforeEach(() => {
         }
         if (name === 'UpdateCommand') { store.updates.push(input); return {}; }
         if (name === 'PutCommand') { store.puts.push(input); return {}; }
+        if (name === 'DeleteCommand') {
+            const cumple = !input.ConditionExpression || evaluarCondicion(
+                store.activity, input.ConditionExpression, input.ExpressionAttributeNames, input.ExpressionAttributeValues);
+            if (store.condicionFalla || !cumple) {
+                const err = new Error('The conditional request failed');
+                err.name = 'ConditionalCheckFailedException';
+                throw err;
+            }
+            store.deletes.push(input); return {};
+        }
         // Cualquier otra query (list por tenantId-index, etc.) sin resultados.
         return { Items: [] };
     };
@@ -412,4 +457,109 @@ test('PATCH no toca asistentes ni firmas al adjuntar el respaldo', async () => {
     }) }));
     const campos = Object.values(store.updates[0].ExpressionAttributeNames || {});
     assert.deepEqual([...campos].sort(), ['evaluacion', 'updatedAt']);
+});
+
+// ── DELETE: eliminar un borrador del plan ──
+
+// Igual a lo que guarda POST /activities/plan: asistentes vacío y firmaRelator null.
+const borrador = (over = {}) => ({
+    activityId: 'a-1', tenantId: 't-1', tipo: 'CHARLA_5MIN', estado: 'borrador',
+    origen: 'planificacion', relatorId: 'p-sup', responsables: ['p-sup'],
+    asistentes: [], asistentesRequeridos: [], firmaRelator: null, ...over,
+});
+const borrar = (sesion) => handler.remove(ev({ pathParameters: { id: 'a-1' }, sesion }));
+
+test('DELETE elimina un borrador sin firmas', async () => {
+    store.activity = borrador();
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 200);
+    assert.equal(store.deletes.length, 1);
+    assert.deepEqual(store.deletes[0].Key, { activityId: 'a-1' });
+    // La condición repite las reglas para cubrir una carrera con quien la programa o firma.
+    assert.match(store.deletes[0].ConditionExpression, /#estado = :borrador/);
+    assert.match(store.deletes[0].ConditionExpression, /attribute_not_exists\(firmaRelator\)/);
+    assert.equal(store.deletes[0].ExpressionAttributeValues[':tenantId'], 't-1');
+});
+
+test('DELETE lo permite el responsable del borrador aunque no pueda crear actividades', async () => {
+    store.activity = borrador();
+    const res = await borrar({ sessionId: 's-2', personaId: 'p-sup', tenantId: 't-1', rol: 'supervisor', permisos: 'actividades.ver' });
+    assert.equal(res.statusCode, 200);
+    assert.equal(store.deletes.length, 1);
+});
+
+test('DELETE 401 sin sesión', async () => {
+    store.activity = borrador();
+    const res = await borrar(null);
+    assert.equal(res.statusCode, 401);
+    assert.equal(store.deletes.length, 0);
+});
+
+test('DELETE 404 si la actividad es de otra empresa', async () => {
+    store.activity = borrador({ tenantId: 't-OTRO' });
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 404);
+    assert.equal(store.deletes.length, 0);
+});
+
+test('DELETE 403 si no es responsable ni puede crear actividades', async () => {
+    store.activity = borrador();
+    const res = await borrar({ sessionId: 's-3', personaId: 'p-otro', tenantId: 't-1', rol: 'trabajador', permisos: 'actividades.ver' });
+    assert.equal(res.statusCode, 403);
+    assert.equal(store.deletes.length, 0);
+});
+
+test('DELETE 409 si la actividad ya está programada', async () => {
+    store.activity = borrador({ estado: 'programada' });
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 409);
+    assert.equal(store.deletes.length, 0);
+});
+
+test('DELETE 409 si tiene firmas o firma del relator', async () => {
+    store.activity = borrador({ asistentes: [{ personaId: 'p-x' }] });
+    assert.equal((await borrar(SESION_CREADOR)).statusCode, 409);
+    store.activity = borrador({ firmaRelator: { firmadoEn: '2026-10-01' } });
+    assert.equal((await borrar(SESION_CREADOR)).statusCode, 409);
+    assert.equal(store.deletes.length, 0);
+});
+
+test('DELETE 409 si tiene un respaldo cargado', async () => {
+    store.activity = borrador({ evaluacion: { exigida: true, respaldo: { fileKey: 'k' } } });
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 409);
+    assert.equal(store.deletes.length, 0);
+});
+
+test('DELETE 409 si la actividad cambió entre la lectura y el borrado', async () => {
+    store.activity = borrador();
+    store.condicionFalla = true;
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 409);
+});
+
+test('DELETE la condición acepta un borrador tal como lo crea el plan (firmaRelator null)', async () => {
+    // Regresión: con `attribute_not_exists(firmaRelator)` a secas, DynamoDB
+    // rechazaba todo borrador real, porque el plan guarda el atributo en null.
+    store.activity = borrador();
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 200);
+    assert.equal(store.deletes.length, 1);
+});
+
+test('DELETE la condición rechaza si al momento de borrar ya hay firma o asistentes', async () => {
+    // La lectura ve un borrador limpio, pero la condición se evalúa contra lo
+    // que hay en la tabla en ese instante.
+    const limpio = borrador();
+    const conFirma = { ...limpio, firmaRelator: { firmadoEn: 'x' } };
+    const original = docClient.send;
+    let leido = false;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'GetCommand' && cmd.input.Key?.activityId && !leido) { leido = true; return { Item: limpio }; }
+        if (cmd.constructor.name === 'DeleteCommand') store.activity = conFirma;
+        return original(cmd);
+    };
+    const res = await borrar(SESION_CREADOR);
+    assert.equal(res.statusCode, 409);
+    assert.equal(store.deletes.length, 0);
 });

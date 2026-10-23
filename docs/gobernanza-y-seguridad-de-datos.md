@@ -1531,6 +1531,42 @@ respondería 503. El backend y el frontend van juntos (regla 4). Con el frontend
 anterior, el token viejo queda revocado y la persona vuelve a la pantalla de
 ingreso.
 
+### D-27. Los borradores del plan de actividades se pueden eliminar
+**Estado: implementado el 12 de octubre de 2026 (en el árbol, sin desplegar).**
+
+**El pedido.** Planificar el mes crea borradores de actividades (`estado:
+'borrador'`) que a veces no se van a realizar. No había forma de quitarlos.
+
+**Qué se decidió.**
+
+- `DELETE /activities/{id}` borra el registro, pero **solo si es un borrador**:
+  sin asistentes, sin firma del relator y sin respaldo cargado (evaluación o
+  duración). Cualquier otra actividad responde 409. La tabla de retención trata
+  las actividades como evidencia por cinco años (D-2); un borrador sin firmas no
+  acredita nada ni avisó a nadie, así que no es evidencia, y una actividad
+  programada, realizada o cancelada nunca se borra por esta vía.
+- Se borra de verdad, no se marca cancelada. Cancelarlo dejaba una tarjeta
+  tachada en el calendario por algo que nunca ocurrió. Como consecuencia, volver
+  a planificar el mes sobre esa fecha crea el borrador de nuevo, porque la
+  idempotencia del plan mira las actividades que existen; el manual lo advierte.
+- El borrado lleva condición en DynamoDB (sigue en borrador, sin asistentes, sin
+  firma del relator y de la misma empresa): si alguien lo programó o firmó entre
+  la lectura y el borrado, se rechaza con 409 en vez de borrarlo. El plan guarda
+  los borradores con `firmaRelator: null` y `asistentes: []`, y en DynamoDB un
+  atributo nulo existe: la condición acepta el atributo ausente **o** de tipo
+  NULL. La primera versión usaba solo `attribute_not_exists` y rechazaba todo
+  borrador real; el doble de pruebas ahora evalúa la condición como DynamoDB.
+- Autoriza la misma regla que editar la actividad: su relator o responsables, o
+  quien tiene `actividades.crear`, tomado de la sesión.
+
+**Despliegue.** Es una ruta nueva que usa el frontend: backend y frontend van
+juntos (regla 4). Con el backend anterior, el botón responde un error y no borra
+nada.
+
+**Pruebas.** `Backend/tests/activities-handler.test.js`, casos `DELETE`. Se
+comprobó que fallan al quitar cada chequeo (estado, firmas, respaldo,
+autorización, empresa, sesión, la condición del borrado y su manejo).
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

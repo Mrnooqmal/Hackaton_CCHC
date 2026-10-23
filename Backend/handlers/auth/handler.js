@@ -48,20 +48,25 @@ const buildUserPayload = async (persona) => {
         permisos = resolvePersonaPermisos(persona, tenantData);
         if (tenantData?.preferencias) {
             const prefs = tenantData.preferencias;
-            let logoUrl = null;
-            if (prefs.logoKey) {
+            const firmar = async (key) => {
+                if (!key) return null;
                 try {
-                    logoUrl = await getSignedUrl(
+                    return await getSignedUrl(
                         s3Client,
-                        new GetObjectCommand({ Bucket: almacenamiento.bucketDeClave(prefs.logoKey), Key: prefs.logoKey }),
+                        new GetObjectCommand({ Bucket: almacenamiento.bucketDeClave(key), Key: key }),
                         { expiresIn: SESSION_DURATION_HOURS * 3600 }
                     );
                 } catch (urlErr) {
                     console.error('Failed to generate logo presigned URL:', urlErr);
+                    return null;
                 }
-            }
+            };
+            const logoUrl = await firmar(prefs.logoKey);
+            // Solo existe si la empresa subió un logo distinto para modo oscuro.
+            const logoOscuroUrl = await firmar(prefs.logoOscuroKey);
             branding = {
                 logoUrl,
+                logoOscuroUrl,
                 colorPrimario: prefs.colorPrimario || null,
             };
         }
