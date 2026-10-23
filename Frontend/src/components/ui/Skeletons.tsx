@@ -308,12 +308,65 @@ export function CompletitudFufSkeleton({ bloques = 4 }: { bloques?: number }) {
     );
 }
 
+/**
+ * Prescripciones: las tarjetas del listado (Prescripciones.tsx). Ícono de 38,
+ * rótulo, medida, línea de plazo, pastilla de estado y el botón de la acción,
+ * con el mismo relleno y alto que la tarjeta real. La última, sin botón, es la
+ * implementada. Cierra con la línea del ítem 58.
+ */
+export function PrescripcionesSkeleton({ filas = 5 }: { filas?: number }) {
+    return (
+        <div aria-busy="true" aria-live="polite" aria-label="Cargando las prescripciones">
+            <div className="sk-pr-lista">
+                {Array.from({ length: filas }, (_, i) => {
+                    const ultima = i === filas - 1;
+                    return (
+                        <div key={i} className="sk-pr-fila">
+                            <div className="ui-skel" style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0 }} />
+                            <div className="sk-pr-cuerpo">
+                                <div className="ui-skel ui-skel--linea" style={{ width: 230, height: 9 }} />
+                                <div className="ui-skel ui-skel--linea" style={{ width: ANCHOS[i % ANCHOS.length], height: 14 }} />
+                                <div className="ui-skel ui-skel--linea" style={{ width: 250, height: 9 }} />
+                            </div>
+                            <div className="ui-skel ui-skel--pildora sk-pr-chip" style={{ width: ultima ? 104 : 86 }} />
+                            <div className="sk-pr-accion">
+                                {!ultima && <div className="ui-skel" style={{ width: 172, height: 32, borderRadius: 8 }} />}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="sk-pr-pie">
+                <div className="ui-skel ui-skel--linea" style={{ width: 'min(560px, 80%)', height: 10 }} />
+            </div>
+            <EstilosSkeleton />
+        </div>
+    );
+}
+
 /* Las medidas repiten las de la pantalla real (rejilla de 4, tarjeta de
    20/14/14, avatar de 52, fila de 5 columnas) para que el relleno no mueva
    nada de sitio. */
 function EstilosSkeleton() {
     return (
         <style>{`
+            /* Prescripciones: misma tarjeta que .pr-fila (css/prescripciones.css). */
+            .sk-pr-lista { display: flex; flex-direction: column; gap: 10px; }
+            .sk-pr-fila {
+                display: flex; align-items: center; gap: 14px; min-height: 97px; box-sizing: border-box;
+                padding: 15px 18px; border: 1px solid var(--surface-border); border-radius: 14px;
+            }
+            .sk-pr-cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+            .sk-pr-chip { flex-shrink: 0; }
+            .sk-pr-accion { width: 210px; flex-shrink: 0; display: flex; justify-content: flex-end; }
+            .sk-pr-pie { margin-top: var(--space-5); padding-top: 14px; border-top: 1px solid var(--surface-border); }
+            @media (max-width: 760px) {
+                .sk-pr-fila { flex-wrap: wrap; }
+                .sk-pr-cuerpo { flex-basis: calc(100% - 52px); }
+                .sk-pr-chip, .sk-pr-accion { margin-left: 52px; }
+                .sk-pr-accion { width: auto; }
+            }
+
             .sk-page { display: flex; flex-direction: column; gap: var(--space-6); }
             .sk-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
             .sk-chips { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }

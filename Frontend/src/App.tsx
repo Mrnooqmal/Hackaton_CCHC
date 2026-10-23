@@ -37,6 +37,8 @@ import ObraDetalle from './pages/ObraDetalle';
 import EstructuraConstituir from './pages/EstructuraConstituir';
 import EstructuraOrgano from './pages/EstructuraOrgano';
 import Prescripciones from './pages/Prescripciones';
+import PrescripcionNueva from './pages/PrescripcionNueva';
+import PrescripcionImplementar from './pages/PrescripcionImplementar';
 import Crear from './pages/Crear';
 import CargosOnboarding from './pages/CargosOnboarding';
 import CatalogosActividad from './pages/CatalogosActividad';
@@ -182,6 +184,8 @@ function AppContent() {
           mismo permiso que administrar obras: constituir un órgano es un acto de
           administración, no una investidura preventiva. */}
       <Route path="/prescripciones" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><Prescripciones /></ProtectedRoute>} />
+      <Route path="/prescripciones/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><PrescripcionNueva /></ProtectedRoute>} />
+      <Route path="/prescripciones/:id/implementar" element={<ProtectedRoute requiredPermission={PERMISSIONS.REPOSITORIO_VER}><PrescripcionImplementar /></ProtectedRoute>} />
       <Route path="/estructura/constituir" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><EstructuraConstituir /></ProtectedRoute>} />
       <Route path="/estructura/organos/:organoId" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRAS_DETALLE}><EstructuraOrgano /></ProtectedRoute>} />
 

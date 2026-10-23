@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-    FiAlertTriangle, FiCheck, FiClock, FiPaperclip, FiPlus, FiUploadCloud,
+    FiAlertTriangle, FiCheck, FiClipboard, FiClock, FiInfo, FiPaperclip, FiPlus,
 } from 'react-icons/fi';
-import { AlertBanner, Badge, DataTable, Drawer, EmptyState, PageHeader, Select, SegmentedControl } from '../components/ui';
-import type { DataTableColumn } from '../components/ui';
+import { AlertBanner, EmptyState, PageHeader, PrescripcionesSkeleton, SearchInput, Select } from '../components/ui';
+import { ChipEstado } from '../components/prescripciones/PrescripcionUi';
+import { useVistaDocumento } from '../hooks/useVistaDocumento';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useToast } from '../context/ToastContext';
-import { subirComoDocumento } from '../utils/subirDocumento';
 import {
     estructuraApi, ORIGEN_PRESCRIPCION_LABEL,
     type EstadoPrescripcion, type OrigenPrescripcion, type Prescripcion,
 } from '../api/estructura.api';
+import { describirCumplimiento, describirPlazo, fechaDe, fmt, ordenarPorUrgencia } from '../utils/prescripciones';
+import '../css/prescripciones.css';
 
 /**
  * Prescripciones de medidas — DS 44 Art. 70 (ítem 58 del FUF).
@@ -21,23 +24,13 @@ import {
  * prescripción no cierra nada, así que esta pantalla es de seguimiento: lo que
  * importa de un vistazo es qué está vencido.
  *
- * Decisiones de interfaz:
- *   - El formulario va en panel lateral y no en modal: son seis campos con dos
- *     adjuntos, y el listado tiene que seguir visible mientras se registra.
+ * Decisiones de interfaz (canvas: PrescripcionesLista / PrescripcionesVacio):
+ *   - El filtro por estado son pestañas en el encabezado, como en Mi empresa.
  *   - El estado NO se elige. Se deriva del plazo y de la evidencia, igual que en
- *     el backend. Un selector de estado invitaría a marcar "implementada" sin
- *     respaldo, que es justo lo que la norma no admite.
- *   - Vacío no es un error: sin prescripciones el ítem 58 está cumplido, y el
- *     estado vacío lo dice en vez de mostrar un hueco.
+ *     el backend; el bloque "Cómo se lleva" lo explica de entrada.
+ *   - Registrar y cerrar una medida son pantallas completas, no paneles.
+ *   - Vacío no es un error: sin prescripciones el ítem 58 está cumplido.
  */
-
-const ESTADO_META: Record<EstadoPrescripcion, {
-    label: string; variant: 'success' | 'warning' | 'danger'; icono: React.ReactNode;
-}> = {
-    Implementada: { label: 'Implementada', variant: 'success', icono: <FiCheck size={12} /> },
-    Pendiente: { label: 'Pendiente', variant: 'warning', icono: <FiClock size={12} /> },
-    Vencida: { label: 'Vencida', variant: 'danger', icono: <FiAlertTriangle size={12} /> },
-};
 
 const ORIGENES: OrigenPrescripcion[] = [
     'OrganismoFiscalizador', 'OrganismoAdministrador', 'DepartamentoPrevencion', 'ComiteParitario',
@@ -45,52 +38,81 @@ const ORIGENES: OrigenPrescripcion[] = [
 
 type Filtro = 'todas' | EstadoPrescripcion;
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
-const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('es-CL') : '—');
-const aISO = (fecha: string) => new Date(`${fecha}T12:00:00`).toISOString();
+const CLAVE_COMO = 'prescripciones.comoFunciona.oculto';
+const leerOculto = () => { try { return localStorage.getItem(CLAVE_COMO) === '1'; } catch { return false; } };
+const guardarOculto = (v: boolean) => { try { localStorage.setItem(CLAVE_COMO, v ? '1' : '0'); } catch { /* sin almacenamiento */ } };
 
-const FORM_VACIO = {
-    origen: 'OrganismoFiscalizador' as OrigenPrescripcion,
-    fechaPrescripcion: hoyISO(),
-    descripcion: '',
-    conPlazo: false,
-    plazoImplementacion: '',
-};
+function ComoFunciona({ onOcultar }: { onOcultar: () => void }) {
+    return (
+        <section className="pr-como" aria-label="Cómo se lleva una prescripción">
+            <div className="pr-como-head">
+                <span className="pr-como-titulo">Cómo se lleva una prescripción</span>
+                <span className="pr-como-sub">El estado no se elige: lo definen el plazo y la evidencia</span>
+                <button type="button" className="pr-como-ocultar" onClick={onOcultar}>Ocultar</button>
+            </div>
+            <ol className="pr-pasos">
+                <li className="pr-paso">
+                    <span className="pr-paso-num">1</span>
+                    <span className="pr-paso-texto">
+                        <span className="pr-paso-titulo">Registra la orden</span>
+                        <span className="pr-paso-desc">Quién la dio, qué pide, su fecha y su plazo, con el documento que la origina.</span>
+                    </span>
+                </li>
+                <li className="pr-paso">
+                    <span className="pr-paso-num">2</span>
+                    <span className="pr-paso-texto">
+                        <span className="pr-paso-titulo">Implementa dentro del plazo</span>
+                        <span className="pr-paso-desc">
+                            Mientras tanto queda <b>Pendiente</b>. Si el plazo pasa, cambia sola a{' '}
+                            <b style={{ color: 'var(--danger-alerta)' }}>Vencida</b>.
+                        </span>
+                    </span>
+                </li>
+                <li className="pr-paso">
+                    <span className="pr-paso-num">3</span>
+                    <span className="pr-paso-texto">
+                        <span className="pr-paso-titulo">Adjunta la evidencia</span>
+                        <span className="pr-paso-desc">
+                            Con fecha y respaldo pasa a <b style={{ color: 'var(--success-apagado)' }}>Implementada</b>.
+                            Sin evidencia no se puede cerrar.
+                        </span>
+                    </span>
+                </li>
+            </ol>
+        </section>
+    );
+}
 
 export default function Prescripciones() {
     const { user } = useAuth();
     const { selectedObraId, selectedObra } = useObraContext();
     const { toast } = useToast();
-    const tenantId = (user as any)?.tenantId as string | undefined;
+    const navigate = useNavigate();
+    const tenantId = user?.tenantId;
 
     const [lista, setLista] = useState<Prescripcion[]>([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [filtro, setFiltro] = useState<Filtro>('todas');
+    const [busqueda, setBusqueda] = useState('');
+    const [origen, setOrigen] = useState<'' | OrigenPrescripcion>('');
+    const [comoOculto, setComoOculto] = useState(leerOculto);
 
-    const [panelAbierto, setPanelAbierto] = useState(false);
-    const [guardando, setGuardando] = useState(false);
-    const [form, setForm] = useState(FORM_VACIO);
-    const [archivoPrescripcion, setArchivoPrescripcion] = useState<File | null>(null);
-    const archivoRef = useRef<HTMLInputElement>(null);
+    const { abrir: abrirDocumento, visor } = useVistaDocumento(useCallback((m: string) => toast.error(m), [toast]));
 
-    const [implementando, setImplementando] = useState<Prescripcion | null>(null);
-    const [fechaImpl, setFechaImpl] = useState(hoyISO());
-    const [archivoEvidencia, setArchivoEvidencia] = useState<File | null>(null);
-    const [subiendoEvidencia, setSubiendoEvidencia] = useState(false);
-    const evidenciaRef = useRef<HTMLInputElement>(null);
-
-    const cargar = useCallback(async () => {
+    // Registrar y cerrar viven en sus propias pantallas: al volver, la página se
+    // monta de nuevo y recarga. No hace falta recargar desde acá.
+    useEffect(() => {
         if (!tenantId) return;
-        setCargando(true);
-        setError(null);
-        const res = await estructuraApi.listarPrescripciones(tenantId, selectedObraId);
-        if (res.success && res.data) setLista(res.data.prescripciones);
-        else setError(res.error || 'No se pudieron cargar las prescripciones.');
-        setCargando(false);
+        let vigente = true;
+        estructuraApi.listarPrescripciones(tenantId, selectedObraId).then((res) => {
+            if (!vigente) return;
+            if (res.success && res.data) { setLista(res.data.prescripciones); setError(null); }
+            else setError(res.error || 'No se pudieron cargar las prescripciones.');
+            setCargando(false);
+        });
+        return () => { vigente = false; };
     }, [tenantId, selectedObraId]);
-
-    useEffect(() => { void cargar(); }, [cargar]);
 
     const conteos = useMemo(() => ({
         todas: lista.length,
@@ -99,372 +121,219 @@ export default function Prescripciones() {
         Implementada: lista.filter((p) => p.estado === 'Implementada').length,
     }), [lista]);
 
-    const visibles = useMemo(
-        () => (filtro === 'todas' ? lista : lista.filter((p) => p.estado === filtro)),
-        [lista, filtro]
-    );
+    const visibles = useMemo(() => {
+        const q = busqueda.trim().toLowerCase();
+        return ordenarPorUrgencia(lista.filter((p) =>
+            (filtro === 'todas' || p.estado === filtro)
+            && (!origen || p.origen === origen)
+            && (!q || p.descripcion.toLowerCase().includes(q))
+        ));
+    }, [lista, filtro, origen, busqueda]);
 
-    const subirEvidencia = useCallback(
-        (file: File, titulo: string) => subirComoDocumento({
-            file, tipo: 'ACTA_REGISTRO', titulo,
-            tenantId: tenantId || '', obraId: selectedObraId,
-        }),
-        [tenantId, selectedObraId]
-    );
+    const irANueva = () => navigate('/prescripciones/nueva');
+    const irAImplementar = (p: Prescripcion) =>
+        navigate(`/prescripciones/${p.prescripcionId}/implementar`, { state: { prescripcion: p } });
 
-    const registrar = useCallback(async () => {
-        if (!tenantId) return;
-        setGuardando(true);
-        try {
-            let documentoPrescripcionId: string | null = null;
-            if (archivoPrescripcion) {
-                documentoPrescripcionId = await subirEvidencia(
-                    archivoPrescripcion, `Prescripción de medidas · ${fmt(aISO(form.fechaPrescripcion))}`
-                );
-            }
-            const res = await estructuraApi.crearPrescripcion(tenantId, {
-                obraId: selectedObraId || null,
-                origen: form.origen,
-                fechaPrescripcion: aISO(form.fechaPrescripcion),
-                descripcion: form.descripcion.trim(),
-                plazoImplementacion: form.conPlazo && form.plazoImplementacion ? aISO(form.plazoImplementacion) : null,
-                documentoPrescripcionId,
-                solicitanteId: (user as any)?.personaId,
-            });
-            if (!res.success) throw new Error(res.error || 'No se pudo registrar la prescripción.');
-            toast.success('Prescripción registrada.');
-            setPanelAbierto(false);
-            setForm(FORM_VACIO);
-            setArchivoPrescripcion(null);
-            await cargar();
-        } catch (e: any) {
-            setError(e?.message || 'Error al registrar la prescripción.');
-        } finally {
-            setGuardando(false);
-        }
-    }, [tenantId, selectedObraId, form, archivoPrescripcion, subirEvidencia, user, toast, cargar]);
+    const ocultarComo = (v: boolean) => { setComoOculto(v); guardarOculto(v); };
 
-    /** Art. 70: sin evidencia no se puede dar por implementada. El backend valida lo mismo. */
-    const marcarImplementada = useCallback(async () => {
-        if (!tenantId || !implementando || !archivoEvidencia) return;
-        setSubiendoEvidencia(true);
-        try {
-            const evidenciaId = await subirEvidencia(
-                archivoEvidencia, `Evidencia de implementación · ${implementando.descripcion.slice(0, 60)}`
-            );
-            const res = await estructuraApi.actualizarPrescripcion(tenantId, implementando.prescripcionId, {
-                fechaImplementacion: aISO(fechaImpl),
-                evidenciaImplementacionDocumentoId: evidenciaId,
-            });
-            if (!res.success) throw new Error(res.error || 'No se pudo registrar la implementación.');
-            toast.success('Implementación registrada.');
-            setImplementando(null);
-            setArchivoEvidencia(null);
-            await cargar();
-        } catch (e: any) {
-            setError(e?.message || 'Error al registrar la implementación.');
-        } finally {
-            setSubiendoEvidencia(false);
-        }
-    }, [tenantId, implementando, archivoEvidencia, fechaImpl, subirEvidencia, toast, cargar]);
+    // El ítem 58 se cumple cuando no hay ninguna, o todas están implementadas
+    // (evaluarItem58 en Backend/lib/completitud-documental.js).
+    const notaItem58 = conteos.todas === 0 ? null
+        : conteos.Implementada === conteos.todas
+            ? 'El ítem 58 del FUF está cumplido: todas las prescripciones están implementadas con evidencia.'
+            : `El ítem 58 del FUF se cumple cuando todas están implementadas con evidencia. Hoy: ${conteos.Implementada} de ${conteos.todas}${conteos.Vencida > 0 ? `, y figura vencido por ${conteos.Vencida === 1 ? 'la que está' : `las ${conteos.Vencida}`} fuera de plazo` : ''}.`;
 
-    const columnas: DataTableColumn<Prescripcion>[] = [
-        {
-            key: 'estado', header: 'Estado', width: '150px', sortable: true,
-            sortValue: (p) => ({ Vencida: 0, Pendiente: 1, Implementada: 2 }[p.estado]),
-            render: (p) => (
-                <Badge variant={ESTADO_META[p.estado].variant}>
-                    {ESTADO_META[p.estado].icono} {ESTADO_META[p.estado].label}
-                </Badge>
-            ),
-        },
-        {
-            key: 'descripcion', header: 'Medida prescrita',
-            render: (p) => (
-                <div style={{ minWidth: 0 }}>
-                    <div style={{ color: 'var(--text-primary)' }}>{p.descripcion}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-                        {ORIGEN_PRESCRIPCION_LABEL[p.origen]}
-                        {p.documentoPrescripcionId && (
-                            <> · <FiPaperclip size={11} style={{ verticalAlign: '-1px' }} /> con documento</>
-                        )}
-                    </div>
-                </div>
-            ),
-        },
-        {
-            key: 'fechaPrescripcion', header: 'Prescrita', width: '120px', sortable: true, hideOnMobile: true,
-            sortValue: (p) => p.fechaPrescripcion,
-            render: (p) => <span style={{ color: 'var(--text-secondary)' }}>{fmt(p.fechaPrescripcion)}</span>,
-        },
-        {
-            key: 'plazo', header: 'Plazo', width: '130px', sortable: true, hideOnMobile: true,
-            sortValue: (p) => p.plazoImplementacion || '9999',
-            render: (p) => (p.plazoImplementacion
-                ? (
-                    <span style={{ color: p.estado === 'Vencida' ? 'var(--danger-400)' : 'var(--text-secondary)' }}>
-                        {fmt(p.plazoImplementacion)}
-                    </span>
-                )
-                : <span style={{ color: 'var(--text-secondary)' }}>Sin plazo</span>),
-        },
-        {
-            key: 'accion', header: '', width: '160px', align: 'right',
-            render: (p) => (p.estado === 'Implementada'
-                ? (
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                        {fmt(p.fechaImplementacion)}
-                    </span>
-                )
-                : (
-                    <button
-                        className="btn btn-secondary btn-sm"
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setImplementando(p); setFechaImpl(hoyISO()); }}
-                    >
-                        Registrar implementación
-                    </button>
-                )),
-        },
-    ];
-
-    const puedeRegistrar = form.descripcion.trim().length > 0 && !guardando;
+    const sinRegistros = !cargando && !error && lista.length === 0;
+    const recuento = (n: number) => (cargando ? <span className="pr-recuento-cargando" aria-hidden="true" /> : n);
 
     return (
         <div className="page-content">
             <PageHeader
                 banner
                 title="Prescripciones de medidas"
-                description={selectedObra?.nombre
-                    ? `Medidas ordenadas para ${selectedObra.nombre} y para la empresa`
-                    : 'Medidas ordenadas por fiscalizadores, el Organismo Administrador, el Departamento de Prevención o el comité'}
+                description={`Medidas que fiscalizadores, el Organismo Administrador, Prevención o el Comité Paritario ordenaron implementar${selectedObra?.nombre ? ` en ${selectedObra.nombre}` : ''}. DS 44 · Art. 70 · ítem 58 del FUF.`}
                 actions={
-                    <button className="btn btn-primary" type="button" onClick={() => setPanelAbierto(true)}>
+                    <button className="btn btn-primary" type="button" onClick={irANueva}>
                         <FiPlus size={15} /> Registrar prescripción
                     </button>
                 }
+                // Las pestañas están desde el primer render: mientras carga, el
+                // recuento es un hueco del mismo ancho, así nada se corre al
+                // llegar los datos. Solo se quitan si no hay ninguna (el vacío).
+                tabs={!sinRegistros ? [
+                    { id: 'todas', label: 'Todas', icon: <FiClipboard size={15} />, badge: recuento(conteos.todas) },
+                    { id: 'Vencida', label: 'Vencidas', icon: <FiAlertTriangle size={15} />, badge: recuento(conteos.Vencida), badgeTone: !cargando && conteos.Vencida > 0 ? 'alerta' : undefined },
+                    { id: 'Pendiente', label: 'Pendientes', icon: <FiClock size={15} />, badge: recuento(conteos.Pendiente) },
+                    { id: 'Implementada', label: 'Implementadas', icon: <FiCheck size={15} />, badge: recuento(conteos.Implementada) },
+                ] : undefined}
+                activeTab={filtro}
+                onTabChange={(id) => setFiltro(id as Filtro)}
+                tabsLabel="Filtrar prescripciones por estado"
             />
 
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError(null)} />}
 
-            {/* Las vencidas son lo primero que revisa un fiscalizador en una segunda
-                visita: se avisan arriba en vez de esconderse en una fila de la tabla. */}
-            {conteos.Vencida > 0 && (
-                <div className="ds44-alert ds44-alert-danger" style={{ marginBottom: 'var(--space-4)' }}>
-                    <span className="ds44-alert-icon"><FiAlertTriangle size={14} /></span>
-                    <span>
-                        {conteos.Vencida} medida{conteos.Vencida === 1 ? '' : 's'} con el plazo vencido sin implementar.
-                        El Art. 70 obliga a implementarlas, no solo a recibirlas.
-                    </span>
-                </div>
-            )}
+            {/* Sin registros, el estado vacío ya explica el módulo. */}
+            {!sinRegistros && (comoOculto ? (
+                <button type="button" className="pr-como-mostrar" onClick={() => ocultarComo(false)}>
+                    <FiInfo size={14} /> Cómo se lleva una prescripción
+                </button>
+            ) : (
+                <ComoFunciona onOcultar={() => ocultarComo(true)} />
+            ))}
 
-            {lista.length > 0 && (
-                <div className="ds44-filtros" style={{ marginBottom: 'var(--space-4)' }}>
-                    <SegmentedControl
-                        ariaLabel="Filtrar prescripciones por estado"
-                        value={filtro}
-                        onChange={(v) => setFiltro(v as Filtro)}
-                        options={[
-                            { value: 'todas', label: `Todas (${conteos.todas})` },
-                            { value: 'Vencida', label: `Vencidas (${conteos.Vencida})` },
-                            { value: 'Pendiente', label: `Pendientes (${conteos.Pendiente})` },
-                            { value: 'Implementada', label: `Implementadas (${conteos.Implementada})` },
-                        ]}
-                    />
+            {sinRegistros ? (
+                <div className="pr-vacio">
+                    <span className="pr-vacio-icono pr-tinte-exito"><FiClipboard size={28} /></span>
+                    <div className="pr-vacio-texto">
+                        <h2>Sin prescripciones registradas</h2>
+                        <p>
+                            Mientras no haya ninguna, el ítem 58 del formulario está cumplido. Cuando recibas una orden
+                            de implementar una medida, regístrala acá para hacerle seguimiento hasta cerrarla con evidencia.
+                        </p>
+                    </div>
+                    <div className="pr-origenes">
+                        <span className="form-label" style={{ margin: 0 }}>Quiénes pueden ordenarlas</span>
+                        <div className="pr-origenes-chips">
+                            {ORIGENES.map((o) => <span key={o}>{ORIGEN_PRESCRIPCION_LABEL[o]}</span>)}
+                        </div>
+                    </div>
+                    <button className="btn btn-primary" type="button" onClick={irANueva}>
+                        <FiPlus size={15} /> Registrar la primera
+                    </button>
                 </div>
-            )}
+            ) : (
+                <>
+                    {/* Las vencidas son lo primero que revisa un fiscalizador en una
+                        segunda visita: se avisan arriba, con el atajo al filtro. */}
+                    {conteos.Vencida > 0 && filtro !== 'Vencida' && (
+                        <div className="pr-aviso" role="status">
+                            <span className="pr-aviso-icono"><FiAlertTriangle size={17} /></span>
+                            <span className="pr-aviso-cuerpo">
+                                <span>
+                                    <span className="pr-aviso-titulo">
+                                        {conteos.Vencida === 1
+                                            ? '1 medida con el plazo vencido sin implementar.'
+                                            : `${conteos.Vencida} medidas con el plazo vencido sin implementar.`}
+                                    </span>{' '}
+                                    <span className="pr-aviso-detalle">
+                                        Registrar la implementación ahora deja constancia de la fecha real, aunque sea tarde.
+                                    </span>
+                                </span>
+                            </span>
+                            <button type="button" className="pr-aviso-accion" onClick={() => setFiltro('Vencida')}>
+                                Ver vencidas
+                            </button>
+                        </div>
+                    )}
 
-            <DataTable
-                columns={columnas}
-                rows={visibles}
-                rowKey={(p) => p.prescripcionId}
-                loading={cargando}
-                emptyState={
-                    lista.length === 0 ? (
-                        // Vacío no es incumplimiento: el ítem 58 obliga a implementar lo
-                        // que exista, así que sin prescripciones está cumplido. El estado
-                        // vacío lo explica en vez de dejar un hueco.
-                        <EmptyState
-                            icon={<FiCheck size={34} />}
-                            title="Sin prescripciones registradas"
-                            description="El Art. 70 obliga a implementar las medidas que ordenen los fiscalizadores, el Organismo Administrador, el Departamento de Prevención o el comité paritario. Mientras no haya ninguna, el ítem 58 del formulario está cumplido."
-                            action={{
-                                label: 'Registrar la primera',
-                                onClick: () => setPanelAbierto(true),
-                                icon: <FiPlus size={15} />,
-                            }}
-                        />
-                    ) : (
+                    {(cargando || lista.length > 0) && (
+                        <div className="pr-toolbar">
+                            <SearchInput value={busqueda} onChange={setBusqueda} placeholder="Buscar por medida…" maxWidth="320px" />
+                            <Select
+                                ariaLabel="Filtrar por origen"
+                                value={origen}
+                                onChange={(v) => setOrigen(v as '' | OrigenPrescripcion)}
+                                options={[
+                                    { value: '', label: 'Origen: Todos' },
+                                    ...ORIGENES.map((o) => ({ value: o, label: ORIGEN_PRESCRIPCION_LABEL[o] })),
+                                ]}
+                            />
+                            <span className="pr-toolbar-nota">Ordenadas por urgencia</span>
+                        </div>
+                    )}
+
+                    {cargando ? (
+                        <PrescripcionesSkeleton />
+                    ) : visibles.length === 0 && lista.length > 0 ? (
                         <EmptyState
                             icon={<FiClock size={34} />}
-                            title="Nada en este estado"
-                            description="Cambia el filtro para ver el resto de las prescripciones."
+                            title="Nada que mostrar con estos filtros"
+                            description="Cambia la pestaña, el origen o la búsqueda para ver el resto de las prescripciones."
                         />
-                    )
-                }
-            />
-
-            {/* ── Registrar prescripción ─────────────────────────────────── */}
-            <Drawer
-                isOpen={panelAbierto}
-                onClose={() => setPanelAbierto(false)}
-                title="Registrar prescripción"
-                subtitle="Medida ordenada a la entidad empleadora (Art. 70)"
-                width={520}
-                footer={
-                    <>
-                        <button className="btn btn-secondary" type="button" onClick={() => setPanelAbierto(false)}>
-                            Cancelar
-                        </button>
-                        <button className="btn btn-primary" type="button" disabled={!puedeRegistrar} onClick={registrar}>
-                            {guardando ? 'Registrando…' : 'Registrar'}
-                        </button>
-                    </>
-                }
-            >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                    <div className="form-group">
-                        <label className="form-label">Quién la ordenó</label>
-                        <Select
-                            ariaLabel="Origen de la prescripción"
-                            value={form.origen}
-                            onChange={(v) => setForm((f) => ({ ...f, origen: v as OrigenPrescripcion }))}
-                            options={ORIGENES.map((o) => ({ value: o, label: ORIGEN_PRESCRIPCION_LABEL[o] }))}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label" htmlFor="pr-desc">Medida prescrita</label>
-                        <textarea
-                            id="pr-desc"
-                            className="form-input"
-                            rows={3}
-                            style={{ resize: 'vertical' }}
-                            placeholder="Qué se ordenó implementar"
-                            value={form.descripcion}
-                            onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label" htmlFor="pr-fecha">Fecha de la prescripción</label>
-                        <input
-                            id="pr-fecha" type="date" className="form-input" max={hoyISO()}
-                            value={form.fechaPrescripcion}
-                            onChange={(e) => setForm((f) => ({ ...f, fechaPrescripcion: e.target.value }))}
-                        />
-                    </div>
-
-                    {/* El plazo es opcional porque no toda prescripción lo trae; sin él
-                        la medida nunca vence, y decirlo evita un vencimiento inventado. */}
-                    <div className="form-group">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}>
-                            <input
-                                type="checkbox"
-                                checked={form.conPlazo}
-                                onChange={(e) => setForm((f) => ({ ...f, conPlazo: e.target.checked }))}
-                            />
-                            <span className="form-label" style={{ margin: 0 }}>La prescripción indica un plazo</span>
-                        </label>
-                        {form.conPlazo ? (
-                            <input
-                                type="date" className="form-input" min={form.fechaPrescripcion}
-                                style={{ marginTop: 'var(--space-2)' }}
-                                value={form.plazoImplementacion}
-                                onChange={(e) => setForm((f) => ({ ...f, plazoImplementacion: e.target.value }))}
-                            />
-                        ) : (
-                            <span className="form-hint">Sin plazo la medida queda pendiente, pero no vence.</span>
-                        )}
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Documento que la origina</label>
-                        <input
-                            ref={archivoRef} type="file" accept="application/pdf,image/*"
-                            style={{ display: 'none' }}
-                            onChange={(e) => setArchivoPrescripcion(e.target.files?.[0] || null)}
-                        />
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => archivoRef.current?.click()}>
-                                <FiUploadCloud size={14} /> Seleccionar archivo
-                            </button>
-                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {archivoPrescripcion?.name || 'Opcional'}
-                            </span>
+                    ) : (
+                        <div className="pr-lista">
+                            {visibles.map((p) => <FilaPrescripcion
+                                key={p.prescripcionId}
+                                p={p}
+                                onImplementar={() => irAImplementar(p)}
+                                onVerDocumento={abrirDocumento}
+                            />)}
                         </div>
-                        <span className="form-hint">
-                            El informe de fiscalización, el acta o la prescripción de medidas.
-                        </span>
-                    </div>
-                </div>
-            </Drawer>
+                    )}
 
-            {/* ── Registrar implementación ───────────────────────────────── */}
-            <Drawer
-                isOpen={Boolean(implementando)}
-                onClose={() => { setImplementando(null); setArchivoEvidencia(null); }}
-                title="Registrar implementación"
-                subtitle={implementando?.descripcion}
-                width={480}
-                footer={
-                    <>
-                        <button
-                            className="btn btn-secondary" type="button"
-                            onClick={() => { setImplementando(null); setArchivoEvidencia(null); }}
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            className="btn btn-primary" type="button"
-                            disabled={!archivoEvidencia || subiendoEvidencia}
-                            onClick={marcarImplementada}
-                        >
-                            {subiendoEvidencia ? 'Guardando…' : 'Marcar implementada'}
-                        </button>
-                    </>
-                }
-            >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                    {/* Una regla permanente no es una alarma: se explica como texto
-                        y el botón queda deshabilitado hasta que haya archivo. */}
-                    <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                        El Art. 70 exige implementar la medida, no solo recibirla. Sin evidencia
-                        adjunta no se puede dar por implementada.
-                    </p>
-
-                    <div className="form-group">
-                        <label className="form-label" htmlFor="pr-fimpl">Fecha de implementación</label>
-                        <input
-                            id="pr-fimpl" type="date" className="form-input" max={hoyISO()}
-                            min={implementando?.fechaPrescripcion?.slice(0, 10)}
-                            value={fechaImpl}
-                            onChange={(e) => setFechaImpl(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Evidencia</label>
-                        <input
-                            ref={evidenciaRef} type="file" accept="application/pdf,image/*"
-                            style={{ display: 'none' }}
-                            onChange={(e) => setArchivoEvidencia(e.target.files?.[0] || null)}
-                        />
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <button className="btn btn-secondary btn-sm" type="button" onClick={() => evidenciaRef.current?.click()}>
-                                <FiUploadCloud size={14} /> Seleccionar archivo
-                            </button>
-                            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {archivoEvidencia?.name || 'Ningún archivo seleccionado'}
-                            </span>
+                    {notaItem58 && !cargando && (
+                        <div className="pr-pie">
+                            <FiInfo size={14} style={{ flexShrink: 0 }} />
+                            {notaItem58}
                         </div>
-                        <span className="form-hint">
-                            El sistema guarda el respaldo; que demuestre la implementación es responsabilidad de quien lo sube.
-                        </span>
-                    </div>
+                    )}
+                </>
+            )}
+
+            {visor}
+        </div>
+    );
+}
+
+function FilaPrescripcion({ p, onImplementar, onVerDocumento }: {
+    p: Prescripcion;
+    onImplementar: () => void;
+    onVerDocumento: (documentId: string, nombre?: string) => void;
+}) {
+    const plazo = fechaDe(p.plazoImplementacion);
+    const icono = p.estado === 'Vencida' ? 'pr-tinte-alerta' : p.estado === 'Implementada' ? 'pr-tinte-exito' : 'pr-tinte-neutro';
+
+    let detallePlazo: React.ReactNode;
+    if (p.estado === 'Implementada') {
+        const cumplimiento = describirCumplimiento(fechaDe(p.fechaImplementacion), plazo || null);
+        detallePlazo = <span>Implementada el {fmt(p.fechaImplementacion)}{cumplimiento ? ` · ${cumplimiento}` : ''}</span>;
+    } else if (plazo) {
+        detallePlazo = (
+            <span className={p.estado === 'Vencida' ? 'pr-fila-meta--alerta' : 'pr-fila-meta--fuerte'}>
+                Plazo {fmt(p.plazoImplementacion)} · {describirPlazo(plazo)}
+            </span>
+        );
+    } else {
+        detallePlazo = <span>Sin plazo · queda pendiente, pero no vence</span>;
+    }
+
+    return (
+        <div className={`pr-fila${p.estado === 'Implementada' ? ' pr-fila--implementada' : ''}`}>
+            <span className={`pr-fila-icono ${icono}`}>
+                {p.estado === 'Vencida' ? <FiAlertTriangle size={18} /> : p.estado === 'Implementada' ? <FiCheck size={18} /> : <FiClipboard size={18} />}
+            </span>
+            <div className="pr-fila-cuerpo">
+                <div className="pr-eyebrow">
+                    {ORIGEN_PRESCRIPCION_LABEL[p.origen]}
+                    <span className="pr-dot">·</span>
+                    Prescrita el {fmt(p.fechaPrescripcion)}
                 </div>
-            </Drawer>
+                <h3 className="pr-fila-titulo">{p.descripcion}</h3>
+                <div className="pr-fila-meta">
+                    {detallePlazo}
+                    <span className="pr-dot">·</span>
+                    {p.estado === 'Implementada' && p.evidenciaImplementacionDocumentoId ? (
+                        <button type="button" className="pr-enlace" onClick={() => onVerDocumento(p.evidenciaImplementacionDocumentoId!, 'Evidencia')}>
+                            <FiPaperclip size={12} /> Ver evidencia
+                        </button>
+                    ) : p.documentoPrescripcionId ? (
+                        <button type="button" className="pr-enlace" onClick={() => onVerDocumento(p.documentoPrescripcionId!, 'Documento de la prescripción')}>
+                            <FiPaperclip size={12} /> Ver documento
+                        </button>
+                    ) : (
+                        <span>Sin documento adjunto</span>
+                    )}
+                </div>
+            </div>
+            <ChipEstado estado={p.estado} />
+            <div className="pr-fila-accion">
+                {p.estado !== 'Implementada' && (
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={onImplementar}>
+                        Registrar implementación
+                    </button>
+                )}
+            </div>
         </div>
     );
 }

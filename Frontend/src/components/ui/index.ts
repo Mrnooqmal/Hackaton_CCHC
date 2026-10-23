@@ -53,7 +53,7 @@ export type { CollectionViewProps, CollectionMode } from './CollectionView';
 
 export {
     DirectorioSkeleton, EquipoObraSkeleton, ObrasSkeleton, IncidentesSkeleton, IncidentesStatsSkeleton,
-    SgsstSkeleton, EstructuraPreventivaSkeleton, CompletitudFufSkeleton,
+    SgsstSkeleton, EstructuraPreventivaSkeleton, CompletitudFufSkeleton, PrescripcionesSkeleton,
 } from './Skeletons';
 
 export { default as FormPage, FieldSection } from './FormPage';

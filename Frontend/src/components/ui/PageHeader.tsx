@@ -5,6 +5,8 @@ export interface PageHeaderTab {
   label: string;
   /** Recuento u otra marca corta a la derecha del rótulo. */
   badge?: React.ReactNode;
+  /** 'alerta': el recuento se tiñe con el acento de alerta (p. ej. vencidas). */
+  badgeTone?: 'alerta';
   icon?: React.ReactNode;
 }
 
@@ -69,7 +71,11 @@ export default function PageHeader({
             >
               {tab.icon}
               {tab.label}
-              {tab.badge !== undefined && <span className="ui-page-header-tab-badge">{tab.badge}</span>}
+              {tab.badge !== undefined && (
+                <span className={`ui-page-header-tab-badge${tab.badgeTone === 'alerta' ? ' ui-page-header-tab-badge--alerta' : ''}`}>
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -195,6 +201,11 @@ export default function PageHeader({
         .ui-page-header-tab[aria-selected='true'] .ui-page-header-tab-badge {
           background: var(--accent-tint);
           color: var(--accent-text);
+        }
+        .ui-page-header-tab .ui-page-header-tab-badge--alerta,
+        .ui-page-header-tab[aria-selected='true'] .ui-page-header-tab-badge--alerta {
+          background: color-mix(in srgb, var(--danger-alerta) 16%, transparent);
+          color: var(--danger-alerta);
         }
         .ui-page-header-main {
           display: flex;
