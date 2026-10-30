@@ -11,13 +11,17 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
+const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
 const obraService = new ObraService();
 const registroService = new RegistroService();
 const incidentsRepo = new IncidentsRepository();
 const tenantService = new TenantService();
 
-module.exports.obrasHandler = async (event) => {
+// Envuelto en conAuditoriaSalud: el expediente y el Registro AT/EP entregan
+// protocolos y aptitud laboral de terceros, así que su acceso tiene que quedar
+// registrado (D-18). Si la auditoría no se puede escribir, no se entrega.
+module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
     const path = (event.rawPath || event.path || event.requestContext?.http?.path || '').split('?')[0];
     const pathParts = path.split('/').filter(Boolean);
@@ -188,13 +192,23 @@ module.exports.obrasHandler = async (event) => {
             const obra = await obraDelTenant(obraId);
             if (!obra) return error('Obra no encontrada', 404);
             const tenant = await tenantService.getById(tenantId).catch(() => null);
-            const { generadoEn, html } = await registroService.generarExpediente({
+            // El detalle de salud por persona solo va con el permiso de vigilancia
+            // (H-15). Sin él se entrega el expediente completo salvo ese detalle,
+            // y el documento declara la omisión en vez de simularla.
+            const puedeSalud = puede(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
+            const { generadoEn, html, titularesSalud, detalleSaludIncluido } = await registroService.generarExpediente({
                 tenantId,
                 obraId,
                 periodo: { desde: q.desde || null, hasta: q.hasta || null },
                 empresaNombre: tenant?.nombre || tenant?.razonSocial || null,
                 obraNombre: obra?.nombre || null,
+                incluirDetalleSalud: puedeSalud,
             });
+            // Entregar salud de terceros deja rastro (D-18). Si no se puede
+            // registrar, conAuditoriaSalud corta la respuesta y no se entrega.
+            if (detalleSaludIncluido && titularesSalud.length) {
+                anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.DOCUMENTO, titulares: titularesSalud });
+            }
             if (q.formato === 'json') {
                 return success({ generadoEn });
             }
@@ -291,4 +305,4 @@ module.exports.obrasHandler = async (event) => {
         console.error('Error in obras handler:', err);
         return error(err.message, 500);
     }
-};
+});

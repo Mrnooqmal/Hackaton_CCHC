@@ -807,13 +807,29 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
      * Organismo Administrador de la Ley 16.744. Reusa `construirSnapshotConsolidado`
      * para que refleje exactamente lo mismo que el registro firmado.
      */
-    async generarExpediente({ tenantId, obraId, periodo = {}, empresaNombre = null, obraNombre = null }) {
+    async generarExpediente({ tenantId, obraId, periodo = {}, empresaNombre = null, obraNombre = null, incluirDetalleSalud = false }) {
         if (!tenantId) throw new Error('tenantId es requerido');
         if (!obraId) throw new Error('obraId es requerido');
         const generadoEn = new Date().toISOString();
         const datos = await this.construirSnapshotConsolidado({ tenantId, obraId, periodo, generadoEn });
+
+        // Resguardo de salud (H-15, Arts. 67-68 y Ley 21.719). El expediente NO se
+        // bloquea entero: los CONTEOS son estadística y el fiscalizador los necesita,
+        // pero el detalle por persona (protocolos, aptitud) es dato sensible de alguien
+        // identificable y solo va con `persona.vigilancia_salud`. Se omite por defecto:
+        // si una pantalla olvida pedir el permiso, el error debe ser que falte detalle,
+        // nunca que se filtre salud. Mismo criterio que lib/documentos-salud.js.
+        const titularesSalud = (datos.vigilanciaSalud?.personas || []).map((p) => p.personaId).filter(Boolean);
+        if (!incluirDetalleSalud) {
+            datos.vigilanciaSalud = {
+                ...datos.vigilanciaSalud,
+                personas: [],
+                detalleOmitido: true,
+            };
+        }
+
         const html = RegistroService.renderExpedienteHtml({ ...datos, empresaNombre, obraNombre });
-        return { generadoEn, datos, html };
+        return { generadoEn, datos, html, titularesSalud, detalleSaludIncluido: Boolean(incluirDetalleSalud) };
     }
 
     /** Render imprimible del Expediente consolidado (HTML → PDF vía navegador). */
@@ -878,7 +894,11 @@ ${filasMed || '<tr><td colspan="5" class="muted">Sin medidas correctivas.</td></
 <table><tr><th>Tipo</th><th>Título</th><th>Versión</th><th>Firmas</th><th>Estado</th></tr>${filasDoc || '<tr><td colspan="5" class="muted">Sin documentos en el expediente.</td></tr>'}</table>
 
 <h2>Vigilancia de la salud (${esc(exp.vigilanciaSalud?.enVigilancia || 0)} de ${esc(exp.vigilanciaSalud?.totalActivos || 0)})</h2>
-<table><tr><th>Persona</th><th>Protocolos</th><th>Aptitud</th></tr>${filasVig || '<tr><td colspan="3" class="muted">Sin personas en vigilancia.</td></tr>'}</table>
+${exp.vigilanciaSalud?.detalleOmitido
+    ? `<p class="muted">El detalle por persona (protocolos y aptitud laboral) <strong>no se incluye en esta copia</strong>:
+       es dato sensible de salud y requiere el permiso de vigilancia de la salud. Los totales de arriba sí
+       corresponden al periodo. Para obtenerlo, solicítelo a quien tenga ese permiso.</p>`
+    : `<table><tr><th>Persona</th><th>Protocolos</th><th>Aptitud</th></tr>${filasVig || '<tr><td colspan="3" class="muted">Sin personas en vigilancia.</td></tr>'}</table>`}
 
 <h2>Incidentes / AT / EP (${(exp.incidentes || []).length})</h2>
 <table><tr><th>Fecha</th><th>Tipo</th><th>Gravedad</th><th>Descripción</th><th>Días perdidos</th><th>Investigación</th></tr>${filasInc || '<tr><td colspan="6" class="muted">Sin incidentes en el periodo.</td></tr>'}</table>
