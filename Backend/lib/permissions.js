@@ -72,6 +72,12 @@ const PERMISSIONS = {
     // Aparte del anterior: registrar solicitudes no es lo mismo que borrar sin
     // vuelta atrás. Aprobar y ejecutar un mismo lote exige dos personas distintas.
     EMPRESA_SUPRESION_DATOS: 'empresa.supresion_datos',
+    // Consultar el registro de auditoría de la empresa (lib/gobernanza/auditoria.js):
+    // quién hizo qué sobre los datos personales, ingresos fallidos y alertas.
+    // Leerlo es ver la actividad de todo el personal: por defecto solo el
+    // administrador; se puede delegar (por ejemplo, a quien responde por la
+    // seguridad de la información). Cada consulta queda, a su vez, registrada.
+    EMPRESA_AUDITORIA: 'empresa.auditoria',
 };
 
 const ALL_PERMISSION_KEYS = Object.values(PERMISSIONS);

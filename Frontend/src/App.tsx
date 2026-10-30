@@ -24,6 +24,7 @@ import ChangePassword from './pages/ChangePassword';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Settings from './pages/Settings';
+import MisDatos from './pages/MisDatos';
 import EnrollMe from './pages/EnrollMe';
 import Unauthorized from './pages/Unauthorized';
 import RegisterAdmin from './pages/RegisterAdmin';
@@ -221,6 +222,7 @@ function AppContent() {
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
       <Route path="/crear" element={<ProtectedRoute><Crear /></ProtectedRoute>} />
       <Route path="/configuracion" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      <Route path="/mis-datos" element={<ProtectedRoute><MisDatos /></ProtectedRoute>} />
       <Route path="/settings" element={<Navigate to="/configuracion" replace />} />
       <Route path="/enroll-me" element={<ProtectedRoute><EnrollMe /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FiPlus, FiAlertTriangle, FiLock, FiClock, FiFileText } from 'react-icons/fi';
+import { FiPlus, FiAlertTriangle, FiLock, FiClock, FiFileText, FiDownload, FiUserCheck } from 'react-icons/fi';
 import { AlertBanner, Badge, Modal, Select } from '../ui';
 import type { BadgeVariant } from '../ui/Badge';
 import { personasApi } from '../../api/personas.api';
 import type { PersonaResponse } from '../../api/types';
 import {
-    gobernanzaApi, lotesApi, DERECHO_LABEL, RESULTADO_LABEL, DERECHOS_QUE_BLOQUEAN,
-    type Solicitud, type EventoHistorial, type Derecho, type Resultado,
+    gobernanzaApi, lotesApi, DERECHO_LABEL, RESULTADO_LABEL, DERECHOS_QUE_BLOQUEAN, ETAPA_LABEL, METODO_LABEL, CAMPO_LABEL, descargarJson,
+    type Solicitud, type EventoHistorial, type Derecho, type Resultado, type MetodoVerificacion, type CampoRectificable, type Etapa,
 } from '../../api/gobernanza.api';
 
 /**
@@ -43,7 +43,13 @@ const EVENTO_LABEL: Record<EventoHistorial['tipo'], string> = {
     desbloqueo: 'Bloqueo levantado',
     supresion: 'Supresión ejecutada',
     alerta: 'Aviso de plazo',
+    verificacion: 'Identidad verificada',
+    ejecucion: 'Ejecutada',
 };
+
+const ETAPA_VARIANTE: Record<Etapa, BadgeVariant> = { recibida: 'warning', verificada: 'info', respondida: 'secondary', cerrada: 'success' };
+/** Métodos que registra quien gestiona (el de sesión y contraseña lo pone el sistema). */
+const METODOS_GESTION: MetodoVerificacion[] = ['presencial_cedula', 'correo_registrado', 'otro'];
 
 const ALERTA_LABEL: Record<string, string> = {
     por_vencer: 'Plazo por vencer',
@@ -143,6 +149,7 @@ export default function SolicitudesTitularesPanel({ puedeSuprimir = false }: { p
                                         <span className="st-titular">{nombreDe(s.personaId)}</span>
                                         <span className="st-meta">
                                             <Badge variant="info">{DERECHO_LABEL[s.derecho]}</Badge>
+                                            {s.etapa && <Badge variant={ETAPA_VARIANTE[s.etapa]}>{ETAPA_LABEL[s.etapa]}</Badge>}
                                             {s.bloqueo?.exigido && s.estado === 'abierta' && (
                                                 <Badge variant="secondary"><FiLock size={11} /> Datos bloqueados</Badge>
                                             )}
@@ -197,6 +204,8 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
     const [canal, setCanal] = useState('');
     const [recibida, setRecibida] = useState(aInputLocal(ahora));
     const [detalle, setDetalle] = useState('');
+    const [metodo, setMetodo] = useState<MetodoVerificacion | ''>('');
+    const [observacion, setObservacion] = useState('');
     const [enviando, setEnviando] = useState(false);
     const [error, setError] = useState('');
 
@@ -210,6 +219,7 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
             const r = await gobernanzaApi.registrar({
                 personaId, derecho: derecho as Derecho, canal: canal.trim(),
                 recibidaEl: new Date(recibida).toISOString(), detalle: detalle.trim() || undefined,
+                verificacion: metodo ? { metodo, observacion: observacion.trim() || undefined } : undefined,
             });
             if (r.success) onRegistrada();
             else setError(r.error || 'No se pudo registrar la solicitud.');
@@ -268,6 +278,17 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
                 <label className="form-label" htmlFor="st-detalle">Detalle (opcional)</label>
                 <textarea id="st-detalle" className="form-input" rows={3} maxLength={2000} value={detalle}
                     onChange={(e) => setDetalle(e.target.value)} placeholder="Qué pide, en sus palabras" />
+                <label className="form-label" htmlFor="st-metodo">Cómo se verificó su identidad (si ya se hizo)</label>
+                <Select id="st-metodo" value={metodo} onChange={(v) => setMetodo(v as MetodoVerificacion)} placeholder="Todavía no se verifica"
+                    options={METODOS_GESTION.map((m) => ({ value: m, label: METODO_LABEL[m] }))} />
+                {metodo === 'otro' && (
+                    <input className="form-input" value={observacion} maxLength={300} onChange={(e) => setObservacion(e.target.value)}
+                        placeholder="Cómo se verificó. Sin números de documento." />
+                )}
+                <p className="me-field-hint">
+                    No se puede acoger una solicitud sin verificar antes la identidad de quien la presenta.
+                    Se registra el método, nunca el número ni una copia del documento.
+                </p>
                 {bloquea && (
                     <div className="st-aviso">
                         <FiLock size={15} aria-hidden />
@@ -291,9 +312,10 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
     onCerrar: () => void;
     onCambio: () => void;
 }) {
-    const [s, setS] = useState<(Solicitud & { historial: EventoHistorial[] }) | null>(null);
+    const [s, setS] = useState<(Solicitud & { historial: EventoHistorial[]; cambiosPropuestos: Partial<Record<CampoRectificable, string>> | null }) | null>(null);
     const [error, setError] = useState('');
-    const [accion, setAccion] = useState<'prorroga' | 'respuesta' | null>(null);
+    const [accion, setAccion] = useState<'prorroga' | 'respuesta' | 'verificacion' | null>(null);
+    const [exportando, setExportando] = useState(false);
 
     const cargar = useCallback(async () => {
         const r = await gobernanzaApi.detalle(solicitudId).catch(() => null);
@@ -310,7 +332,19 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
         if (r?.success) setPropuesto('Lote de supresión propuesto. Apruébalo y ejecútalo en Supresiones (dos personas).');
         else setError(r?.error || 'No se pudo proponer el lote.');
     };
-    const suprimible = s && s.derecho === 'supresion' && s.estado === 'resuelta' && s.respuesta?.resultado !== 'rechazada';
+    const exportar = async () => {
+        setExportando(true);
+        setError('');
+        const r = await gobernanzaApi.exportar(solicitudId).catch(() => null);
+        setExportando(false);
+        if (r?.success && r.data) {
+            descargarJson(r.data, `datos-titular-${solicitudId.slice(0, 8)}.json`);
+            cargar();
+            onCambio();
+        } else setError(r?.error || 'No se pudo generar la copia.');
+    };
+    const exportable = s && ['acceso', 'portabilidad'].includes(s.derecho) && s.estado === 'abierta' && s.verificacion;
+    const suprimible = s && s.derecho === 'supresion' && s.estado === 'resuelta' && s.respuesta?.resultado !== 'rechazada' && !s.ejecucion;
     const puedeProrrogar = s && s.estado === 'abierta' && !s.prorroga && new Date() <= new Date(s.venceEl);
 
     return (
@@ -325,10 +359,25 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
                         <div><dt>Canal</dt><dd>{s.canal}</dd></div>
                         <div><dt>Registrada</dt><dd>{fechaHora(s.registradaEl)} por {s.registradaPor.nombre || 'sin nombre'}</dd></div>
                         <div><dt>Plazo de respuesta</dt><dd>{fecha(s.plazoVigente)} {s.prorroga ? '(prorrogado)' : ''} <Plazo s={s} /></dd></div>
+                        <div><dt>Etapa</dt><dd><Badge variant={ETAPA_VARIANTE[s.etapa]}>{ETAPA_LABEL[s.etapa]}</Badge></dd></div>
+                        <div><dt>Identidad</dt><dd>{s.verificacion
+                            ? <><FiUserCheck size={13} aria-hidden /> {METODO_LABEL[s.verificacion.metodo]}, {fechaHora(s.verificacion.verificadaEl)}{s.verificacion.observacion ? `. ${s.verificacion.observacion}` : ''}</>
+                            : 'Sin verificar'}</dd></div>
                         {s.bloqueo?.exigido && (
                             <div><dt>Bloqueo</dt><dd>{s.bloqueo.aplicadoEl ? `Aplicado el ${fechaHora(s.bloqueo.aplicadoEl)}` : 'Pendiente'}</dd></div>
                         )}
                         {s.detalle && <div className="st-ancho"><dt>Detalle</dt><dd>{s.detalle}</dd></div>}
+                        {s.cambiosPropuestos && (
+                            <div className="st-ancho"><dt>Corrección que pide</dt><dd>
+                                <ul className="st-cambios">
+                                    {(Object.keys(s.cambiosPropuestos) as CampoRectificable[]).map((c) => (
+                                        <li key={c}><strong>{CAMPO_LABEL[c]}:</strong> {s.cambiosPropuestos![c]}</li>
+                                    ))}
+                                </ul>
+                                <span className="me-field-hint">Se aplica al acoger. Los valores propuestos se borran de la solicitud al responder.</span>
+                            </dd></div>
+                        )}
+                        {s.ejecucion && <div><dt>Ejecutada</dt><dd>{fechaHora(s.ejecucion.en)} por {s.ejecucion.por?.nombre || 'sin nombre'}</dd></div>}
                         {s.respuesta && (
                             <div className="st-ancho"><dt>Respuesta</dt><dd>
                                 <strong>{RESULTADO_LABEL[s.respuesta.resultado]}</strong>, {fechaHora(s.respuesta.respondidaEl)} por {s.respuesta.por.nombre || 'sin nombre'}.
@@ -346,9 +395,20 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
                             ) : !s.prorroga && (
                                 <span className="me-field-hint">El primer plazo venció: ya no se puede prorrogar.</span>
                             )}
+                            {!s.verificacion && (
+                                <button className="btn btn-secondary btn-sm" onClick={() => setAccion('verificacion')}>
+                                    <FiUserCheck size={14} /> Registrar verificación
+                                </button>
+                            )}
+                            {exportable && (
+                                <button className="btn btn-secondary btn-sm" disabled={exportando} onClick={exportar}>
+                                    <FiDownload size={14} /> {exportando ? 'Generando…' : 'Descargar copia de sus datos'}
+                                </button>
+                            )}
                             <button className="btn btn-primary btn-sm" onClick={() => setAccion('respuesta')}>Responder</button>
                         </div>
                     )}
+                    {accion === 'verificacion' && <FormVerificacion s={s} onCancelar={() => setAccion(null)} onListo={listo} />}
                     {suprimible && puedeSuprimir && !propuesto && (
                         <div className="st-acciones">
                             <button className="btn btn-secondary btn-sm" onClick={proponerLote}>Proponer lote de supresión</button>
@@ -356,7 +416,7 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
                     )}
                     {propuesto && <AlertBanner variant="success" message={propuesto} onDismiss={() => setPropuesto('')} />}
                     {accion === 'prorroga' && <FormProrroga s={s} onCancelar={() => setAccion(null)} onListo={listo} />}
-                    {accion === 'respuesta' && <FormRespuesta s={s} onCancelar={() => setAccion(null)} onListo={listo} />}
+                    {accion === 'respuesta' && <FormRespuesta s={s} cambios={s.cambiosPropuestos} onCancelar={() => setAccion(null)} onListo={listo} />}
 
                     <h4 className="st-subtitulo">Historial</h4>
                     <p className="me-field-hint">Cada paso queda registrado y no se puede editar ni borrar.</p>
@@ -369,6 +429,8 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
                                 {e.tipo === 'prorroga' && <span className="st-ev-detalle">Comunicada {fecha(String(e.datos.comunicadaEl))}. {String(e.datos.motivo || '')}</span>}
                                 {e.tipo === 'respuesta' && <span className="st-ev-detalle">{RESULTADO_LABEL[e.datos.resultado as Resultado]}{e.datos.dentroDePlazo ? '' : ' (fuera de plazo)'}</span>}
                                 {e.tipo === 'alerta' && <span className="st-ev-detalle">{ALERTA_LABEL[String(e.datos.tipo)] || String(e.datos.tipo)}</span>}
+                                {e.tipo === 'verificacion' && <span className="st-ev-detalle">{METODO_LABEL[e.datos.metodo as MetodoVerificacion] || String(e.datos.metodo)}</span>}
+                                {e.tipo === 'ejecucion' && Array.isArray(e.datos.campos) && <span className="st-ev-detalle">Campos corregidos: {(e.datos.campos as CampoRectificable[]).map((c) => CAMPO_LABEL[c] || c).join(', ')}</span>}
                             </li>
                         ))}
                     </ol>
@@ -415,16 +477,60 @@ function FormProrroga({ s, onCancelar, onListo }: { s: Solicitud; onCancelar: ()
     );
 }
 
-function FormRespuesta({ s, onCancelar, onListo }: { s: Solicitud; onCancelar: () => void; onListo: () => void }) {
-    const [resultado, setResultado] = useState<Resultado | ''>('');
-    const [fundamento, setFundamento] = useState('');
-    const [medio, setMedio] = useState('');
+function FormVerificacion({ s, onCancelar, onListo }: { s: Solicitud; onCancelar: () => void; onListo: () => void }) {
+    const [metodo, setMetodo] = useState<MetodoVerificacion | ''>('');
+    const [observacion, setObservacion] = useState('');
     const [enviando, setEnviando] = useState(false);
     const [error, setError] = useState('');
     const enviar = async () => {
         setEnviando(true);
         setError('');
-        const r = await gobernanzaApi.responder(s.solicitudId, { resultado: resultado as Resultado, fundamento: fundamento.trim(), medio: medio.trim() || undefined }).catch(() => null);
+        const r = await gobernanzaApi.verificar(s.solicitudId, { metodo: metodo as MetodoVerificacion, observacion: observacion.trim() || undefined }).catch(() => null);
+        setEnviando(false);
+        if (r?.success) onListo(); else setError(r?.error || 'No se pudo registrar la verificación.');
+    };
+    return (
+        <div className="st-form st-subform">
+            {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
+            <p className="me-field-hint">Pide lo mínimo para saber que es el titular. Se registra el método, nunca el número de documento.</p>
+            <label className="form-label" htmlFor="st-metodo-v">Cómo se verificó</label>
+            <Select id="st-metodo-v" value={metodo} onChange={(v) => setMetodo(v as MetodoVerificacion)} placeholder="Método"
+                options={METODOS_GESTION.map((m) => ({ value: m, label: METODO_LABEL[m] }))} />
+            {metodo === 'otro' && (
+                <input className="form-input" value={observacion} maxLength={300} onChange={(e) => setObservacion(e.target.value)}
+                    placeholder="Describe cómo, sin números de documento" />
+            )}
+            <div className="st-acciones">
+                <button className="btn btn-secondary btn-sm" disabled={enviando} onClick={onCancelar}>Cancelar</button>
+                <button className="btn btn-primary btn-sm" disabled={enviando || !metodo || (metodo === 'otro' && observacion.trim().length < 10)} onClick={enviar}>
+                    {enviando ? 'Guardando…' : 'Registrar verificación'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function FormRespuesta({ s, cambios, onCancelar, onListo }: {
+    s: Solicitud;
+    cambios: Partial<Record<CampoRectificable, string>> | null;
+    onCancelar: () => void;
+    onListo: () => void;
+}) {
+    const [resultado, setResultado] = useState<Resultado | ''>('');
+    const [fundamento, setFundamento] = useState('');
+    const [medio, setMedio] = useState('');
+    const campos = cambios ? (Object.keys(cambios) as CampoRectificable[]) : [];
+    const [aceptados, setAceptados] = useState<CampoRectificable[]>(campos);
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState('');
+    const rectifica = s.derecho === 'rectificacion' && campos.length > 0 && resultado !== '' && resultado !== 'rechazada';
+    const enviar = async () => {
+        setEnviando(true);
+        setError('');
+        const r = await gobernanzaApi.responder(s.solicitudId, {
+            resultado: resultado as Resultado, fundamento: fundamento.trim(), medio: medio.trim() || undefined,
+            ...(rectifica ? { camposAceptados: aceptados } : {}),
+        }).catch(() => null);
         setEnviando(false);
         if (r?.success) onListo(); else setError(r?.error || 'No se pudo registrar la respuesta.');
     };
@@ -434,7 +540,24 @@ function FormRespuesta({ s, onCancelar, onListo }: { s: Solicitud; onCancelar: (
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
             <label className="form-label" htmlFor="st-resultado">Resultado</label>
             <Select id="st-resultado" value={resultado} onChange={(v) => setResultado(v as Resultado)} placeholder="Resultado"
-                options={(Object.keys(RESULTADO_LABEL) as Resultado[]).map((r) => ({ value: r, label: RESULTADO_LABEL[r] }))} />
+                options={(Object.keys(RESULTADO_LABEL) as Resultado[])
+                    .filter((r) => r === 'rechazada' || s.verificacion)
+                    .map((r) => ({ value: r, label: RESULTADO_LABEL[r] }))} />
+            {!s.verificacion && (
+                <p className="me-field-hint">Sin la identidad verificada solo se puede rechazar (por ejemplo, porque no fue posible verificarla).</p>
+            )}
+            {rectifica && (
+                <fieldset className="st-campos">
+                    <legend className="form-label">Qué se corrige</legend>
+                    {campos.map((c) => (
+                        <label key={c} className="st-check">
+                            <input type="checkbox" checked={aceptados.includes(c)}
+                                onChange={(e) => setAceptados((a) => (e.target.checked ? [...a, c] : a.filter((x) => x !== c)))} />
+                            {CAMPO_LABEL[c]}: {cambios![c]}
+                        </label>
+                    ))}
+                </fieldset>
+            )}
             <label className="form-label" htmlFor="st-fundamento">Qué se hizo y con qué fundamento</label>
             <textarea id="st-fundamento" className="form-input" rows={4} maxLength={4000} value={fundamento} onChange={(e) => setFundamento(e.target.value)}
                 placeholder="Es lo que se le comunica al titular. Si se conserva algo, di hasta cuándo y por qué." />
@@ -448,7 +571,7 @@ function FormRespuesta({ s, onCancelar, onListo }: { s: Solicitud; onCancelar: (
             )}
             <div className="st-acciones">
                 <button className="btn btn-secondary btn-sm" disabled={enviando} onClick={onCancelar}>Cancelar</button>
-                <button className="btn btn-primary btn-sm" disabled={enviando || !resultado || fundamento.trim().length < 20} onClick={enviar}>
+                <button className="btn btn-primary btn-sm" disabled={enviando || !resultado || fundamento.trim().length < 20 || (rectifica && aceptados.length === 0)} onClick={enviar}>
                     {enviando ? 'Guardando…' : 'Registrar respuesta'}
                 </button>
             </div>
@@ -490,4 +613,7 @@ const estilos = `
     .st-historial time, .st-ev-quien { color: var(--text-secondary); }
     .st-ev-detalle { grid-column: 1 / -1; color: var(--text-secondary); }
     @media (max-width: 600px) { .st-historial li { grid-template-columns: 1fr; } }
+    .st-cambios { margin: 0 0 4px; padding-left: 18px; }
+    .st-campos { border: 1px solid var(--surface-border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); margin: 0; display: flex; flex-direction: column; gap: 6px; }
+    .st-check { display: flex; gap: 8px; align-items: center; font-size: 0.88rem; }
 `;

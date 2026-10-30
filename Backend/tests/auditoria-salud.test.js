@@ -134,6 +134,8 @@ test('ver las respuestas de la ficha de salud queda registrado; una encuesta com
     const { idEncuestaSalud } = require('../lib/health/healthSurvey');
     const salud = idEncuestaSalud(T);
     const gestiona = 'personas.ver,encuestas.crear,persona.vigilancia_salud';
+    // Juan respondió con su consentimiento vigente (sin él, la respuesta se retiene).
+    await require('./consentir').consentir(juan, ['ficha_basica_salud']);
     await docClient.send(new PutCommand({ TableName: 'SURVEYS_TABLE', Item: { surveyId: salud, tenantId: T, titulo: 'Ficha', recipients: [{ personaId: juan.personaId, respondedAt: '2026-09-01', responses: [{ p: 1, r: 'sí' }] }, { personaId: pedro.personaId }] } }));
     await docClient.send(new PutCommand({ TableName: 'SURVEYS_TABLE', Item: { surveyId: 'clima-1', tenantId: T, titulo: 'Clima', recipients: [{ personaId: juan.personaId, respondedAt: '2026-09-01', responses: [{ p: 1, r: 'bien' }] }] } }));
     const r = await encuestas.get(evento(medica, 'GET', `/surveys/${salud}`, { path: { id: salud }, permisos: gestiona }));

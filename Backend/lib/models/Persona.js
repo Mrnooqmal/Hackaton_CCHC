@@ -6,6 +6,7 @@
  */
 
 const { normalizeRol } = require('../utils/validation');
+const { consentimientoVigente } = require('../gobernanza/consentimiento');
 
 const ROLES = {
     admin: {
@@ -132,6 +133,11 @@ class Persona {
         // bloqueado. Conjunto de ids: la persona está bloqueada mientras haya al
         // menos una. Lo escribe solo lib/gobernanza (nunca `crear` ni `actualizar`).
         this.solicitudesBloqueo = data.solicitudesBloqueo ? [...data.solicitudesBloqueo] : [];
+        // Consentimientos vigentes, como `finalidad@versión` (lib/gobernanza/
+        // consentimiento.js). Copia mínima del registro de consentimientos que se
+        // escribe en la misma transacción que él; la escribe solo el módulo de
+        // consentimiento (nunca `crear` ni `actualizar`, igual que el bloqueo).
+        this.consentimientos = data.consentimientos ? [...data.consentimientos] : [];
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento
@@ -403,7 +409,9 @@ class Persona {
             fechaNacimiento: this.fechaNacimiento,
             email: this.email,
             telefono: this.telefono,
-            fotoPerfil: this.fotoPerfil,
+            // La foto depende del consentimiento de la persona (finalidad
+            // `foto_perfil`): sin él, o revocado, no sale en ninguna respuesta.
+            fotoPerfil: consentimientoVigente(this, 'foto_perfil') ? this.fotoPerfil : null,
             rol: this.rol,
             permisos: this.permisos,
             cargo: this.cargo,

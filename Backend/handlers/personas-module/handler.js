@@ -16,6 +16,8 @@ const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { normalizeRol, validateRut } = require('../../lib/utils/validation');
 const { PERMISSIONS } = require('../../lib/permissions');
+const auditoria = require('../../lib/gobernanza/auditoria');
+const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 const cargas = require('../../lib/cargas');
@@ -1668,8 +1670,32 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 return error('El correo no tiene un formato válido', 400);
             }
 
+            // La foto de perfil depende del consentimiento de su titular (Ley
+            // 21.719): sin él no se guarda una nueva. Quitarla siempre se puede.
+            if (body.fotoPerfil && !consentimientoVigente(previousPersona, 'foto_perfil')) {
+                return error('Para subir una foto de perfil, primero otórgale tu consentimiento en Mis datos y privacidad.', 409);
+            }
+
             const previousObraIds = new Set(previousPersona.obraIds || []);
             const persona = await personaService.actualizar(tenantId, personaId, body);
+
+            // Auditoría: qué campos cambió quién sobre qué persona; nunca los
+            // valores. Un cambio de rol se registra aparte (alimenta la detección
+            // de escalamiento de privilegios).
+            const camposCambiados = Object.keys(body).filter((c) => c !== 'solicitanteId').sort();
+            const actorAud = { id: sesion.personaId, tipo: 'persona', rol: sesion.rol };
+            await auditoria.registrar({
+                tenantId, operacion: 'datos.modificacion', actor: actorAud, recurso: { tipo: 'persona', id: personaId },
+                titulares: [personaId], origen: auditoria.origenDe(event),
+                detalle: { campos: camposCambiados, propia: personaId === sesion.personaId },
+            });
+            if (body.rol !== undefined && normalizeRol(body.rol) !== normalizeRol(previousPersona.rol)) {
+                await auditoria.registrar({
+                    tenantId, operacion: 'admin.cambio_rol', actor: actorAud, recurso: { tipo: 'persona', id: personaId },
+                    titulares: [personaId], origen: auditoria.origenDe(event),
+                    detalle: { rolAnterior: normalizeRol(previousPersona.rol), rolNuevo: normalizeRol(body.rol) },
+                });
+            }
 
             try {
                 const nextObraIds = Array.isArray(persona.obraIds) ? persona.obraIds : [];
@@ -2105,6 +2131,9 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         return error('Ruta no encontrada', 404);
     } catch (err) {
         console.error('Error in personas handler:', err);
-        return error(err.message, 500);
+        // Un rechazo de las reglas (400, por ejemplo la edad mínima) no es un
+        // error del servidor.
+        const codigo = Number(err.statusCode) >= 400 && Number(err.statusCode) < 500 ? Number(err.statusCode) : 500;
+        return error(err.message, codigo);
     }
 });

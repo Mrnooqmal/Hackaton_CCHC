@@ -10,6 +10,7 @@ const { buildDefaultCargoCatalog, sanitizeCargoCatalog } = require('../../lib/ds
 const { sanitizeCatalogosActividad, resolveCatalogos, PERMISOS_TRABAJO_DEF } = require('../../lib/catalogos-actividad');
 const { EppCatalogoService } = require('../../lib/services/EppCatalogoService');
 const { PERMISSIONS } = require('../../lib/permissions');
+const auditoria = require('../../lib/gobernanza/auditoria');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 
 const { FirmaRepresentanteService } = require('../../lib/services/FirmaRepresentanteService');
@@ -198,6 +199,18 @@ module.exports.tenantsHandler = async (event) => {
             }
 
             const tenant = await tenantService.updateConfig(tenantId, body);
+
+            // Cambiar los roles es cambiar el control de acceso de la empresa:
+            // queda en la auditoría y alimenta la detección de escalamiento de
+            // privilegios. Qué roles se tocaron, no su contenido completo.
+            if (body.roles !== undefined) {
+                await auditoria.registrar({
+                    tenantId, operacion: 'admin.roles_empresa',
+                    actor: { id: sesion.personaId, tipo: 'persona', rol: sesion.rol },
+                    recurso: { tipo: 'empresa', id: tenantId }, origen: auditoria.origenDe(event),
+                    detalle: { roles: Array.isArray(body.roles) ? body.roles.map((r) => String(r?.id || r?.nombre || '').slice(0, 60)).filter(Boolean) : [] },
+                });
+            }
 
             // Designar (o volver a designar) al representante le asigna los
             // documentos que tiene que firmar y le quita la pendiente al anterior.

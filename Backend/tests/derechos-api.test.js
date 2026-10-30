@@ -47,7 +47,9 @@ const datos = (res) => JSON.parse(res.body).data;
 const historial = () => doble.items('GOBERNANZA_HISTORIAL_TABLE');
 const fichaTitular = () => doble.items('PERSONAS_TABLE').find((p) => p.personaId === titular.personaId);
 
-const SOLICITUD = () => ({ personaId: titular.personaId, derecho: 'supresion', canal: 'Correo a rrhh@constructora.cl', recibidaEl: '2026-10-05T12:00:00Z', detalle: 'Pide suprimir sus datos' });
+// Con la identidad verificada al registrar: acoger exige saber quién pide
+// (lib/gobernanza/derechos.js, `SIN_VERIFICACION`).
+const SOLICITUD = () => ({ personaId: titular.personaId, derecho: 'supresion', canal: 'Correo a rrhh@constructora.cl', recibidaEl: '2026-10-05T12:00:00Z', detalle: 'Pide suprimir sus datos', verificacion: { metodo: 'presencial_cedula' } });
 
 // ─── Acceso ─────────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ test('registrar una supresión la guarda, bloquea a la persona y deja dos evento
     assert.equal(s.registradaPor.nombre, 'Ana Rojas');
     assert.equal(s.bloqueo.aplicadoEl, AHORA.toISOString());
     assert.ok(fichaTitular().solicitudesBloqueo.has(s.solicitudId), 'la persona quedó bloqueada');
-    assert.deepEqual(historial().map((h) => h.tipo).sort(), ['bloqueo', 'solicitud']);
+    assert.deepEqual(historial().map((h) => h.tipo).sort(), ['bloqueo', 'solicitud', 'verificacion']);
     assert.equal(historial().find((h) => h.tipo === 'solicitud').datos.recibidaEl, '2026-10-05T12:00:00.000Z', 'el historial guarda la fecha original');
 });
 
@@ -91,7 +93,7 @@ test('acceso y portabilidad no bloquean', async () => {
     const res = await pedir('POST', '/gobernanza/solicitudes', { ...SOLICITUD(), derecho: 'acceso' });
     assert.equal(res.statusCode, 201);
     assert.ok(!('solicitudesBloqueo' in fichaTitular()));
-    assert.deepEqual(historial().map((h) => h.tipo), ['solicitud']);
+    assert.deepEqual(historial().map((h) => h.tipo), ['solicitud', 'verificacion']);
 });
 
 test('una fecha de recepción futura se rechaza y no deja rastro', async () => {
@@ -120,7 +122,7 @@ test('el historial solo recibe ítems nuevos: nunca una actualización ni un bor
     const sobreHistorial = doble.escrituras.filter((e) => e.tabla === 'GOBERNANZA_HISTORIAL_TABLE');
     assert.ok(sobreHistorial.length >= 4);
     assert.ok(sobreHistorial.every((e) => e.nombre === 'Put'), 'solo Put');
-    assert.deepEqual(historial().map((h) => h.tipo).sort(), ['bloqueo', 'prorroga', 'respuesta', 'solicitud']);
+    assert.deepEqual(historial().map((h) => h.tipo).sort(), ['bloqueo', 'prorroga', 'respuesta', 'solicitud', 'verificacion']);
 });
 
 // ─── Prórroga ───────────────────────────────────────────────────────────────
@@ -203,7 +205,8 @@ test('responder dos veces: la segunda se rechaza y no deja otro evento', async (
 test('el detalle trae la solicitud con su historial completo, en orden', async () => {
     const { solicitudId } = datos(await pedir('POST', '/gobernanza/solicitudes', SOLICITUD()));
     const d = datos(await pedir('GET', `/gobernanza/solicitudes/${solicitudId}`));
-    assert.deepEqual(d.historial.map((h) => h.tipo), ['solicitud', 'bloqueo']);
+    assert.deepEqual(d.historial.map((h) => h.tipo), ['solicitud', 'bloqueo', 'verificacion']);
+    assert.equal(d.etapa, 'verificada');
     assert.equal(d.plazoVigente.slice(0, 10), '2026-11-04');
 });
 

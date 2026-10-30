@@ -152,6 +152,10 @@ export default function IncidentReportar() {
                                 ...prev,
                                 descripcion: prev.descripcion ? `${prev.descripcion} ${result.data!.text}` : result.data!.text,
                             }));
+                        } else if (result.error) {
+                            // Sin consentimiento para el dictado (Mis datos y privacidad) el
+                            // audio no sale: se explica y se puede seguir escribiendo.
+                            setFormError(result.error);
                         }
                     } catch {
                         setFormError('No se pudo transcribir el audio.');

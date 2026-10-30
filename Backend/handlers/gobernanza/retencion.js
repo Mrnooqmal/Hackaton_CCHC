@@ -222,4 +222,4 @@ module.exports.retencionDiaria = async () => {
 };
 
 module.exports.calcularPlan = calcularPlan;
-module.exports._interno = { procesarEmpresa, cargarEmpresa, extenderBloqueos, LECTURA, FUENTES };
+module.exports._interno = { procesarEmpresa, cargarEmpresa, extenderBloqueos, LECTURA, FUENTES, consultarTodo, completos };

@@ -8,10 +8,14 @@ const D = require('../lib/gobernanza/derechos');
 const ACTOR = { personaId: 'p-admin', nombre: 'Ana Rojas' };
 const AHORA = new Date('2026-10-07T15:00:00Z');   // miércoles
 
-const nueva = (sobre = {}, opts = {}) => D.nuevaSolicitud({
-    personaId: 'p-titular', derecho: D.DERECHOS.SUPRESION, canal: 'Correo a rrhh@constructora.cl',
-    recibidaEl: '2026-10-05T12:00:00Z', detalle: 'Pide suprimir sus datos', ...sobre,
-}, ACTOR, { ahora: AHORA, solicitudId: 'sol-1', ...opts });
+// Con la identidad ya verificada: acoger lo exige (`SIN_VERIFICACION`).
+const nueva = (sobre = {}, opts = {}) => ({
+    ...D.nuevaSolicitud({
+        personaId: 'p-titular', derecho: D.DERECHOS.SUPRESION, canal: 'Correo a rrhh@constructora.cl',
+        recibidaEl: '2026-10-05T12:00:00Z', detalle: 'Pide suprimir sus datos', ...sobre,
+    }, ACTOR, { ahora: AHORA, solicitudId: 'sol-1', ...opts }),
+    verificacion: { metodo: 'presencial_cedula', verificadaEl: AHORA.toISOString(), por: ACTOR },
+});
 
 const rechaza = (fn, codigo) => assert.throws(fn, (e) => e.codigo === codigo);
 /** Con el bloqueo ya aplicado (lo que hace el sistema al registrarla): para mirar solo los avisos de plazo. */

@@ -74,7 +74,7 @@ const poner = (env, item) => docClient.send(new PutCommand({ TableName: env, Ite
 /** Solicitud de supresión de Juan, respondida y acogida (queda bloqueado). */
 async function supresionAcogida() {
     await poner('INBOX_TABLE', { recipientId: juan.personaId, messageId: 'm1', senderId: 'system', createdAt: '2026-01-01' });
-    const s = datos(await derechos.atender(evento(ana, 'POST', '/gobernanza/solicitudes', { personaId: juan.personaId, derecho: 'supresion', canal: 'correo', recibidaEl: '2026-10-05T12:00:00Z' }), { ahora: AHORA }));
+    const s = datos(await derechos.atender(evento(ana, 'POST', '/gobernanza/solicitudes', { personaId: juan.personaId, derecho: 'supresion', canal: 'correo', recibidaEl: '2026-10-05T12:00:00Z', verificacion: { metodo: 'presencial_cedula' } }), { ahora: AHORA }));
     await derechos.atender(evento(ana, 'POST', `/gobernanza/solicitudes/${s.solicitudId}/respuesta`, { resultado: 'acogida_parcial', fundamento: 'Se suprimen los datos de conveniencia; la evidencia se conserva por el DS 44.' }), { ahora: AHORA });
     return s.solicitudId;
 }
@@ -93,7 +93,7 @@ test('el lote de una supresión acogida trae exactamente lo de conveniencia: cam
 });
 
 test('una solicitud no acogida (o que no es de supresión) no genera lote', async () => {
-    const s = datos(await derechos.atender(evento(ana, 'POST', '/gobernanza/solicitudes', { personaId: juan.personaId, derecho: 'supresion', canal: 'correo', recibidaEl: '2026-10-05T12:00:00Z' }), { ahora: AHORA }));
+    const s = datos(await derechos.atender(evento(ana, 'POST', '/gobernanza/solicitudes', { personaId: juan.personaId, derecho: 'supresion', canal: 'correo', recibidaEl: '2026-10-05T12:00:00Z', verificacion: { metodo: 'presencial_cedula' } }), { ahora: AHORA }));
     const r = await lote(ana, 'POST', '/gobernanza/lotes', { origen: 'solicitud', solicitudId: s.solicitudId });
     assert.equal(r.statusCode, 409, 'todavía abierta');
 });

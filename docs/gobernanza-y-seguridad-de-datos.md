@@ -1567,6 +1567,41 @@ nada.
 comprobó que fallan al quitar cada chequeo (estado, firmas, respaldo,
 autorización, empresa, sesión, la condición del borrado y su manejo).
 
+### D-29. Consentimiento por finalidad (Actividad 5)
+**Estado: implementado el 29 de octubre de 2026 (en el árbol). D-28 queda reservada para la minimización de la Actividad 4.**
+
+- Solo tres tratamientos dependen del consentimiento: la **Ficha Básica de Salud**, la **foto de perfil** y el **dictado por voz con IA** (el audio sale a Google, fuera de Chile). El resto tiene otra base (obligación legal del DS 44 y la Ley 16.744, contrato de trabajo) y se informa al titular sin preguntarle: un consentimiento que no se puede negar no es libre (`lib/gobernanza/consentimiento.js`, `BASES_SIN_CONSENTIMIENTO`).
+- Registro por persona y finalidad en la tabla de gobernanza (`CONSENT#<persona>#<finalidad>`): estado, versión del texto, `otorgadoEl`, `revocadoEl`, canal. Cada cambio deja un evento en el historial que solo crece (`CONS#...`). La ficha lleva una copia mínima (`consentimientos`, conjunto de `finalidad@versión`) escrita en la **misma transacción**, para decidir sin lecturas extra.
+- Los textos están versionados en el código; la vigencia exige la versión actual. Aceptar un texto que ya no es el vigente se rechaza.
+- Revocar no pide contraseña. Efectos: la ficha de salud no se puede responder y sus respuestas dejan de mostrarse a terceros (quedan retenidas); la foto deja de salir en toda respuesta y no se puede subir otra; el dictado devuelve 403 antes de enviar el audio. La supresión de lo ya entregado va por solicitud y lote de dos personas, que ahora incluye las respuestas de la ficha de salud (`quitar_respuestas`).
+- **Menores:** no hay titulares menores de 18. El DS N° 1 de 2021 del Ministerio del Trabajo prohíbe a menores de 18 el trabajo en faenas de construcción (art. 2 y art. 4, letra A, N° 31). El alta y la rectificación rechazan una fecha de nacimiento de un menor (`problemaEdadMinima`), y el consentimiento también.
+- **Decisión para la persona responsable:** las respuestas de la Ficha Básica de Salud anteriores a este módulo no tienen constancia de consentimiento y quedan retenidas (no se muestran a terceros) hasta que cada persona lo otorgue. Lo mismo las fotos de perfil existentes.
+
+### D-30. Ejercicio de derechos por el titular y flujo de solicitudes (Actividad 5)
+**Estado: implementado el 29 de octubre de 2026 (en el árbol).**
+
+- **Autoservicio** (`/gobernanza/mis-datos`, `handlers/gobernanza/titular.js`, pantalla "Mis datos y privacidad"): descargar una copia (portabilidad), pedir rectificación, supresión, oposición o bloqueo, y ver el estado. Lo sensible exige volver a escribir la contraseña; tres errores en 15 minutos cierran las sesiones de la cuenta.
+- **Exportación** en JSON con esquema declarado (`buildandserve.datos-titular` v1), armada por lista blanca: nada de terceros (de cada registro compartido sale solo lo del titular) ni interno (hashes, HMAC, sobres, IP, sesiones). Hasta 3 por día; la cuarta se rechaza y alerta. Sin registro en la auditoría no se entrega.
+- **Flujo y etapas:** recibida, verificada (en evaluación), respondida, cerrada. La etapa se calcula de lo registrado (`etapaDe`). Acoger exige identidad verificada; se registra el método (sesión y contraseña, cédula en persona, correo registrado u otro), nunca el número de documento.
+- **Rectificación:** campos de identidad (nombre, apellidos, RUT, fecha de nacimiento), validados (RUT, edad mínima, caracteres). Los valores propuestos viajan cifrados y se borran de la solicitud al responder; se aplican en la misma transacción que la respuesta. Un RUT nuevo actualiza el vínculo `afectadoRutHmac` de los incidentes. Lo firmado (actas, documentos) no se reescribe: es la prueba de lo que se firmó.
+- **Canal de la empresa:** la solicitud que llega por carta o correo se registra como antes y ahora puede verificarse y, si es de acceso, exportarse desde el panel.
+
+### D-31. Auditoría general y detección de eventos sospechosos (Actividad 5)
+**Estado: implementado el 29 de octubre de 2026 (en el árbol).**
+
+- `lib/gobernanza/auditoria.js` registra en `AuditoriaAccesosTable` (la de D-18) un catálogo cerrado de operaciones: ingresos y fallidos, verificaciones de identidad, consentimientos, solicitudes, exportaciones, rectificaciones, supresiones, cambios de fichas, roles y permisos, contención, alertas y la consulta de la propia auditoría.
+- Atributos: identificador, fecha, categoría, operación, resultado, actor (personaId, `rut:<hmac>` sin sesión, operador), recurso, titulares, IP y canal, detalle acotado, TTL y **sello HMAC**. `sanear` rechaza contraseñas, tokens, RUT, correos, nombres, valores y textos largos.
+- Protección: IAM de solo agregar y leer para todos los roles (incluido `RolSupresion`, que ahora escribe aquí), `Retain`, recuperación a un punto en el tiempo, y el sello que delata una alteración hecha sin la llave.
+- Conservación por TTL: seguridad 1 año, alertas 2, operaciones sobre datos 5 (configurable). Los registros de acceso a salud de D-18 no llevan TTL.
+- Consulta: permiso nuevo `empresa.auditoria` (solo administrador por defecto), pestaña Auditoría en Mi Empresa; cada consulta queda registrada de forma estricta.
+- Detección (`lib/gobernanza/deteccion.js`): fuerza bruta contra una cuenta, contraseña reiterada al confirmar identidad (cierra sesiones), exportación sobre el límite, acceso masivo a salud y escalamiento de privilegios. Cada alerta queda en la auditoría, avisa en la bandeja y emite la métrica `EventoSospechoso` con su alarma.
+
+### D-32. Plan de respuesta a incidentes y contención (Actividad 5)
+**Estado: plan escrito y scripts implementados el 29 de octubre de 2026. Cierra el punto 7.4 del checklist salvo la validación legal de plazos y responsables.**
+
+- `docs/plan-respuesta-incidentes.md`: fases, responsables, criterios, escalamiento, notificación y cierre. La Ley 21.719 no fija horas para notificar ("sin dilaciones indebidas"); los plazos internos son compromisos del plan. La Ley 21.663 solo aplica si la plataforma o una constructora son calificadas como servicio esencial u operador de importancia vital.
+- `Backend/scripts/contencion.js` (lógica en `lib/gobernanza/contencion.js`): preservar evidencia con huella, revocar sesiones, suspender y reactivar cuentas, revocar vales de firma. Exigen operador y motivo, y quedan en la auditoría.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

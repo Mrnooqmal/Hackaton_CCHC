@@ -1,5 +1,8 @@
 const { success, error } = require('../../lib/utils/response');
 const gemini = require('../../lib/ai/gemini');
+const { conSesion } = require('../../lib/auth/sesion');
+const { PersonaService } = require('../../lib/services/PersonaService');
+const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 
 /**
  * POST /ai/transcribe - Transcribir audio a texto usando Gemini
@@ -10,6 +13,14 @@ const gemini = require('../../lib/ai/gemini');
  */
 module.exports.transcribeAudio = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        // El audio sale a un tercero (Google) fuera de Chile: solo con el
+        // consentimiento vigente de quien dicta (finalidad `dictado_voz_ia`).
+        const persona = await new PersonaService().getById(ses.sesion.personaId);
+        if (!consentimientoVigente(persona, 'dictado_voz_ia')) {
+            return error('Para dictar por voz, primero otorga tu consentimiento en Mis datos y privacidad. También puedes escribir el relato.', 403);
+        }
         const body = JSON.parse(event.body || '{}');
         const { audio, mimeType } = body;
 

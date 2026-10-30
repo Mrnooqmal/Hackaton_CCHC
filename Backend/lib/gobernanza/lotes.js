@@ -73,9 +73,13 @@ function contenidoDesdePlan(plan, versiones) {
 /**
  * Contenido de un lote por una SOLICITUD de supresión acogida: lo que no es
  * evidencia (D-2). De la ficha, los campos de conveniencia que tenga; su
- * bandeja; sus sugerencias. La evidencia queda para cuando venza su plazo.
+ * bandeja; sus sugerencias; y sus respuestas a la Ficha Básica de Salud, que se
+ * tratan con su consentimiento y no acreditan nada ante la autoridad. La
+ * evidencia queda para cuando venza su plazo.
+ *
+ * @param {object[]} [encuestasSalud] la Ficha Básica de Salud de la empresa (0 o 1 ítem)
  */
-function contenidoDesdeSolicitud({ persona, bandeja = [], sugerencias = [] }) {
+function contenidoDesdeSolicitud({ persona, bandeja = [], sugerencias = [], encuestasSalud = [] }) {
     const ficha = fuente('PERSONAS_TABLE');
     // Solo lo que tiene contenido: quitar un `false` o unas preferencias por
     // defecto no suprime nada y ensucia lo que ve quien aprueba.
@@ -88,6 +92,12 @@ function contenidoDesdeSolicitud({ persona, bandeja = [], sugerencias = [] }) {
     }
     for (const m of bandeja) operaciones.push({ tabla: 'INBOX_TABLE', clave: fuente('INBOX_TABLE').clave(m), accion: 'suprimir' });
     for (const g of sugerencias) operaciones.push({ tabla: 'SUGGESTIONS_TABLE', clave: fuente('SUGGESTIONS_TABLE').clave(g), accion: 'suprimir' });
+    for (const e of encuestasSalud) {
+        const propia = (e.recipients || []).find((r) => persona && (r.personaId || r.workerId) === persona.personaId);
+        if (propia && (propia.responsesCifradas !== undefined || propia.responses !== undefined)) {
+            operaciones.push({ tabla: 'SURVEYS_TABLE', clave: fuente('SURVEYS_TABLE').clave(e), accion: 'quitar_respuestas', personaId: persona.personaId });
+        }
+    }
     return { operaciones: ordenar(operaciones, k), archivos: [], personas: persona ? [persona.personaId] : [] };
 }
 

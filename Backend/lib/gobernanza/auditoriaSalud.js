@@ -77,25 +77,33 @@ async function escribir(event, eventos, ahora = new Date()) {
     const s = sesionDe(event);
     const en = ahora.toISOString();
     const juntar = (campo) => [...new Set(eventos.flatMap((e) => e[campo]))];
+    const item = {
+        tenantId: s.tenantId || 'sin-empresa',
+        sk: `${en}#${crypto.randomUUID()}`,
+        en,
+        actorId: s.personaId || 'desconocido',
+        actorRol: s.rol,
+        ip: event?.requestContext?.http?.sourceIp || null,
+        userAgent: String(event?.headers?.['user-agent'] || event?.headers?.['User-Agent'] || '').slice(0, 200) || null,
+        // Método y ruta, sin la consulta.
+        ruta: `${event?.requestContext?.http?.method || ''} ${String(event?.rawPath || '').split('?')[0]}`.trim(),
+        tipos: [...new Set(eventos.map((e) => e.tipo))],
+        titulares: juntar('titulares'),
+        documentos: juntar('documentos'),
+        claves: juntar('claves'),
+    };
     await docClient.send(new PutCommand({
         TableName: process.env.AUDITORIA_ACCESOS_TABLE,
-        Item: {
-            tenantId: s.tenantId || 'sin-empresa',
-            sk: `${en}#${crypto.randomUUID()}`,
-            en,
-            actorId: s.personaId || 'desconocido',
-            actorRol: s.rol,
-            ip: event?.requestContext?.http?.sourceIp || null,
-            userAgent: String(event?.headers?.['user-agent'] || event?.headers?.['User-Agent'] || '').slice(0, 200) || null,
-            // Método y ruta, sin la consulta.
-            ruta: `${event?.requestContext?.http?.method || ''} ${String(event?.rawPath || '').split('?')[0]}`.trim(),
-            tipos: [...new Set(eventos.map((e) => e.tipo))],
-            titulares: juntar('titulares'),
-            documentos: juntar('documentos'),
-            claves: juntar('claves'),
-        },
+        Item: item,
         ConditionExpression: 'attribute_not_exists(sk)',
     }));
+    // Detección de acceso masivo a salud (lib/gobernanza/deteccion.js). Después
+    // de escribir y sin poder tumbar la respuesta: la auditoría ya quedó.
+    try {
+        await require('./auditoria').detectar(item, { ahora });
+    } catch (err) {
+        registrarFallo('auditoria.deteccion_salud', err, {});
+    }
 }
 
 /** Envuelve un handler que puede entregar datos de salud. */

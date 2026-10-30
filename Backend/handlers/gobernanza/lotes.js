@@ -28,6 +28,7 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { bucketDeClave, esDeLaEmpresa } = require('../../lib/almacenamiento');
 const { fuente } = require('../../lib/gobernanza/inventario');
 const L = require('../../lib/gobernanza/lotes');
+const auditoria = require('../../lib/gobernanza/auditoria');
 const D = require('../../lib/gobernanza/derechos');
 const { calcularPlan } = require('./retencion');
 
@@ -101,7 +102,10 @@ async function contenidoActual(tenantId, ambito, { hoy = new Date() } = {}) {
             const r = await docClient.send(new BatchGetCommand({ RequestItems: { [T('SUGGESTIONS_TABLE')]: { Keys: clavesSug.slice(i, i + 100).map((x) => ({ suggestionId: x.suggestionId })) } } }));
             sugerencias.push(...(r.Responses?.[T('SUGGESTIONS_TABLE')] || []).filter((g) => g.userId === s.personaId));
         }
-        return L.contenidoDesdeSolicitud({ persona, bandeja, sugerencias });
+        const { idEncuestaSalud } = require('../../lib/health/healthSurvey');
+        const ficha = (await docClient.send(new GetCommand({ TableName: T('SURVEYS_TABLE'), Key: { surveyId: idEncuestaSalud(tenantId) }, ConsistentRead: true }))).Item;
+        const encuestasSalud = ficha && ficha.tenantId === tenantId ? [ficha] : [];
+        return L.contenidoDesdeSolicitud({ persona, bandeja, sugerencias, encuestasSalud });
     }
     throw error409('Origen de lote no reconocido', 'ORIGEN_INVALIDO');
 }
@@ -123,6 +127,25 @@ async function ejecutarOperacion(op) {
             ExpressionAttributeNames: { ...nombres, '#anon': op.accion === 'anonimizar' ? 'anonimizadoEl' : 'camposSuprimidosEl' },
             ExpressionAttributeValues: { ':en': new Date().toISOString() },
         })).catch((err) => { if (err.name !== 'ConditionalCheckFailedException') throw err; });
+    } else if (op.accion === 'quitar_respuestas') {
+        // Las respuestas de UNA persona dentro de un ítem compartido: se lee, se
+        // quitan las suyas y se escribe solo si nadie respondió entremedio.
+        const it = (await docClient.send(new GetCommand({ TableName: tabla, Key: op.clave, ConsistentRead: true }))).Item;
+        if (!it) return;
+        let tocado = false;
+        const recipients = (it.recipients || []).map((r) => {
+            if ((r.personaId || r.workerId) !== op.personaId) return r;
+            const { responsesCifradas, responses, ...resto } = r;
+            tocado = tocado || responsesCifradas !== undefined || responses !== undefined;
+            return { ...resto, respuestasSuprimidasEl: new Date().toISOString() };
+        });
+        if (!tocado) return;
+        await docClient.send(new UpdateCommand({
+            TableName: tabla, Key: op.clave,
+            UpdateExpression: 'SET recipients = :r, updatedAt = :ahora',
+            ConditionExpression: it.updatedAt ? 'updatedAt = :antes' : 'attribute_not_exists(updatedAt)',
+            ExpressionAttributeValues: { ':r': recipients, ':ahora': new Date().toISOString(), ...(it.updatedAt ? { ':antes': it.updatedAt } : {}) },
+        }));
     } else {
         throw new Error(`Acción desconocida: ${op.accion}`);
     }
@@ -240,6 +263,14 @@ async function ejecutar(tenantId, id, body, actor, { ahora }) {
     const items = [{ Put: { TableName: T('GOBERNANZA_HISTORIAL_TABLE'), Item: D.evento(tenantId, idHistorial, D.EVENTOS.SUPRESION, datosEvento, actor, { ahora }), ConditionExpression: 'attribute_not_exists(sk)' } }];
     if (lote.ambito.origen === L.ORIGENES.SOLICITUD && !resultado.errores.length) {
         const personaId = lote.contenido.personas[0];
+        // La solicitud pasa a cerrada (lib/gobernanza/derechos.js, `etapaDe`).
+        items.push({
+            Update: {
+                TableName: T('GOBERNANZA_TABLE'), Key: { tenantId, sk: `SOLICITUD#${lote.ambito.solicitudId}` },
+                UpdateExpression: 'SET ejecucion = :e, actualizadaEl = :ahora', ConditionExpression: 'attribute_exists(sk)',
+                ExpressionAttributeValues: { ':e': { en: ahora.toISOString(), por: actor, detalle: { loteId: lote.loteId } }, ':ahora': ahora.toISOString() },
+            },
+        });
         items.push({
             Update: {
                 TableName: T('PERSONAS_TABLE'), Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
@@ -250,6 +281,12 @@ async function ejecutar(tenantId, id, body, actor, { ahora }) {
         items.push({ Put: { TableName: T('GOBERNANZA_HISTORIAL_TABLE'), Item: D.evento(tenantId, idHistorial, D.EVENTOS.DESBLOQUEO, { personaId }, actor, { ahora, n: 1 }), ConditionExpression: 'attribute_not_exists(sk)' } });
     }
     await docClient.send(new TransactWriteCommand({ TransactItems: items }));
+    await auditoria.registrar({
+        tenantId, operacion: 'derechos.supresion_ejecutada', resultado: resultado.errores.length ? 'fallido' : 'exito',
+        actor: { id: actor.personaId, tipo: 'persona' }, recurso: { tipo: 'lote', id: lote.loteId },
+        titulares: lote.contenido.personas, origen: { canal: 'web' },
+        detalle: { origenLote: lote.ambito.origen, operaciones: resultado.operaciones, versiones: resultado.versiones, errores: resultado.errores.length, aprobadoPor: lote.aprobadoPor?.personaId || null },
+    }, { ahora });
     return success({ ...lote, estado, resultado, ejecutadoPor: actor });
 }
 

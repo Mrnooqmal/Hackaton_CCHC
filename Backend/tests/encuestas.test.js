@@ -156,6 +156,11 @@ test('quien no es destinatario ni gestiona no ve la encuesta', async () => {
 // ─── La Ficha Básica de Salud ───────────────────────────────────────────────
 
 const sembrarFichaSalud = async () => {
+    // Los dos respondieron con su consentimiento vigente (finalidad
+    // `ficha_basica_salud`): sin él, sus respuestas se retienen.
+    const { consentir } = require('./consentir');
+    await consentir(trabajador, ['ficha_basica_salud']);
+    await consentir(otro, ['ficha_basica_salud']);
     const [llave, llaveSalud] = await Promise.all([llaveDe(tenantId), llaveSaludDe(tenantId)]);
     const respuestas = [{ questionId: 'health-01', value: 'Sí' }];
     await docClient.send(new PutCommand({

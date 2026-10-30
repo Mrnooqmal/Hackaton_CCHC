@@ -18,6 +18,7 @@ const { validateRut, validateRequired, hashPassword } = require('../../lib/utils
 const credenciales = require('../../lib/credenciales');
 const cifradoCampo = require('../../lib/cifradoCampo');
 const { registrarFallo } = require('../../lib/degradacion');
+const auditoria = require('../../lib/gobernanza/auditoria');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { resolvePersonaPermisos } = require('../../lib/permissions');
@@ -99,6 +100,10 @@ const crearSesionParaPersona = async (persona, event) => {
     }
 
     const { token, sessionId, expiresAt, now } = await emitirSesion(persona, event);
+    await auditoria.registrar({
+        tenantId: persona.tenantId, operacion: 'auth.ingreso', actor: { id: persona.personaId, tipo: 'persona', rol: persona.rol },
+        titulares: [persona.personaId], origen: auditoria.origenDe(event),
+    }).catch((err) => registrarFallo('auditoria.ingreso', err));
 
     // Actualizar último acceso
     await docClient.send(new UpdateCommand({
@@ -237,6 +242,21 @@ module.exports.login = async (event) => {
             }
         }
         if (!ficha) {
+            // Auditoría y detección (lib/gobernanza/deteccion.js): el actor es la
+            // cuenta atacada, por el HMAC de su RUT (nunca el RUT en claro). Cinco
+            // intentos en quince minutos contra la misma cuenta generan una alerta.
+            // No puede tumbar el ingreso: sin `estricto`.
+            // Queda en la auditoría de la empresa de la cuenta atacada (para que
+            // su administración vea la alerta); si el RUT no existe, en la de la
+            // plataforma (`sin-empresa`).
+            const actorFallido = { id: `rut:${await cifradoCampo.hmacRut(rutValidation.formatted)}`, tipo: 'cuenta' };
+            const empresas = [...new Set(candidatas.map((p) => p.tenantId))];
+            for (const tenantId of (empresas.length ? empresas : [null])) {
+                await auditoria.registrar({
+                    tenantId, operacion: 'auth.ingreso_fallido', resultado: 'denegado', actor: actorFallido,
+                    origen: auditoria.origenDe(event), detalle: { fichasConAcceso: candidatas.length },
+                }).catch((err) => registrarFallo('auditoria.ingreso_fallido', err));
+            }
             return error('Credenciales inválidas', 401);
         }
 

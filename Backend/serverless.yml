@@ -1571,6 +1571,35 @@ resources:
         AlarmActions:
           - !Ref AlertasOperacionTopic
 
+    # Detección de eventos sospechosos (D-31, lib/gobernanza/deteccion.js):
+    # fuerza bruta contra una cuenta, contraseña reiterada al confirmar
+    # identidad, exportaciones sobre el límite, acceso masivo a salud y
+    # escalamiento de privilegios. Cada alerta ya quedó en la auditoría y avisó
+    # en la bandeja a quien revisa la auditoría de la empresa; esto avisa además
+    # al equipo de la plataforma (plan de respuesta, docs/plan-respuesta-incidentes.md).
+    EventoSospechosoAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-evento-sospechoso-${self:provider.stage}
+        AlarmDescription: >-
+          Una regla de detección cruzó su umbral. Revisar los logs filtrando por
+          EVENTO_SOSPECHOSO (dimensión regla) y la auditoría de la empresa
+          afectada. Es una alerta, no un incidente confirmado: clasificar según el
+          plan de respuesta a incidentes.
+        Namespace: BuildAndServe
+        MetricName: EventoSospechoso
+        Dimensions:
+          - Name: stage
+            Value: ${self:provider.stage}
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
     # ==========================================
     # SNS
     # ==========================================
@@ -2182,6 +2211,14 @@ resources:
                 - Effect: Allow
                   Action: [dynamodb:PutItem]
                   Resource: !GetAtt GobernanzaHistorialTable.Arn
+                # La auditoría (D-31): solo agregar. Cada lote ejecutado deja su
+                # registro sellado; el sello usa la llave HMAC de SSM.
+                - Effect: Allow
+                  Action: [dynamodb:PutItem]
+                  Resource: !GetAtt AuditoriaAccesosTable.Arn
+                - Effect: Allow
+                  Action: [ssm:GetParameter]
+                  Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${self:service}/${self:provider.stage}/campo-hmac-key'
                 - Effect: Allow
                   Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
                   Resource: !GetAtt ClaveDatos.Arn
@@ -2254,11 +2291,17 @@ resources:
         PointInTimeRecoverySpecification:
           PointInTimeRecoveryEnabled: true
 
-    # Auditoría de acceso a datos de salud (D-18): quién vio o descargó datos de
-    # salud de otra persona, cuándo y desde dónde; nunca el contenido. Como el
-    # historial de gobernanza, solo se le agregan ítems (ningún rol puede
-    # actualizar ni borrar) y se conserva siempre. El índice por actor responde
-    # "a qué accedió esta cuenta" (informe de brecha, D-19).
+    # Auditoría de acceso a datos de salud (D-18) y de las demás operaciones
+    # sobre datos personales (D-31): quién hizo qué, cuándo y desde dónde; nunca
+    # el contenido. Como el historial de gobernanza, solo se le agregan ítems
+    # (ningún rol puede actualizar ni borrar) y la tabla se conserva siempre.
+    # El índice por actor responde "a qué accedió esta cuenta" (informe de
+    # brecha, D-19) y alimenta la detección de eventos sospechosos.
+    #
+    # El TTL es la ÚNICA vía de eliminación: cada registro de D-31 lleva su
+    # vencimiento por categoría (1, 2 o 5 años, lib/gobernanza/auditoria.js) y
+    # lo borra DynamoDB, no un rol. Los de acceso a salud de D-18 no llevan
+    # `ttl` y se conservan.
     AuditoriaAccesosTable:
       Type: AWS::DynamoDB::Table
       DeletionPolicy: Retain
@@ -2266,6 +2309,9 @@ resources:
       Properties:
         TableName: ${self:provider.environment.AUDITORIA_ACCESOS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
         SSESpecification: ${self:custom.cifradoTablas}
         AttributeDefinitions:
           - AttributeName: tenantId

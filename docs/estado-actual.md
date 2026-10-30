@@ -140,6 +140,10 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-25 | Avisos del EventBus durables sobre la misma cola |
 | D-26 | Cambiar la contraseña revoca todas las sesiones y emite una nueva |
 | D-27 | Los borradores del plan de actividades se pueden eliminar |
+| D-29 | Consentimiento por finalidad (Actividad 5) |
+| D-30 | Ejercicio de derechos por el titular y flujo de solicitudes |
+| D-31 | Auditoría general y detección de eventos sospechosos |
+| D-32 | Plan de respuesta a incidentes y contención (`docs/plan-respuesta-incidentes.md`) |
 
 ### Hallazgos (sección 4)
 

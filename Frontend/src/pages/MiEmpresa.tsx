@@ -30,6 +30,7 @@ import SgsstPanel from '../components/SgsstPanel';
 import OrganizacionesSindicales from '../components/OrganizacionesSindicales';
 import SolicitudesTitularesPanel from '../components/gobernanza/SolicitudesTitularesPanel';
 import LotesSupresionPanel from '../components/gobernanza/LotesSupresionPanel';
+import AuditoriaPanel from '../components/gobernanza/AuditoriaPanel';
 import { AMBITO } from '../utils/estructuraPreventiva';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ function contrastVsWhite(hex: string): number | null {
 
 interface RoleDraft { _id: string; id: string; nombre: string; descripcion: string; permisos: string[]; locked?: boolean; tipo?: string | null; protegido?: boolean; }
 
-type TabKey = 'identidad' | 'ds44' | 'roles' | 'cargos' | 'epp' | 'salud' | 'datos' | 'supresiones';
+type TabKey = 'identidad' | 'ds44' | 'roles' | 'cargos' | 'epp' | 'salud' | 'datos' | 'supresiones' | 'auditoria';
 
 export default function MiEmpresa() {
     const { user, hasPermission, updateUser } = useAuth();
@@ -101,6 +102,7 @@ export default function MiEmpresa() {
         salud: hasPermission(PERMISSIONS.EMPRESA_FICHA_SALUD),
         datos: hasPermission(PERMISSIONS.EMPRESA_DERECHOS_TITULARES),
         supresiones: hasPermission(PERMISSIONS.EMPRESA_SUPRESION_DATOS),
+        auditoria: hasPermission(PERMISSIONS.EMPRESA_AUDITORIA),
     };
     const tabs: { key: TabKey; label: string; icon: any }[] = [
         ...(can.identidad ? [{ key: 'identidad' as const, label: 'Identidad', icon: FiBriefcase }] : []),
@@ -111,6 +113,7 @@ export default function MiEmpresa() {
         ...(can.salud ? [{ key: 'salud' as const, label: 'Ficha de salud', icon: FiHeart }] : []),
         ...(can.datos ? [{ key: 'datos' as const, label: 'Datos personales', icon: FiLock }] : []),
         ...(can.supresiones ? [{ key: 'supresiones' as const, label: 'Supresiones', icon: FiTrash2 }] : []),
+        ...(can.auditoria ? [{ key: 'auditoria' as const, label: 'Auditoría', icon: FiEye }] : []),
     ];
     // `?tab=ds44` deja enlazar directo a una pestaña (p. ej. desde el repositorio DS 44).
     const [searchParams] = useSearchParams();
@@ -221,6 +224,7 @@ export default function MiEmpresa() {
             )}
             {tab === 'datos' && can.datos && <SolicitudesTitularesPanel puedeSuprimir={can.supresiones} />}
             {tab === 'supresiones' && can.supresiones && <LotesSupresionPanel />}
+            {tab === 'auditoria' && can.auditoria && <AuditoriaPanel />}
 
             <style>{styles}</style>
         </div>

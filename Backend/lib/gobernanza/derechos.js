@@ -33,6 +33,8 @@
  */
 
 const { sumarDiasHabiles } = require('../utils/fechaChile');
+const { validateRut } = require('../utils/validation');
+const { problemaEdadMinima } = require('./consentimiento');
 
 const DERECHOS = {
     ACCESO: 'acceso',
@@ -47,6 +49,42 @@ const DERECHOS = {
 const EXIGEN_BLOQUEO = new Set([DERECHOS.RECTIFICACION, DERECHOS.SUPRESION, DERECHOS.OPOSICION, DERECHOS.BLOQUEO]);
 
 const ESTADOS = { ABIERTA: 'abierta', RESUELTA: 'resuelta' };
+
+/**
+ * Etapas del flujo de una solicitud. No se guardan: se calculan de las fechas
+ * que sí se guardan (`etapaDe`), así no puede haber una etapa que contradiga
+ * lo ocurrido.
+ *
+ *   recibida    llegó y quedó registrada, con su fecha de recepción
+ *   verificada  se comprobó que quien la presenta es el titular; queda en
+ *               evaluación de quien tiene el permiso de derechos
+ *   respondida  se decidió (acogida, en parte o rechazada) con fundamento;
+ *               falta ejecutar (una supresión espera su lote de dos personas)
+ *   cerrada     respondida y, si correspondía, ejecutada
+ */
+const ETAPAS = { RECIBIDA: 'recibida', VERIFICADA: 'verificada', RESPONDIDA: 'respondida', CERRADA: 'cerrada' };
+
+/**
+ * Cómo se verificó la identidad. Proporcional al riesgo y sin guardar el
+ * documento: se registra el método, nunca el número de cédula ni una copia.
+ *   sesion_y_contrasena  el titular la presentó desde su sesión y volvió a
+ *                        escribir su contraseña (autoservicio)
+ *   presencial_cedula    se presentó con su cédula ante quien la recibió
+ *   correo_registrado    llegó desde el correo que la ficha ya tenía
+ *   otro                 con una observación obligatoria
+ */
+const METODOS_VERIFICACION = ['sesion_y_contrasena', 'presencial_cedula', 'correo_registrado', 'otro'];
+
+/** Derechos que, acogidos, exigen ejecutar algo además de responder. */
+const EXIGEN_EJECUCION = new Set([DERECHOS.RECTIFICACION, DERECHOS.SUPRESION]);
+
+/**
+ * Lo que el titular puede pedir rectificar con una solicitud (lo revisa quien
+ * tiene el permiso). El resto de su perfil de contacto (teléfono, correo,
+ * contacto de emergencia, foto) lo corrige directamente en su perfil.
+ */
+const CAMPOS_RECTIFICABLES = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'rut', 'fechaNacimiento'];
+const NOMBRE_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]{1,60}$/;
 const RESULTADOS = { ACOGIDA: 'acogida', ACOGIDA_PARCIAL: 'acogida_parcial', RECHAZADA: 'rechazada' };
 
 /** Qué queda en el historial. Solo crece: cada evento es un ítem nuevo, nunca se edita. */
@@ -58,6 +96,8 @@ const EVENTOS = {
     DESBLOQUEO: 'desbloqueo',
     SUPRESION: 'supresion',
     ALERTA: 'alerta',
+    VERIFICACION: 'verificacion',
+    EJECUCION: 'ejecucion',
 };
 
 const CONFIG = { plazoRespuestaDias: 30, prorrogaDias: 30, bloqueoDiasHabiles: 2, alertaDiasAntes: 5 };
@@ -117,6 +157,76 @@ function nuevaSolicitud(d, actor, { ahora = new Date(), config = CONFIG, solicit
     };
 }
 
+/**
+ * Verificación de identidad de una solicitud registrada. Una vez, antes de
+ * responder, y sin guardar el documento que se exhibió.
+ */
+function verificar(s, { metodo, observacion }, actor, { ahora = new Date() } = {}) {
+    if (s.estado !== ESTADOS.ABIERTA) throw error('La solicitud ya está resuelta', 'SOLICITUD_CERRADA');
+    if (s.verificacion) throw error('La identidad ya se verificó', 'YA_VERIFICADA');
+    if (!METODOS_VERIFICACION.includes(metodo)) throw error('Método de verificación no reconocido', 'METODO_INVALIDO');
+    const obs = String(observacion || '').trim();
+    if (metodo === 'otro' && obs.length < 10) throw error('Describe cómo se verificó la identidad (al menos 10 caracteres)', 'OBSERVACION_REQUERIDA');
+    // Sin números de documento: la observación es para el método, no para
+    // copiar la cédula.
+    if (/\d{7,}/.test(obs.replace(/[.\-\s]/g, ''))) {
+        throw error('No anotes números de documento: basta con decir cómo se verificó.', 'OBSERVACION_CON_DOCUMENTO');
+    }
+    return {
+        metodo,
+        observacion: obs.slice(0, 300) || null,
+        verificadaEl: ahora.toISOString(),
+        por: actor ? { personaId: actor.personaId, nombre: actor.nombre || null } : { sistema: true },
+    };
+}
+
+/** Etapa actual, calculada de lo registrado. */
+function etapaDe(s) {
+    if (!s) return null;
+    if (s.respuesta) {
+        const acogida = s.respuesta.resultado !== RESULTADOS.RECHAZADA;
+        const pendiente = acogida && EXIGEN_EJECUCION.has(s.derecho) && !s.ejecucion;
+        return pendiente ? ETAPAS.RESPONDIDA : ETAPAS.CERRADA;
+    }
+    return s.verificacion ? ETAPAS.VERIFICADA : ETAPAS.RECIBIDA;
+}
+
+/**
+ * Valida los cambios que el titular pide en una rectificación, contra su ficha
+ * actual. Devuelve `{ campo: valorNuevo }` normalizado, o lanza con el primer
+ * problema. Lo que no está en `CAMPOS_RECTIFICABLES` se rechaza (no se ignora):
+ * el titular tiene que saber que eso no se pidió.
+ */
+function validarCambios(cambios, actual, { ahora = new Date() } = {}) {
+    if (!cambios || typeof cambios !== 'object' || Array.isArray(cambios)) throw error('Indica qué datos quieres corregir', 'SIN_CAMBIOS');
+    const resultado = {};
+    for (const [campo, crudo] of Object.entries(cambios)) {
+        if (!CAMPOS_RECTIFICABLES.includes(campo)) {
+            throw error(`"${campo}" no se rectifica con una solicitud. El teléfono, el correo y el contacto de emergencia los corriges en tu perfil.`, 'CAMPO_NO_RECTIFICABLE');
+        }
+        const valor = String(crudo ?? '').trim();
+        let normal = valor;
+        if (campo === 'rut') {
+            const v = validateRut(valor);
+            if (!v.valid) throw error('El RUT no es válido', 'RUT_INVALIDO');
+            normal = v.formatted;
+        } else if (campo === 'fechaNacimiento') {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) throw error('La fecha de nacimiento debe tener el formato AAAA-MM-DD', 'FECHA_INVALIDA');
+            const problema = problemaEdadMinima(valor, ahora);
+            if (problema) throw error(problema, 'FECHA_INVALIDA');
+        } else if (campo === 'apellidoMaterno' && valor === '') {
+            normal = '';
+        } else if (!NOMBRE_RE.test(valor)) {
+            throw error(`"${campo}" solo admite letras, espacios, apóstrofo y guion, hasta 60 caracteres`, 'NOMBRE_INVALIDO');
+        }
+        const previo = campo === 'rut' ? validateRut(actual?.rut).formatted : String(actual?.[campo] ?? '');
+        if (normal === previo) throw error(`"${campo}" ya tiene ese valor`, 'SIN_CAMBIOS');
+        resultado[campo] = normal;
+    }
+    if (!Object.keys(resultado).length) throw error('Indica qué datos quieres corregir', 'SIN_CAMBIOS');
+    return resultado;
+}
+
 /** Plazo vigente de respuesta: el original, o el prorrogado. */
 const plazoVigente = (s) => new Date(s.prorroga?.venceEl || s.venceEl);
 
@@ -153,6 +263,12 @@ function prorrogar(s, { comunicadaEl, motivo, medio }, actor, { ahora = new Date
 function responder(s, { resultado, fundamento, medio }, actor, { ahora = new Date() } = {}) {
     if (s.estado !== ESTADOS.ABIERTA) throw error('La solicitud ya está resuelta', 'SOLICITUD_CERRADA');
     if (!Object.values(RESULTADOS).includes(resultado)) throw error('Resultado no reconocido', 'RESULTADO_INVALIDO');
+    // Acoger sin saber quién pide es entregar o cambiar datos de una persona a
+    // cualquiera que diga ser ella. Rechazar sí se puede: "no se pudo verificar
+    // la identidad" es un fundamento válido.
+    if (resultado !== RESULTADOS.RECHAZADA && !s.verificacion) {
+        throw error('Antes de acoger una solicitud hay que registrar cómo se verificó la identidad del titular.', 'SIN_VERIFICACION');
+    }
     const f = String(fundamento || '').trim();
     if (f.length < 20) throw error('La respuesta tiene que decir qué se hizo y con qué fundamento (al menos 20 caracteres)', 'FUNDAMENTO_REQUERIDO');
     return {
@@ -214,6 +330,6 @@ function evento(tenantId, solicitudId, tipo, datos, actor, { ahora = new Date(),
 }
 
 module.exports = {
-    DERECHOS, EXIGEN_BLOQUEO, ESTADOS, RESULTADOS, EVENTOS, CONFIG,
-    configDesdeEntorno, nuevaSolicitud, prorrogar, responder, alertasDe, evento, plazoVigente, sumarDias,
+    DERECHOS, EXIGEN_BLOQUEO, EXIGEN_EJECUCION, ESTADOS, ETAPAS, RESULTADOS, EVENTOS, CONFIG, METODOS_VERIFICACION, CAMPOS_RECTIFICABLES,
+    configDesdeEntorno, nuevaSolicitud, prorrogar, responder, verificar, etapaDe, validarCambios, alertasDe, evento, plazoVigente, sumarDias,
 };

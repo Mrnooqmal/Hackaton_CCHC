@@ -138,6 +138,19 @@ const hmacCorreo = async (correo) => {
     return `v${version}:${digest}`;
 };
 
+/**
+ * Sello de un registro de auditoría (lib/gobernanza/auditoria.js): HMAC de su
+ * forma canónica, con la misma llave y un prefijo de dominio propio para que
+ * nunca coincida con el HMAC de un RUT o de un correo. Quien pueda escribir en
+ * la tabla pero no leer la llave (una consola, un script con credenciales de
+ * DynamoDB) no puede alterar un registro sin que la verificación lo note.
+ */
+const selloAuditoria = async (canonico) => {
+    const { valor, version } = await obtenerLlaveHmac();
+    const digest = crypto.createHmac('sha256', valor).update(`auditoria:${canonico}`).digest('hex');
+    return `v${version}:${digest}`;
+};
+
 // ─── El cifrado de sobre ─────────────────────────────────────────────────────
 
 const cifrarConLlave = (texto, llave) => {
@@ -279,6 +292,7 @@ module.exports = {
     normalizarRut,
     hmacRut,
     hmacCorreo,
+    selloAuditoria,
     cifrarSobre,
     descifrarSobre,
     generarLlaveReutilizable,

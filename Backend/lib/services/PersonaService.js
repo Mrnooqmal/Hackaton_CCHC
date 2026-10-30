@@ -43,6 +43,13 @@ const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const cifradoCampo = require('../cifradoCampo');
 const { revocarSesionesDe } = require('../auth/sesion');
+const { problemaEdadMinima } = require('../gobernanza/consentimiento');
+
+/** Lanza un 400 si la fecha de nacimiento es de un menor de edad o no sirve. */
+const exigirEdadMinima = (fechaNacimiento) => {
+    const problema = problemaEdadMinima(fechaNacimiento);
+    if (problema) throw Object.assign(new Error(problema), { statusCode: 400, codigo: 'EDAD_MINIMA' });
+};
 const { llaveDeTenant, PROPOSITOS } = require('../llaveTenant');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
@@ -157,6 +164,9 @@ class PersonaService {
     async _datosBaseAlta(tenantId, data, { personaId } = {}) {
         const rutValidation = validateRut(data.rut);
         if (!rutValidation.valid) throw new Error('RUT invalido');
+        // No hay titulares menores de edad en el sistema: el trabajo en faenas de
+        // construcción les está prohibido (lib/gobernanza/consentimiento.js).
+        exigirEdadMinima(data.fechaNacimiento);
 
         if (!data.rol || typeof data.rol !== 'string' || !data.rol.trim()) {
             throw new Error('El campo rol es requerido');
@@ -498,6 +508,7 @@ class PersonaService {
      * Actualizar datos de una persona
      */
     async actualizar(tenantId, personaId, updates) {
+        if (updates.fechaNacimiento) exigirEdadMinima(updates.fechaNacimiento);
         const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
             'fechaNacimiento', 'fotoPerfil',
             'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'historialAsignaciones', 'evidencias',

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi, type PersonaResponse } from '../api/client';
-import { FiLock, FiKey, FiEdit2 } from 'react-icons/fi';
+import { FiLock, FiKey, FiEdit2, FiShield } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
-import { IdentityPanel } from '../components/ui';
+import { IdentityPanel, AlertBanner } from '../components/ui';
 import { getCargoLabel } from '../utils/ds44';
 import '../css/ficha.css';
 
@@ -81,6 +81,7 @@ export default function Settings() {
     const [cargando, setCargando] = useState(true);
     const [photoSaving, setPhotoSaving] = useState(false);
     const [photoSuccess, setPhotoSuccess] = useState(false);
+    const [photoError, setPhotoError] = useState('');
 
     const [editando, setEditando] = useState(false);
     const [form, setForm] = useState({ email: '', telefono: '' });
@@ -115,9 +116,15 @@ export default function Settings() {
     const handlePhotoChange = async (file: File) => {
         setPhotoSaving(true);
         setPhotoSuccess(false);
+        setPhotoError('');
         try {
             const base64 = await resizeImageToBase64(file, 320);
-            if (personaId && tenantId) await personasApi.update(tenantId, personaId, { fotoPerfil: base64 });
+            if (personaId && tenantId) {
+                // La foto depende de tu consentimiento (Mis datos y privacidad):
+                // sin él, el servidor no la guarda y se explica por qué.
+                const res = await personasApi.update(tenantId, personaId, { fotoPerfil: base64 });
+                if (!res.success) { setPhotoError(res.error || 'No se pudo guardar la foto.'); return; }
+            }
             updateUser({ fotoPerfil: base64 });
             setPhotoSuccess(true);
             setTimeout(() => setPhotoSuccess(false), 2500);
@@ -204,6 +211,9 @@ export default function Settings() {
                             <button className="btn btn-secondary btn-sm" onClick={() => navigate('/change-password')}>
                                 <FiLock size={13} /> Cambiar contraseña
                             </button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => navigate('/mis-datos')}>
+                                <FiShield size={13} /> Mis datos y privacidad
+                            </button>
                             {(user as any)?.pinConfigurado === false ? (
                                 // Sin PIN (se lo restablecieron): no hay nada que confirmar
                                 // ni PIN actual que pedir; se crea directo.
@@ -218,6 +228,10 @@ export default function Settings() {
                         </>
                     }
                 />
+
+                {photoError && (
+                    <AlertBanner variant="warning" message={photoError} onDismiss={() => setPhotoError('')} />
+                )}
 
                 <div
                     className={`pd-tab${editando ? ' pd-tab--editando' : ''}`}

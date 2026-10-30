@@ -21,6 +21,7 @@ const anotarRespuestasSalud = (encuestas, tenantId) => {
 };
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
+const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
@@ -405,6 +406,21 @@ module.exports.get = conAuditoriaSalud(async (event) => {
             });
         }
 
+        // La Ficha Básica de Salud se trata con el consentimiento de cada persona
+        // (finalidad `ficha_basica_salud`): las respuestas de quien no lo otorgó,
+        // o lo revocó, no se muestran a nadie más que a ella. Respuestas
+        // anteriores al módulo de consentimiento quedan retenidas igual: no
+        // hay constancia de que se consintieran.
+        if (esFichaSalud(encuesta) && recipients.some((r) => !propio(r) && r.responses)) {
+            const personas = await new PersonaService().listByTenant(sesion.tenantId, { incluirBloqueadas: true });
+            const conConsentimiento = new Set(personas.filter((p) => consentimientoVigente(p, 'ficha_basica_salud')).map((p) => p.personaId));
+            recipients = recipients.map((r) => {
+                if (propio(r) || !r.responses || conConsentimiento.has(idDestinatario(r))) return r;
+                const { responses, ...sinRespuestas } = r;
+                return { ...sinRespuestas, respuestasRetenidas: 'sin_consentimiento' };
+            });
+        }
+
         anotarRespuestasSalud([{ surveyId: encuesta.surveyId, recipients }], sesion.tenantId);
         return success({
             ...visible,
@@ -463,6 +479,16 @@ module.exports.updateResponseStatus = async (event) => {
 
         if (index === -1) {
             return error('Trabajador no está asignado a esta encuesta', 404);
+        }
+
+        // Responder la Ficha Básica de Salud exige el consentimiento vigente de
+        // quien responde (lib/gobernanza/consentimiento.js). Sin él, o revocado,
+        // no se recibe ni un dato: se rechaza antes de pedir el PIN.
+        if (esFichaSalud(survey) && status === 'respondida') {
+            const titular = await new PersonaService().getById(workerId);
+            if (!consentimientoVigente(titular, 'ficha_basica_salud')) {
+                return error('Para responder la Ficha Básica de Salud, primero otorga tu consentimiento en Mis datos y privacidad.', 403);
+            }
         }
 
         const now = new Date().toISOString();
