@@ -15,6 +15,7 @@ import { activitiesApi, documentsApi, surveysApi } from '../api/client';
 import type { Activity } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
+import { ListaInicioSkeleton, AccesoEstadoSkeleton } from '../components/inicio/InicioSkeleton';
 
 /**
  * Inicio de obra.
@@ -384,7 +385,7 @@ export default function Dashboard() {
                                     <span
                                         className={`inicio-acceso-estado${a.activo ? ' inicio-acceso-estado--activo' : ''}`}
                                     >
-                                        {cargando ? '—' : a.estado}
+                                        {cargando ? <AccesoEstadoSkeleton /> : a.estado}
                                     </span>
                                 </span>
                             </Link>
@@ -414,7 +415,7 @@ export default function Dashboard() {
                         </div>
 
                         {cargando ? (
-                            <div className="inicio-cargando" />
+                            <ListaInicioSkeleton filas={3} conMarca />
                         ) : pendientes.length === 0 ? (
                             <>
                                 <div className="inicio-vacio">
@@ -488,7 +489,7 @@ export default function Dashboard() {
                         </div>
 
                         {cargando ? (
-                            <div className="inicio-cargando" />
+                            <ListaInicioSkeleton filas={2} />
                         ) : agenda.length === 0 ? (
                             <div className="inicio-vacio">
                                 <span className="inicio-vacio-icono">

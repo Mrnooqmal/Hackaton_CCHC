@@ -13,6 +13,7 @@ import {
     estadoDocumentoPeriodico, fechaLimiteCursoOpr, periodoAnual,
     type CausalExtraordinaria,
 } from '../utils/estructuraPreventiva';
+import { EstructuraOrganoSkeleton } from '../components/estructura/EstructuraSkeleton';
 
 /**
  * Detalle de un órgano preventivo: integrantes, acreditaciones, documentos y
@@ -240,7 +241,7 @@ export default function EstructuraOrgano() {
         [organo]
     );
 
-    if (cargando) return <div className="page"><div className="text-muted">Cargando órgano…</div></div>;
+    if (cargando) return <div className="page"><EstructuraOrganoSkeleton /></div>;
     if (error || !organo) return <div className="page"><AlertBanner variant="error" message={error || 'Órgano no encontrado.'} /></div>;
 
     const docsFigura = DOCUMENTOS_ORGANO[organo.tipo] || [];

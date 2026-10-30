@@ -14,6 +14,7 @@ import {
     validarMiembros, type Ambito, type Calidad, type CargoOrgano, type Estamento,
     type MiembroBorrador, type TipoOrgano,
 } from '../utils/estructuraPreventiva';
+import { EstructuraConstituirSkeleton } from '../components/estructura/EstructuraSkeleton';
 
 /**
  * Asistente de constitución de un órgano preventivo (secciones 5.3, 5.6, 5.7 y 5.8).
@@ -221,7 +222,7 @@ export default function EstructuraConstituir() {
             </div>
 
             {cargando ? (
-                <div className="text-muted">Cargando…</div>
+                <EstructuraConstituirSkeleton />
             ) : (
                 <>
                     {/* ── Paso 1: datos ──────────────────────────────────── */}

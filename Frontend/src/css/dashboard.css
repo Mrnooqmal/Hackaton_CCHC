@@ -472,20 +472,7 @@
     color: var(--text-primary);
 }
 
-/* ── Carga ───────────────────────────────────────────────────────────────── */
-.inicio-cargando {
-    flex-grow: 1;
-    margin: var(--space-4);
-    border-radius: var(--radius-sm);
-    background: var(--surface-elevated);
-    animation: inicio-latido 1.4s ease-in-out infinite;
-}
-@keyframes inicio-latido {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
 @media (prefers-reduced-motion: reduce) {
-    .inicio-cargando { animation: none; }
     .inicio-acceso:hover { transform: none; }
 }
 
