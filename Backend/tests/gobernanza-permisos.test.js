@@ -100,3 +100,26 @@ test('la auditoría de accesos a salud se conserva siempre', () => {
     const bloque = YML.slice(YML.indexOf('    AuditoriaAccesosTable:'), YML.indexOf('    AuditoriaAccesosTable:') + 400);
     assert.match(bloque, /DeletionPolicy: Retain/);
 });
+
+test('RolSupresion puede borrar en toda tabla que un lote puede suprimir o anonimizar', () => {
+    // Sin esto, un lote se aprueba con las pruebas en verde y al ejecutarse en
+    // AWS falla con acceso denegado en la tabla que se olvidó declarar.
+    const { FUENTES, CLASE, AL_VENCER } = require('../lib/gobernanza/inventario');
+    const recursoDe = (env) => {
+        const m = new RegExp(`\\n {4}(\\w+):\\n {6}Type: AWS::DynamoDB::Table(?:(?!\\n {4}\\w+:\\n)[\\s\\S])*?TableName: \\$\\{self:provider\\.environment\\.${env}\\}`).exec(YML);
+        return m && m[1];
+    };
+    const inicio = YML.indexOf('    RolSupresion:');
+    const fin = inicio + 10 + YML.slice(inicio + 10).search(/\n {4}[A-Za-z]+:\n {6}Type:/);
+    const lineaDe = (i) => YML.slice(0, i).split('\n').length;
+    const borrables = new Set(statements()
+        .filter((s) => s.efecto === 'Allow' && s.linea > lineaDe(inicio) && s.linea < lineaDe(fin))
+        .filter((s) => s.acciones.includes('dynamodb:DeleteItem'))
+        .flatMap((s) => s.recursos)
+        .map((r) => /^!GetAtt (\w+)\.Arn$/.exec(r)?.[1])
+        .filter(Boolean));
+    const suprimibles = FUENTES.filter((f) => f.clase !== CLASE.OPERACIONAL && f.alVencer !== AL_VENCER.EMPRESA && f.alVencer !== AL_VENCER.TTL);
+    assert.ok(suprimibles.length > 5);
+    const faltan = suprimibles.map((f) => [f.tabla, recursoDe(f.tabla)]).filter(([, r]) => !r || !borrables.has(r)).map(([t]) => t);
+    assert.deepEqual(faltan, [], 'tablas del inventario que RolSupresion no puede borrar');
+});

@@ -90,6 +90,16 @@ test('tres contraseñas mal escritas en quince minutos cierran todas las sesione
 
 // ─── Acceso y portabilidad ──────────────────────────────────────────────────
 
+/** Progreso de recorridos guiados (D-33) de Juan y de Pedro. */
+const sembrarRecorridos = async () => {
+    for (const [p, recorridoId, estado] of [[juan, 'intro', 'completado'], [juan, 'firmas', 'omitido'], [pedro, 'intro', 'en_progreso']]) {
+        await docClient.send(new PutCommand({ TableName: 'RECORRIDOS_TABLE', Item: {
+            tenantId: T, sk: `${p.personaId}#${recorridoId}`, personaId: p.personaId, recorridoId,
+            version: 1, estado, ultimoPaso: 0, cierres: 0, rev: 1, actualizadoEn: '2026-10-20T12:00:00Z',
+        } }));
+    }
+};
+
 const sembrarRegistrosCompartidos = async () => {
     const llave = await llaveDe(T);
     await docClient.send(new PutCommand({ TableName: 'DOCUMENTS_TABLE', Item: {
@@ -121,6 +131,7 @@ test('la exportación trae los datos del titular en JSON estructurado y deja la 
     assert.equal(d.secciones.actividades.datos[0].miAsistencia.estado, 'presente');
     assert.equal(d.secciones.firmas.datos[0].metodo, 'PIN');
     assert.equal(d.secciones.incidentes.datos[0].participacion, 'persona afectada');
+    assert.deepEqual(d.secciones.recorridos.datos, [], 'sin recorridos, la sección va vacía');
 
     const s = doble.items('GOBERNANZA_TABLE').find((x) => x.sk.startsWith('SOLICITUD#'));
     assert.equal(s.derecho, 'portabilidad');
@@ -129,6 +140,14 @@ test('la exportación trae los datos del titular en JSON estructurado y deja la 
     const tipos = doble.items('GOBERNANZA_HISTORIAL_TABLE').filter((h) => h.solicitudId === s.solicitudId).map((h) => h.tipo);
     assert.deepEqual(tipos.sort(), ['ejecucion', 'respuesta', 'solicitud', 'verificacion']);
     assert.ok(operaciones().includes('derechos.exportacion'));
+});
+
+test('la exportación trae el progreso de recorridos guiados del titular y no el de otros (D-33)', async () => {
+    await sembrarRecorridos();
+    const d = datos(await exportar());
+    const propios = d.secciones.recorridos.datos.map((x) => [x.recorridoId, x.estado]).sort();
+    assert.deepEqual(propios, [['firmas', 'omitido'], ['intro', 'completado']]);
+    assert.ok(d.secciones.recorridos.datos.every((x) => x.rev === undefined && x.sk === undefined && x.tenantId === undefined), 'nada interno');
 });
 
 test('la exportación no trae datos de terceros ni información interna', async () => {
@@ -263,6 +282,7 @@ test('el autoservicio no acepta pedir acceso por la vía de solicitudes ni un de
 // ─── Supresión ──────────────────────────────────────────────────────────────
 
 test('supresión de punta a punta: la pide el titular, se acoge y la ejecutan dos personas; alcanza su ficha de salud', async () => {
+    await sembrarRecorridos();
     const [llave, llaveSalud] = await Promise.all([llaveDe(T), llaveSaludDe(T)]);
     await docClient.send(new PutCommand({ TableName: 'SURVEYS_TABLE', Item: {
         surveyId: idEncuestaSalud(T), tenantId: T, titulo: 'Ficha', updatedAt: '2026-10-01T00:00:00Z',
@@ -290,6 +310,7 @@ test('supresión de punta a punta: la pide el titular, se acoge y la ejecutan do
     assert.equal(deJuan.responsesCifradas, undefined, 'sus respuestas de salud se suprimieron');
     assert.ok(deJuan.respuestasSuprimidasEl);
     assert.notEqual(dePedro.responsesCifradas, undefined, 'las de su compañero quedan');
+    assert.deepEqual(doble.items('RECORRIDOS_TABLE').map((r) => r.personaId), [pedro.personaId], 'su progreso de recorridos se suprimió; el de Pedro queda');
     assert.equal(datos(await pedir(juan, 'GET', '/gobernanza/mis-datos/solicitudes')).solicitudes[0].etapa, 'cerrada');
     assert.ok(operaciones().includes('derechos.supresion_ejecutada'));
 });

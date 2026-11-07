@@ -149,6 +149,12 @@ function construirExportacion({
                 datos: (bandeja || []).map((m) => ({ ...solo(m, ['messageId', 'subject', 'content', 'type', 'createdAt', 'read']), de: m.senderId === 'system' || m.senderId === 'sistema' ? 'sistema' : 'otra persona' })),
             },
             sugerencias: { finalidad: 'Mejorar la plataforma.', datos: sugerencias },
+            recorridos: {
+                finalidad: 'No volver a mostrarte la ayuda que ya viste y retomar la que quedó a medias.',
+                datos: r('RECORRIDOS_TABLE')
+                    .filter((x) => x.personaId === yo)
+                    .map((x) => solo(x, ['recorridoId', 'version', 'estado', 'ultimoPaso', 'cierres', 'actualizadoEn'])),
+            },
             consentimientos: {
                 finalidad: 'Registro de lo que autorizaste y revocaste.',
                 datos: (consentimientos || []).map((c) => solo(c, ['finalidad', 'version', 'estado', 'canal', 'otorgadoEl', 'revocadoEl'])),

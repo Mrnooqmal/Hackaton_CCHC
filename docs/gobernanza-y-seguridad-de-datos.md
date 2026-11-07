@@ -1165,6 +1165,7 @@ herramienta para registrar la solicitud y su canal de origen.
 | Estructura preventiva (comités, delegados) | Integrantes de cada órgano (nombre, estamento, cargo, acreditación) y sus reuniones. | Acreditar la constitución y funcionamiento del Comité Paritario y demás órganos. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
 | Bandeja de mensajes | Avisos y mensajes enviados y recibidos por la persona. | Comunicación dentro de la plataforma. | conveniencia | Hasta que la persona pida suprimirlo, o con la ficha | Se suprime |
 | Sugerencias | Nombre de quien sugiere y el texto de la sugerencia. | Mejorar la plataforma. | conveniencia | Hasta que la persona pida suprimirlo, o con la ficha | Se suprime |
+| Progreso de recorridos guiados | Qué recorridos de ayuda vio la persona, en qué versión, si los completó, los omitió o quedaron en curso, hasta qué paso llegó, cuántas veces los cerró y cuándo. | No volver a mostrar la ayuda que la persona ya vio y retomar la que quedó a medias. | conveniencia | Hasta que la persona pida suprimirlo, o con la ficha | Se suprime |
 | Sesiones | Hash del token de sesión, persona, empresa y vencimiento. | Mantener la sesión iniciada. | operacional | Mientras sirve (horas o días) | Vence solo (uso o fecha de expiración) |
 | Vales de firma sin conexión | Hash del vale, persona, equipo de emisión y de uso. | Firmar sin conexión sin guardar el PIN en el equipo. | operacional | Mientras sirve (horas o días) | Vence solo (uso o fecha de expiración) |
 | Licencias de alta de empresa | Correo del futuro administrador y datos prellenados de la empresa. | Dar de alta una empresa con un enlace de un solo uso. | operacional | Mientras sirve (horas o días) | Vence solo (uso o fecha de expiración) |
@@ -1601,6 +1602,30 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 
 - `docs/plan-respuesta-incidentes.md`: fases, responsables, criterios, escalamiento, notificación y cierre. La Ley 21.719 no fija horas para notificar ("sin dilaciones indebidas"); los plazos internos son compromisos del plan. La Ley 21.663 solo aplica si la plataforma o una constructora son calificadas como servicio esencial u operador de importancia vital.
 - `Backend/scripts/contencion.js` (lógica en `lib/gobernanza/contencion.js`): preservar evidencia con huella, revocar sesiones, suspender y reactivar cuentas, revocar vales de firma. Exigen operador y motivo, y quedan en la auditoría.
+
+### D-33. Recorridos guiados como código, y su progreso como dato de conveniencia
+**Estado: Fase 1 implementada el 6 de noviembre de 2026 (en el árbol de la rama `tours`, sin desplegar). Aprobada la Fase 0 con sus diez respuestas (`docs/ayuda-contextual/fase-0-reconocimiento.md`).**
+
+**Definiciones como código, sin panel ni rol de plataforma.** No existe un rol de plataforma y no cabe en la sesión, que es siempre de una empresa: crearlo sería una identidad nueva que cruza empresas. Las definiciones viven en `Frontend/src/ayuda/recorridos.ts`, se revisan en un PR y se publican con `desplegar-frontend.sh`. Quién cambió qué y cuándo lo dice git.
+
+- **Anclas tipadas** (`src/ayuda/registro.ts`): un recorrido nombra un ancla registrada y el componente la marca con `ancla()`. Un ancla mal escrita no compila; una registrada que ningún componente marca, una ruta que desapareció de `App.tsx`, una página del manual que no existe o un `data-tour` escrito a mano hacen fallar `scripts/verificar-recorridos.mjs`, que `npm run build` corre antes de `tsc -b`.
+- **Versión obligatoria:** `src/ayuda/huellas.json` guarda la huella del contenido de cada recorrido. Cambiar el contenido sin subir la versión hace fallar el build; `npm run recorridos:huellas` la actualiza solo si la versión subió.
+- **Textos en texto plano:** se muestran como texto, nunca como HTML, y la validación rechaza lo que parezca una etiqueta. No hay sumidero de HTML nuevo (H-13).
+- **Segmentación por permiso** (`visibleSi`: todos, alguno, ninguno), no por nombre de rol, porque cada empresa crea sus roles.
+
+**El progreso es un dato personal de conveniencia.** Tabla `RECORRIDOS_TABLE` (`tenantId` y `sk = <personaId>#<recorridoId>`), con la CMK y recuperación a un punto en el tiempo. En el inventario como conveniencia que se suprime: entra en la retención (vence con la ficha), en la supresión a solicitud del titular (lote de dos personas; `RolSupresion` puede borrar en ella) y en la exportación del titular. Se agregó una prueba que exige que `RolSupresion` pueda borrar en toda tabla que un lote puede suprimir: antes, olvidar una tabla nueva se descubría al ejecutar el lote en AWS.
+
+**API** (`handlers/ayuda/progreso.js`): `GET /ayuda/progreso` y `PUT /ayuda/progreso/{recorridoId}`. La empresa y la persona salen de `conSesion`; el cuerpo es una lista blanca de cuatro campos (versión, estado, último paso, cierres) y cualquier otro se rechaza con 400. Sin rutas de administración ni de depuración.
+
+- **El estado nunca retrocede:** en una misma versión sube (`en_progreso < omitido < completado`) y los cierres y el último paso toman el máximo, así que un evento viejo que llega tarde desde la cola sin conexión no deshace nada y repetir una escritura no cambia nada. Una versión mayor reinicia; una menor se ignora.
+- **Regla de la cola de obligatorios:** completar u omitir lo saca; cerrar lo deja en curso y suma un cierre; al tercero cuenta como omitido. La aplica el servidor al fusionar.
+- **Sin escrituras a ciegas:** leer, fusionar y escribir con condición sobre la revisión; si otra escritura se metió entremedio, se vuelve a leer y a fusionar (hasta tres veces, después 409).
+- **Persona bloqueada** por una solicitud del titular: no se registra progreso (409 `TRATAMIENTO_BLOQUEADO`), y el GET devuelve `registrar: false`.
+- **Tope:** 200 recorridos por persona y empresa.
+
+**Recursos del stack:** una función con dos rutas de métodos explícitos (el preflight lo responde la configuración CORS del API, sin rutas `OPTIONS`) y una tabla: unos 7 recursos (D-16). El conteo exacto lo da `desplegar-backend.sh`.
+
+**Pruebas:** `Backend/tests/ayuda-progreso.test.js` (reglas, aislamiento entre empresas y entre personas, bloqueo, tope, concurrencia), `ayuda-gemelos.test.js` (estados y límites iguales en backend y frontend), casos nuevos en `retencion.test.js`, `derechos-autoservicio.test.js` y `gobernanza-permisos.test.js`; `Frontend/tests/ayuda-validacion.test.mjs` y `ayuda-verificacion.test.mjs` (`npm test` en Frontend). Se comprobó que cada una falla al romper lo que protege.
 
 ## 4. Hallazgos priorizados
 

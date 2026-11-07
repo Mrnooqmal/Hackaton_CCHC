@@ -205,6 +205,18 @@ const FUENTES = [
         archivosDe: () => [],
     },
     {
+        tabla: 'RECORRIDOS_TABLE',
+        contieneSalud: false,
+        claves: ['tenantId', 'sk'],
+        nombre: 'Progreso de recorridos guiados',
+        datos: 'Qué recorridos de ayuda vio la persona, en qué versión, si los completó, los omitió o quedaron en curso, hasta qué paso llegó, cuántas veces los cerró y cuándo.',
+        finalidad: 'No volver a mostrar la ayuda que la persona ya vio y retomar la que quedó a medias.',
+        clase: CLASE.CONVENIENCIA,
+        alVencer: AL_VENCER.SUPRIMIR,
+        personasDe: (it) => uno(it.personaId),
+        archivosDe: () => [],
+    },
+    {
         tabla: 'SESSIONS_TABLE',
         contieneSalud: false,
         claves: ['sessionId'],

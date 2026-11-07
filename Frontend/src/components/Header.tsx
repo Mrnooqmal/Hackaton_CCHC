@@ -8,6 +8,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
 import LogoMarca from './LogoMarca';
 import { inboxApi } from '../api/client';
+import { ancla } from '../ayuda/registro';
 
 interface Crumb {
     label: string;
@@ -244,6 +245,7 @@ export default function Header() {
                     <Link
                         to={manualUrlFor(location.pathname)}
                         className="header-action header-action--help"
+                        {...ancla('global.boton-ayuda')}
                         aria-label="Abrir el manual de uso de esta sección"
                         title="Ayuda de esta sección"
                     >

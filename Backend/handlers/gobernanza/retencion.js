@@ -38,6 +38,7 @@ const LECTURA = {
     INCIDENTS_TABLE: (t) => ({ IndexName: 'tenantId-fecha-index', KeyConditionExpression: 'tenantId = :t', ExpressionAttributeValues: { ':t': t } }),
     SURVEYS_TABLE: (t) => ({ IndexName: 'tenantId-index', KeyConditionExpression: 'tenantId = :t', ExpressionAttributeValues: { ':t': t } }),
     SUGGESTIONS_TABLE: (t) => ({ IndexName: 'tenantId-createdAt-index', KeyConditionExpression: 'tenantId = :t', ExpressionAttributeValues: { ':t': t } }),
+    RECORRIDOS_TABLE: (t) => ({ KeyConditionExpression: 'tenantId = :t', ExpressionAttributeValues: { ':t': t } }),
 };
 
 async function consultarTodo(params) {

@@ -8,7 +8,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/verificar-recorridos.mjs && tsc -b && vite build",
+    "test": "node --test 'tests/*.test.mjs'",
+    "recorridos:verificar": "node scripts/verificar-recorridos.mjs",
+    "recorridos:huellas": "node scripts/verificar-recorridos.mjs --actualizar-huellas",
     "lint": "eslint .",
     "preview": "vite preview"
   },

@@ -66,6 +66,26 @@ test('vencido el plazo: se suprimen la ficha, sus firmas, sus documentos propios
     assert.equal(accionesDe(p, 'PERSONAS_TABLE')[0].vencioEl, '2031-01-15');
 });
 
+test('vencido el plazo, también se suprime su progreso de recorridos guiados (D-33), y solo el suyo', () => {
+    const p = plan([desvinculada('a', VENCIDA), persona('b')], {
+        RECORRIDOS_TABLE: [
+            { tenantId: 't', sk: 'a#intro', personaId: 'a', recorridoId: 'intro' },
+            { tenantId: 't', sk: 'b#intro', personaId: 'b', recorridoId: 'intro' },
+        ],
+    });
+    const acciones = accionesDe(p, 'RECORRIDOS_TABLE');
+    assert.deepEqual(acciones.map((a) => [a.clave, a.accion]), [[{ tenantId: 't', sk: 'a#intro' }, 'suprimir']]);
+});
+
+test('el lote por una solicitud de supresión toma solo el progreso de recorridos del titular', () => {
+    const { contenidoDesdeSolicitud } = require('../lib/gobernanza/lotes');
+    const c = contenidoDesdeSolicitud({
+        persona: persona('a'),
+        recorridos: [{ tenantId: 't', sk: 'a#intro', personaId: 'a' }, { tenantId: 't', sk: 'b#intro', personaId: 'b' }],
+    });
+    assert.deepEqual(c.operaciones.filter((o) => o.tabla === 'RECORRIDOS_TABLE').map((o) => o.clave), [{ tenantId: 't', sk: 'a#intro' }]);
+});
+
 test('dentro del plazo, nada se toca aunque la persona ya no trabaje', () => {
     const p = plan([desvinculada('a', EN_PLAZO)], { SIGNATURES_TABLE: [{ signatureId: 's1', personaId: 'a' }] });
     assert.deepEqual(p.acciones, []);

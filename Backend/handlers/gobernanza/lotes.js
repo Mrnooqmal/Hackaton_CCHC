@@ -105,7 +105,11 @@ async function contenidoActual(tenantId, ambito, { hoy = new Date() } = {}) {
         const { idEncuestaSalud } = require('../../lib/health/healthSurvey');
         const ficha = (await docClient.send(new GetCommand({ TableName: T('SURVEYS_TABLE'), Key: { surveyId: idEncuestaSalud(tenantId) }, ConsistentRead: true }))).Item;
         const encuestasSalud = ficha && ficha.tenantId === tenantId ? [ficha] : [];
-        return L.contenidoDesdeSolicitud({ persona, bandeja, sugerencias, encuestasSalud });
+        const recorridos = await todo({
+            TableName: T('RECORRIDOS_TABLE'), KeyConditionExpression: 'tenantId = :t AND begins_with(sk, :p)',
+            ExpressionAttributeValues: { ':t': tenantId, ':p': `${s.personaId}#` },
+        });
+        return L.contenidoDesdeSolicitud({ persona, bandeja, sugerencias, encuestasSalud, recorridos });
     }
     throw error409('Origen de lote no reconocido', 'ORIGEN_INVALIDO');
 }
