@@ -1616,7 +1616,10 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 - `Backend/scripts/contencion.js` (lógica en `lib/gobernanza/contencion.js`): preservar evidencia con huella, revocar sesiones, suspender y reactivar cuentas, revocar vales de firma. Exigen operador y motivo, y quedan en la auditoría.
 
 ### D-34. Producción solo en buildandserve.cl: la URL de CloudFront sale del CORS y se redirige
-**Estado: decidido el 6 de noviembre de 2026; preparado en el árbol, sin desplegar.
+**Estado: decidido el 6 de noviembre de 2026; en producción desde el 7 de noviembre
+(`14fa693`). Verificado: `d30jksx91fodea.cloudfront.net` responde 301 a
+`https://buildandserve.cl/`, la API de prod no acepta ese origen (preflight sin
+`Access-Control-Allow-Origin`) y la prueba de punta a punta de prod lo comprueba.
 D-33 la usa la rama `tours` (recorridos guiados).**
 
 **Qué se decidió.** La URL de CloudFront de producción
