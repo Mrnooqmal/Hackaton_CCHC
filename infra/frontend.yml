@@ -32,20 +32,31 @@ Parameters:
   NombreBucket:
     Type: String
     Default: buildandserve-frontend
-  CspSoloReporte:
+  Csp:
     Type: String
     Default: ''
     Description: >-
-      Política CSP en modo solo reporte (Content-Security-Policy-Report-Only).
-      Vacía = no se envía. La arma infra/desplegar-infra-frontend.sh con la URL
-      de la ruta de reportes de la API.
+      Política CSP de producción. Vacía = solo `frame-ancestors 'none'`. La arma
+      infra/desplegar-infra-frontend.sh con la API del ambiente y los hashes de
+      los scripts en línea del build.
+
+  CspModo:
+    Type: String
+    Default: activa
+    AllowedValues: [activa, solo-reporte]
+    Description: >-
+      `activa`: el navegador aplica la política (Content-Security-Policy).
+      `solo-reporte`: solo reporta (Content-Security-Policy-Report-Only). Vale
+      para las dos distribuciones. Volver a `solo-reporte` es la salida rápida si
+      la política activa bloquea algo legítimo: se pasa al script de infra con
+      CSP_MODO=solo-reporte, sin otro commit.
 
   ReportingEndpoints:
     Type: String
     Default: ''
     Description: >-
-      Cabecera Reporting-Endpoints para `report-to` (Chrome). Va junto con la CSP
-      en modo solo reporte.
+      Cabecera Reporting-Endpoints para `report-to` (Chrome). Va junto con la
+      CSP, en los dos modos: las violaciones siguen llegando a /csp/reporte.
 
   CertificadoProd:
     Type: String
@@ -71,17 +82,21 @@ Parameters:
   NombreBucketDev:
     Type: String
     Default: buildandserve-frontend-dev
-  CspSoloReporteDev:
+  CspDev:
     Type: String
     Default: ''
-    Description: La CSP en modo solo reporte de la distribución de dev (API de dev).
+    Description: La política CSP de la distribución de dev (API de dev).
   ReportingEndpointsDev:
     Type: String
     Default: ''
 
 Conditions:
-  ConCspSoloReporte: !Not [!Equals [!Ref CspSoloReporte, '']]
-  ConCspSoloReporteDev: !Not [!Equals [!Ref CspSoloReporteDev, '']]
+  ConCsp: !Not [!Equals [!Ref Csp, '']]
+  ConCspDev: !Not [!Equals [!Ref CspDev, '']]
+  # La política activa va en la cabecera de seguridad Content-Security-Policy:
+  # CloudFront no acepta una cabecera propia con el nombre de una de seguridad.
+  CspActiva: !And [!Condition ConCsp, !Equals [!Ref CspModo, activa]]
+  CspActivaDev: !And [!Condition ConCspDev, !Equals [!Ref CspModo, activa]]
   ConDominio: !Not [!Equals [!Ref CertificadoProd, '']]
   ExigeRol: !Equals [!Ref ExigirRolPublicador, 'true']
 
@@ -182,27 +197,37 @@ Resources:
           FrameOptions:
             Override: true
             FrameOption: DENY
-          # Solo frame-ancestors: se aplica de verdad sin restringir scripts.
+          # En modo activo, la política completa (que ya trae frame-ancestors
+          # 'none'). En solo reporte, solo frame-ancestors, que sí se aplica.
           ContentSecurityPolicy:
             Override: true
-            ContentSecurityPolicy: "frame-ancestors 'none'"
+            ContentSecurityPolicy: !If [CspActiva, !Ref Csp, "frame-ancestors 'none'"]
           ReferrerPolicy:
             Override: true
             ReferrerPolicy: strict-origin-when-cross-origin
         CustomHeadersConfig: !If
-          - ConCspSoloReporte
+          - ConCsp
           - Items:
-              - Header: Content-Security-Policy-Report-Only
-                Value: !Ref CspSoloReporte
-                Override: true
+              - !If
+                - CspActiva
+                - !Ref AWS::NoValue
+                - Header: Content-Security-Policy-Report-Only
+                  Value: !Ref Csp
+                  Override: true
               - Header: Reporting-Endpoints
                 Value: !Ref ReportingEndpoints
                 Override: true
           - !Ref AWS::NoValue
 
-  # www.buildandserve.cl -> https://buildandserve.cl, con la ruta y la consulta.
-  # Una sola URL canónica: los enlaces de los correos, el CORS y las cookies
-  # hablan de la raíz (D-21).
+  # www.buildandserve.cl y d30jksx91fodea.cloudfront.net -> https://buildandserve.cl,
+  # con la ruta y la consulta. Una sola URL canónica: los enlaces de los correos,
+  # el CORS y las cookies hablan de la raíz (D-21). La de CloudFront se redirige
+  # desde D-34: el CORS de prod ya no la acepta, y una página servida ahí no
+  # podría hablar con la API.
+  #
+  # Va en la misma función que www porque una distribución admite una sola
+  # función por evento. El nombre y el id lógico se conservan: cambiarlos
+  # reemplazaría una función asociada a la distribución.
   RedireccionWww:
     Type: AWS::CloudFront::Function
     Condition: ConDominio
@@ -210,13 +235,13 @@ Resources:
       Name: buildandserve-www-a-raiz
       AutoPublish: true
       FunctionConfig:
-        Comment: Redirige www a la raiz del dominio
+        Comment: Redirige www y el dominio de CloudFront a la raiz del dominio
         Runtime: cloudfront-js-2.0
       FunctionCode: |
         function handler(event) {
           var req = event.request;
-          var host = req.headers.host ? req.headers.host.value : '';
-          if (host !== 'www.buildandserve.cl') return req;
+          var host = req.headers.host ? req.headers.host.value.toLowerCase() : '';
+          if (host !== 'www.buildandserve.cl' && host !== 'd30jksx91fodea.cloudfront.net') return req;
           // Igual si CloudFront entrega la consulta codificada o decodificada.
           function cod(x) { try { return encodeURIComponent(decodeURIComponent(x)); } catch (e) { return encodeURIComponent(x); } }
           var qs = [];
@@ -372,16 +397,19 @@ Resources:
             FrameOption: DENY
           ContentSecurityPolicy:
             Override: true
-            ContentSecurityPolicy: "frame-ancestors 'none'"
+            ContentSecurityPolicy: !If [CspActivaDev, !Ref CspDev, "frame-ancestors 'none'"]
           ReferrerPolicy:
             Override: true
             ReferrerPolicy: strict-origin-when-cross-origin
         CustomHeadersConfig: !If
-          - ConCspSoloReporteDev
+          - ConCspDev
           - Items:
-              - Header: Content-Security-Policy-Report-Only
-                Value: !Ref CspSoloReporteDev
-                Override: true
+              - !If
+                - CspActivaDev
+                - !Ref AWS::NoValue
+                - Header: Content-Security-Policy-Report-Only
+                  Value: !Ref CspDev
+                  Override: true
               - Header: Reporting-Endpoints
                 Value: !Ref ReportingEndpointsDev
                 Override: true

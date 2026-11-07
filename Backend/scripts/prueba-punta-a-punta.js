@@ -28,8 +28,10 @@
  *      **enseguida** (el caso que fallaba: ver D-26).
  *   2. Alta de una persona trabajadora por el administrador, y su propio primer
  *      ingreso por el mismo camino.
- *   3. Permisos: la trabajadora no da de alta personas.
- *   4. CORS: el origen del ambiente se acepta y otro no.
+ *   3. Permisos: la trabajadora no da de alta personas, ve el listado del
+ *      personal recortado (H-16) y no ve el historial de firmas de otra (H-17).
+ *   4. CORS: el origen del ambiente se acepta y otro no; en prod, tampoco la URL
+ *      de CloudFront (D-34).
  *   5. Las respuestas de la API no se cachean.
  *   6. Cierre de sesión.
  *
@@ -145,8 +147,15 @@ async function recorrer(c, empresa, personasCreadas) {
 
     const tokenTrabajadora = await primerIngreso(c, { quien: 'trabajadora', rut, personaId });
 
-    // Que no pueda LISTAR el personal todavía no se comprueba: hoy puede, y
-    // restringirlo es una decisión pendiente (H-16).
+    // Sin personas.ver el listado llega recortado: nombre, cargo e identificador (H-16).
+    const listaRecortada = await c.pedir('GET', '/personas', { token: tokenTrabajadora });
+    const recortadas = listaRecortada.cuerpo?.data?.personas || [];
+    comprobar('trabajadora: el listado del personal llega sin RUT ni correo',
+        listaRecortada.status === 200 && recortadas.length === 2 && recortadas.every((p) => !('rut' in p) && !('email' in p)),
+        resumen(listaRecortada));
+    // El historial de firmas de otra persona es parte de su ficha (H-17).
+    const historialAjeno = await c.pedir('GET', `/signature-requests/history/${empresa.adminPersonaId}`, { token: tokenTrabajadora });
+    comprobar('trabajadora: no ve el historial de firmas de otra persona (404)', historialAjeno.status === 404, resumen(historialAjeno));
     const altaAjena = await c.pedir('POST', '/personas', {
         token: tokenTrabajadora,
         cuerpo: { rut: desechable.rutAlAzar(10_000_000, 25_000_000), nombre: 'No', rol: 'trabajador' },
@@ -173,6 +182,15 @@ async function recorrer(c, empresa, personasCreadas) {
     });
     comprobar('no acepta un origen ajeno', !ajeno.headers.get('access-control-allow-origin'),
         `access-control-allow-origin: ${ajeno.headers.get('access-control-allow-origin')}`);
+    if (stage === 'prod') {
+        // D-34: la URL de CloudFront de producción ya no es un origen de la app.
+        const viejo = await fetch(`${c.api}/personas`, {
+            method: 'OPTIONS',
+            headers: { Origin: 'https://d30jksx91fodea.cloudfront.net', 'Access-Control-Request-Method': 'GET' },
+        });
+        comprobar('no acepta la URL de CloudFront de producción', !viejo.headers.get('access-control-allow-origin'),
+            `access-control-allow-origin: ${viejo.headers.get('access-control-allow-origin')}`);
+    }
 
     console.log('\n  Cierre de sesión');
     const salida = await c.pedir('POST', '/auth/logout', { token: tokenTrabajadora });

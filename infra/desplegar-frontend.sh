@@ -43,7 +43,9 @@ API_OTRO="$(salida "BuildAndServe-$OTRO" HttpApiUrl)"
 if [ "$AMBIENTE" = prod ]; then
     BUCKET="$(salida "$STACK_FRONTEND" Bucket)"
     DISTRIBUCION="$(salida "$STACK_FRONTEND" DistribucionId)"
-    DOMINIO="$(salida "$STACK_FRONTEND" DominioDistribucion)"
+    # Se verifica en el dominio propio: la URL de CloudFront de producción
+    # redirige todo a https://buildandserve.cl desde D-34.
+    DOMINIO=buildandserve.cl
 else
     BUCKET="$(salida "$STACK_FRONTEND" BucketDev)"
     DISTRIBUCION="$(salida "$STACK_FRONTEND" DistribucionDevId)"
@@ -74,6 +76,22 @@ if [ "$APIS" != "$API_URL" ]; then
 fi
 if grep -rqE 'localhost:[0-9]+' dist; then
     echo "El build contiene una URL de localhost." >&2; exit 1
+fi
+
+# Con la CSP activa, un script en línea que la política no autoriza no corre: un
+# index.html con un script nuevo, publicado sin redesplegar la infra, dejaría la
+# aplicación en blanco. Se comprueba contra la política de ESTA distribución.
+parametro() { aws cloudformation describe-stacks --stack-name "$STACK_FRONTEND" --query "Stacks[0].Parameters[?ParameterKey=='$1'].ParameterValue" --output text; }
+CSP_MODO="$(parametro CspModo)"
+POLITICA="$(parametro "Csp$SUFIJO")"
+if [ "$CSP_MODO" = activa ]; then
+    node "$TMP/wt/infra/hashes-csp.js" --verificar "$POLITICA" dist/index.html src/utils/informesHtml.ts || {
+        echo "La CSP activa de $AMBIENTE no autoriza los scripts en línea de este build: despliega antes la infra de este commit (infra/desplegar-infra-frontend.sh $SHA)." >&2
+        exit 1; }
+    echo "== los scripts en línea del build están en la CSP activa de $AMBIENTE"
+elif [ -n "$POLITICA" ] && [ "$POLITICA" != "None" ] \
+    && ! node "$TMP/wt/infra/hashes-csp.js" --verificar "$POLITICA" dist/index.html src/utils/informesHtml.ts 2>/dev/null; then
+    echo "== AVISO: la CSP (solo reporte) de $AMBIENTE no autoriza los scripts en línea de este build: el navegador lo va a reportar." >&2
 fi
 
 # Publicar lo hace el rol de publicación (D-22), asumido recién ahora, después
@@ -114,10 +132,4 @@ while IFS= read -r f; do
 done < <(cd dist && find . -type f | sed 's|^\./||')
 echo "archivos: $total, distintos: $distintos"
 [ "$distintos" -eq 0 ] || exit 1
-# Producción: además, lo que sirve el dominio propio (si ya resuelve).
-if [ "$AMBIENTE" = prod ] && curl -fsS -o /dev/null --max-time 10 https://buildandserve.cl/ 2>/dev/null; then
-    curl -fsS https://buildandserve.cl/index.html | cmp -s - dist/index.html \
-        || { echo "https://buildandserve.cl no sirve el index.html recién publicado." >&2; exit 1; }
-    echo "== https://buildandserve.cl sirve el mismo build"
-fi
 echo "Publicado $SHA ($AMBIENTE) en https://$DOMINIO"

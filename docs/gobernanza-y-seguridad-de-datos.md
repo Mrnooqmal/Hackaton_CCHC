@@ -48,7 +48,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 |---|---|---|---|
 | 1.1 | Particionamiento de datos por empresa | **Implementado** | Clave primaria `TENANT#{tenantId}` en personas, documentos y firmas. `Backend/lib/services/PersonaService.js` |
 | 1.2 | Toda ruta privada exige sesión | **Implementado** | Autorizador de API Gateway (`Backend/handlers/auth/authorizer.js`) más cierre por omisión en el handler (`conSesion` en `Backend/lib/auth/sesion.js`): una ruta nueva que olvide declarar el autorizador queda inutilizable, no abierta. `Backend/tests/rutas-autenticadas.test.js` falla la build si aparece una ruta pública fuera de la lista declarada. |
-| 1.3 | La empresa sale de la sesión, nunca del cliente | **Implementado** | `tenantIdDeSesion(event)`. Antes era `query.tenantId \|\| authorizer.claims`, **en ese orden**: el valor del llamante ganaba. |
+| 1.3 | La empresa sale de la sesión, nunca del cliente | **Implementado; verificado por una prueba estructural** | `tenantIdDeSesion(event)` y `conSesion`. *Corrección de la versión anterior:* esta fila decía "Implementado" con la revisión hecha módulo por módulo, y no estaba completo. Se escaparon `/signature-requests` (siete rutas sin `conSesion`: descifraba las solicitudes de la empresa nombrada en la consulta, devolvía el historial de firmas de cualquier persona y dejaba cancelar cualquier solicitud) y `/ausencias` (empresa y registrador del cuerpo o la consulta), entre otros (H-17). Ahora lo verifica `Backend/tests/identidad-desde-sesion.test.js`, que no tiene lista de módulos: invoca toda ruta autenticada sin sesión y exige el 401 de `conSesion` sin tocar AWS ni la red, y analiza el código de todos los handlers buscando lecturas de la empresa, de un actor o de una persona desde el cuerpo, la consulta o el path. La empresa y el actor no admiten excepción; una persona como objeto del acto sí, declarada con dónde se comprueba que sea de la empresa (404). |
 | 1.4 | Las lecturas y escrituras por identificador comprueban pertenencia | **Implementado** | Personas, documentos, firmas, actividades, incidentes, encuestas, obras, estructura preventiva, empresa y archivos. Responden **404** y no 403: que un identificador exista en otra empresa tampoco se informa. `Backend/tests/aislamiento-tenant.test.js`, `aislamiento-tramo2.test.js`, `aislamiento-tramo3.test.js`, `uploads-pertenencia.test.js` |
 | 1.5 | La configuración de la empresa solo la toca su empresa | **Implementado** | El módulo de empresa tomaba el `tenantId` del path sin compararlo con la sesión: cualquier usuario podía reescribir los **roles y permisos** de otra empresa, es decir su control de acceso completo. Era el peor hallazgo del recorrido. |
 | 1.6 | Una persona solo firma dentro de su empresa | **Implementado** | Validación previa a aceptar la firma. `Backend/handlers/signatures/handler.js` |
@@ -81,7 +81,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 3.4 | Tokens de recuperación almacenados hasheados | **Implementado** | `hashResetToken()` con SHA-256; nunca se guarda el token en claro. |
 | 3.5 | El cambio de contraseña actúa sobre la sesión, no sobre el cuerpo | **Implementado** | `changePassword` tomaba el `personaId` del cuerpo: con la contraseña temporal de cualquiera —que el propio sistema devolvía al resetear— se le cambiaba la contraseña a otra persona. |
 | 3.6 | El alta de empresas no es un endpoint | **Implementado** | Era pública, tras un código compartido que además estaba vacío en los dos ambientes. La ejecuta el operador con `Backend/scripts/crear-empresa.js`: autorización por IAM y trazabilidad en CloudTrail. |
-| 3.7 | Cambiar la contraseña revoca las sesiones abiertas | **Implementado (en el árbol)** | Al cambiarla, al restablecerla por correo y al restablecerla un administrador se revocan todas las sesiones de la persona, en todas sus empresas; el cambio con sesión emite una nueva. Antes no se revocaba ninguna: una sesión abierta con la contraseña inicial por quien conoce el RUT quedaba completa al cambiarla su dueña. `Backend/tests/cambio-password-sesiones.test.js`. Ver D-26. |
+| 3.7 | Cambiar la contraseña revoca las sesiones abiertas | **Implementado** | Al cambiarla, al restablecerla por correo y al restablecerla un administrador se revocan todas las sesiones de la persona, en todas sus empresas; el cambio con sesión emite una nueva. Antes no se revocaba ninguna: una sesión abierta con la contraseña inicial por quien conoce el RUT quedaba completa al cambiarla su dueña. `Backend/tests/cambio-password-sesiones.test.js`. Ver D-26. |
 
 ### 2.4 Integridad y trazabilidad documental
 
@@ -95,7 +95,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 4.6 | Serialización del estampado por documento | **Implementado** | Cola SQS FIFO con `MessageGroupId = documentId` y cola de mensajes fallidos. |
 | 4.7 | Verificación independiente de una firma por token | **Implementado** | Sin exponer datos personales. |
 | 4.8 | Constancia de difusión con origen declarado | **Implementado** | `Document.difusiones[]` distingue constancia automática de declarada. `Backend/lib/distribucion.js` |
-| 4.9 | **Hash de integridad del archivo almacenado** | **Pendiente** | No se calcula huella del archivo al subirlo, así que no se puede demostrar que el binario no fue alterado en el almacenamiento. |
+| 4.9 | Hash de integridad del archivo almacenado | **Implementado** | Ver D-12. *Corrección:* esta fila seguía como pendiente después de implementarse. La huella se toma del archivo en S3 al registrarlo (`camposDeArchivo` en `Backend/lib/huellaArchivo.js`, usado por `Backend/handlers/documents/handler.js`), nunca del cuerpo. `Backend/tests/huella-archivo.test.js`. Está en el código desplegado en prod (`d750646`) y en dev. |
 | 4.10 | Ninguna firma se registra sin PIN | **Implementado** | La estrategia `PRESENCIAL` de `FirmaService` valida siempre: omitir el PIN permitía firmar documentos, registros AT/EP e informes del Art. 71 a nombre de otra persona, y `sign-bulk` lo hacía sobre una lista entera. Firmar por un tercero exige ahora el permiso de firma asistida, con el PIN del firmante como prueba del consentimiento. |
 | 4.11 | El PIN no se puede reemplazar por la espalda | **Implementado** | Quien sobreescribe un PIN puede firmar por esa persona. Si ya tiene PIN, solo ella lo cambia y probando el actual. |
 
@@ -110,7 +110,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 5.3 | La persona siempre accede a sus propios datos de salud | **Implementado** | Ocultarle su propio examen sería improcedente. |
 | 5.4 | Falla cerrada ante solicitante no identificado | **Implementado** | Sin identificación se ocultan: el error es que falten documentos, nunca que se filtren datos de salud. Cubierto por pruebas. |
 | 5.5 | Archivos servidos por URL prefirmada temporal | **Implementado** | No hay URL pública permanente sobre el almacenamiento. |
-| 5.6 | **Registro de auditoría de accesos a datos sensibles** | **Pendiente** | Se audita quién firma, no quién consulta una ficha de vigilancia. Ver hallazgo H-5. |
+| 5.6 | Registro de auditoría de accesos a datos sensibles | **Implementado para salud; auditoría general en el árbol** | *Corrección:* esta fila seguía como pendiente. El acceso a datos de salud se audita desde D-18 (`Backend/lib/gobernanza/auditoriaSalud.js`, `Backend/tests/auditoria-salud.test.js`), en el código desplegado en prod (`d750646`) y en dev. La auditoría general y la detección de eventos sospechosos (D-31, `Backend/lib/gobernanza/auditoria.js`) están en el árbol desde `57c5a9b`, sin desplegar en ningún ambiente (verificado el 6 de noviembre de 2026). Ver H-5. |
 | 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Parcial** | Cifrado en dev y prod: Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`), Tenants (`rutEmpresa`), los sidecars de firmas/incidentes, los arreglos embebidos de documentos/actividades/solicitudes, y las respuestas de encuesta. **Pendiente:** dos copias en claro que genera `RegistroService` en `DocumentsTable` — el RUT del accidentado y de los entrevistados (informe Art. 71) y la aptitud laboral y protocolos de vigilancia por persona (registro AT/EP). Se resuelven junto con la huella de integridad, porque son justo los snapshots que se firman. Ver D-10. |
 | 5.8 | Los índices de personas proyectan todos los atributos | **Implementado** | `personaId-index`, `email-index` y `tenantRutHmac-index` pasaron a `KEYS_ONLY`: el índice da la clave, la ficha se lee de la tabla. Ver D-6. |
 | 5.9 | El RUT no viaja completo en la verificación pública de firmas | **Implementado** | `GET /signatures/verify/{token}` es público por diseño (un fiscalizador comprueba una firma sin cuenta), y devolvía nombre y **RUT completo**: el token se convertía en una consulta abierta de identidad. Ahora el RUT va parcial (`···.678-5`), que cumple igual la función de cotejo. |
@@ -125,11 +125,11 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 6.2 | Cifrado en reposo declarado | **Implementado, salvo logs** | Buckets de evidencia y trabajo con la CMK de su ambiente (D-4); el del frontend, con `AES256`. Tablas DynamoDB: pasan a la CMK (`SSESpecification`) con el commit del 28 de septiembre de 2026; antes, las 17 usaban la llave propiedad de AWS. Grupos de logs: sin clave propia, postergado. Ver D-14. |
 | 6.3 | Bloqueo explícito de acceso público a los buckets | **Implementado** | *Corrección de la versión anterior:* se declaraba **Pendiente** por ausencia en `serverless.yml`, pero en AWS ya estaba activo (las cuatro opciones en `true`). Lo que faltaba era la declaración, no la protección. Ahora está en el stack. |
 | 6.4 | Restricción de orígenes CORS en almacenamiento | **Implementado** | Estaba en `AllowedOrigins: ['*']`, es decir cualquier página de internet podía hacerle peticiones al bucket desde el navegador de quien la visitara. Acotado al CloudFront de la aplicación (y `localhost` solo en dev), con métodos `GET`, `PUT` y `HEAD`. |
-| 6.5 | Recuperación a un punto en el tiempo | **Implementado** | `PointInTimeRecoverySpecification` en **las 16 tablas**, dev y prod, verificado `ENABLED` contra AWS. Antes estaba deshabilitado en todas: un borrado no tenía ninguna vía de recuperación. |
+| 6.5 | Recuperación a un punto en el tiempo | **Implementado** | `PointInTimeRecoverySpecification` en **todas las tablas**, dev y prod: 22 por ambiente, verificadas `ENABLED` contra AWS el 6 de noviembre de 2026 (eran 16 cuando se activó). Antes estaba deshabilitado en todas: un borrado no tenía ninguna vía de recuperación. |
 | 6.6 | Política de retención de infraestructura | **Implementado** | `DeletionPolicy` y `UpdateReplacePolicy` configurados por ambiente. |
 | 6.8 | Región de tratamiento de los datos | **Evaluada y postergada** | Ver decisión D-1. |
 | 6.9 | Versionado de los buckets | **Implementado** | Habilitado en los cuatro buckets y declarado en el stack. Sustituye al punto 6.7, que lo reportaba pendiente. |
-| 6.12 | Cabeceras de seguridad del frontend | **Implementado; CSP en solo reporte** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, declarados en `infra/frontend.yml`. La CSP de scripts, en modo solo reporte hasta confirmar que no hay violaciones legítimas. Ver D-14. |
+| 6.12 | Cabeceras de seguridad del frontend | **Implementado; CSP activa** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, declarados en `infra/frontend.yml`. La CSP de scripts pasó a **activa** el 6 de noviembre de 2026 en las dos distribuciones (infra de `4b2db9e`), después de un mes en solo reporte sin violaciones de la aplicación; probada en dev y prod. `CspModo` permite volver a solo reporte desde el mismo commit; los hashes salen de `infra/hashes-csp.js`, y `desplegar-frontend.sh` se niega a publicar un build cuyos scripts en línea la política activa no autoriza (con la CSP activa, ese build dejaría la aplicación en blanco). `Backend/tests/csp-activa.test.js`. Ver D-14. |
 | 6.13 | Las respuestas de la API no se cachean | **Implementado** | `Cache-Control: no-store` en toda respuesta; una prueba invoca cada función HTTP y lo comprueba. |
 | 6.14 | HTML armado con texto de usuario | **Implementado** | Un solo escapado por lado y una prueba que falla si aparece un sumidero de HTML nuevo. Ver H-13. |
 | 6.15 | Token de sesión fuera del alcance de un script | **Postergado** | Vive en `localStorage`. Moverlo a una cookie `httpOnly` exige dominio propio y protección CSRF. Ver D-14. |
@@ -260,7 +260,13 @@ pedirlos con red, y la interfaz avisa cuando quedan pocos mientras todavía hay
 señal.
 
 ### D-4. Clave propia (CMK) para el cifrado en reposo
-**Estado: pendiente de aplicar, con motivo**
+**Estado: aplicada en tablas y buckets de datos, dev y prod; los logs siguen sin
+llave propia. Verificado contra AWS el 6 de noviembre de 2026:** las 22 tablas de
+cada ambiente usan `SSEType: KMS` con la llave `Clave de los datos de Build &
+Serve (<ambiente>)`, administrada por la cuenta (`KeyManager: CUSTOMER`); los
+cuatro buckets de evidencia y trabajo, `aws:kms` con esa misma llave. Ninguno de
+los 161 grupos de logs `/aws/lambda/BuildAndServe-*` tiene llave propia (D-14).
+Lo que sigue es el texto original, de cuando estaba pendiente.
 
 Los buckets cifran con `AES256` (clave gestionada por AWS) y eso ya está
 declarado en el stack. La clave propia (KMS) no se aplicó junto con el resto por
@@ -1326,7 +1332,10 @@ puede escribir en el bucket e invalidar la distribución.
 de `64adc40`). Verificado: prueba de punta a punta en `https://buildandserve.cl`
 con una empresa desechable borrada después; rebotes y quejas de punta a punta
 con el simulador de SES; recorrido en Chrome de las pantallas principales con
-sesión, sin violaciones de CSP. Pendiente: la salida de SES del sandbox.**
+sesión, sin violaciones de CSP. La salida de SES del sandbox, que figuraba pendiente,
+está concedida: `aws sesv2 get-account` responde `ProductionAccessEnabled: true`
+y el caso `179073624400729` en `GRANTED` (verificado el 30 de octubre y el 6 de
+noviembre de 2026).**
 
 **Dominio.** La distribución de producción sirve `buildandserve.cl` con un
 certificado de ACM (us-east-1) para la raíz y `www`, validado por DNS en
@@ -1336,7 +1345,8 @@ cabeceras y la CSP que ya controla CloudFront. `www` redirige a la raíz (301,
 con ruta y consulta) con una CloudFront Function: una sola URL canónica para los
 enlaces de los correos y el CORS. Con certificado propio, el TLS mínimo sube a
 **1.2** (`TLSv1.2_2021`), lo que cierra la brecha de D-14. La URL de
-CloudFront sigue sirviendo y aceptada por el backend durante la transición.
+CloudFront sigue sirviendo y aceptada por el backend durante la transición; D-34
+la cierra.
 
 **Correo.** Todo envío pasa por `lib/correo.js` (una prueba falla si otro
 archivo usa SES):
@@ -1487,8 +1497,9 @@ inc. 2), y un aviso que fallaba se perdía en silencio.
 - En pruebas y en local (sin cola) todo sigue corriendo en la petición.
 
 ### D-26. Cambiar la contraseña revoca todas las sesiones y emite una nueva
-**Estado: implementado el 30 de septiembre de 2026 (en el árbol, sin desplegar).
-Reproducido en dev antes de corregir.**
+**Estado: en dev y prod desde el 1 de octubre de 2026 (`d750646`; el índice,
+`8b072e9`, se desplegó antes). Reproducido en dev antes de corregir; verificado
+con la prueba de punta a punta en los dos ambientes (26 de 26).**
 
 **El síntoma.** Tras cambiar la contraseña inicial, crear el PIN respondía
 "Debes cambiar tu contraseña inicial". El autorizador cachea su respuesta 60
@@ -1533,7 +1544,9 @@ anterior, el token viejo queda revocado y la persona vuelve a la pantalla de
 ingreso.
 
 ### D-27. Los borradores del plan de actividades se pueden eliminar
-**Estado: implementado el 12 de octubre de 2026 (en el árbol, sin desplegar).**
+**Estado: implementado el 12 de octubre de 2026. En dev, no en prod (verificado el
+30 de octubre de 2026): el backend de dev corre `b7c3e88` y el frontend `6aa53d1`,
+que contienen `ccf181f`; prod sigue en `d750646`.**
 
 **El pedido.** Planificar el mes crea borradores de actividades (`estado:
 'borrador'`) que a veces no se van a realizar. No había forma de quitarlos.
@@ -1629,6 +1642,52 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 
 **Pruebas:** `Backend/tests/ayuda-progreso.test.js` (reglas, aislamiento entre empresas y entre personas, bloqueo, tope, concurrencia), `ayuda-gemelos.test.js` (estados y límites iguales en backend y frontend), casos nuevos en `retencion.test.js`, `derechos-autoservicio.test.js` y `gobernanza-permisos.test.js`; `Frontend/tests/ayuda-validacion.test.mjs` y `ayuda-verificacion.test.mjs` (`npm test` en Frontend). Se comprobó que cada una falla al romper lo que protege.
 
+### D-34. Producción solo en buildandserve.cl: la URL de CloudFront sale del CORS y se redirige
+**Estado: decidido el 6 de noviembre de 2026; preparado en el árbol, sin desplegar.
+D-33 la usa la rama `tours` (recorridos guiados).**
+
+**Qué se decidió.** La URL de CloudFront de producción
+(`https://d30jksx91fodea.cloudfront.net`) deja de ser un origen de la aplicación:
+
+- sale de `corsOrigins.prod` en `Backend/serverless.yml`, que es el CORS de la API
+  y de los buckets de prod: queda solo `https://buildandserve.cl`;
+- la función de CloudFront que redirigía `www` (`RedireccionWww`) redirige
+  también ese host con 301 a `https://buildandserve.cl`, con la misma ruta y
+  consulta. Va en la misma función porque una distribución admite una sola
+  función por evento, y conserva nombre e identificador para no reemplazarla
+  estando asociada. No agrega recursos al stack del frontend.
+
+Las dos cosas van juntas: sin la redirección, una página servida en ese host
+cargaría y no podría hablar con la API.
+
+**Por qué sin medir.** El pendiente decía medir antes el tráfico con ese
+`Origin`. No se puede con los registros actuales: la API de prod no tiene
+registro de acceso (y el de HTTP API no permite registrar `Origin`), ningún
+handler registra esa cabecera, y la distribución no tiene registro de
+CloudFront. Medir exigía activar uno de esos registros y esperar. Se decidió no
+hacerlo: en prod solo existen las dos empresas del equipo y no hay clientes
+reales, así que se corta antes de la marcha blanca, cuando no afecta a nadie de
+afuera.
+
+**Lo que queda, conocido.** El service worker de la app responde las
+navegaciones con el `index.html` del precaché. Quien la instaló desde la URL de
+CloudFront la sigue abriendo desde caché en ese origen, y su service worker no
+se actualiza, porque `sw.js` responde 301 y los navegadores no aceptan un script
+de service worker redirigido. Esa copia ya no puede hablar con la API. Se
+resuelve borrando los datos del sitio de ese origen y reinstalando desde
+`https://buildandserve.cl`; hoy solo afecta al equipo.
+
+**Verificación.** `Backend/tests/dominio-unico-prod.test.js` ejecuta la función
+de CloudFront con eventos reales (los dos hosts redirigidos, ruta y consulta con
+valores vacíos, repetidos y con espacios, host en mayúsculas; el dominio propio
+y otros hosts pasan), y fija el CORS de prod, que los scripts verifiquen prod en
+el dominio propio y que ningún código use la URL de CloudFront. Al desplegar,
+`desplegar-infra-frontend.sh` comprueba el 301, y la prueba de punta a punta en
+prod, que la API rechaza ese origen. Los scripts de despliegue verificaban prod
+en la URL de CloudFront: con la redirección habrían fallado en cada archivo, y
+ahora verifican en `buildandserve.cl`. El enlace de las licencias, cuando falta
+`FRONTEND_URL`, también pasó al dominio propio.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo
@@ -1679,7 +1738,8 @@ quien solo se equivocó.
 **Ubicación:** `Backend/lib/limitePin.js`
 
 ### H-3. Sin recuperación a un punto en el tiempo
-**Severidad: media**
+**Severidad: media — RESUELTO (ver 6.5). Verificado el 6 de noviembre de 2026: las
+22 tablas de dev y las 22 de prod responden `PointInTimeRecoveryStatus: ENABLED`.**
 
 Un borrado accidental o una corrupción de datos no tienen vuelta atrás. Para un sistema cuyo
 valor es la evidencia de cumplimiento ante fiscalización, la pérdida de datos es la falla más
@@ -1689,7 +1749,10 @@ costosa posible.
 cumplimiento y datos personales.
 
 ### H-4. Cifrado en reposo y exposición del almacenamiento no declarados
-**Severidad: media**
+**Severidad: media — RESUELTO salvo los logs (ver 6.2, 6.3, 6.4 y D-4).
+Verificado el 6 de noviembre de 2026: tablas y buckets de datos con la CMK de su
+ambiente; los cuatro buckets con las cuatro opciones de bloqueo público en `true`
+y versionado `Enabled`. Los grupos de logs no tienen llave propia.**
 
 Los buckets no bloquean explícitamente el acceso público, aceptan cualquier origen CORS, y ni
 buckets ni tablas declaran su configuración de cifrado. Aunque AWS cifra por defecto, ante un
@@ -1700,7 +1763,9 @@ acotado a los dominios de la aplicación, y `BucketEncryption` / `SSESpecificati
 idealmente con clave gestionada por el cliente.
 
 ### H-5. No se audita el acceso a datos sensibles
-**Severidad: media**
+**Severidad: media — PARCIAL. Resuelto para datos de salud (D-18), en dev y prod.
+La auditoría general (D-31) está en el árbol, sin desplegar (verificado el 6 de
+noviembre de 2026). Ver 5.6.**
 
 El resguardo de documentos de salud impide el acceso indebido, pero no deja rastro de los
 accesos legítimos. Para datos sensibles, el registro de acceso es lo que permite **detectar** un
@@ -1710,7 +1775,10 @@ uso indebido por parte de quien sí tiene permiso.
 documento, con retención acotada.
 
 ### H-6. Sin gobernanza del ciclo de vida del dato personal
-**Severidad: media, con plazo normativo**
+**Severidad: media, con plazo normativo — PARCIAL (ver 7.1 a 7.4). Verificado el 6
+de noviembre de 2026: en prod existen `retencionDiaria` (31 ejecuciones en los
+últimos 30 días, ninguna con error), `gobernanzaDerechos`, `alertasDerechos` y
+`gobernanzaLotes`. No se comprobó si se ejecutó alguna supresión.**
 
 No hay política de retención, ni mecanismo de supresión a solicitud, ni registro de
 tratamientos, ni protocolo de notificación de brechas.
@@ -1883,8 +1951,28 @@ restringirlos al permiso de vigilancia, o sacar del registro el detalle por
 persona y dejar solo los conteos.
 
 ### H-16. Cualquier sesión lista todo el personal de su empresa
-**Severidad: media — ABIERTO, espera decisión de producto. Encontrado el 30 de
-septiembre de 2026 por la prueba de punta a punta, en dev.**
+**Severidad: media — RESUELTO el 1 de octubre de 2026, sin desplegar (verificado
+el 6 de noviembre de 2026: no está en ningún ambiente). Encontrado el 30 de
+septiembre por la prueba de punta a punta, en dev.**
+
+**Resolución.** El listado no se corta, se recorta: sin `personas.ver`, `GET
+/personas` devuelve de cada persona solo identificador, nombre, apellidos y
+cargo; con el permiso, la ficha completa (`Backend/tests/listado-personas.test.js`).
+Se revisaron las pantallas que usan el listado. Los roles sin `personas.ver`
+(`trabajador`, `colaborador`) alcanzan cinco: el reporte de incidentes, el
+listado de incidentes, encuestas, actividades y solicitudes de firma. Las tres
+del medio y la última usan la lista solo en funciones que exigen permisos que
+traen `personas.ver`. Actividades usa nombre, cargo e identificador. El reporte
+de incidentes usaba el RUT en dos lugares: el trabajador accidentado, que es
+del formulario de incidente y exige `incidentes.reportar` (todos los roles con
+ese permiso tienen `personas.ver`), y el afectado de un hallazgo por acción
+insegura, que sí lo reporta una trabajadora. Ese afectado ahora se guarda con su
+identificador, que el backend comprueba que sea de la empresa (404), y sin RUT
+cuando quien reporta no ve fichas. Un rol propio de una empresa con
+`obras.detalle` y sin `personas.ver` verá el equipo de la obra con nombre y cargo,
+sin RUT: es lo coherente con no tener ese permiso.
+
+**Lo que decía al encontrarlo:**
 
 `GET /personas` solo exige sesión: no pide `personas.ver`. Una persona con rol
 `trabajador`, recién enrolada, recibe la lista completa del personal de su
@@ -1899,6 +1987,48 @@ reportar. Hay que decidir qué necesita ver cada rol: probablemente un listado
 mínimo (nombre y cargo) para elegir personas, y la ficha completa solo con
 `personas.ver`. Cuando se decida, la prueba de punta a punta agrega la
 comprobación (hoy verifica solo que la trabajadora no puede dar de alta).
+
+### H-17. Rutas que tomaban la empresa o el actor del cliente, fuera de la revisión por módulos
+**Severidad: alta — RESUELTO el 1 de octubre de 2026, sin desplegar (verificado el
+6 de noviembre de 2026: no está en ningún ambiente). Encontrado por la sesión de
+product tours (las dos primeras) y por la prueba estructural (el resto). La
+comprobación de sesión de `/ai/transcribe` llegó a `HEAD` con la Actividad 5
+(`57c5a9b`), junto con el consentimiento para el dictado.**
+
+- **`/signature-requests`**: ninguna de sus siete rutas llamaba a `conSesion`.
+  `GET` tomaba la empresa de la consulta y descifraba sus solicitudes; `get`
+  comparaba la empresa solo si el cliente la mandaba; `create` tomaba el
+  solicitante (y con él el permiso y la empresa) del cuerpo; `pending/{id}` sin
+  empresa recorría la tabla de todas; `history/{id}` devolvía las firmas de
+  cualquier persona de cualquier empresa; `cancel` cancelaba cualquier
+  solicitud. Ahora: empresa y solicitante de la sesión; `firmas.crear` para
+  crear, cancelar y ver estadísticas; sin él, solo las solicitudes propias;
+  pendientes e historial de uno mismo o con `personas.detalle`, y de la empresa
+  (404).
+- **`/ausencias`**: empresa del cuerpo o la consulta y `registradoPor` del
+  cuerpo, sin `conSesion`. Se leían, escribían y borraban ausencias de otra
+  empresa, con su motivo ("Licencia médica"). Ahora: empresa y registrador de la
+  sesión, obra y persona de la empresa (404), y el permiso de convocar
+  actividades (`actividades.crear`), que es para lo que se registran.
+- **`/ai/transcribe`**: sin `conSesion`; una sesión con la contraseña inicial
+  usaba Gemini, que tiene costo.
+- **`/personas/validate`**: corría sin `conSesion` (su comentario la daba por
+  pública, pero la ruta tiene autorizador); con la contraseña inicial se
+  consultaba si un RUT existe.
+- **Gobernanza de hallazgos**: `verificadoPor` y `fechaVerificacion` se
+  aceptaban del cuerpo salvo al cerrar; el responsable no se comprobaba.
+- **Actividades**: el aviso de creación salía con `createdBy` igual al relator
+  del cuerpo; relator, responsables y asistentes no se comprobaban contra la
+  empresa, y la asistencia firmada con firma asistida no comprobaba la empresa
+  de quien firmaba.
+- **Documentos**: el relator no se comprobaba; firmar por una persona de otra
+  empresa respondía 403 "no pertenece a tu organización", que confirma que el id
+  existe. Ahora 404.
+
+La pertenencia nueva pasa por `lib/auth/pertenencia.js`. Las pruebas:
+`identidad-desde-sesion.test.js` (estructural), `rutas-identidad-sesion.test.js`,
+`incidentes-identidad.test.js` y `activities-handler.test.js`; cada una falla con
+el código anterior.
 
 ### H-8. El PIN se guardaba en claro en el dispositivo (modo sin conexión)
 **Severidad: alta — RESUELTO el 16 de septiembre de 2026 (ver D-3)**

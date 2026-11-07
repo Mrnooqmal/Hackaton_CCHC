@@ -89,7 +89,7 @@ process.env.PERSONAS_TABLE = `${SERVICIO}-personas-${stage}`;
 // La URL del frontend arma el enlace. Es la misma que usa la recuperación de
 // contraseña, así que un ambiente bien configurado ya la tiene.
 const FRONTEND_URL = process.env.FRONTEND_URL
-    || (stage === 'prod' ? 'https://d30jksx91fodea.cloudfront.net' : 'http://localhost:5173');
+    || (stage === 'prod' ? 'https://buildandserve.cl' : 'http://localhost:5173');
 
 const { LicenciaService } = require('../lib/services/LicenciaService');
 const { validateRut } = require('../lib/utils/validation');

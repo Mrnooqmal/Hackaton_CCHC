@@ -11,6 +11,7 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { resolveCatalogos, validatePlanificacion, validatePermisosTrabajo } = require('../../lib/catalogos-actividad');
 const { eventBus } = require('../../lib/events/EventBus');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { obraDeLaEmpresa, personasDeLaEmpresa, personaDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { cifrarConLlaveDatos } = require('../../lib/cifradoCampo');
 const {
     llaveDe: llaveDeArreglos,
@@ -367,6 +368,16 @@ module.exports.create = async (event) => {
             ? [...new Set([body.relatorId, ...body.responsables.filter((r) => typeof r === 'string' && r)])]
             : [body.relatorId];
 
+        // Relator, responsables y asistentes los nombra quien crea la actividad,
+        // pero tienen que ser de la empresa: antes se guardaba cualquier id, y
+        // los avisos y las firmas salían hacia personas de otra empresa.
+        if (!await personasDeLaEmpresa([...responsables, ...asistentesRequeridos], sesion)) {
+            return error('Persona no encontrada', 404);
+        }
+        if (body.obraId && !await obraDeLaEmpresa(body.obraId, sesion)) {
+            return error('Obra no encontrada', 404);
+        }
+
         const baseActivity = {
             tenantId,
             obraId: body.obraId || null,
@@ -420,7 +431,8 @@ module.exports.create = async (event) => {
                 await eventBus.emit('activity.created', {
                     activityId: primera.activityId,
                     attendeeIds: asistentesRequeridos,
-                    createdBy: body.relatorId,
+                    // Quien crea es quien tiene la sesión, no el relator del cuerpo.
+                    createdBy: sesion.personaId,
                     activityName: primera.titulo,
                     fecha: primera.fecha,
                     tipo: primera.tipo,
@@ -810,8 +822,11 @@ module.exports.registerAttendance = async (event) => {
             const yaRegistrado = (activity.asistentes || []).some(a => a.personaId === pid);
             if (yaRegistrado) continue;
 
-            const persona = await personaService.getById(pid);
-            if (!persona) continue;
+            // La persona que firma su asistencia tiene que ser de la empresa de
+            // la actividad: con firma asistida y el PIN, se registraba a
+            // cualquiera.
+            const persona = await personaDeLaEmpresa(pid, { tenantId: activity.tenantId });
+            if (!persona) return error('Persona no encontrada', 404);
 
             // Crear firma en SignaturesTable (PIN del trabajador, o su vale).
             const metodo = vale ? 'VALE' : 'PIN';
@@ -1078,6 +1093,10 @@ module.exports.patch = async (event) => {
         if (updates.asistentesRequeridos !== undefined && !Array.isArray(updates.asistentesRequeridos)) {
             return error('asistentesRequeridos debe ser una lista');
         }
+        if (updates.asistentesRequeridos !== undefined
+            && !await personasDeLaEmpresa(updates.asistentesRequeridos, { tenantId: activity.tenantId })) {
+            return error('Persona no encontrada', 404);
+        }
         if (updates.subtipo !== undefined) {
             if (activity.tipo !== 'CAPACITACION') delete updates.subtipo;
             else if (!CAPACITACION_SUBTIPOS[updates.subtipo]) return error('Subtipo de capacitación inválido');
@@ -1140,9 +1159,8 @@ module.exports.patch = async (event) => {
                 return error('No se puede cambiar el relator: la actividad ya tiene firmas registradas', 409);
             }
             if (!body.relatorId) return error('El relator no puede quedar vacío');
-            const nuevoRelator = await personaService.getById(body.relatorId).catch(() => null);
-            if (!nuevoRelator || nuevoRelator.tenantId !== activity.tenantId) {
-                return error('El relator indicado no pertenece a la empresa');
+            if (!await personaDeLaEmpresa(body.relatorId, { tenantId: activity.tenantId })) {
+                return error('Persona no encontrada', 404);
             }
             updates.relatorId = body.relatorId;
             // responsables[0] = relator (invariante que asume create/firmas). El
