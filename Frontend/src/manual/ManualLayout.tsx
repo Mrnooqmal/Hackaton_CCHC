@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { FiSearch, FiBookOpen, FiArrowLeft, FiMenu, FiX } from 'react-icons/fi';
 import { MANUAL_SECTIONS, permisoDePagina } from './manualNav';
 import { filtrarMarkdown, useFiltroManual } from './filtro';
@@ -10,6 +10,7 @@ import { extractHeadings } from './headings';
 import { searchManual, type SearchResult } from './search';
 import ManualHome from './ManualHome';
 import ManualPage from './ManualPage';
+import { ANCLAS_MOVIDAS, destinoDe } from './redirecciones';
 import './manual.css';
 
 /** Ruta relativa a /manual (sin barra inicial ni final). '' = portada. */
@@ -198,6 +199,16 @@ function ManualLayoutContenido() {
 
     // Cierra el menú lateral (drawer móvil) al navegar a otra página.
     useEffect(() => { setMenuOpen(false); }, [pathname]);
+
+    // Direcciones del manual anterior (ordenado por módulo): llevan a la página
+    // nueva, con su ancla. También una sección que se fue a otra página.
+    const ancla = decodeURIComponent(hash.replace(/^#/, ''));
+    if (rel && !doc) {
+        const destino = destinoDe(rel, ancla);
+        if (destino) return <Navigate to={destino} replace />;
+    }
+    const anclaMovida = doc && ancla ? ANCLAS_MOVIDAS[`${rel}#${ancla}`] : undefined;
+    if (anclaMovida && !headings.some((h) => h.id === ancla)) return <Navigate to={`/manual/${anclaMovida}#${ancla}`} replace />;
 
     return (
         <div className="manual-root">

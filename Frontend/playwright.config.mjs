@@ -13,6 +13,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const PUERTO = 5181;
+/** El build servido con `vite preview` (manual sin conexión). */
+export const PUERTO_BUILD = 5182;
 
 export default defineConfig({
     testDir: 'tests/e2e',
@@ -21,10 +23,20 @@ export default defineConfig({
     reporter: 'list',
     use: { baseURL: `http://localhost:${PUERTO}` },
     projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-    webServer: {
-        command: `node ./node_modules/vite/bin/vite.js --port ${PUERTO} --strictPort`,
-        url: `http://localhost:${PUERTO}/tests/e2e/arnes.html`,
-        reuseExistingServer: false,
-        timeout: 60000,
-    },
+    webServer: [
+        {
+            command: `node ./node_modules/vite/bin/vite.js --port ${PUERTO} --strictPort`,
+            url: `http://localhost:${PUERTO}/tests/e2e/arnes.html`,
+            reuseExistingServer: false,
+            timeout: 60000,
+        },
+        {
+            // El build real (con su service worker), para probar el manual sin
+            // conexión. En dev: la sección FUF pendiente de revisión no pasa en prod.
+            command: `VITE_AMBIENTE=dev node ./node_modules/vite/bin/vite.js build --outDir dist-e2e --emptyOutDir --logLevel error && node ./node_modules/vite/bin/vite.js preview --outDir dist-e2e --port ${PUERTO_BUILD} --strictPort`,
+            url: `http://localhost:${PUERTO_BUILD}/manual`,
+            reuseExistingServer: false,
+            timeout: 180000,
+        },
+    ],
 });

@@ -50,13 +50,13 @@ import { ancla } from '../ayuda/registro';
     reiniciarAlPublicar: false,
     estado: 'borrador',                // 'borrador' | 'publicado' | 'inactivo'
     titulo: { es: 'Tus firmas' },
-    manual: 'modulos/firmas',
+    manual: 'terreno/firmar',
     pasos: [
         {
             ancla: 'mis-firmas.lista-pendientes',
             titulo: { es: 'Lo que tienes por firmar' },
             descripcion: { es: 'Aquí aparecen los documentos que te asignaron. Tócalo para leerlo antes de firmar.' },
-            manual: 'modulos/firmas',      // agrega "Leer más en el manual"
+            manual: 'terreno/firmar',      // agrega "Leer más en el manual"
         },
     ],
 },
@@ -117,7 +117,20 @@ npm test                               # pruebas del frontend
 - Si la pantalla tiene parámetros (`/obras/:obraId`), reemplázalos por una obra de esa empresa: el recorrido necesita la pantalla con datos para encontrar sus anclas.
 - Si un ancla no aparece, el paso se salta y queda en la consola del navegador como `[recorridos] ancla no encontrada`.
 
-## 5. Publicar y retirar
+## 5. Enlazarlo desde el manual
+
+En la página del manual que explica esa tarea, agrega:
+
+```markdown
+[Ver recorrido](recorrido:mis-firmas-intro)
+```
+
+Con sesión, y si la persona puede ver el recorrido, el enlace lleva a la pantalla y lo abre (y
+guarda su progreso, a diferencia de la vista previa). Sin sesión, sin permiso, fuera de vigencia o
+si la pantalla tiene parámetros en la ruta (`/obras/:obraId`), el enlace no aparece. El build
+falla si el id no existe.
+
+## 6. Publicar y retirar
 
 1. Cambia `estado` a `'publicado'` en el mismo PR (o en uno posterior).
 2. Despliega como siempre: dev primero (`infra/desplegar-frontend.sh <commit> dev`), revisión de QA y después prod.
@@ -127,7 +140,7 @@ npm test                               # pruebas del frontend
 
 **Borrar uno:** no reutilices su `id`. El progreso de las personas sigue guardado con ese id.
 
-## 6. Reglas de redacción (obligatorias)
+## 7. Reglas de redacción (obligatorias)
 
 - El sistema **gestiona y custodia** evidencia preventiva.
   - **No valida** el contenido de los documentos que sube la persona; eso es responsabilidad de quien los sube.

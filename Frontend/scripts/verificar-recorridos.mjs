@@ -9,6 +9,11 @@
 //   4. Las definiciones pasan `validarRecorridos`.
 //   5. Si cambió el contenido de un recorrido, subió su versión, y
 //      `src/ayuda/huellas.json` está al día.
+//   6. Manual: cada enlace "Ver recorrido" (`recorrido:<id>`) nombra un
+//      recorrido que existe, y en prod no se publica una página marcada
+//      `revision: pendiente-normativa` (la sección FUF y DS 44 espera revisión).
+//      El ambiente es VITE_AMBIENTE, como con los borradores: sin la variable,
+//      prod.
 //
 //   node scripts/verificar-recorridos.mjs                       verifica
 //   node scripts/verificar-recorridos.mjs --actualizar-huellas  verifica y reescribe huellas.json
@@ -110,6 +115,27 @@ export function verificarRegistro({ pantallas, anclas, rutasApp, manual, usos, a
     return errores;
 }
 
+/** Frontmatter `revision: pendiente-normativa` al comienzo de una página. */
+export const pendienteNormativa = (texto) => /^---\r?\n(?:[\s\S]*?\r?\n)?revision:\s*pendiente-normativa\s*\r?\n[\s\S]*?---/.test(texto);
+
+/**
+ * Revisión del manual. `paginas`: [{ slug, texto }]. `idsRecorridos`: los que
+ * existen. `ambiente`: VITE_AMBIENTE.
+ */
+export function revisarManual({ paginas, idsRecorridos, ambiente }) {
+    const errores = [];
+    const existen = new Set(idsRecorridos);
+    for (const { slug, texto } of paginas) {
+        for (const m of texto.matchAll(/\]\(recorrido:([^)\s]*)\)/g)) {
+            if (!existen.has(m[1])) errores.push(`manual ${slug}: "Ver recorrido" nombra un recorrido que no existe: ${m[1]}.`);
+        }
+        if (ambiente !== 'dev' && pendienteNormativa(texto)) {
+            errores.push(`manual ${slug}: está pendiente de revisión normativa y no se publica en prod. Quita la marca (revision: pendiente-normativa y el aviso) cuando esté revisada.`);
+        }
+    }
+    return errores;
+}
+
 // ─── Lectura del proyecto ────────────────────────────────────────────────────
 
 const archivos = (dir, exts) => readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
@@ -150,6 +176,12 @@ async function principal() {
     const guardadas = JSON.parse(readFileSync(HUELLAS, 'utf8'));
     const { bloqueantes, desactualizadas } = revisarHuellas(RECORRIDOS, guardadas);
     errores.push(...bloqueantes);
+    const base = join(SRC, 'manual', 'content');
+    errores.push(...revisarManual({
+        paginas: archivos(base, ['.md']).map((f) => ({ slug: relative(base, f).split(sep).join('/'), texto: readFileSync(f, 'utf8') })),
+        idsRecorridos: RECORRIDOS.map((d) => d.id),
+        ambiente: process.env.VITE_AMBIENTE,
+    }));
     if (!actualizar) errores.push(...desactualizadas.map((e) => `${e} Corre npm run recorridos:huellas.`));
 
     if (errores.length) {

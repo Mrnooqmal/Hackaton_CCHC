@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-    anclasEnCodigo, calcularHuellas, huellaDe, revisarHuellas, rutasDeApp, verificarRegistro,
+    anclasEnCodigo, calcularHuellas, huellaDe, pendienteNormativa, revisarHuellas, revisarManual, rutasDeApp, verificarRegistro,
 } from '../scripts/verificar-recorridos.mjs';
 
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
@@ -89,8 +89,25 @@ test('un recorrido nuevo o uno borrado piden actualizar huellas, sin bloquear', 
     assert.match(revisarHuellas([], calcularHuellas([def()])).desactualizadas.join(), /ya no existe/);
 });
 
-test('el script real pasa sobre el proyecto tal como está', () => {
-    const r = spawnSync(process.execPath, ['scripts/verificar-recorridos.mjs'], { cwd: RAIZ, encoding: 'utf8' });
+test('manual: un "Ver recorrido" a un recorrido que no existe rompe el build', () => {
+    const paginas = [{ slug: 'terreno/firmar.md', texto: 'Ver [aquí](recorrido:firmas-intro) y [allá](recorrido:no-existe).' }];
+    assert.deepEqual(revisarManual({ paginas, idsRecorridos: ['firmas-intro'], ambiente: 'dev' }),
+        ['manual terreno/firmar.md: "Ver recorrido" nombra un recorrido que no existe: no-existe.']);
+});
+
+test('manual: una página pendiente de revisión normativa no pasa en prod ni sin ambiente; en dev sí', () => {
+    const pendiente = '---\nrevision: pendiente-normativa\n---\n# FUF\n';
+    assert.equal(pendienteNormativa(pendiente), true);
+    assert.equal(pendienteNormativa('# FUF\n\nrevision: pendiente-normativa\n'), false, 'solo cuenta en el frontmatter');
+    assert.equal(pendienteNormativa('---\nrevision: lista\n---\n# FUF\n'), false);
+    const paginas = [{ slug: 'fuf/index.md', texto: pendiente }];
+    assert.equal(revisarManual({ paginas, idsRecorridos: [], ambiente: 'prod' }).length, 1);
+    assert.equal(revisarManual({ paginas, idsRecorridos: [], ambiente: undefined }).length, 1);
+    assert.deepEqual(revisarManual({ paginas, idsRecorridos: [], ambiente: 'dev' }), []);
+});
+
+test('el script real pasa sobre el proyecto tal como está (en dev)', () => {
+    const r = spawnSync(process.execPath, ['scripts/verificar-recorridos.mjs'], { cwd: RAIZ, encoding: 'utf8', env: { ...process.env, VITE_AMBIENTE: 'dev' } });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /ancla\(s\)/);
 });

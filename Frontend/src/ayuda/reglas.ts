@@ -135,3 +135,16 @@ export function entradaDeEvento(def: DefinicionRecorrido, previo: EntradaProgres
     if (ev.tipo === 'cerrar' && def.tipo !== 'anuncio') return { version: def.version, estado: 'en_progreso', ultimoPaso, cierres: cierres + 1 };
     return { version: def.version, estado: ev.tipo === 'omitir' ? 'omitido' : 'completado', ultimoPaso, cierres };
 }
+
+/**
+ * Enlace "Ver recorrido" del manual: la pantalla del recorrido con
+ * `?recorrido=<id>`, que el proveedor lanza al llegar. Solo si está disponible
+ * para la persona (publicado, vigente, visible) y su pantalla tiene una ruta sin
+ * parámetros: a `/obras/:obraId` no se puede llevar sin saber qué obra.
+ */
+export function enlaceDeRecorrido(def: DefinicionRecorrido | undefined, ctx: ContextoPersona, hoy: string): string | null {
+    if (!def || !disponible(def, ctx, hoy)) return null;
+    const ruta = (PANTALLAS[def.pantalla] as { ruta: string | null }).ruta;
+    if (!ruta || ruta.includes(':')) return null;
+    return `${ruta}?recorrido=${encodeURIComponent(def.id)}`;
+}

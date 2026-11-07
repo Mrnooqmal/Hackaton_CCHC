@@ -1,33 +1,28 @@
-# Rol: Trabajador
+# Trabajador
 
-El **trabajador** es la persona en terreno. Su uso de la plataforma se centra en **firmar** lo
-que le corresponde y quedar **apto para trabajar**.
+El **trabajador** es la persona en terreno. Lo suyo es **firmar** lo que le corresponde, quedar
+**apto para entrar a la obra** y avisar cuando ve algo inseguro.
 
-## Qué hace
+## Lo que te toca
 
-- **Firma** los documentos que se le asignan: el reglamento interno, su información de riesgos,
-  la recepción de su EPP, los procedimientos. Ver [Firmas](/modulos/firmas).
-- **Firma su asistencia** a charlas y capacitaciones. Ver [Actividades](/modulos/actividades).
-- **Responde encuestas**, incluida la ficha de salud si su empresa la usa. Ver
-  [Encuestas](/modulos/encuestas).
-- **Reporta hallazgos**: condiciones o acciones inseguras. Ver [Incidentes](/modulos/incidentes).
+1. **Entrar por primera vez**: tu RUT y, como contraseña inicial, los cuatro primeros dígitos de
+   tu RUT. Después creas tu contraseña y tu **PIN de firma**. Ver [Cómo ingresar](/empezar/ingresar).
+2. **Revisar tu Inicio**: ahí está todo lo que tienes pendiente. Si te faltan firmas
+   **obligatorias para entrar a la obra**, aparece primero un aviso: resuélvelo antes que nada.
+   Ver [Tu pantalla de Inicio](/empezar/elegir-obra#tu-pantalla-de-inicio).
+3. **Firmar** los documentos que te asignan: el reglamento interno, tu información de riesgos,
+   la recepción de tu EPP, los procedimientos. Ver [Firmar lo que te asignaron](/terreno/firmar).
+4. **Firmar tu asistencia** a charlas y capacitaciones. Ver
+   [Firmar tu asistencia](/terreno/firmar#firmar-tu-asistencia-a-una-actividad).
+5. **Responder encuestas**, incluida la Ficha Básica de Salud si tu empresa la usa. Ver
+   [Responder una encuesta](/terreno/encuestas).
+6. **Reportar hallazgos**: condiciones o acciones inseguras. Ver
+   [Reportar un hallazgo o un incidente](/terreno/reportar).
 
-## Su pantalla de Inicio
+Si no tienes teléfono propio, puedes firmar en el equipo de tu supervisor con **firma asistida**:
+te abre el documento y tú escribes **tu propio PIN**.
 
-En [Inicio](/modulos/dashboard) ve todo lo que tiene pendiente. Si le faltan firmas
-**obligatorias para entrar a la obra**, aparece primero un aviso: es lo que debe resolver antes
-que nada.
-
-## Cómo entra
-
-Con su **RUT** y, la primera vez, los **cuatro primeros dígitos de su RUT** como contraseña.
-Después crea su propia contraseña y su **PIN de firma**. Ver
-[Cómo ingresar](/guia-inicio/instalacion).
-
-Si no tiene teléfono propio, puede firmar en el equipo de su supervisor con **firma asistida**:
-el supervisor le abre el documento y él escribe su propio PIN.
-
-::: warning Consulta legal
-La validez del PIN como firma electrónica está en consulta con la Dirección del Trabajo. Ver
-[Firmas digitales y DS 44](/ds44/firmas-digitales).
+::: warning Validez del PIN
+La validez del PIN como firma electrónica está en consulta. Ver
+[Firmas: qué se registra y qué falta resolver](/fuf/firmas).
 :::

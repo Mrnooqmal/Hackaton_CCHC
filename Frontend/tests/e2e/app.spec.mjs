@@ -109,7 +109,7 @@ test.describe('a 360 px', () => {
         expect(p.x).toBeGreaterThanOrEqual(0);
         expect(p.x + p.width).toBeLessThanOrEqual(360);
         expect(p.y + p.height).toBeLessThanOrEqual(640);
-        await expect(panel.getByRole('link', { name: 'Abrir el manual de esta pantalla' })).toHaveAttribute('href', '/manual/modulos/dashboard');
+        await expect(panel.getByRole('link', { name: 'Abrir el manual de esta pantalla' })).toHaveAttribute('href', '/manual/empezar/elegir-obra');
         await expect(panel).toContainText('No hay recorridos para esta pantalla.');
         await page.screenshot({ path: 'test-results/menu-ayuda-360.png' });
         await page.keyboard.press('Escape');
@@ -125,7 +125,7 @@ test('el progreso se lee una vez por sesión, aunque se cambie de pantalla', asy
     await expect.poll(() => llamadas.progreso).toBe(1);
     await page.locator('[data-tour="global.boton-ayuda"]').click();
     await page.getByRole('region', { name: 'Ayuda' }).getByRole('link').click();
-    await expect(page).toHaveURL(/\/manual\/modulos\/dashboard/);
+    await expect(page).toHaveURL(/\/manual\/empezar\/elegir-obra/);
     await page.goBack();
     await expect(page.locator('[data-tour="global.boton-ayuda"]')).toBeVisible();
     await page.waitForTimeout(500);
@@ -277,4 +277,58 @@ test('un anuncio cerrado con la X queda como visto y no vuelve a aparecer', asyn
     await expect(page.locator('[data-tour="global.boton-ayuda"]')).toBeVisible();
     await page.waitForTimeout(1500);
     await expect(globo(page)).toHaveCount(0);
+});
+
+// ─── Manual (Fase 4) ─────────────────────────────────────────────────────────
+
+test('una dirección del manual anterior lleva a su página nueva, con la sección', async ({ page }) => {
+    await page.goto('/manual/modulos/firmas#firma-asistida');
+    await expect(page).toHaveURL(/\/manual\/obra\/pedir-firmas#firma-asistida$/);
+    await expect(page.getByRole('heading', { name: 'Firma asistida', exact: true })).toBeVisible();
+    await page.goto('/manual/ds44');
+    await expect(page).toHaveURL(/\/manual\/fuf$/);
+    await page.goto('/manual/guia-inicio/instalacion');
+    await expect(page).toHaveURL(/\/manual\/empezar\/ingresar$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Cómo ingresar a la plataforma');
+});
+
+test('?recorrido=<id> abre el recorrido y guarda su progreso; un borrador no se abre por esa vía', async ({ page }) => {
+    const llamadas = await prepararApp(page, { recorridos: RECORRIDOS_PRUEBA, progreso: [{ recorridoId: 'inicio-obligatorio', version: 1, estado: 'completado', ultimoPaso: 1, cierres: 0, actualizadoEn: '2026-11-01T00:00:00Z' }] });
+    await page.goto('/?recorrido=inicio-opcional');
+    await expect(globo(page)).toContainText('Opcional', { timeout: 5000 });
+    await page.getByRole('button', { name: 'Finalizar' }).click();
+    await expect.poll(() => llamadas.put).toEqual([{ version: 1, estado: 'completado', ultimoPaso: 0, cierres: 0 }]);
+
+    await page.evaluate(() => sessionStorage.clear());
+    await page.goto('/?recorrido=inicio-borrador');
+    await expect(page.locator('[data-tour="global.boton-ayuda"]')).toBeVisible();
+    await page.waitForTimeout(1500);
+    await expect(globo(page)).toHaveCount(0);
+});
+
+/** Reemplaza el contenido de una página del manual al servirla Vite. */
+const paginaDelManual = (page, archivo, md) => page.route(new RegExp(`/src/manual/content/${archivo.replace(/[/.]/g, '\\$&')}(\\?.*)?$`), (ruta) =>
+    ruta.fulfill({ status: 200, contentType: 'application/javascript', body: `export default ${JSON.stringify(md)};` }));
+
+const CON_RECORRIDO = '# Firmar lo que te asignaron\n\nTexto.\n\n[Ver recorrido](recorrido:inicio-opcional)\n\n[Ver el borrador](recorrido:inicio-borrador)\n';
+
+test('"Ver recorrido" en el manual: con sesión lleva a la pantalla y abre el recorrido', async ({ page }) => {
+    await prepararApp(page, { recorridos: RECORRIDOS_PRUEBA, progreso: [{ recorridoId: 'inicio-obligatorio', version: 1, estado: 'completado', ultimoPaso: 1, cierres: 0, actualizadoEn: '2026-11-01T00:00:00Z' }] });
+    await paginaDelManual(page, 'terreno/firmar.md', CON_RECORRIDO);
+    await page.goto('/');
+    await expect(page.locator('[data-tour="global.boton-ayuda"]')).toBeVisible();
+    await page.goto('/manual/terreno/firmar');
+    const enlace = page.getByRole('link', { name: 'Ver recorrido' });
+    await expect(enlace).toHaveAttribute('href', '/?recorrido=inicio-opcional');
+    await expect(page.getByRole('link', { name: 'Ver el borrador' })).toHaveCount(0);
+    await enlace.click();
+    await expect(globo(page)).toContainText('Opcional', { timeout: 5000 });
+});
+
+test('"Ver recorrido" en el manual: sin sesión no aparece', async ({ page }) => {
+    await page.route(/\/src\/ayuda\/recorridos\.ts(\?.*)?$/, (ruta) => ruta.fulfill({ status: 200, contentType: 'application/javascript', body: `export const RECORRIDOS = ${JSON.stringify(RECORRIDOS_PRUEBA)};` }));
+    await paginaDelManual(page, 'terreno/firmar.md', CON_RECORRIDO);
+    await page.goto('/manual/terreno/firmar');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Firmar lo que te asignaron');
+    await expect(page.getByRole('link', { name: 'Ver recorrido' })).toHaveCount(0);
 });

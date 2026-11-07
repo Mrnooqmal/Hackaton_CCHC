@@ -40,6 +40,7 @@ interface Seccion {
 function toPlain(md: string): string {
     return md
         .replace(/```[\s\S]*?```/g, ' ')         // bloques de código
+        .replace(/<!--[\s\S]*?-->/g, ' ')         // comentarios (marcas de captura pendiente)
         .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')    // imágenes
         .replace(/^#{1,6}\s+/gm, '')              // encabezados
         .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')  // enlaces → solo el texto

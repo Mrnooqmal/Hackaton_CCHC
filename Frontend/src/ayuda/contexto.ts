@@ -17,6 +17,8 @@ export interface ValorRecorridos {
     readonly lanzar: (id: string) => void;
     /** Id del recorrido en curso, o null. */
     readonly activo: string | null;
+    /** Ruta para abrir un recorrido desde el manual, o null si la persona no puede verlo. */
+    readonly enlaceA: (id: string) => string | null;
     readonly menuAbierto: boolean;
     readonly abrirMenu: () => void;
     readonly cerrarMenu: () => void;
@@ -24,7 +26,7 @@ export interface ValorRecorridos {
 
 const VACIO: ValorRecorridos = {
     pantalla: null, deLaPantalla: [], novedades: [], manual: '/manual', estadoDe: () => null,
-    lanzar: () => {}, activo: null, menuAbierto: false, abrirMenu: () => {}, cerrarMenu: () => {},
+    lanzar: () => {}, activo: null, enlaceA: () => null, menuAbierto: false, abrirMenu: () => {}, cerrarMenu: () => {},
 };
 
 export const ContextoRecorridos = createContext<ValorRecorridos>(VACIO);

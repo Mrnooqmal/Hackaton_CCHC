@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    colaAutomatica, deLaPantalla, entradaDeEvento, esVisible, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta, pendiente, vigente,
+    colaAutomatica, deLaPantalla, enlaceDeRecorrido, entradaDeEvento, esVisible, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta, pendiente, vigente,
 } from '../src/ayuda/reglas.ts';
 
 test('pantallaDeRuta: gana la ruta más específica y lo que no es pantalla da null', () => {
@@ -21,7 +21,7 @@ test('pantallaDeRuta: gana la ruta más específica y lo que no es pantalla da n
 });
 
 test('manualDePantalla: la página del registro, o la portada', () => {
-    assert.equal(manualDePantalla('mis-firmas'), '/manual/modulos/firmas');
+    assert.equal(manualDePantalla('mis-firmas'), '/manual/terreno/firmar');
     assert.equal(manualDePantalla('crear'), '/manual', 'sin página propia');
     assert.equal(manualDePantalla(null), '/manual');
 });
@@ -120,4 +120,15 @@ test('entradaDeEvento: cerrar un anuncio lo marca como visto, sin sumar cierres'
     const anuncio = def({ tipo: 'anuncio', vigenciaHasta: '2026-12-31' });
     assert.deepEqual(entradaDeEvento(anuncio, undefined, { tipo: 'cerrar', ultimoPaso: 0 }), { version: 2, estado: 'completado', ultimoPaso: 0, cierres: 0 });
     assert.equal(pendiente(anuncio, entradaDeEvento(anuncio, undefined, { tipo: 'cerrar', ultimoPaso: 0 })), false);
+});
+
+test('enlaceDeRecorrido: lleva a la pantalla con el pedido, solo si la persona puede verlo y la ruta no tiene parámetros', () => {
+    const hoy = '2026-11-07';
+    const p = persona(['obras.ver']);
+    assert.equal(enlaceDeRecorrido(def({ id: 'mis-obras', pantalla: 'obras' }), p, hoy), '/obras?recorrido=mis-obras');
+    assert.equal(enlaceDeRecorrido(undefined, p, hoy), null, 'no existe');
+    assert.equal(enlaceDeRecorrido(def({ pantalla: 'obras', estado: 'borrador' }), p, hoy), null, 'borrador');
+    assert.equal(enlaceDeRecorrido(def({ pantalla: 'obras', vigenciaHasta: '2026-01-01' }), p, hoy), null, 'vencido');
+    assert.equal(enlaceDeRecorrido(def({ pantalla: 'obras', visibleSi: { todos: ['obras.crear'] } }), p, hoy), null, 'sin permiso');
+    assert.equal(enlaceDeRecorrido(def({ pantalla: 'obra-detalle' }), p, hoy), null, '/obras/:obraId no se puede armar');
 });

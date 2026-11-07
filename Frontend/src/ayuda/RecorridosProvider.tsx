@@ -20,7 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { enviarProgreso, leerProgreso } from '../api/ayuda.api';
 import { RECORRIDOS } from './recorridos';
-import { colaAutomatica, deLaPantalla, entradaDeEvento, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta } from './reglas';
+import { colaAutomatica, deLaPantalla, enlaceDeRecorrido, entradaDeEvento, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta } from './reglas';
 import type { ContextoPersona } from './reglas';
 import { fusionar } from './fusion';
 import type { EntradaProgreso } from './fusion';
@@ -49,15 +49,16 @@ const marcarAutomatico = () => {
 interface Activo { def: DefinicionRecorrido; persistir: boolean; ruta: string }
 
 /**
- * Vista previa pedida en la URL con que se abrió la app. Se lee una sola vez:
- * al entrar sin ámbito elegido la app pasa por /seleccionar-obra y vuelve sin
- * la consulta, así que se recuerda la ruta y se lanza al volver a ella.
+ * Recorrido pedido en la URL: `?recorrido=<id>` lo abre (el "Ver recorrido" del
+ * manual) y `&previa=1` lo abre en vista previa, sin guardar nada. Se recuerda
+ * la ruta: al entrar sin ámbito elegido la app pasa por /seleccionar-obra y
+ * vuelve sin la consulta, y se lanza al volver a ella.
  */
-function previaDeLaUrl(): { id: string; ruta: string } | null {
-    if (typeof window === 'undefined') return null;
-    const q = new URLSearchParams(window.location.search);
+interface Pedido { id: string; ruta: string; previa: boolean }
+function pedidoDe(search: string, ruta: string): Pedido | null {
+    const q = new URLSearchParams(search);
     const id = q.get('recorrido');
-    return q.get('previa') === '1' && id ? { id, ruta: window.location.pathname } : null;
+    return id ? { id, ruta, previa: q.get('previa') === '1' } : null;
 }
 
 export default function RecorridosProvider({ children }: { children: ReactNode }) {
@@ -77,7 +78,7 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
     const [registrar, setRegistrar] = useState(true);
     const [activo, setActivo] = useState<Activo | null>(null);
     const [menuAbierto, setMenuAbierto] = useState(false);
-    const [previa, setPrevia] = useState(previaDeLaUrl);
+    const [previa, setPrevia] = useState<Pedido | null>(null);
     const enviando = useRef(false);
     const progresoRef = useRef(progreso);
     useEffect(() => { progresoRef.current = progreso; }, [progreso]);
@@ -147,20 +148,30 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
         return () => window.clearTimeout(t);
     }, [quien, scopeElegido, cargado, registrar, activo, previa, hayBloqueo, pantalla, progreso, persona, hoy, location.pathname]);
 
-    // Vista previa (`?recorrido=<id>&previa=1`): en la pantalla real, tal como
-    // está la definición, sin escribir progreso. Ocupa el recorrido automático
-    // de la sesión, para no mezclarse con uno de verdad.
+    // Un recorrido pedido en la URL (al entrar o al navegar desde el manual).
+    useEffect(() => {
+        const pedido = pedidoDe(location.search, location.pathname);
+        if (!pedido) return;
+        const t = window.setTimeout(() => setPrevia(pedido), 0);
+        return () => window.clearTimeout(t);
+    }, [location.search, location.pathname]);
+
+    // Lanzar lo pedido al llegar a su ruta. La vista previa abre la definición
+    // tal como está, también en borrador, y no escribe progreso. El pedido normal
+    // ("Ver recorrido") solo abre lo que la persona puede ver, y sí guarda. Los
+    // dos ocupan el recorrido automático de la sesión.
     useEffect(() => {
         if (!previa || !quien || !scopeElegido || activo || location.pathname !== previa.ruta) return;
         const def = RECORRIDOS.find((d) => d.id === previa.id);
         const t = window.setTimeout(() => {
             setPrevia(null);
-            if (!def) { console.warn('[recorridos] vista previa: no existe el recorrido', { recorrido: previa.id }); return; }
+            if (!def) { console.warn('[recorridos] recorrido pedido en la URL que no existe', { recorrido: previa.id }); return; }
+            if (!previa.previa && !enlaceDeRecorrido(def, persona, hoy)) return;
             marcarAutomatico();
-            setActivo({ def, persistir: false, ruta: previa.ruta });
+            setActivo({ def, persistir: !previa.previa, ruta: previa.ruta });
         }, 0);
         return () => window.clearTimeout(t);
-    }, [previa, quien, scopeElegido, activo, location.pathname]);
+    }, [previa, quien, scopeElegido, activo, location.pathname, persona, hoy]);
 
     // Cambiar de pantalla termina el recorrido en curso (el motor registra el cierre al desmontarse).
     useEffect(() => {
@@ -187,6 +198,7 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
         estadoDe: (id: string) => progreso.get(id)?.estado ?? null,
         lanzar,
         activo: activo?.def.id ?? null,
+        enlaceA: (id: string) => (user ? enlaceDeRecorrido(RECORRIDOS.find((d) => d.id === id), persona, hoy) : null),
         menuAbierto,
         abrirMenu: () => setMenuAbierto(true),
         cerrarMenu: () => setMenuAbierto(false),
