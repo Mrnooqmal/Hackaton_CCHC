@@ -219,9 +219,15 @@ Resources:
                 Override: true
           - !Ref AWS::NoValue
 
-  # www.buildandserve.cl -> https://buildandserve.cl, con la ruta y la consulta.
-  # Una sola URL canónica: los enlaces de los correos, el CORS y las cookies
-  # hablan de la raíz (D-21).
+  # www.buildandserve.cl y d30jksx91fodea.cloudfront.net -> https://buildandserve.cl,
+  # con la ruta y la consulta. Una sola URL canónica: los enlaces de los correos,
+  # el CORS y las cookies hablan de la raíz (D-21). La de CloudFront se redirige
+  # desde D-34: el CORS de prod ya no la acepta, y una página servida ahí no
+  # podría hablar con la API.
+  #
+  # Va en la misma función que www porque una distribución admite una sola
+  # función por evento. El nombre y el id lógico se conservan: cambiarlos
+  # reemplazaría una función asociada a la distribución.
   RedireccionWww:
     Type: AWS::CloudFront::Function
     Condition: ConDominio
@@ -229,13 +235,13 @@ Resources:
       Name: buildandserve-www-a-raiz
       AutoPublish: true
       FunctionConfig:
-        Comment: Redirige www a la raiz del dominio
+        Comment: Redirige www y el dominio de CloudFront a la raiz del dominio
         Runtime: cloudfront-js-2.0
       FunctionCode: |
         function handler(event) {
           var req = event.request;
-          var host = req.headers.host ? req.headers.host.value : '';
-          if (host !== 'www.buildandserve.cl') return req;
+          var host = req.headers.host ? req.headers.host.value.toLowerCase() : '';
+          if (host !== 'www.buildandserve.cl' && host !== 'd30jksx91fodea.cloudfront.net') return req;
           // Igual si CloudFront entrega la consulta codificada o decodificada.
           function cod(x) { try { return encodeURIComponent(decodeURIComponent(x)); } catch (e) { return encodeURIComponent(x); } }
           var qs = [];

@@ -65,6 +65,12 @@ done
 if [ -n "$CERT" ]; then echo "== dominio: $DOMINIO_PROD y www con $CERT"
 else echo "== AVISO: no hay certificado emitido para $DOMINIO_PROD y www; la distribución de producción queda sin dominio propio." >&2; fi
 
+# Dónde se mira lo que sirve cada distribución. En producción, el dominio propio:
+# la URL de CloudFront redirige todo a él desde D-34.
+dominio_de() {
+    if [ "$1" = DominioDistribucion ] && [ -n "$CERT" ]; then echo "$DOMINIO_PROD"; else salida "$STACK_FRONTEND" "$1"; fi
+}
+
 TMP="$(mktemp -d)"
 trap 'git -C "$RAIZ" worktree remove --force "$TMP/wt" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 git -C "$RAIZ" worktree add --detach --quiet "$TMP/wt" "$SHA"
@@ -95,7 +101,7 @@ done
 # la política nueva. Puede ser de otro commit que el de esta infra.
 if [ "$CSP_MODO" = activa ]; then
     for par in "DominioDistribucion:$CSP" "DominioDistribucionDev:$CSP_DEV"; do
-        DOMINIO="$(salida "$STACK_FRONTEND" "${par%%:*}")"
+        DOMINIO="$(dominio_de "${par%%:*}")"
         curl -fsS "https://$DOMINIO/index.html" -o "$TMP/servido.html" \
             || { echo "No se pudo leer el index.html de https://$DOMINIO." >&2; exit 1; }
         node "$TMP/wt/infra/hashes-csp.js" --verificar "${par#*:}" "$TMP/servido.html" src/utils/informesHtml.ts \
@@ -112,7 +118,7 @@ aws cloudformation deploy \
     --no-fail-on-empty-changeset
 
 for par in DominioDistribucion DominioDistribucionDev; do
-    DOMINIO="$(salida "$STACK_FRONTEND" "$par")"
+    DOMINIO="$(dominio_de "$par")"
     echo "== cabeceras que sirve https://$DOMINIO"
     curl -sI "https://$DOMINIO/" | grep -iE 'strict-transport|x-content-type|x-frame|content-security|referrer|reporting-endpoints' || true
     # La cabecera que manda es la que llega, no la plantilla. CloudFront tarda en
@@ -129,3 +135,20 @@ for par in DominioDistribucion DominioDistribucionDev; do
         echo "https://$DOMINIO no sirve la CSP activa después de 10 minutos." >&2; exit 1
     fi
 done
+
+# D-34: la URL de CloudFront de producción redirige con 301 a la raíz del dominio,
+# con la misma ruta y consulta. Se comprueba lo que llega, con reintentos mientras
+# CloudFront propaga la función.
+if [ -n "$CERT" ]; then
+    CF_PROD="$(salida "$STACK_FRONTEND" DominioDistribucion)"
+    ESPERADO="https://$DOMINIO_PROD/verificacion/redireccion?a=1&b=dos"
+    for intento in $(seq 1 20); do
+        RESPUESTA="$(curl -sI "https://$CF_PROD/verificacion/redireccion?a=1&b=dos" | tr -d '\r')"
+        if echo "$RESPUESTA" | head -1 | grep -q ' 301' \
+            && echo "$RESPUESTA" | grep -qixF "location: $ESPERADO"; then
+            echo "== https://$CF_PROD redirige con 301 a https://$DOMINIO_PROD"; break
+        fi
+        [ "$intento" -eq 20 ] && { echo "https://$CF_PROD no redirige a https://$DOMINIO_PROD después de 10 minutos." >&2; exit 1; }
+        sleep 30
+    done
+fi

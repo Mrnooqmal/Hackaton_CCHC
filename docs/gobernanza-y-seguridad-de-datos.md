@@ -129,7 +129,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 6.6 | Política de retención de infraestructura | **Implementado** | `DeletionPolicy` y `UpdateReplacePolicy` configurados por ambiente. |
 | 6.8 | Región de tratamiento de los datos | **Evaluada y postergada** | Ver decisión D-1. |
 | 6.9 | Versionado de los buckets | **Implementado** | Habilitado en los cuatro buckets y declarado en el stack. Sustituye al punto 6.7, que lo reportaba pendiente. |
-| 6.12 | Cabeceras de seguridad del frontend | **Implementado; CSP en solo reporte, el paso a activa preparado en el árbol** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, declarados en `infra/frontend.yml`. La CSP de scripts, en modo solo reporte hasta confirmar que no hay violaciones legítimas. Ver D-14. Modo activo preparado el 6 de noviembre de 2026, sin desplegar: `CspModo` en `infra/frontend.yml`, hashes en un solo lugar (`infra/hashes-csp.js`), y `desplegar-frontend.sh` se niega a publicar un build cuyos scripts en línea no autoriza la política activa (decisión técnica: con la CSP activa, ese build dejaría la aplicación en blanco). `Backend/tests/csp-activa.test.js`. |
+| 6.12 | Cabeceras de seguridad del frontend | **Implementado; CSP activa** | HSTS, `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'` y `Referrer-Policy`, declarados en `infra/frontend.yml`. La CSP de scripts pasó a **activa** el 6 de noviembre de 2026 en las dos distribuciones (infra de `4b2db9e`), después de un mes en solo reporte sin violaciones de la aplicación; probada en dev y prod. `CspModo` permite volver a solo reporte desde el mismo commit; los hashes salen de `infra/hashes-csp.js`, y `desplegar-frontend.sh` se niega a publicar un build cuyos scripts en línea la política activa no autoriza (con la CSP activa, ese build dejaría la aplicación en blanco). `Backend/tests/csp-activa.test.js`. Ver D-14. |
 | 6.13 | Las respuestas de la API no se cachean | **Implementado** | `Cache-Control: no-store` en toda respuesta; una prueba invoca cada función HTTP y lo comprueba. |
 | 6.14 | HTML armado con texto de usuario | **Implementado** | Un solo escapado por lado y una prueba que falla si aparece un sumidero de HTML nuevo. Ver H-13. |
 | 6.15 | Token de sesión fuera del alcance de un script | **Postergado** | Vive en `localStorage`. Moverlo a una cookie `httpOnly` exige dominio propio y protección CSRF. Ver D-14. |
@@ -1344,7 +1344,8 @@ cabeceras y la CSP que ya controla CloudFront. `www` redirige a la raíz (301,
 con ruta y consulta) con una CloudFront Function: una sola URL canónica para los
 enlaces de los correos y el CORS. Con certificado propio, el TLS mínimo sube a
 **1.2** (`TLSv1.2_2021`), lo que cierra la brecha de D-14. La URL de
-CloudFront sigue sirviendo y aceptada por el backend durante la transición.
+CloudFront sigue sirviendo y aceptada por el backend durante la transición; D-34
+la cierra.
 
 **Correo.** Todo envío pasa por `lib/correo.js` (una prueba falla si otro
 archivo usa SES):
@@ -1613,6 +1614,52 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 
 - `docs/plan-respuesta-incidentes.md`: fases, responsables, criterios, escalamiento, notificación y cierre. La Ley 21.719 no fija horas para notificar ("sin dilaciones indebidas"); los plazos internos son compromisos del plan. La Ley 21.663 solo aplica si la plataforma o una constructora son calificadas como servicio esencial u operador de importancia vital.
 - `Backend/scripts/contencion.js` (lógica en `lib/gobernanza/contencion.js`): preservar evidencia con huella, revocar sesiones, suspender y reactivar cuentas, revocar vales de firma. Exigen operador y motivo, y quedan en la auditoría.
+
+### D-34. Producción solo en buildandserve.cl: la URL de CloudFront sale del CORS y se redirige
+**Estado: decidido el 6 de noviembre de 2026; preparado en el árbol, sin desplegar.
+D-33 la usa la rama `tours` (recorridos guiados).**
+
+**Qué se decidió.** La URL de CloudFront de producción
+(`https://d30jksx91fodea.cloudfront.net`) deja de ser un origen de la aplicación:
+
+- sale de `corsOrigins.prod` en `Backend/serverless.yml`, que es el CORS de la API
+  y de los buckets de prod: queda solo `https://buildandserve.cl`;
+- la función de CloudFront que redirigía `www` (`RedireccionWww`) redirige
+  también ese host con 301 a `https://buildandserve.cl`, con la misma ruta y
+  consulta. Va en la misma función porque una distribución admite una sola
+  función por evento, y conserva nombre e identificador para no reemplazarla
+  estando asociada. No agrega recursos al stack del frontend.
+
+Las dos cosas van juntas: sin la redirección, una página servida en ese host
+cargaría y no podría hablar con la API.
+
+**Por qué sin medir.** El pendiente decía medir antes el tráfico con ese
+`Origin`. No se puede con los registros actuales: la API de prod no tiene
+registro de acceso (y el de HTTP API no permite registrar `Origin`), ningún
+handler registra esa cabecera, y la distribución no tiene registro de
+CloudFront. Medir exigía activar uno de esos registros y esperar. Se decidió no
+hacerlo: en prod solo existen las dos empresas del equipo y no hay clientes
+reales, así que se corta antes de la marcha blanca, cuando no afecta a nadie de
+afuera.
+
+**Lo que queda, conocido.** El service worker de la app responde las
+navegaciones con el `index.html` del precaché. Quien la instaló desde la URL de
+CloudFront la sigue abriendo desde caché en ese origen, y su service worker no
+se actualiza, porque `sw.js` responde 301 y los navegadores no aceptan un script
+de service worker redirigido. Esa copia ya no puede hablar con la API. Se
+resuelve borrando los datos del sitio de ese origen y reinstalando desde
+`https://buildandserve.cl`; hoy solo afecta al equipo.
+
+**Verificación.** `Backend/tests/dominio-unico-prod.test.js` ejecuta la función
+de CloudFront con eventos reales (los dos hosts redirigidos, ruta y consulta con
+valores vacíos, repetidos y con espacios, host en mayúsculas; el dominio propio
+y otros hosts pasan), y fija el CORS de prod, que los scripts verifiquen prod en
+el dominio propio y que ningún código use la URL de CloudFront. Al desplegar,
+`desplegar-infra-frontend.sh` comprueba el 301, y la prueba de punta a punta en
+prod, que la API rechaza ese origen. Los scripts de despliegue verificaban prod
+en la URL de CloudFront: con la redirección habrían fallado en cada archivo, y
+ahora verifican en `buildandserve.cl`. El enlace de las licencias, cuando falta
+`FRONTEND_URL`, también pasó al dominio propio.
 
 ## 4. Hallazgos priorizados
 

@@ -43,7 +43,9 @@ API_OTRO="$(salida "BuildAndServe-$OTRO" HttpApiUrl)"
 if [ "$AMBIENTE" = prod ]; then
     BUCKET="$(salida "$STACK_FRONTEND" Bucket)"
     DISTRIBUCION="$(salida "$STACK_FRONTEND" DistribucionId)"
-    DOMINIO="$(salida "$STACK_FRONTEND" DominioDistribucion)"
+    # Se verifica en el dominio propio: la URL de CloudFront de producción
+    # redirige todo a https://buildandserve.cl desde D-34.
+    DOMINIO=buildandserve.cl
 else
     BUCKET="$(salida "$STACK_FRONTEND" BucketDev)"
     DISTRIBUCION="$(salida "$STACK_FRONTEND" DistribucionDevId)"
@@ -130,10 +132,4 @@ while IFS= read -r f; do
 done < <(cd dist && find . -type f | sed 's|^\./||')
 echo "archivos: $total, distintos: $distintos"
 [ "$distintos" -eq 0 ] || exit 1
-# Producción: además, lo que sirve el dominio propio (si ya resuelve).
-if [ "$AMBIENTE" = prod ] && curl -fsS -o /dev/null --max-time 10 https://buildandserve.cl/ 2>/dev/null; then
-    curl -fsS https://buildandserve.cl/index.html | cmp -s - dist/index.html \
-        || { echo "https://buildandserve.cl no sirve el index.html recién publicado." >&2; exit 1; }
-    echo "== https://buildandserve.cl sirve el mismo build"
-fi
 echo "Publicado $SHA ($AMBIENTE) en https://$DOMINIO"

@@ -30,15 +30,16 @@ custom:
   # Cada backend acepta el frontend de su ambiente (D-20). El de dev sale de la
   # salida del stack del frontend, así que ese stack se despliega primero. Dev ya
   # no acepta la URL de producción: QA prueba en su distribución.
-  # Producción sale en su dominio (D-21). La URL de CloudFront sigue aceptada
-  # durante la transición: quien tenga un enlace viejo o la app abierta.
+  # Producción sale solo en su dominio (D-21, D-34). La URL de CloudFront
+  # (d30jksx91fodea.cloudfront.net) ya no se acepta: la distribución la redirige
+  # con 301 a https://buildandserve.cl, así que ninguna página de la app corre en
+  # ese origen. Esta lista es también el CORS de los buckets de prod.
   frontendUrl:
     prod: https://buildandserve.cl
     dev: https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
   corsOrigins:
     prod:
       - https://buildandserve.cl
-      - https://d30jksx91fodea.cloudfront.net
     dev:
       - https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
       - http://localhost:5173

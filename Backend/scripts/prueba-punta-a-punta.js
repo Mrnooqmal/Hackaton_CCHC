@@ -30,7 +30,8 @@
  *      ingreso por el mismo camino.
  *   3. Permisos: la trabajadora no da de alta personas, ve el listado del
  *      personal recortado (H-16) y no ve el historial de firmas de otra (H-17).
- *   4. CORS: el origen del ambiente se acepta y otro no.
+ *   4. CORS: el origen del ambiente se acepta y otro no; en prod, tampoco la URL
+ *      de CloudFront (D-34).
  *   5. Las respuestas de la API no se cachean.
  *   6. Cierre de sesión.
  *
@@ -181,6 +182,15 @@ async function recorrer(c, empresa, personasCreadas) {
     });
     comprobar('no acepta un origen ajeno', !ajeno.headers.get('access-control-allow-origin'),
         `access-control-allow-origin: ${ajeno.headers.get('access-control-allow-origin')}`);
+    if (stage === 'prod') {
+        // D-34: la URL de CloudFront de producción ya no es un origen de la app.
+        const viejo = await fetch(`${c.api}/personas`, {
+            method: 'OPTIONS',
+            headers: { Origin: 'https://d30jksx91fodea.cloudfront.net', 'Access-Control-Request-Method': 'GET' },
+        });
+        comprobar('no acepta la URL de CloudFront de producción', !viejo.headers.get('access-control-allow-origin'),
+            `access-control-allow-origin: ${viejo.headers.get('access-control-allow-origin')}`);
+    }
 
     console.log('\n  Cierre de sesión');
     const salida = await c.pedir('POST', '/auth/logout', { token: tokenTrabajadora });
