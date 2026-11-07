@@ -1,4 +1,5 @@
-// Definiciones de los recorridos guiados (D-33).
+// Definiciones de los recorridos guiados (D-33). Guía completa:
+// docs/ayuda-contextual/como-escribir-un-recorrido.md
 //
 // Vacío hasta que se aprueben los recorridos iniciales (Fase 5). Para agregar o
 // cambiar uno:

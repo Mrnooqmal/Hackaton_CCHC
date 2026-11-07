@@ -19,7 +19,7 @@ import type { KeyboardEvent as KeyboardEventReact } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
-import type { DefinicionRecorrido } from './tipos';
+import type { DefinicionRecorrido, EventoRecorrido } from './tipos';
 import { ESPERA_ANCLA_MS, esperarAncla, traerALaVista } from './dom';
 import { ANCHO_ANGOSTO, HALO, anchoGlobo, colocar } from './posicion';
 import type { Colocacion, Rect } from './posicion';
@@ -27,7 +27,7 @@ import { TEXTOS } from './textos';
 import type { TextosMotor } from './textos';
 import './ayuda.css';
 
-export type EventoRecorrido = { tipo: 'cerrar' | 'omitir' | 'completar'; ultimoPaso: number };
+export type { EventoRecorrido };
 
 export interface PropsMotor {
     definicion: DefinicionRecorrido;

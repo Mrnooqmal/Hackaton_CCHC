@@ -20,7 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { enviarProgreso, leerProgreso } from '../api/ayuda.api';
 import { RECORRIDOS } from './recorridos';
-import { colaAutomatica, deLaPantalla, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta } from './reglas';
+import { colaAutomatica, deLaPantalla, entradaDeEvento, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta } from './reglas';
 import type { ContextoPersona } from './reglas';
 import { fusionar } from './fusion';
 import type { EntradaProgreso } from './fusion';
@@ -28,9 +28,8 @@ import { encolar, identidad, pendientesDe, vaciar } from './cola';
 import { useHayBloqueo } from './useBloqueoAyuda';
 import { bloqueado } from './bloqueo';
 import MotorRecorrido from './MotorRecorrido';
-import type { EventoRecorrido } from './MotorRecorrido';
 import { ContextoRecorridos } from './contexto';
-import type { DefinicionRecorrido } from './tipos';
+import type { DefinicionRecorrido, EventoRecorrido } from './tipos';
 
 /** Marca de la sesión que ya tuvo su recorrido automático. Solo el id de sesión. */
 const CLAVE_AUTOMATICO = 'recorridoAutomatico';
@@ -46,15 +45,6 @@ const automaticoUsado = () => {
 const marcarAutomatico = () => {
     try { sessionStorage.setItem(CLAVE_AUTOMATICO, sesionActual() || ''); } catch { /* sin almacenamiento: a lo más se repite */ }
 };
-
-/** La entrada que deja un evento, a partir del progreso conocido de esa versión. */
-function entradaDe(def: DefinicionRecorrido, previo: EntradaProgreso | undefined, ev: EventoRecorrido): EntradaProgreso {
-    const base = previo && previo.version === def.version ? previo : null;
-    const cierres = base?.cierres ?? 0;
-    const ultimoPaso = Math.max(base?.ultimoPaso ?? 0, ev.ultimoPaso);
-    if (ev.tipo === 'cerrar') return { version: def.version, estado: 'en_progreso', ultimoPaso, cierres: cierres + 1 };
-    return { version: def.version, estado: ev.tipo === 'omitir' ? 'omitido' : 'completado', ultimoPaso, cierres };
-}
 
 interface Activo { def: DefinicionRecorrido; persistir: boolean; ruta: string }
 
@@ -134,7 +124,7 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
 
     const registrarEvento = useCallback((def: DefinicionRecorrido, ev: EventoRecorrido) => {
         if (!quien) return;
-        const entrada = entradaDe(def, progresoRef.current.get(def.id), ev);
+        const entrada = entradaDeEvento(def, progresoRef.current.get(def.id), ev);
         setProgreso((mapa) => new Map(mapa).set(def.id, fusionar(mapa.get(def.id) || null, entrada).progreso));
         // Con el tratamiento bloqueado no se encola: el servidor lo rechazaría.
         if (!registrar) return;

@@ -1619,6 +1619,8 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 
 - **El estado nunca retrocede:** en una misma versión sube (`en_progreso < omitido < completado`) y los cierres y el último paso toman el máximo, así que un evento viejo que llega tarde desde la cola sin conexión no deshace nada y repetir una escritura no cambia nada. Una versión mayor reinicia; una menor se ignora.
 - **Regla de la cola de obligatorios:** completar u omitir lo saca; cerrar lo deja en curso y suma un cierre; al tercero cuenta como omitido. La aplica el servidor al fusionar.
+- **Anuncios** (decisión del 6 de noviembre de 2026): cerrarlos es haberlos visto. El frontend registra un anuncio cerrado como completado y no vuelve a aparecer; la regla de los tres cierres queda solo para los recorridos.
+- **Sin panel de administración** (Fase 3): el listado con filtros es `npm run recorridos:listar`, la vista previa es `?recorrido=<id>&previa=1` en la pantalla real, y borrador y publicación son el campo `estado` más el despliegue. Guía: `docs/ayuda-contextual/como-escribir-un-recorrido.md`.
 - **Sin escrituras a ciegas:** leer, fusionar y escribir con condición sobre la revisión; si otra escritura se metió entremedio, se vuelve a leer y a fusionar (hasta tres veces, después 409).
 - **Persona bloqueada** por una solicitud del titular: no se registra progreso (409 `TRATAMIENTO_BLOQUEADO`), y el GET devuelve `registrar: false`.
 - **Tope:** 200 recorridos por persona y empresa.

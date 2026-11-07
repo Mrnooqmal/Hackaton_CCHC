@@ -111,6 +111,9 @@ export interface DefinicionRecorrido {
     readonly pasos: readonly Paso[];
 }
 
+/** Lo que hizo la persona al terminar un recorrido (lo emite el motor). */
+export type EventoRecorrido = { tipo: 'cerrar' | 'omitir' | 'completar'; ultimoPaso: number };
+
 /** Progreso de una persona en un recorrido, como lo devuelve `GET /ayuda/progreso`. */
 export interface ProgresoRecorrido {
     readonly recorridoId: string;

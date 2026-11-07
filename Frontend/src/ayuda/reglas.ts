@@ -4,7 +4,7 @@
 
 import { PANTALLAS } from './registro.ts';
 import type { PantallaKey } from './registro.ts';
-import type { Ambito, DefinicionRecorrido, ProgresoRecorrido } from './tipos.ts';
+import type { Ambito, DefinicionRecorrido, EventoRecorrido, ProgresoRecorrido } from './tipos.ts';
 import type { EntradaProgreso } from './fusion.ts';
 
 // ─── Pantalla actual ─────────────────────────────────────────────────────────
@@ -119,3 +119,19 @@ export const deLaPantalla = (defs: readonly DefinicionRecorrido[], pantalla: Pan
 /** Anuncios vigentes que la persona puede ver, de cualquier pantalla. */
 export const novedades = (defs: readonly DefinicionRecorrido[], ctx: ContextoPersona, hoy: string) =>
     defs.filter((d) => d.tipo === 'anuncio' && disponible(d, ctx, hoy));
+
+// ─── Del evento del motor al progreso que se guarda ──────────────────────────
+
+/**
+ * La entrada de progreso que deja un evento, a partir de lo conocido de esa
+ * versión. Recorridos: cerrar suma un cierre y lo deja en curso (al tercero el
+ * servidor lo pasa a omitido). Anuncios: cerrarlos es haberlos visto, no
+ * vuelven a aparecer (decisión del 6 de noviembre de 2026, al aprobar la Fase 2).
+ */
+export function entradaDeEvento(def: DefinicionRecorrido, previo: EntradaProgreso | undefined, ev: EventoRecorrido): EntradaProgreso {
+    const base = previo && previo.version === def.version ? previo : null;
+    const cierres = base?.cierres ?? 0;
+    const ultimoPaso = Math.max(base?.ultimoPaso ?? 0, ev.ultimoPaso);
+    if (ev.tipo === 'cerrar' && def.tipo !== 'anuncio') return { version: def.version, estado: 'en_progreso', ultimoPaso, cierres: cierres + 1 };
+    return { version: def.version, estado: ev.tipo === 'omitir' ? 'omitido' : 'completado', ultimoPaso, cierres };
+}

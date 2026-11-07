@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "recorridos:verificar": "node scripts/verificar-recorridos.mjs",
     "recorridos:huellas": "node scripts/verificar-recorridos.mjs --actualizar-huellas",
+    "recorridos:listar": "node scripts/listar-recorridos.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

@@ -30,6 +30,11 @@ const RECORRIDOS_PRUEBA = [
         pasos: [{ ancla: 'global.boton-ayuda', titulo: { es: 'Opcional' }, descripcion: { es: 'Un recorrido opcional.' } }],
     },
     {
+        id: 'novedad-bandeja', tipo: 'anuncio', pantalla: 'bandeja', visibleSi: {}, ambito: 'cualquiera', version: 1,
+        reiniciarAlPublicar: false, estado: 'publicado', vigenciaHasta: '2099-12-31', titulo: { es: 'Novedad' },
+        pasos: [{ titulo: { es: 'Bandeja nueva' }, descripcion: { es: 'Ahora los avisos llegan aquí.' } }],
+    },
+    {
         id: 'inicio-borrador', tipo: 'obligatorio', pantalla: 'inicio', visibleSi: {}, ambito: 'cualquiera', version: 1,
         reiniciarAlPublicar: false, estado: 'borrador', titulo: { es: 'Borrador' },
         pasos: [{ ancla: 'global.boton-ayuda', titulo: { es: 'Borrador' }, descripcion: { es: 'Solo en vista previa.' } }],
@@ -192,7 +197,8 @@ test('el menú de ayuda lista los recorridos de la pantalla (sin borradores) y l
     await page.goto('/');
     await page.locator('[data-tour="global.boton-ayuda"]').click();
     const panel = page.getByRole('region', { name: 'Ayuda' });
-    await expect(panel.getByRole('button')).toHaveText([/Conoce el inicio\s*Visto/, /Accesos rápidos/]);
+    await expect(panel.locator('[data-tour="menu-ayuda.recorridos"]').getByRole('button')).toHaveText([/Conoce el inicio\s*Visto/, /Accesos rápidos/]);
+    await expect(panel.locator('[data-tour="menu-ayuda.novedades"]').getByRole('button')).toHaveText(['Novedad']);
     await panel.getByRole('button', { name: /Accesos rápidos/ }).click();
     await expect(globo(page)).toContainText('Opcional');
     await page.getByRole('button', { name: 'Finalizar' }).click();
@@ -251,4 +257,24 @@ test('con una confirmación abierta no se lanza solo; al cerrarla, sí (decisió
     await expect(globo(page)).toHaveCount(0);
     await confirmacion.getByRole('button', { name: 'Cancelar' }).click();
     await expect(globo(page)).toContainText('Tu ayuda', { timeout: 3000 });
+});
+
+test('un anuncio cerrado con la X queda como visto y no vuelve a aparecer', async ({ page }) => {
+    const llamadas = await prepararApp(page, { recorridos: RECORRIDOS_PRUEBA });
+    await page.goto('/inbox');
+    await expect(globo(page)).toContainText('Bandeja nueva', { timeout: 5000 });
+    await page.getByRole('button', { name: 'Cerrar recorrido' }).click();
+    await expect.poll(() => llamadas.put).toEqual([{ version: 1, estado: 'completado', ultimoPaso: 0, cierres: 0 }]);
+
+    // Sesión nueva, con lo que el servidor guardó: no vuelve.
+    await page.evaluate(() => sessionStorage.clear());
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await prepararApp(page, {
+        recorridos: RECORRIDOS_PRUEBA,
+        progreso: [{ recorridoId: 'novedad-bandeja', version: 1, estado: 'completado', ultimoPaso: 0, cierres: 0, actualizadoEn: '2026-11-06T00:00:00Z' }],
+    });
+    await page.goto('/inbox');
+    await expect(page.locator('[data-tour="global.boton-ayuda"]')).toBeVisible();
+    await page.waitForTimeout(1500);
+    await expect(globo(page)).toHaveCount(0);
 });

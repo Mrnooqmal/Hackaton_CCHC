@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    colaAutomatica, deLaPantalla, esVisible, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta, pendiente, vigente,
+    colaAutomatica, deLaPantalla, entradaDeEvento, esVisible, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta, pendiente, vigente,
 } from '../src/ayuda/reglas.ts';
 
 test('pantallaDeRuta: gana la ruta más específica y lo que no es pantalla da null', () => {
@@ -103,4 +103,21 @@ test('deLaPantalla y novedades: lo que muestra el menú de ayuda', () => {
     const defs = [def({ id: 'obl' }), def({ id: 'opc', tipo: 'opcional' }), def({ id: 'nov', tipo: 'anuncio', pantalla: 'inicio' }), def({ id: 'borr', tipo: 'opcional', estado: 'borrador' })];
     assert.deepEqual(deLaPantalla(defs, 'obras', persona([]), '2026-11-06').map((d) => d.id), ['obl', 'opc'], 'completados incluidos: se pueden volver a ver');
     assert.deepEqual(novedades(defs, persona([]), '2026-11-06').map((d) => d.id), ['nov'], 'de cualquier pantalla');
+});
+
+test('entradaDeEvento: en un recorrido, cerrar suma un cierre y lo deja en curso; omitir y completar, su estado', () => {
+    const d = def();
+    assert.deepEqual(entradaDeEvento(d, undefined, { tipo: 'cerrar', ultimoPaso: 1 }), { version: 2, estado: 'en_progreso', ultimoPaso: 1, cierres: 1 });
+    assert.deepEqual(entradaDeEvento(d, { version: 2, estado: 'en_progreso', ultimoPaso: 3, cierres: 2 }, { tipo: 'cerrar', ultimoPaso: 0 }),
+        { version: 2, estado: 'en_progreso', ultimoPaso: 3, cierres: 3 });
+    assert.deepEqual(entradaDeEvento(d, undefined, { tipo: 'omitir', ultimoPaso: 0 }), { version: 2, estado: 'omitido', ultimoPaso: 0, cierres: 0 });
+    assert.deepEqual(entradaDeEvento(d, undefined, { tipo: 'completar', ultimoPaso: 4 }), { version: 2, estado: 'completado', ultimoPaso: 4, cierres: 0 });
+    assert.deepEqual(entradaDeEvento(d, { version: 1, estado: 'en_progreso', ultimoPaso: 5, cierres: 2 }, { tipo: 'cerrar', ultimoPaso: 0 }),
+        { version: 2, estado: 'en_progreso', ultimoPaso: 0, cierres: 1 }, 'lo de una versión anterior no cuenta');
+});
+
+test('entradaDeEvento: cerrar un anuncio lo marca como visto, sin sumar cierres', () => {
+    const anuncio = def({ tipo: 'anuncio', vigenciaHasta: '2026-12-31' });
+    assert.deepEqual(entradaDeEvento(anuncio, undefined, { tipo: 'cerrar', ultimoPaso: 0 }), { version: 2, estado: 'completado', ultimoPaso: 0, cierres: 0 });
+    assert.equal(pendiente(anuncio, entradaDeEvento(anuncio, undefined, { tipo: 'cerrar', ultimoPaso: 0 })), false);
 });
