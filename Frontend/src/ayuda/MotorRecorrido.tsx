@@ -1,0 +1,297 @@
+// Motor de un recorrido: resuelve cada paso, resalta el elemento y muestra el
+// globo. No sabe nada de la API ni de la cola: avisa por `alEvento` qué hizo la
+// persona y quien lo monta decide si eso se guarda. La vista previa lo monta
+// sin guardar nada (falla 13).
+//
+// Cómo se resuelve un paso:
+//   1. Si pide abrir la ayuda, la abre (`abrirAyuda`).
+//   2. Espera su ancla con MutationObserver hasta `espera` ms (falla 2).
+//   3. Si no aparece, se salta y queda en la consola (falla 6). Si no aparece
+//      ninguna, el recorrido termina sin registrar nada.
+//   4. La trae a la vista, despejando la cabecera fija (falla 1), y la resalta.
+//
+// Completar solo se registra con el botón final (falla 4). La X, Escape o salir
+// de la pantalla a mitad de camino cuentan como cerrar (falla 3). Los textos se
+// muestran como texto plano (falla 8).
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as KeyboardEventReact } from 'react';
+import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
+import { FiX } from 'react-icons/fi';
+import type { DefinicionRecorrido } from './tipos';
+import { ESPERA_ANCLA_MS, esperarAncla, traerALaVista } from './dom';
+import { ANCHO_ANGOSTO, HALO, anchoGlobo, colocar } from './posicion';
+import type { Colocacion, Rect } from './posicion';
+import { TEXTOS } from './textos';
+import type { TextosMotor } from './textos';
+import './ayuda.css';
+
+export type EventoRecorrido = { tipo: 'cerrar' | 'omitir' | 'completar'; ultimoPaso: number };
+
+export interface PropsMotor {
+    definicion: DefinicionRecorrido;
+    /** Lo que hizo la persona. No se llama si ningún paso se pudo mostrar. */
+    alEvento: (evento: EventoRecorrido) => void;
+    /** Se llama al terminar desde el globo, haya evento o no. */
+    alTerminar: () => void;
+    abrirAyuda?: () => void;
+    textos?: TextosMotor;
+    /** Espera máxima por cada ancla, en ms. */
+    espera?: number;
+    /** Alto de la cabecera fija: el elemento no queda debajo de ella. */
+    alturaCabecera?: number;
+}
+
+/** Paso en pantalla: cuál, su elemento (null si va centrado) y si es el último que se pudo mostrar. */
+interface Visible { indice: number; elemento: HTMLElement | null; mostrados: readonly number[]; finalForzado: boolean }
+
+const avisar = (mensaje: string, datos: Record<string, unknown>) => console.warn(`[recorridos] ${mensaje}`, datos);
+
+const rectDe = (el: HTMLElement): Rect => {
+    const r = el.getBoundingClientRect();
+    return { top: r.top, left: r.left, width: r.width, height: r.height };
+};
+
+const vista = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+const mismaColocacion = (a: Colocacion | null, b: Colocacion | null) => JSON.stringify(a) === JSON.stringify(b);
+
+export default function MotorRecorrido({
+    definicion, alEvento, alTerminar, abrirAyuda, textos = TEXTOS, espera = ESPERA_ANCLA_MS, alturaCabecera = 0,
+}: PropsMotor) {
+    const pasos = definicion.pasos;
+    const [visible, setVisible] = useState<Visible | null>(null);
+    const [destino, setDestino] = useState<{ desde: number; direccion: 1 | -1; n: number }>({ desde: 0, direccion: 1, n: 0 });
+    const [objetivo, setObjetivo] = useState<Rect | null>(null);
+    const [colocacion, setColocacion] = useState<Colocacion | null>(null);
+    /** Alto del globo: cambia con el contenido de cada paso, con la clase de anclado o al cargar las fuentes. */
+    const [altoGlobo, setAltoGlobo] = useState(0);
+    const globoRef = useRef<HTMLDivElement>(null);
+    const terminado = useRef(false);
+    // Lo último conocido, para los manejadores que no se rehacen en cada render.
+    const actual = useRef<{ visible: Visible | null; alEvento: typeof alEvento; alTerminar: typeof alTerminar }>({ visible: null, alEvento, alTerminar });
+    useEffect(() => { actual.current = { visible, alEvento, alTerminar }; });
+
+    const terminar = useCallback((evento?: EventoRecorrido) => {
+        if (terminado.current) return;
+        terminado.current = true;
+        if (evento) actual.current.alEvento(evento);
+        actual.current.alTerminar();
+    }, []);
+
+    // Resolver el paso de destino, saltando hacia `direccion` los que no aparecen.
+    useEffect(() => {
+        const control = new AbortController();
+        const { desde, direccion } = destino;
+        void (async () => {
+            const previo = actual.current.visible;
+            const mostrados = previo?.mostrados ?? [];
+            for (let i = desde; i >= 0 && i < pasos.length; i += direccion) {
+                const paso = pasos[i];
+                if (paso.accion === 'abrir_ayuda') abrirAyuda?.();
+                const el = paso.ancla ? await esperarAncla(paso.ancla, document, { espera, senal: control.signal }) : null;
+                if (control.signal.aborted) return;
+                if (!paso.ancla || el) {
+                    setVisible({ indice: i, elemento: el, mostrados: [...new Set([...mostrados, i])].sort((a, b) => a - b), finalForzado: false });
+                    return;
+                }
+                avisar('ancla no encontrada: se salta el paso', { recorrido: definicion.id, version: definicion.version, paso: i + 1, ancla: paso.ancla });
+            }
+            // Se acabaron los pasos en esa dirección.
+            if (mostrados.length === 0) {
+                avisar('ningún paso se pudo mostrar: no se registra progreso', { recorrido: definicion.id, version: definicion.version, pantalla: definicion.pantalla });
+                terminar();
+                return;
+            }
+            // Hacia adelante: el último que se vio pasa a ser el final, para que
+            // completar siga saliendo del botón. Hacia atrás: se queda en el primero.
+            if (previo) setVisible(direccion === 1 ? { ...previo, finalForzado: true } : previo);
+        })();
+        return () => control.abort();
+    }, [destino, pasos, abrirAyuda, espera, definicion, terminar]);
+
+    // Salir de la pantalla a mitad de camino cuenta como cerrar. Si nunca se
+    // mostró un paso (o el modo estricto de React monta y desmonta antes de
+    // empezar), no hay nada que registrar.
+    useEffect(() => () => {
+        const v = actual.current.visible;
+        if (!terminado.current && v) {
+            terminado.current = true;
+            actual.current.alEvento({ tipo: 'cerrar', ultimoPaso: v.indice });
+        }
+    }, []);
+
+    // El foco vuelve a donde estaba al terminar.
+    useEffect(() => {
+        const previo = document.activeElement as HTMLElement | null;
+        return () => { previo?.focus?.(); };
+    }, []);
+
+    // Escape cierra, esté donde esté el foco.
+    useEffect(() => {
+        if (!visible) return;
+        const tecla = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            terminar({ tipo: 'cerrar', ultimoPaso: visible.indice });
+        };
+        document.addEventListener('keydown', tecla, true);
+        return () => document.removeEventListener('keydown', tecla, true);
+    }, [visible, terminar]);
+
+    // Traer a la vista y medir en el cuadro siguiente, ya desplazado. En
+    // pantallas angostas el globo va abajo, así que el elemento se sube; en las
+    // anchas, se centra.
+    useLayoutEffect(() => {
+        if (!visible) return;
+        const el = visible.elemento;
+        if (el) traerALaVista(el, { margenSuperior: alturaCabecera + 2 * HALO, bloque: window.innerWidth < ANCHO_ANGOSTO ? 'start' : 'center' });
+        const cuadro = requestAnimationFrame(() => setObjetivo(el ? rectDe(el) : null));
+        return () => cancelAnimationFrame(cuadro);
+    }, [visible, alturaCabecera]);
+
+    // Seguir al elemento si la página se desplaza o cambia de tamaño.
+    useEffect(() => {
+        const el = visible?.elemento;
+        if (!el) return;
+        let cuadro = 0;
+        const medir = () => {
+            cancelAnimationFrame(cuadro);
+            cuadro = requestAnimationFrame(() => setObjetivo(rectDe(el)));
+        };
+        window.addEventListener('scroll', medir, true);
+        window.addEventListener('resize', medir);
+        return () => {
+            cancelAnimationFrame(cuadro);
+            window.removeEventListener('scroll', medir, true);
+            window.removeEventListener('resize', medir);
+        };
+    }, [visible]);
+
+    // Medir el globo cada vez que cambia de alto.
+    const hayVisible = visible !== null;
+    useEffect(() => {
+        const globo = globoRef.current;
+        if (!hayVisible || !globo || typeof ResizeObserver === 'undefined') return;
+        const observador = new ResizeObserver(() => setAltoGlobo(globo.offsetHeight));
+        observador.observe(globo);
+        return () => observador.disconnect();
+    }, [hayVisible]);
+
+    // Colocar el globo con su alto real.
+    useLayoutEffect(() => {
+        const globo = globoRef.current;
+        if (!visible || !globo) return;
+        const v = vista();
+        const c = colocar(objetivo, { width: anchoGlobo(v), height: globo.offsetHeight }, v, pasos[visible.indice]?.posicion);
+        setColocacion((previa) => (mismaColocacion(previa, c) ? previa : c));
+    }, [visible, objetivo, pasos, altoGlobo]);
+
+    // El foco entra al globo en cada paso.
+    const colocado = colocacion !== null;
+    useEffect(() => {
+        if (visible && colocado) globoRef.current?.querySelector<HTMLElement>('[data-principal]')?.focus();
+    }, [visible, colocado]);
+
+    if (!visible) return null;
+
+    const { indice, mostrados } = visible;
+    const paso = pasos[indice];
+    const total = pasos.length;
+    const esFinal = indice === total - 1 || visible.finalForzado;
+    const esAnuncio = definicion.tipo === 'anuncio';
+    const previo = [...mostrados].reverse().find((i) => i < indice);
+    const idTitulo = `recorrido-${definicion.id}-titulo`;
+    const idTexto = `recorrido-${definicion.id}-texto`;
+
+    const siguiente = () => {
+        if (esFinal) { terminar({ tipo: 'completar', ultimoPaso: indice }); return; }
+        setDestino((d) => ({ desde: indice + 1, direccion: 1, n: d.n + 1 }));
+    };
+    const anterior = () => {
+        if (previo !== undefined) setDestino((d) => ({ desde: previo, direccion: -1, n: d.n + 1 }));
+    };
+
+    const teclado = (e: KeyboardEventReact<HTMLDivElement>) => {
+        const enEnlace = Boolean((e.target as HTMLElement).closest('a'));
+        if (e.key === 'ArrowRight' && !enEnlace) { e.preventDefault(); siguiente(); return; }
+        if (e.key === 'ArrowLeft' && !enEnlace && previo !== undefined) { e.preventDefault(); anterior(); return; }
+        if (e.key !== 'Tab' || !globoRef.current) return;
+        // El foco no sale del globo mientras dura el recorrido.
+        const focables = Array.from(globoRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]'));
+        if (focables.length === 0) return;
+        const primero = focables[0];
+        const ultimo = focables[focables.length - 1];
+        if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
+        else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
+    };
+
+    const estiloGlobo = colocacion
+        ? { top: colocacion.top, left: colocacion.left, width: colocacion.width }
+        : { top: 0, left: 0, width: anchoGlobo(vista()), visibility: 'hidden' as const };
+    const etiquetaColocacion = !colocacion ? undefined
+        : colocacion.modo === 'flotante' ? colocacion.lado
+            : colocacion.modo === 'anclado' ? `anclado-${colocacion.borde}` : 'centrado';
+
+    return createPortal(
+        <div className="recorrido" data-recorrido={definicion.id}>
+            <div className={`recorrido-capa${objetivo ? '' : ' recorrido-capa--opaca'}`} aria-hidden="true" />
+            {objetivo && (
+                <div
+                    className="recorrido-resalte"
+                    aria-hidden="true"
+                    style={{ top: objetivo.top - HALO, left: objetivo.left - HALO, width: objetivo.width + 2 * HALO, height: objetivo.height + 2 * HALO }}
+                />
+            )}
+            <div
+                ref={globoRef}
+                className={`recorrido-globo${colocacion?.modo === 'anclado' ? ' recorrido-globo--anclado' : ''}`}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={idTitulo}
+                aria-describedby={idTexto}
+                data-colocacion={etiquetaColocacion}
+                style={estiloGlobo}
+                onKeyDown={teclado}
+            >
+                <div className="recorrido-globo__cabecera">
+                    <h2 id={idTitulo} className="recorrido-globo__titulo">{paso.titulo.es}</h2>
+                    <button
+                        type="button"
+                        className="recorrido-globo__cerrar"
+                        onClick={() => terminar({ tipo: 'cerrar', ultimoPaso: indice })}
+                        aria-label={textos.cerrar}
+                        title={textos.cerrar}
+                    >
+                        <FiX aria-hidden="true" />
+                    </button>
+                </div>
+                <p id={idTexto} className="recorrido-globo__texto">{paso.descripcion.es}</p>
+                {paso.manual && (
+                    <Link className="recorrido-globo__manual" to={`/manual/${paso.manual}`} target="_blank" rel="noopener noreferrer">
+                        {textos.leerMas}
+                    </Link>
+                )}
+                <div className="recorrido-globo__pie">
+                    {total > 1 && <span className="recorrido-globo__progreso" aria-live="polite">{textos.paso(indice + 1, total)}</span>}
+                    <div className="recorrido-globo__acciones">
+                        {!esAnuncio && !esFinal && (
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => terminar({ tipo: 'omitir', ultimoPaso: indice })}>
+                                {textos.omitir}
+                            </button>
+                        )}
+                        {previo !== undefined && (
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={anterior}>{textos.anterior}</button>
+                        )}
+                        <button type="button" className="btn btn-primary btn-sm" data-principal onClick={siguiente}>
+                            {esFinal ? (esAnuncio ? textos.entendido : textos.finalizar) : textos.siguiente}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}

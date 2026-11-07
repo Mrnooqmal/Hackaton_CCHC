@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, type ReactNode, useId } from 'react';
 import { createPortal } from 'react-dom';
+import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 import { FiAlertTriangle } from 'react-icons/fi';
 
 interface ConfirmModalProps {
@@ -31,6 +32,10 @@ export default function ConfirmModal({
     variant = 'primary',
     icon
 }: ConfirmModalProps) {
+    const idTitulo = useId();
+    // Una confirmación (muchas son destructivas) bloquea el lanzamiento automático de recorridos.
+    useBloqueoAyuda(isOpen);
+
     // Lock body scroll when modal is open
     useEffect(() => {
         if (isOpen) {
@@ -63,12 +68,12 @@ export default function ConfirmModal({
 
     const modalContent = (
         <div className="confirm-modal-overlay" onClick={onCancel}>
-            <div className="confirm-modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-modal-container" role="alertdialog" aria-modal="true" aria-labelledby={idTitulo} onClick={(e) => e.stopPropagation()}>
                 <div className="confirm-modal-body">
                     <div className={`confirm-modal-icon ${getIconColor()}`}>
                         {icon ?? <FiAlertTriangle size={32} />}
                     </div>
-                    <h2 className="confirm-modal-title">{title}</h2>
+                    <h2 id={idTitulo} className="confirm-modal-title">{title}</h2>
                     <p className="confirm-modal-message">{message}</p>
                 </div>
                 <div className="confirm-modal-actions">

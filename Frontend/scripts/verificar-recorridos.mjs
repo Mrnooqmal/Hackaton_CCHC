@@ -32,6 +32,8 @@ export const rutasDeApp = (texto) => new Set([...texto.matchAll(/<Route\s+path="
 
 const USO_ANCLA = /\bancla\(\s*['"]([^'"]*)['"]\s*\)/g;
 const DATA_TOUR = /data-tour/;
+/** Los únicos que escriben `data-tour`: el registro (el atributo) y el motor (el selector). */
+const DUENOS_DATA_TOUR = ['src/ayuda/registro.ts', 'src/ayuda/dom.ts'];
 
 /**
  * Usos de anclas en el código. `archivos`: [{ ruta, texto }].
@@ -44,7 +46,7 @@ export function anclasEnCodigo(archivos) {
         // El registro define el helper y lo muestra en un comentario: no es un uso.
         if (ruta.endsWith('ayuda/registro.ts')) continue;
         for (const m of texto.matchAll(USO_ANCLA)) usos.set(m[1], [...(usos.get(m[1]) || []), ruta]);
-        if (DATA_TOUR.test(texto)) aMano.push(ruta);
+        if (DATA_TOUR.test(texto) && !DUENOS_DATA_TOUR.some((d) => ruta.endsWith(d))) aMano.push(ruta);
     }
     return { usos, aMano };
 }

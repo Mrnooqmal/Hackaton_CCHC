@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX } from 'react-icons/fi';
+import { useBloqueoAyuda } from '../../ayuda/useBloqueoAyuda';
 
 export interface DrawerProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export default function Drawer({ isOpen, onClose, title, subtitle, width = 480, 
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
+
+  useBloqueoAyuda(isOpen);
 
   if (!isOpen) return null;
 

@@ -55,6 +55,9 @@ const limpiarDatosLocales = () => {
     // quienes los desbloquearon: no sobreviven al cierre de sesión en un equipo
     // compartido.
     localStorage.removeItem('offlineVales');
+    // Progreso de recorridos guiados sin enviar (dato de conveniencia: perderlo
+    // solo hace que una ayuda vuelva a aparecer).
+    localStorage.removeItem('recorridosPendientes');
     // Preguntas de las encuestas asignadas, guardadas para responder sin red.
     borrarPreguntasEnCache();
     purgarAlmacenOfflineAntiguo();

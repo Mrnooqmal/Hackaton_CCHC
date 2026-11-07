@@ -10,6 +10,7 @@ import {
 import { FieldSection, FormPage, PageHeader } from '../components/ui';
 import '../css/AuthCard.css';
 import '../css/cambio-password.css';
+import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 
 // Misma regla que valida el backend (POST /auth/change-password).
 const MIN_PASSWORD = 6;
@@ -33,6 +34,8 @@ export default function ChangePassword() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const isFirstEntry = user?.passwordTemporal === true || user?.habilitado === false;
+  // El cambio obligatorio del primer ingreso no se interrumpe con un recorrido.
+  useBloqueoAyuda(isFirstEntry);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

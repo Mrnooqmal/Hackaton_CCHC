@@ -32,3 +32,22 @@ test('el patrón del identificador de recorrido es el mismo', async () => {
     assert.equal(F.ID_RECORRIDO.source, P.ID_RECORRIDO.source);
     assert.equal(F.ID_RECORRIDO.flags, P.ID_RECORRIDO.flags);
 });
+
+test('la fusión del frontend da lo mismo que la del backend en todos los casos', async () => {
+    // El frontend fusiona su copia local y su cola con su propia implementación:
+    // si difiere, la persona ve un estado que el servidor no va a guardar.
+    const F = await import(pathToFileURL(path.join(__dirname, '..', '..', 'Frontend', 'src', 'ayuda', 'fusion.ts')).href);
+    const estados = Object.values(P.ESTADOS);
+    const valores = [];
+    for (const version of [1, 2, 3]) for (const estado of estados) for (const ultimoPaso of [0, 2]) for (const cierres of [0, 2, 3, 5]) {
+        valores.push({ version, estado, ultimoPaso, cierres });
+    }
+    let casos = 0;
+    for (const actual of [null, ...valores]) {
+        for (const entrante of valores) {
+            assert.deepEqual(F.fusionar(actual, entrante), P.fusionar(actual, entrante), `${JSON.stringify(actual)} + ${JSON.stringify(entrante)}`);
+            casos += 1;
+        }
+    }
+    assert.ok(casos > 5000);
+});

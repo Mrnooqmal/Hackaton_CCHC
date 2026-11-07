@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 import PinInput from './PinInput';
 import { FiShield, FiX, FiFileText, FiCheckSquare, FiClipboard, FiCalendar } from 'react-icons/fi';
 
@@ -66,11 +67,14 @@ export default function SignatureModal({
         }
     };
 
+    // La firma es un flujo crítico: ningún recorrido se lanza solo encima.
+    useBloqueoAyuda(isOpen);
+
     if (!isOpen) return null;
 
     const modalContent = (
         <div className="signature-modal-overlay" onClick={handleClose}>
-            <div className="signature-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="signature-modal" role="dialog" aria-modal="true" aria-label={title || `Firmar ${config.label}`} onClick={(e) => e.stopPropagation()}>
                 {/* Close button */}
                 <button className="signature-modal-close" onClick={handleClose} disabled={isProcessing || loading}>
                     <FiX size={20} />

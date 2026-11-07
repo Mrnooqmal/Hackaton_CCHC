@@ -24,6 +24,8 @@ export const PANTALLAS = {
     'persona-nueva': { ruta: '/personas/nueva', descripcion: 'Agregar persona', manual: 'modulos/personas' },
     'personas-carga-masiva': { ruta: '/personas/carga-masiva', descripcion: 'Carga masiva de personas', manual: 'modulos/personas' },
     'persona-detalle': { ruta: '/personas/:rut', descripcion: 'Ficha de una persona', manual: 'modulos/personas' },
+    // Ruta antigua de la ficha, todavía en App.tsx (los enlaces viejos llegan aquí).
+    'persona-detalle-legado': { ruta: '/workers/:rut', descripcion: 'Ficha de una persona (ruta antigua)', manual: 'modulos/personas' },
     'enrolar-trabajador': { ruta: '/workers/enroll', descripcion: 'Enrolar trabajador', manual: 'modulos/personas' },
     obras: { ruta: '/obras', descripcion: 'Obras', manual: 'modulos/obras' },
     'obra-nueva': { ruta: '/obras/nueva', descripcion: 'Crear obra', manual: 'modulos/obras' },
@@ -52,7 +54,7 @@ export const PANTALLAS = {
     crear: { ruta: '/crear', descripcion: 'Crear (accesos rápidos)' },
     configuracion: { ruta: '/configuracion', descripcion: 'Configuración', manual: 'modulos/configuracion' },
     'mis-datos': { ruta: '/mis-datos', descripcion: 'Mis datos y privacidad', manual: 'modulos/datos-personales' },
-    'cambiar-contrasena': { ruta: '/change-password', descripcion: 'Cambiar contraseña', manual: 'guia-inicio/instalacion' },
+    'cambiar-contrasena': { ruta: '/change-password', descripcion: 'Cambiar contraseña', manual: 'modulos/configuracion' },
     enrolamiento: { ruta: '/enroll-me', descripcion: 'Mi enrolamiento', manual: 'guia-inicio/primeros-pasos' },
 } as const satisfies Record<string, { ruta: string | null; descripcion: string; manual?: string }>;
 
@@ -68,6 +70,11 @@ export const ANCLAS = {
     global: {
         'boton-ayuda': 'Botón de ayuda del encabezado',
         'menu-lateral': 'Menú lateral con los módulos',
+    },
+    'menu-ayuda': {
+        recorridos: 'Lista de recorridos de la pantalla, dentro del menú de ayuda',
+        manual: 'Enlace al manual de la pantalla, dentro del menú de ayuda',
+        novedades: 'Novedades, dentro del menú de ayuda',
     },
 } as const satisfies Partial<Record<PantallaKey, Record<string, string>>>;
 

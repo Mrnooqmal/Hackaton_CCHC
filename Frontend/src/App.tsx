@@ -61,6 +61,7 @@ import { ObraProvider, useObraContext } from './context/ObraContext';
 import { BrandProvider, useBrand } from './context/BrandContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PERMISSIONS } from './permissions';
+import RecorridosProvider from './ayuda/RecorridosProvider';
 import './css/index.css';
 // Estilos globales, por responsabilidad. EL ORDEN IMPORTA: con igual especificidad
 // gana el último, y cada archivo va donde estaban sus reglas en el antiguo App.css.
@@ -309,7 +310,9 @@ function App() {
           <LayoutProvider>
             <BrandProvider>
               <BrowserRouter>
-                <AppContent />
+                <RecorridosProvider>
+                  <AppContent />
+                </RecorridosProvider>
               </BrowserRouter>
             </BrandProvider>
           </LayoutProvider>
