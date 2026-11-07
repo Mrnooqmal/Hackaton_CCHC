@@ -62,7 +62,9 @@ cd "$TMP/wt/Frontend"
 
 echo "== $SHA: npm ci y build contra $API_URL"
 npm ci --no-audit --no-fund --silent
-VITE_API_URL="$API_URL" npm run build --silent >/dev/null
+# VITE_AMBIENTE decide si entran los recorridos en borrador: solo en dev, para
+# la vista previa. En prod el build los quita y falla si alguno se cuela (D-33).
+VITE_AMBIENTE="$AMBIENTE" VITE_API_URL="$API_URL" npm run build --silent >/dev/null
 
 # El bundle tiene que apuntar a esta API y a ninguna otra: ni la del otro
 # ambiente, ni otra API Gateway cualquiera, ni localhost.

@@ -113,6 +113,7 @@ npm test                               # pruebas del frontend
 
 **Vista previa:** con el frontend de dev, entra con una empresa de prueba y abre la ruta que da el listado (`/my-signatures?recorrido=mis-firmas-intro&previa=1`).
 - Muestra la definición tal como está, también en borrador, y no guarda progreso.
+- Los borradores existen solo en dev (y en `npm run dev`): el build de prod los quita, y falla si el texto de alguno se cuela por otro lado. En prod, la vista previa solo abre recorridos publicados o inactivos.
 - Si la pantalla tiene parámetros (`/obras/:obraId`), reemplázalos por una obra de esa empresa: el recorrido necesita la pantalla con datos para encontrar sus anclas.
 - Si un ancla no aparece, el paso se salta y queda en la consola del navegador como `[recorridos] ancla no encontrada`.
 
