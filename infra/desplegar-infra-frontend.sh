@@ -138,14 +138,16 @@ done
 
 # D-34: la URL de CloudFront de producción redirige con 301 a la raíz del dominio,
 # con la misma ruta y consulta. Se comprueba lo que llega, con reintentos mientras
-# CloudFront propaga la función.
+# CloudFront propaga la función. Los parámetros se comparan sin importar el orden
+# (infra/misma-url.js): CloudFront no lo conserva al recorrer la consulta.
 if [ -n "$CERT" ]; then
     CF_PROD="$(salida "$STACK_FRONTEND" DominioDistribucion)"
     ESPERADO="https://$DOMINIO_PROD/verificacion/redireccion?a=1&b=dos"
     for intento in $(seq 1 20); do
         RESPUESTA="$(curl -sI "https://$CF_PROD/verificacion/redireccion?a=1&b=dos" | tr -d '\r')"
+        LOCATION="$(echo "$RESPUESTA" | sed -n 's/^[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]: *//p' | head -1)"
         if echo "$RESPUESTA" | head -1 | grep -q ' 301' \
-            && echo "$RESPUESTA" | grep -qixF "location: $ESPERADO"; then
+            && node "$TMP/wt/infra/misma-url.js" "$ESPERADO" "$LOCATION"; then
             echo "== https://$CF_PROD redirige con 301 a https://$DOMINIO_PROD"; break
         fi
         [ "$intento" -eq 20 ] && { echo "https://$CF_PROD no redirige a https://$DOMINIO_PROD después de 10 minutos." >&2; exit 1; }
