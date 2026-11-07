@@ -1,6 +1,6 @@
 # Estado actual de Build & Serve
 
-**Actualizado: 30 de septiembre de 2026.** Este documento sirve para retomar el trabajo sin leer conversaciones anteriores. Si algo de lo que dice aquí no coincide con lo que ves en AWS o en git, gana lo que ves. Si lo compruebas, actualiza este documento.
+**Actualizado: 6 de noviembre de 2026.** Este documento sirve para retomar el trabajo sin leer conversaciones anteriores. Si algo de lo que dice aquí no coincide con lo que ves en AWS o en git, gana lo que ves. Si lo compruebas, actualiza este documento.
 
 El producto está en producción con datos reales. Ante la duda, prioriza la solidez.
 
@@ -12,17 +12,19 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
 
 | Ambiente | Pieza | Dónde | Commit |
 |---|---|---|---|
-| **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `88e5944` |
-| **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net`, que se mantiene durante la transición), bucket `buildandserve-frontend` | `88e5944` |
-| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `88e5944` |
-| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `88e5944` |
+| **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `d750646` |
+| **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net`, que se mantiene durante la transición), bucket `buildandserve-frontend` | `d750646` |
+| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `b7c3e88` |
+| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `6aa53d1` |
 | Ambos | Infra del frontend | Stack `BuildAndServe-frontend`: dos distribuciones, certificado, cabeceras, CSP y rol de publicación | `64adc40` |
+
+**Cómo se verificó (30 de octubre y 6 de noviembre de 2026).** Los scripts no dejan el commit escrito en AWS. El backend se identificó comparando el código del paquete de `personasModule` (`aws lambda get-function`) con el árbol `Backend/` de cada commit: prod coincide con `d750646` (paquete del 1 de octubre); dev, con `b7c3e88` (paquete del 15 de octubre a las 17:07, `UpdateStack` de Benjamin; `93b9a00` tiene el mismo código). El frontend, por la fecha de `index.html` en el bucket y por textos que solo existen desde ciertos commits: prod no tiene los de D-27 ni del footer nuevo; dev tiene los de `6aa53d1` y no los de `b3cb99c` (publicado por Benjamin el 23 de octubre, invalidación a las 10:33, 97 segundos después del commit: a confirmar que fue con el script).
 
 **Estado de cada pieza:**
 
 - **Dominio:** certificado de ACM para `buildandserve.cl` y `www`, validado por DNS en Cloudflare con la nube gris (sin proxy). El TLS mínimo en el dominio es 1.2. La URL de `cloudfront.net` sigue aceptando TLS 1.0 mientras dure la transición.
 - **CSP:** en **modo solo reporte** en las dos distribuciones. En prod no registra violaciones desde la publicación del 30 de septiembre, a las 02:34 UTC. Los reportes llegan a `POST /csp/reporte` (métrica `CspViolaciones` en CloudWatch).
-- **Correo:** sale de `no-responder@buildandserve.cl` y las respuestas van a `contacto@buildandserve.cl` (reenvío de Cloudflare). Hay un configuration set por ambiente con rebotes y quejas enviados a SNS. **SES sigue en sandbox** (ver pendientes).
+- **Correo:** sale de `no-responder@buildandserve.cl` y las respuestas van a `contacto@buildandserve.cl` (reenvío de Cloudflare). Hay un configuration set por ambiente con rebotes y quejas enviados a SNS. **SES está fuera del sandbox**: `aws sesv2 get-account` responde `ProductionAccessEnabled: true` y el caso `179073624400729` en `GRANTED` (verificado el 30 de octubre y el 6 de noviembre de 2026).
 - **Colas:** en dev y en prod están activas las colas de carga masiva y de avisos del EventBus, con su cola de mensajes fallidos y una alarma.
 - **Rol de publicación del frontend:** existe, pero todavía **no se exige** (`ExigirRolPublicador=false`).
 - **Recursos del stack del backend:** 464 de 500. El script de deploy avisa sobre 450 y se niega sobre 490 (D-16).
@@ -93,13 +95,11 @@ infra/desplegar-infra-frontend.sh <commit>
 
 | Cuándo | Qué | Detalle |
 |---|---|---|
-| **Próximo despliegue** | D-26: cambiar la contraseña revoca las sesiones y emite una nueva | En el árbol, sin desplegar. El índice `personaId-index` de Sessions va en un commit propio y se despliega primero (dev y prod). Después va el commit con el código, backend y frontend juntos. Verificar con `prueba-punta-a-punta.js`: hoy, contra dev, falla justamente en "crea su PIN inmediatamente después del cambio". |
+| **Próximo despliegue** | Lo que no está en prod | Verificado el 6 de noviembre de 2026: H-16 y H-17 no están desplegados en ningún ambiente; tampoco la Actividad 5 (`57c5a9b`, D-29 a D-32). D-27 y la pantalla nueva de contraseña (`d2cecfd`) están en dev y no en prod. Prod sigue en `d750646`. |
 | **Lunes 5 de octubre de 2026** | Quitar la URL de CloudFront del CORS de prod | Antes, revisar en los logs que no llegue tráfico con `Origin: https://d30jksx91fodea.cloudfront.net`. Si no llega, quitarla de `custom.corsOrigins.prod` en `Backend/serverless.yml` y desplegar prod. Actualizar D-21. |
 | **Lunes 5 de octubre de 2026** | CSP a modo activo | Solo si la métrica `CspViolaciones` de prod sigue en cero. El cambio va en `infra/frontend.yml` e `infra/desplegar-infra-frontend.sh`, y consiste en que la cabecera pase de `Content-Security-Policy-Report-Only` a `Content-Security-Policy` en las dos distribuciones. Se despliega con `desplegar-infra-frontend.sh` desde un commit pusheado. Si aparecen violaciones legítimas, se corrigen antes. |
 | **Cuando Adrean y Benjamin registren MFA** | Exigir el rol de publicación | Desplegar la infra del frontend con `ExigirRolPublicador=true`: los buckets pasan a aceptar escrituras solo del rol y se niega invalidar a las personas. Hoy nadie tiene MFA, y activarlo antes dejaría a nadie en condiciones de publicar (D-22). La siguiente etapa, GitHub Actions por OIDC, queda para después. |
-| **Urgente** | **SES: la salida del sandbox figura DENEGADA** | Al 30 de septiembre, `aws sesv2 get-account` responde `ReviewDetails.Status = DENIED`, caso `179073624400729`, con tipo de correo `TRANSACTIONAL`, sitio `https://buildandserve.cl` y la descripción de uso **vacía**. Hay que revisar el caso en el Support Center y volver a pedirlo con la descripción completa: correos transaccionales, rebotes y quejas por SNS y supresión automática. Mientras siga en sandbox, prod solo envía correos a direcciones verificadas: los de bienvenida y restablecimiento no le llegan a nadie más. |
 | Sin fecha | Timeout de la función de lotes de supresión | `gobernanzaLotes` tiene un timeout de 300 s, pero HTTP API corta a los 30 s: un lote grande se ejecuta, pero quien lo lanza recibe un error. Candidato a pasar a la cola (D-17, D-24). |
-| Sin fecha | H-16, decisión de producto | Cualquier sesión, incluida la de una trabajadora, lista todo el personal de su empresa con RUT, correo y fecha de nacimiento (`GET /personas` no exige `personas.ver`). Hay que decidir qué ve cada rol antes de restringirlo: unas quince pantallas usan ese listado. |
 | Sin fecha | H-15, decisión de producto | El Registro AT/EP y la investigación de accidentes traen datos de salud sin el resguardo de los documentos de salud. |
 | Sin fecha | Protocolo de notificación de brechas (checklist 7.4) | Ya existe con qué responder qué se expuso (D-19). Falta decidir quién notifica, en qué plazos y por qué canal: decisión legal. |
 
@@ -147,7 +147,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 
 ### Hallazgos (sección 4)
 
-H-1 a H-16. Están abiertos **H-15** y **H-16**, que esperan una decisión de producto, y lo que el checklist marca como pendiente o parcial.
+H-1 a H-17. Está abierto **H-15**, que espera una decisión de producto, y lo que el checklist marca como pendiente o parcial.
 
 ### Otros documentos
 

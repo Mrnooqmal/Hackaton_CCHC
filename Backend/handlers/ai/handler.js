@@ -13,14 +13,18 @@ const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento')
  */
 module.exports.transcribeAudio = async (event) => {
     try {
+        // Cada llamada le cuesta a la plataforma: con la contraseña inicial sin
+        // cambiar no se usa, como todo lo demás.
         const ses = conSesion(event);
         if (!ses.ok) return ses.respuesta;
+
         // El audio sale a un tercero (Google) fuera de Chile: solo con el
         // consentimiento vigente de quien dicta (finalidad `dictado_voz_ia`).
         const persona = await new PersonaService().getById(ses.sesion.personaId);
         if (!consentimientoVigente(persona, 'dictado_voz_ia')) {
             return error('Para dictar por voz, primero otorga tu consentimiento en Mis datos y privacidad. También puedes escribir el relato.', 403);
         }
+
         const body = JSON.parse(event.body || '{}');
         const { audio, mimeType } = body;
 

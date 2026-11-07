@@ -63,7 +63,10 @@ export default function IncidentReportar() {
     const [trabajadorSearch, setTrabajadorSearch] = useState('');
     const [showTrabajadorDropdown, setShowTrabajadorDropdown] = useState(false);
 
-    const [afectados, setAfectados] = useState<Array<{ nombre: string; rut: string; cargo: string }>>([{ nombre: '', rut: '', cargo: '' }]);
+    // `personaId` vincula al afectado con su ficha. El RUT solo llega cuando quien
+    // reporta puede ver las fichas (personas.ver): una trabajadora que reporta
+    // una acción insegura recibe del listado nombre, cargo e identificador (H-16).
+    const [afectados, setAfectados] = useState<Array<{ nombre: string; rut: string; cargo: string; personaId?: string }>>([{ nombre: '', rut: '', cargo: '' }]);
     const [afectadoSearch, setAfectadoSearch] = useState<string[]>(['']);
     const [showAfectadoDropdown, setShowAfectadoDropdown] = useState<boolean[]>([false]);
 
@@ -461,7 +464,7 @@ export default function IncidentReportar() {
                                                                     const nombre = `${p.nombre || ''} ${p.apellido || ''}`.trim();
                                                                     const next = [...afectadoSearch]; next[idx] = nombre; setAfectadoSearch(next);
                                                                     const nextDrop = [...showAfectadoDropdown]; nextDrop[idx] = false; setShowAfectadoDropdown(nextDrop);
-                                                                    setAfectados(afectados.map((a, i) => (i === idx ? { nombre, rut: p.rut || '', cargo: p.cargo || p.puesto || '' } : a)));
+                                                                    setAfectados(afectados.map((a, i) => (i === idx ? { nombre, rut: p.rut || '', cargo: p.cargo || p.puesto || '', personaId: p.personaId } : a)));
                                                                 }}
                                                             >
                                                                 <span className="inc-autocomplete-name">{p.nombre} {p.apellido || ''}</span>

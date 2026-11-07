@@ -4,6 +4,7 @@ const { IncidentsRepository } = require('./incidents.repository');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
+const { personaDeLaEmpresa, personasDeLaEmpresa } = require('../../lib/auth/pertenencia');
 
 const incidentsRepo = new IncidentsRepository();
 const router = Router();
@@ -154,8 +155,20 @@ async function create(request) {
             return sinPermiso('No tienes permiso para reportar incidentes y accidentes.');
         }
 
+        // Afectados elegidos del listado: llegan con su identificador, que tiene que
+        // ser de la empresa.
+        const idsAfectados = (Array.isArray(body.afectados) ? body.afectados : [])
+            .map((a) => a?.personaId).filter(Boolean);
+        if (idsAfectados.length && !await personasDeLaEmpresa(idsAfectados, sesion)) {
+            return jsonResponse({ success: false, error: 'Persona no encontrada' }, 404);
+        }
+
         // Gobernanza de hallazgos: responsable, plazo y verificacion de cierre.
         if (clasificacion === 'hallazgo') {
+            // El responsable lo nombra quien reporta, pero tiene que ser de la empresa.
+            if (body.responsableId && !await personaDeLaEmpresa(body.responsableId, sesion)) {
+                return jsonResponse({ success: false, error: 'Persona no encontrada' }, 404);
+            }
             body.gobernanza = {
                 responsableId: body.responsableId || null,
                 responsableNombre: body.responsableNombre || null,
@@ -346,11 +359,15 @@ async function updateGobernanza(request) {
             return sinPermiso('Solo supervisores y roles superiores pueden gestionar la gobernanza de hallazgos.');
         }
         const body = parseBody(request.event);
-        // Quien verifica el cierre es quien tiene la sesión.
-        if (body.estadoCierre === 'cerrado') {
-            body.verificadoPor = ses.sesion.personaId;
+        // Quién verifica y cuándo no lo dice el cliente: el repositorio no los
+        // acepta del cuerpo. Antes solo se pisaba `verificadoPor` al cerrar; con
+        // cualquier otro estado se guardaba el del cuerpo tal cual.
+        if (body.responsableId && !await personaDeLaEmpresa(body.responsableId, ses.sesion)) {
+            return jsonResponse({ success: false, error: 'Persona no encontrada' }, 404);
         }
-        const result = await incidentsRepo.updateGobernanza(request.params.id, body);
+        const result = await incidentsRepo.updateGobernanza(request.params.id, body, {
+            verificadoPor: body.estadoCierre === 'cerrado' ? ses.sesion.personaId : null,
+        });
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);

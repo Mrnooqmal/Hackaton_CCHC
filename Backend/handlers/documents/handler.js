@@ -12,6 +12,7 @@ const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { personaDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { TIPOS_SALUD, filtrarSalud, traeSalud } = require('../../lib/documentos-salud');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
@@ -257,6 +258,10 @@ module.exports.create = async (event) => {
 
         if (!DOCUMENT_TYPES[body.tipo]) {
             return error(`Tipo de documento inválido. Tipos válidos: ${Object.keys(DOCUMENT_TYPES).join(', ')}`);
+        }
+        // El relator lo nombra quien crea el documento, pero tiene que ser de la empresa.
+        if (body.relatorId && !await personaDeLaEmpresa(body.relatorId, sesion)) {
+            return error('Persona no encontrada', 404);
         }
 
         // El permiso se exige SIEMPRE: antes bastaba con no mandar `createdBy`.
@@ -1107,9 +1112,10 @@ module.exports.sign = async (event) => {
         const persona = await personaService.getById(signerPersonaId);
         if (!persona) return error('Persona no encontrada', 404);
 
-        // La persona solo puede firmar documentos de su propia empresa
-        if (documentData.tenantId && persona.tenantId && documentData.tenantId !== persona.tenantId) {
-            return error('El documento no pertenece a tu organización', 403);
+        // La persona solo puede firmar documentos de su propia empresa. 404 y no
+        // 403: que el id exista en otra empresa tampoco se informa.
+        if (persona.tenantId !== documentData.tenantId) {
+            return error('Persona no encontrada', 404);
         }
 
         const esFirmaRelator = body.tipoFirma === 'relator';
@@ -1264,7 +1270,7 @@ module.exports.signAssisted = async (event) => {
         const firmante = await personaService.getById(firmanteId);
         if (!firmante) return error('Trabajador no encontrado', 404);
         if (asistente.tenantId !== firmante.tenantId) {
-            return error('El trabajador no pertenece a tu organizacion', 403);
+            return error('Trabajador no encontrado', 404);
         }
         if (!firmante.habilitado) {
             return error('El trabajador no ha completado su enrolamiento', 400);

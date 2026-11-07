@@ -383,7 +383,12 @@ class IncidentsRepository {
 
     // ─── Gobernanza de hallazgos (reunion 2026-06-10) ────────────────────────────
     // Actualiza responsable, plazo y estado de cierre SIN tocar el resto del registro.
-    async updateGobernanza(incidentId, data) {
+    /**
+     * @param {object} data lo que el cliente puede cambiar.
+     * @param {{verificadoPor?: string|null}} servidor lo que decide el handler a
+     *   partir de la sesión: quién verificó el cierre. Nunca sale de `data`.
+     */
+    async updateGobernanza(incidentId, data, { verificadoPor = null } = {}) {
         const res = await this.dynamo.send(new GetCommand({
             TableName: this.incidentsTable,
             Key: { incidentId }
@@ -393,7 +398,7 @@ class IncidentsRepository {
             throw new Error('La gobernanza solo aplica a hallazgos');
         }
 
-        const camposPermitidos = ['responsableId', 'responsableNombre', 'plazoRespuestaISO', 'estadoCierre', 'verificadoPor', 'fechaVerificacion', 'comentarioCierre'];
+        const camposPermitidos = ['responsableId', 'responsableNombre', 'plazoRespuestaISO', 'estadoCierre', 'comentarioCierre'];
         const estadosValidos = ['abierto', 'en_proceso', 'cerrado'];
         if (data.estadoCierre && !estadosValidos.includes(data.estadoCierre)) {
             throw new Error(`Estado de cierre invalido. Validos: ${estadosValidos.join(', ')}`);
@@ -406,8 +411,9 @@ class IncidentsRepository {
         camposPermitidos.forEach((campo) => {
             if (data[campo] !== undefined) gobernanza[campo] = data[campo];
         });
-        if (data.estadoCierre === 'cerrado' && !gobernanza.fechaVerificacion) {
-            gobernanza.fechaVerificacion = new Date().toISOString();
+        if (data.estadoCierre === 'cerrado') {
+            gobernanza.verificadoPor = verificadoPor;
+            if (!gobernanza.fechaVerificacion) gobernanza.fechaVerificacion = new Date().toISOString();
         }
 
         const result = await this.dynamo.send(new UpdateCommand({

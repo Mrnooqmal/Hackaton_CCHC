@@ -84,7 +84,9 @@ const ev = (over = {}) => ({
 beforeEach(() => {
     store = {
         activity: null,        // Item que devuelve el GET de Activities
-        personas: {},          // personaId -> item de persona
+        // personaId -> item de persona. `p-1` es el relator de las altas: tiene
+        // que existir y ser de la empresa (pertenencia, ver identidad-desde-sesion).
+        personas: { 'p-1': { personaId: 'p-1', tenantId: 't-1', rol: 'trabajador', nombre: 'Ana' } },
         tenant: null,          // Item de tenant (getById)
         updates: [],           // UpdateCommand capturados
         puts: [],              // PutCommand capturados
@@ -273,8 +275,39 @@ test('PATCH rechaza un relator de otra empresa', async () => {
         solicitanteId: 'p-adm', relatorId: 'p-ajeno',
     }) }));
 
-    assert.equal(res.statusCode, 400);
+    // 404 y no 400: que el id exista en otra empresa tampoco se informa.
+    assert.equal(res.statusCode, 404);
     assert.equal(store.updates.length, 0);
+});
+
+test('CREATE rechaza con 404 un relator, responsable o asistente de otra empresa', async () => {
+    store.tenant = null;
+    store.personas['p-ajeno'] = persona({ personaId: 'p-ajeno', tenantId: 't-OTRO' });
+    const base = { tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1', planificacion: { tema: { codigo: 'FRAGUADO' } } };
+    for (const extra of [{ relatorId: 'p-ajeno' }, { responsables: ['p-ajeno'] }, { asistentesRequeridos: ['p-ajeno'] }]) {
+        const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({ ...base, ...extra }) }));
+        assert.equal(res.statusCode, 404, JSON.stringify(extra));
+    }
+    assert.equal(store.puts.length, 0);
+});
+
+test('CREATE: el aviso de la actividad sale a nombre de quien tiene la sesión, no del relator', async () => {
+    const { eventBus } = require('../lib/events/EventBus');
+    const emitir = eventBus.emit;
+    const emitidos = [];
+    eventBus.emit = async (tipo, datos) => { emitidos.push({ tipo, datos }); };
+    try {
+        store.tenant = null;
+        const res = await handler.create(ev({ sesion: SESION_CREADOR, body: JSON.stringify({
+            tipo: 'CHARLA_5MIN', titulo: 'Charla', relatorId: 'p-1', asistentesRequeridos: ['p-1'],
+            planificacion: { tema: { codigo: 'FRAGUADO' } },
+        }) }));
+        assert.equal(res.statusCode, 201, res.body);
+    } finally {
+        eventBus.emit = emitir;
+    }
+    const creada = emitidos.find((e) => e.tipo === 'activity.created');
+    assert.equal(creada?.datos.createdBy, 'p-adm');
 });
 
 // ── CREATE: validación del bloque de planificación ──

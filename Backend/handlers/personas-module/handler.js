@@ -1171,6 +1171,19 @@ module.exports.dependenciasCarga = dependenciasCarga;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
+/**
+ * Lo que ve de cada persona quien no tiene `personas.ver` (H-16): lo necesario
+ * para elegirla en una lista, nada que la identifique fuera de la empresa.
+ */
+const listadoMinimo = (p) => ({
+    personaId: p.personaId,
+    nombre: p.nombre,
+    apellidoPaterno: p.apellidoPaterno,
+    apellidoMaterno: p.apellidoMaterno,
+    apellido: p.apellido,
+    cargo: p.cargo,
+});
+
 module.exports.personasHandler = conAuditoriaSalud(async (event) => {
     const method = event.requestContext?.http?.method || event.httpMethod;
     const path = event.rawPath || event.path || '';
@@ -1190,8 +1203,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
     // caso.
     const tenantId = tenantIdDeSesion(event);
 
-    // Quién pregunta. `/personas/validate` es pública (registro de empresa) y sigue
-    // resolviéndose sin sesión; todo el resto la exige antes de tocar un dato.
+    // Quién pregunta. Toda ruta del módulo la exige antes de tocar un dato.
     const sesionRes = conSesion(event);
     const sesion = sesionRes.ok ? sesionRes.sesion : null;
     const puede = (permiso) => sesionPuede(sesion, permiso);
@@ -1601,6 +1613,17 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             const verBloqueadas = incluirBloqueadas === '1'
                 && (puede(PERMISSIONS.EMPRESA_DERECHOS_TITULARES) || puede(PERMISSIONS.EMPRESA_SUPRESION_DATOS));
             const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
+
+            // Sin `personas.ver`, el listado se recorta a lo necesario para elegir
+            // a alguien (reportar un hallazgo, ver quién está citado a una
+            // charla): identificador, nombre y cargo. Antes cualquier sesión
+            // recibía la ficha de todo el personal, con RUT, correo y fecha de
+            // nacimiento (H-16). Se revisaron las pantallas que lo usan: ninguna
+            // de las que alcanza un rol de terreno lee otro campo.
+            if (!puede(PERMISSIONS.PERSONAS_VER)) {
+                return success({ total: personas.length, personas: personas.map(listadoMinimo) });
+            }
+
             // Resuelve nombre/tipo del rol desde la def. del tenant para que el
             // frontend muestre el rol y arme las cuadrillas (quién es supervisor).
             const tenantDef = await tenantSafe(tenantId);
@@ -1624,14 +1647,13 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         // (ej. paso "admin" del onboarding de un tenant nuevo, que todavía no
         // existe) se mantiene el chequeo global informativo de siempre.
         if (method === 'GET' && personaId === 'validate') {
+            // Se decía pública (registro de empresa), pero la ruta tiene
+            // autorizador: sin sesión nunca llegaba acá. Lo que sí pasaba era que
+            // una sesión con la contraseña inicial consultaba si un RUT existe. El
+            // alta de empresa usa hoy la licencia, sin esta ruta.
+            if (!sesion) return sesionRes.respuesta;
             const rut = event.queryStringParameters?.rut;
             if (!rut) return error('El parámetro rut es requerido', 400);
-
-            if (!tenantId) {
-                const existenteGlobal = await personaService.getByRutGlobal(rut);
-                return success({ existe: !!existenteGlobal, valido: !existenteGlobal,
-                    mensaje: existenteGlobal ? `El RUT ${rut} ya está registrado en el sistema` : null });
-            }
 
             const existente = await personaService.getByRut(tenantId, rut);
             return success({ existe: !!existente, valido: !existente,

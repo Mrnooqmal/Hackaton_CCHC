@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
@@ -9,15 +9,47 @@ const { eventBus } = require('../../lib/events/EventBus');
 
 const TABLE_NAME = process.env.SIGNATURE_REQUESTS_TABLE || 'SignatureRequests';
 const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
-const { PersonaService } = require('../../lib/services/PersonaService');
-const { TenantService } = require('../../lib/services/TenantService');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
+const { conSesion, sesionPuede, esDeLaEmpresa } = require('../../lib/auth/sesion');
+const { personaDeLaEmpresa, obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { cifrarConLlaveDatos } = require('../../lib/cifradoCampo');
 const {
     llaveDe: llaveDeArreglos,
     descifrarSolicitudDeTenant,
     descifrarSolicitudesDeTenant,
 } = require('../../lib/arregloSensible');
+
+// ─── Identidad ───────────────────────────────────────────────────────────────
+//
+// Todo este módulo tomaba la identidad del cliente: la empresa de la consulta
+// (y descifraba las solicitudes de la empresa que se nombrara), el solicitante
+// del cuerpo, y el historial de cualquier persona por su id. Ahora la empresa y
+// el actor salen de la sesión, y lo que el cliente nombra (una solicitud, una
+// persona, una obra) se comprueba contra la empresa con 404.
+//
+// Quién ve qué: quien gestiona solicitudes (`firmas.crear`) ve las de su
+// empresa; el resto, solo aquellas en las que firma o que pidió.
+
+const gestiona = (sesion) => sesionPuede(sesion, PERMISSIONS.FIRMAS_CREAR);
+
+const participa = (solicitud, personaId) => solicitud.solicitanteId === personaId
+    || (solicitud.trabajadores || []).some((t) => t.personaId === personaId || t.workerId === personaId);
+
+/** La solicitud, si es de la empresa de la sesión. */
+async function solicitudDeLaEmpresa(requestId, sesion) {
+    if (!requestId) return null;
+    const r = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { requestId } }));
+    return esDeLaEmpresa(r.Item, sesion) ? r.Item : null;
+}
+
+/**
+ * Las firmas pendientes y el historial de una persona los ve ella misma, o
+ * quien puede ver el detalle de las personas (la ficha del trabajador).
+ */
+async function personaConsultable(personaId, sesion) {
+    if (personaId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.PERSONAS_DETALLE)) return null;
+    return personaDeLaEmpresa(personaId, sesion);
+}
 
 // Tipos de solicitudes de firma
 const REQUEST_TYPES = {
@@ -57,76 +89,64 @@ const REQUEST_TYPES = {
  *   trabajadoresIds: string[], // IDs de trabajadores que deben firmar
  *   fechaLimite?: string,      // Fecha límite opcional
  *   ubicacion?: string,        // Ubicación de la actividad
- *   tenantId?: string
  * }
+ * La empresa y el solicitante salen de la sesión.
  */
 module.exports.create = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!gestiona(sesion)) return error('No tienes permiso para crear solicitudes de firma', 403);
+
         const body = JSON.parse(event.body || '{}');
 
-        // Validar campos requeridos
-        const validation = validateRequired(body, ['tipo', 'titulo', 'trabajadoresIds', 'solicitanteId']);
+        const validation = validateRequired(body, ['tipo', 'titulo', 'trabajadoresIds']);
         if (!validation.valid) {
             return error(`Campos requeridos faltantes: ${validation.missing.join(', ')}`);
         }
-
-        // Validar tipo
         if (!REQUEST_TYPES[body.tipo]) {
             return error(`Tipo de solicitud inválido. Tipos válidos: ${Object.keys(REQUEST_TYPES).join(', ')}`);
         }
-
-        // Validar que hay al menos un trabajador
         if (!Array.isArray(body.trabajadoresIds) || body.trabajadoresIds.length === 0) {
             return error('Debe especificar al menos un trabajador');
         }
+        if (body.obraId && !await obraDeLaEmpresa(body.obraId, sesion)) return error('Obra no encontrada', 404);
 
-        // Obtener informacion del solicitante
-        const personaService = new PersonaService();
-        const solicitante = await personaService.getById(body.solicitanteId);
+        // Quien solicita es quien tiene la sesión: venía del cuerpo, y con él el
+        // permiso que se comprobaba y la empresa de la solicitud.
+        const solicitante = await personaDeLaEmpresa(sesion.personaId, sesion);
         if (!solicitante) return error('Solicitante no encontrado', 404);
-
-        // Enforcement: requiere permiso para crear solicitudes de firma.
-        const tenantSvc = new TenantService();
-        const tenantSolicitante = await tenantSvc.getById(solicitante.tenantId).catch(() => null);
-        if (!personaPuede(solicitante, tenantSolicitante ? tenantSolicitante.toSafeFormat() : null, PERMISSIONS.FIRMAS_CREAR)) {
-            return error('No tienes permiso para crear solicitudes de firma', 403);
-        }
-
-        // El tenant lo define el solicitante: evita crear solicitudes cruzadas entre empresas
-        const requestTenantId = solicitante.tenantId || body.tenantId || body.empresaId || 'default';
+        const requestTenantId = sesion.tenantId;
 
         // Obtener informacion de las personas asignadas (solo del mismo tenant)
         const llaveArreglos = await llaveDeArreglos(requestTenantId);
         const trabajadoresInfo = [];
         const trabajadoresOmitidos = [];
         for (const pid of body.trabajadoresIds) {
-            const persona = await personaService.getById(pid);
-            if (persona) {
-                if (persona.tenantId && persona.tenantId !== requestTenantId) {
-                    console.warn(`[SignatureRequests] Persona ${pid} pertenece a otro tenant (${persona.tenantId} != ${requestTenantId}), omitida`);
-                    trabajadoresOmitidos.push(pid);
-                    continue;
-                }
-                trabajadoresInfo.push({
-                    personaId: persona.personaId,
-                    workerId: persona.personaId, // backward compat
-                    nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
-                    // Cifrado con la llave de la empresa (D-10): la solicitud
-                    // entera viaja en cada listado, con todos sus trabajadores.
-                    rutCifrado: cifrarConLlaveDatos(persona.rut ?? null, llaveArreglos),
-                    cargo: persona.cargo,
-                    firmado: false,
-                    signatureId: null,
-                    fechaFirma: null,
-                });
+            const persona = await personaDeLaEmpresa(pid, sesion);
+            if (!persona) {
+                trabajadoresOmitidos.push(pid);
+                continue;
             }
+            trabajadoresInfo.push({
+                personaId: persona.personaId,
+                workerId: persona.personaId, // backward compat
+                nombre: `${persona.nombre} ${persona.apellido || ''}`.trim(),
+                // Cifrado con la llave de la empresa (D-10): la solicitud
+                // entera viaja en cada listado, con todos sus trabajadores.
+                rutCifrado: cifrarConLlaveDatos(persona.rut ?? null, llaveArreglos),
+                cargo: persona.cargo,
+                firmado: false,
+                signatureId: null,
+                fechaFirma: null,
+            });
         }
 
-        if (trabajadoresInfo.length === 0) {
-            return error(trabajadoresOmitidos.length > 0
-                ? 'Las personas especificadas no pertenecen a tu organización'
-                : 'Ninguna de las personas especificadas fue encontrada');
-        }
+        // Una persona ajena a la empresa se trata como inexistente (404), igual
+        // que en el resto del sistema: decir "es de otra organización" confirma
+        // que el id existe.
+        if (trabajadoresOmitidos.length > 0) return error('Persona no encontrada', 404);
 
         const now = new Date().toISOString();
         const requestId = uuidv4();
@@ -151,7 +171,7 @@ module.exports.create = async (event) => {
             tieneDocumentos: (body.documentos && body.documentos.length > 0),
 
             // Información del solicitante
-            solicitanteId: body.solicitanteId,
+            solicitanteId: sesion.personaId,
             solicitanteNombre: `${solicitante.nombre} ${solicitante.apellido || ''}`.trim(),
             solicitanteRutCifrado: cifrarConLlaveDatos(solicitante.rut ?? null, llaveArreglos),
 
@@ -193,7 +213,7 @@ module.exports.create = async (event) => {
             await eventBus.emit('signature.requested', {
                 requestId: signatureRequest.requestId,
                 personaIds,
-                requestedBy: body.solicitanteId,
+                requestedBy: sesion.personaId,
                 documentName: signatureRequest.titulo,
                 priority: isUrgent ? 'urgent' : 'normal',
                 obraId: signatureRequest.obraId
@@ -213,24 +233,24 @@ module.exports.create = async (event) => {
 
 /**
  * GET /signature-requests - Listar solicitudes de firma
- * Query params: tenantId, estado, solicitanteId, tipo, obraId
+ * Query params: estado, solicitante, tipo, obraId. La empresa sale de la sesión.
  */
 module.exports.list = async (event) => {
     try {
-        const { tenantId: qsTenantId, empresaId, estado, solicitanteId, tipo, obraId } = event.queryStringParameters || {};
-        const tenantId = qsTenantId || empresaId;
-
-        // Sin tenant no se listan solicitudes: un Scan global filtraría datos de otras empresas
-        if (!tenantId) {
-            return error('tenantId es requerido', 400);
-        }
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const tenantId = sesion.tenantId;
+        // `solicitante` filtra dentro de la empresa: no identifica a quien pide.
+        const { estado, tipo, obraId } = event.queryStringParameters || {};
+        const filtroSolicitante = (event.queryStringParameters || {}).solicitante || null;
 
         // Use GSI query for tenant isolation
         let filterParts = [];
         const expressionAttributeValues = { ':tenantId': tenantId };
 
         if (estado) { filterParts.push('estado = :estado'); expressionAttributeValues[':estado'] = estado; }
-        if (solicitanteId) { filterParts.push('solicitanteId = :solicitanteId'); expressionAttributeValues[':solicitanteId'] = solicitanteId; }
+        if (filtroSolicitante) { filterParts.push('solicitanteId = :solicitanteId'); expressionAttributeValues[':solicitanteId'] = filtroSolicitante; }
         if (tipo) { filterParts.push('tipo = :tipo'); expressionAttributeValues[':tipo'] = tipo; }
         if (obraId) { filterParts.push('obraId = :obraId'); expressionAttributeValues[':obraId'] = obraId; }
 
@@ -244,9 +264,9 @@ module.exports.list = async (event) => {
 
         const result = await docClient.send(new QueryCommand(params));
 
-        const requests = (result.Items || []).sort((a, b) =>
-            new Date(b.createdAt) - new Date(a.createdAt)
-        );
+        const requests = (result.Items || [])
+            .filter((r) => gestiona(sesion) || participa(r, sesion.personaId))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         return success({
             requests: await descifrarSolicitudesDeTenant(requests, tenantId),
@@ -264,28 +284,20 @@ module.exports.list = async (event) => {
  */
 module.exports.get = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
         const { id } = event.pathParameters || {};
 
         if (!id) {
             return error('ID de solicitud requerido');
         }
 
-        const result = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { requestId: id },
-            })
-        );
-
-        if (!result.Item) {
+        const solicitud = await solicitudDeLaEmpresa(id, sesion);
+        if (!solicitud || !(gestiona(sesion) || participa(solicitud, sesion.personaId))) {
             return error('Solicitud no encontrada', 404);
         }
-
-        // Si el caller indica su tenant, no exponer solicitudes de otras empresas
-        const { tenantId: callerTenantId } = event.queryStringParameters || {};
-        if (callerTenantId && result.Item.tenantId && result.Item.tenantId !== callerTenantId) {
-            return error('Solicitud no encontrada', 404);
-        }
+        const result = { Item: solicitud };
 
         // Obtener firmas asociadas a esta solicitud
         const signaturesResult = await docClient.send(
@@ -299,9 +311,13 @@ module.exports.get = async (event) => {
             })
         );
 
+        // Quien no gestiona ve su propia firma, no las de sus compañeros.
+        const firmas = (signaturesResult.Items || [])
+            .filter((f) => gestiona(sesion) || f.personaId === sesion.personaId);
+
         return success({
             ...(await descifrarSolicitudDeTenant(result.Item, result.Item?.tenantId)),
-            firmasDetalle: signaturesResult.Items || [],
+            firmasDetalle: firmas,
         });
     } catch (err) {
         console.error('Error getting signature request:', err);
@@ -314,42 +330,31 @@ module.exports.get = async (event) => {
  */
 module.exports.getPendingByWorker = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
         const { workerId } = event.pathParameters || {};
 
         if (!workerId) {
             return error('ID de trabajador requerido');
         }
+        if (!await personaConsultable(workerId, sesion)) return error('Persona no encontrada', 404);
 
-        // Buscar solicitudes donde el trabajador está en la lista y no ha firmado.
-        // Si el caller entrega tenantId se usa el GSI (más barato y aislado por empresa).
-        const { tenantId } = event.queryStringParameters || {};
-        let result;
-        if (tenantId) {
-            result = await docClient.send(
-                new QueryCommand({
-                    TableName: TABLE_NAME,
-                    IndexName: 'tenantId-index',
-                    KeyConditionExpression: 'tenantId = :tenantId',
-                    FilterExpression: 'estado IN (:pendiente, :enProceso)',
-                    ExpressionAttributeValues: {
-                        ':tenantId': tenantId,
-                        ':pendiente': 'pendiente',
-                        ':enProceso': 'en_proceso',
-                    },
-                })
-            );
-        } else {
-            result = await docClient.send(
-                new ScanCommand({
-                    TableName: TABLE_NAME,
-                    FilterExpression: 'estado IN (:pendiente, :enProceso)',
-                    ExpressionAttributeValues: {
-                        ':pendiente': 'pendiente',
-                        ':enProceso': 'en_proceso',
-                    },
-                })
-            );
-        }
+        // Siempre por la empresa de la sesión. Sin `tenantId` en la consulta,
+        // esto recorría la tabla de todas las empresas.
+        const result = await docClient.send(
+            new QueryCommand({
+                TableName: TABLE_NAME,
+                IndexName: 'tenantId-index',
+                KeyConditionExpression: 'tenantId = :tenantId',
+                FilterExpression: 'estado IN (:pendiente, :enProceso)',
+                ExpressionAttributeValues: {
+                    ':tenantId': sesion.tenantId,
+                    ':pendiente': 'pendiente',
+                    ':enProceso': 'en_proceso',
+                },
+            })
+        );
 
         // Filtrar las que incluyen al trabajador y no ha firmado.
         // Solicitudes antiguas solo traen workerId en la lista de trabajadores.
@@ -362,7 +367,7 @@ module.exports.getPendingByWorker = async (event) => {
         }));
 
         return success({
-            pendientes: await descifrarSolicitudesDeTenant(pendientes, pendientes[0]?.tenantId),
+            pendientes: await descifrarSolicitudesDeTenant(pendientes, sesion.tenantId),
             total: pendientes.length,
         });
     } catch (err) {
@@ -377,8 +382,13 @@ module.exports.getPendingByWorker = async (event) => {
  */
 module.exports.getHistoryByWorker = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
         const { workerId: inputId } = event.pathParameters || {};
         if (!inputId) return error('ID de persona requerido');
+        // Antes devolvía las firmas de cualquier persona de cualquier empresa.
+        if (!await personaConsultable(inputId, sesion)) return error('Persona no encontrada', 404);
 
         // Query por GSI personaId-index
         const signaturesResult = await docClient.send(
@@ -390,7 +400,8 @@ module.exports.getHistoryByWorker = async (event) => {
             })
         );
 
-        const firmas = (signaturesResult.Items || []).sort((a, b) =>
+        // Una persona con fichas en varias empresas: acá solo lo de esta.
+        const firmas = (signaturesResult.Items || []).filter((f) => f.tenantId === sesion.tenantId).sort((a, b) =>
             new Date(b.timestamp) - new Date(a.timestamp)
         );
 
@@ -400,7 +411,7 @@ module.exports.getHistoryByWorker = async (event) => {
                 const requestResult = await docClient.send(
                     new GetCommand({ TableName: TABLE_NAME, Key: { requestId: firma.requestId } })
                 );
-                historial.push({ firma, solicitud: requestResult.Item || null });
+                historial.push({ firma, solicitud: esDeLaEmpresa(requestResult.Item, sesion) ? requestResult.Item : null });
             } else {
                 historial.push({ firma, solicitud: null });
             }
@@ -418,6 +429,10 @@ module.exports.getHistoryByWorker = async (event) => {
  */
 module.exports.cancel = async (event) => {
     try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!gestiona(sesion)) return error('No tienes permiso para cancelar solicitudes de firma', 403);
         const { id } = event.pathParameters || {};
         const body = JSON.parse(event.body || '{}');
 
@@ -425,16 +440,10 @@ module.exports.cancel = async (event) => {
             return error('ID de solicitud requerido');
         }
 
-        const result = await docClient.send(
-            new GetCommand({
-                TableName: TABLE_NAME,
-                Key: { requestId: id },
-            })
-        );
-
-        if (!result.Item) {
-            return error('Solicitud no encontrada', 404);
-        }
+        // Antes cualquiera cancelaba cualquier solicitud, de cualquier empresa.
+        const solicitud = await solicitudDeLaEmpresa(id, sesion);
+        if (!solicitud) return error('Solicitud no encontrada', 404);
+        const result = { Item: solicitud };
 
         if (result.Item.estado === 'completada') {
             return error('No se puede cancelar una solicitud completada');
@@ -446,10 +455,11 @@ module.exports.cancel = async (event) => {
             new UpdateCommand({
                 TableName: TABLE_NAME,
                 Key: { requestId: id },
-                UpdateExpression: 'SET estado = :estado, motivoCancelacion = :motivo, updatedAt = :updatedAt',
+                UpdateExpression: 'SET estado = :estado, motivoCancelacion = :motivo, canceladaPor = :por, updatedAt = :updatedAt',
                 ExpressionAttributeValues: {
                     ':estado': 'cancelada',
                     ':motivo': body.motivo || 'Cancelada por el solicitante',
+                    ':por': sesion.personaId,
                     ':updatedAt': now,
                 },
             })
@@ -467,13 +477,12 @@ module.exports.cancel = async (event) => {
  */
 module.exports.getStats = async (event) => {
     try {
-        const { tenantId: qsTenantId, empresaId, solicitanteId } = event.queryStringParameters || {};
-        const tenantId = qsTenantId || empresaId;
-
-        // Sin tenant las estadísticas mezclarían datos de todas las empresas
-        if (!tenantId) {
-            return error('tenantId es requerido', 400);
-        }
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!gestiona(sesion)) return error('No tienes permiso para ver estas estadísticas', 403);
+        const tenantId = sesion.tenantId;
+        const filtroSolicitante = (event.queryStringParameters || {}).solicitante || null;
 
         const params = {
             TableName: TABLE_NAME,
@@ -482,9 +491,9 @@ module.exports.getStats = async (event) => {
             ExpressionAttributeValues: { ':tenantId': tenantId },
         };
 
-        if (solicitanteId) {
+        if (filtroSolicitante) {
             params.FilterExpression = 'solicitanteId = :solicitanteId';
-            params.ExpressionAttributeValues[':solicitanteId'] = solicitanteId;
+            params.ExpressionAttributeValues[':solicitanteId'] = filtroSolicitante;
         }
 
         const result = await docClient.send(new QueryCommand(params));
