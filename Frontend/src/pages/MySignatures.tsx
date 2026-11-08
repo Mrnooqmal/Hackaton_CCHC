@@ -77,6 +77,7 @@ import { useAuth } from '../context/AuthContext';
 import { Modal, PageHeader, SearchInput, Select } from '../components/ui';
 import { requiereFirmaRepresentante, ROL_REPRESENTANTE } from '../utils/firmaRepresentante';
 import { MsigAvanceSkeleton, MsigCardSkeleton, MsigHistRowSkeleton } from '../components/firmas/FirmasSkeleton';
+import { ancla } from '../ayuda/registro';
 
 type TabType = 'pendientes' | 'historial';
 
@@ -404,6 +405,7 @@ export default function MySignatures() {
                     activeTab={activeTab}
                     onTabChange={(id) => setActiveTab(id as TabType)}
                     tabsLabel="Vista de firmas"
+                    tabsAncla={ancla('mis-firmas.pestanas')}
                     actions={
                         <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
                             <FiRefreshCw className={loading ? 'spin' : ''} /> Actualizar
@@ -416,7 +418,7 @@ export default function MySignatures() {
                     obra) — en vez de una sola columna de tarjetas sueltas. */}
                 {activeTab === 'pendientes' && (
                     <div className="msig-layout">
-                        <div className="msig-list-col">
+                        <div className="msig-list-col" {...ancla('mis-firmas.lista')}>
                             {loading ? (
                                 <div className="msig-list">
                                     <MsigCardSkeleton i={0} />
@@ -486,7 +488,7 @@ export default function MySignatures() {
                             )}
                         </div>
 
-                        <div className="msig-avance-col">
+                        <div className="msig-avance-col" {...ancla('mis-firmas.avance')}>
                             {loading ? <MsigAvanceSkeleton /> : (
                             <section className="msig-avance-card">
                                 <div className="msig-avance-head">

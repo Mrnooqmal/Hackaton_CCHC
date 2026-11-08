@@ -26,6 +26,7 @@ import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { AlertBanner, Select, PageHeader, SegmentedControl } from '../components/ui';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { ancla } from '../ayuda/registro';
 
 // ── Carpetas del repositorio ──────────────────────────────────────────────
 // Cada documento se ubica en una carpeta según su clasificación / fase.
@@ -414,7 +415,7 @@ export default function DocumentsRepository() {
                     tabsLabel="Ámbito del repositorio"
                     actions={
                         canUpload && selectedObraId ? (
-                            <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
+                            <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)} {...ancla('repositorio.subir')}>
                                 <FiUpload /> Subir documento
                             </button>
                         ) : undefined
@@ -607,7 +608,7 @@ export default function DocumentsRepository() {
 
                 {/* ── Vista de carpetas (raíz) ── */}
                 {!loading && showFolders && carpetasVisibles.length > 0 && (
-                    <div className="repo-folder-grid">
+                    <div className="repo-folder-grid" {...ancla('repositorio.carpetas')}>
                         {carpetasVisibles.map((k) => {
                             const f = FOLDERS[k];
                             const Icon = f.icon;

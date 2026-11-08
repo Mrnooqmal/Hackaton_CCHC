@@ -7,6 +7,8 @@ El módulo de **Incidentes** registra lo que ocurre en materia de seguridad en l
 Registrarlos es la base para que no se repitan, y alimenta las **estadísticas** de la obra y los
 registros que exige el DS 44.
 
+[Ver recorrido](recorrido:reportar)
+
 ## Hallazgo, incidente o accidente
 
 - Un **hallazgo** es una condición o una acción insegura que se detecta **antes** de que cause

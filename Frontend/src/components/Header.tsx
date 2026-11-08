@@ -9,6 +9,7 @@ import { useBrand } from '../context/BrandContext';
 import LogoMarca from './LogoMarca';
 import { inboxApi } from '../api/client';
 import MenuAyuda from '../ayuda/MenuAyuda';
+import { ancla } from '../ayuda/registro';
 
 interface Crumb {
     label: string;
@@ -153,6 +154,7 @@ export default function Header() {
                     <button
                         type="button"
                         className={`header-hamburger ${isMobileMenuOpen ? 'is-open' : ''}`}
+                        {...ancla('global.boton-menu')}
                         onClick={handleToggleSidebar}
                         aria-label={isMobileMenuOpen ? 'Cerrar el menú lateral' : 'Mostrar u ocultar el menú lateral'}
                         aria-expanded={isMobileMenuOpen}
@@ -205,7 +207,7 @@ export default function Header() {
 
                 <div className="header-mainbar-right">
                     {!isLoadingObras && scopeLabel && (
-                        <span className="header-obra-label" title={`Estás trabajando en: ${scopeLabel}`}>
+                        <span className="header-obra-label" title={`Estás trabajando en: ${scopeLabel}`} {...ancla('global.obra-actual')}>
                             {scopeLabel}
                         </span>
                     )}

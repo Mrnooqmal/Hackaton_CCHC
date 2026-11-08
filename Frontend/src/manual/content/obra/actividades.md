@@ -6,6 +6,8 @@ trabajadores en torno a la seguridad: **capacitaciones**, **charlas de inicio de
 es que aquí queda el **registro de asistencia firmado**, que es la prueba de que la
 capacitación efectivamente se realizó (una exigencia clave del DS 44, Art. 16).
 
+[Ver recorrido](recorrido:programar-actividades)
+
 ## Entrar al módulo
 
 En el menú lateral, haz clic en **Actividades**. Se abrirá la pantalla **"Actividades y

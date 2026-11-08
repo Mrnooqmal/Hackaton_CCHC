@@ -1,8 +1,7 @@
 // Definiciones de los recorridos guiados (D-33). Guía completa:
 // docs/ayuda-contextual/como-escribir-un-recorrido.md
 //
-// Vacío hasta que se aprueben los recorridos iniciales (Fase 5). Para agregar o
-// cambiar uno:
+// Para agregar o cambiar uno:
 //   1. Marca en el componente cada elemento que vas a resaltar con `ancla()` y
 //      regístralo en `registro.ts`.
 //   2. Escribe o edita la definición acá. Si cambias el contenido de uno que ya
@@ -13,7 +12,323 @@
 // Los textos se muestran como texto plano. Reglas de redacción en el encargo:
 // el sistema custodia evidencia, no valida el contenido de los documentos ni
 // garantiza el cumplimiento legal.
+//
+// Recorridos iniciales (Fase 5, aprobados el 7 de noviembre de 2026): todos en
+// BORRADOR hasta que Adrean y Benja los revisen en dev con la vista previa. El
+// build de prod no los incluye (vite-borradores.ts). Las tres introducciones de
+// Inicio se reparten por permiso para que cada persona calce con una sola:
+// sin `obras.ver` (terreno), con `obras.ver` y sin `empresa.ver` (gestión de
+// obra), con `empresa.ver` (vista de empresa).
+//
+// En el teléfono, el menú lateral, la obra actual y el menú de sesión están
+// ocultos: sus pasos se saltan solos. El del botón de menú se ve en los dos.
 
 import type { DefinicionRecorrido } from './tipos.ts';
 
-export const RECORRIDOS: readonly DefinicionRecorrido[] = [];
+const t = (es: string) => ({ es });
+
+export const RECORRIDOS: readonly DefinicionRecorrido[] = [
+    // ─── Obligatorios ────────────────────────────────────────────────────────
+    {
+        id: 'inicio-terreno',
+        tipo: 'obligatorio',
+        pantalla: 'inicio',
+        visibleSi: { ninguno: ['obras.ver'] },
+        ambito: 'cualquiera',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Tu pantalla de Inicio'),
+        manual: 'roles/trabajador',
+        pasos: [
+            {
+                ancla: 'inicio.aviso-ingreso',
+                titulo: t('Antes de entrar a la obra'),
+                descripcion: t('Te faltan firmas obligatorias para ingresar a terreno. Toca este aviso y fírmalas antes que nada.'),
+            },
+            {
+                ancla: 'inicio.accesos',
+                titulo: t('Tus accesos'),
+                descripcion: t('Tus firmas, las actividades de hoy, tus encuestas y el botón para reportar un hallazgo o un incidente.'),
+            },
+            {
+                ancla: 'inicio.pendientes',
+                titulo: t('Lo que te toca'),
+                descripcion: t('Aquí aparece lo que espera por ti: firmar un documento, responder una encuesta o registrar tu asistencia. Lo atrasado va primero.'),
+                manual: 'terreno/firmar',
+            },
+            {
+                ancla: 'global.boton-ayuda',
+                titulo: t('¿Tienes dudas?'),
+                descripcion: t('En cada pantalla, este botón tiene guías como esta y la página del manual que la explica.'),
+                manual: 'empezar/ayuda',
+            },
+        ],
+    },
+    {
+        id: 'inicio-gestion',
+        tipo: 'obligatorio',
+        pantalla: 'inicio',
+        visibleSi: { alguno: ['obras.ver'], ninguno: ['empresa.ver'] },
+        ambito: 'obra',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Inicio para quien gestiona la obra'),
+        manual: 'empezar/elegir-obra',
+        pasos: [
+            {
+                ancla: 'global.obra-actual',
+                titulo: t('La obra en la que estás'),
+                descripcion: t('Todo lo que ves es de esta obra: actividades, firmas, incidentes y documentos.'),
+            },
+            {
+                ancla: 'global.menu-lateral',
+                titulo: t('Tus módulos'),
+                descripcion: t('Desde aquí entras a lo que gestionas: el detalle de la obra, personas, repositorio, actividades e incidentes.'),
+            },
+            {
+                ancla: 'global.boton-menu',
+                titulo: t('El menú'),
+                descripcion: t('Este botón muestra u oculta el menú. En el teléfono, ábrelo para entrar a tus módulos; abajo, junto a tu nombre, está Cambiar de obra.'),
+            },
+            {
+                ancla: 'global.menu-sesion',
+                titulo: t('Cambiar de obra'),
+                descripcion: t('Si trabajas en varias obras, cambias de una a otra desde este menú.'),
+            },
+            {
+                ancla: 'inicio.pendientes',
+                titulo: t('También lo tuyo'),
+                descripcion: t('Tus propias firmas y encuestas aparecen aquí, como las de cualquier persona.'),
+            },
+            {
+                ancla: 'global.boton-ayuda',
+                titulo: t('Ayuda en cada pantalla'),
+                descripcion: t('Guías como esta y el manual de la pantalla en la que estás.'),
+                manual: 'empezar/ayuda',
+            },
+        ],
+    },
+    {
+        id: 'inicio-empresa',
+        tipo: 'obligatorio',
+        pantalla: 'inicio',
+        visibleSi: { todos: ['empresa.ver'] },
+        ambito: 'empresa',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('La vista de empresa'),
+        manual: 'roles/administrador',
+        pasos: [
+            {
+                ancla: 'global.menu-lateral',
+                titulo: t('La vista de empresa'),
+                descripcion: t('Aquí configuras la empresa: obras, personas, Mi Empresa, Onboarding y catálogos.'),
+            },
+            {
+                ancla: 'global.boton-menu',
+                titulo: t('El menú'),
+                descripcion: t('Este botón muestra u oculta el menú. En el teléfono, ábrelo para configurar la empresa; abajo, junto a tu nombre, entras a una obra.'),
+            },
+            {
+                ancla: 'global.menu-sesion',
+                titulo: t('Entrar a una obra'),
+                descripcion: t('Para trabajar dentro de una obra, usa Cambiar de obra en este menú.'),
+            },
+            {
+                ancla: 'global.boton-ayuda',
+                titulo: t('Ayuda en cada pantalla'),
+                descripcion: t('Guías como esta y el manual de cada pantalla. Para empezar, revisa Mi Empresa y registra a tu equipo.'),
+                manual: 'roles/administrador',
+            },
+        ],
+    },
+    {
+        id: 'mis-firmas',
+        tipo: 'obligatorio',
+        pantalla: 'mis-firmas',
+        visibleSi: {},
+        ambito: 'cualquiera',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Firmar lo que te asignan'),
+        manual: 'terreno/firmar',
+        pasos: [
+            {
+                ancla: 'mis-firmas.pestanas',
+                titulo: t('Pendientes e historial'),
+                descripcion: t('En Pendientes está lo que espera tu firma. En Historial, todo lo que ya firmaste, con su comprobante.'),
+            },
+            {
+                ancla: 'mis-firmas.lista',
+                titulo: t('Cómo se firma'),
+                descripcion: t('Toca Firmar, lee el documento con Ver documento, escribe tu PIN de 4 dígitos y marca que lo leíste. La firma queda registrada con fecha y hora.'),
+                manual: 'terreno/firmar',
+            },
+            {
+                ancla: 'mis-firmas.avance',
+                titulo: t('Tu avance'),
+                descripcion: t('Cuánto llevas firmado este mes y lo que vence pronto en tu obra.'),
+            },
+        ],
+    },
+
+    // ─── Opcionales (desde la ayuda de cada pantalla) ───────────────────────
+    {
+        id: 'reportar',
+        tipo: 'opcional',
+        pantalla: 'incidente-reportar',
+        visibleSi: {},
+        ambito: 'cualquiera',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Hallazgo, incidente o accidente'),
+        manual: 'terreno/reportar',
+        pasos: [
+            {
+                ancla: 'incidente-reportar.tipo',
+                titulo: t('¿Hallazgo o incidente?'),
+                descripcion: t('Un hallazgo es algo inseguro que ves antes de que cause daño: cualquiera puede reportarlo. Un incidente es algo que ya pasó. Si hubo lesión, quien tiene el permiso lo califica después como accidente.'),
+                manual: 'terreno/reportar',
+            },
+            {
+                ancla: 'incidente-reportar.datos',
+                titulo: t('Qué y dónde'),
+                descripcion: t('El tipo de hallazgo y la etapa de la obra. En un incidente, además, su gravedad: leve, grave o fatal. Los graves y fatales se investigan.'),
+            },
+            {
+                ancla: 'incidente-reportar.detalle',
+                titulo: t('Qué pasó'),
+                descripcion: t('Cuéntalo con claridad. Puedes dictarlo si lo autorizaste en Mis datos y privacidad.'),
+            },
+            {
+                ancla: 'incidente-reportar.evidencia',
+                titulo: t('Fotos'),
+                descripcion: t('Una foto ayuda a entender y a corregir. El reporte queda con tu nombre como quien lo hizo.'),
+            },
+        ],
+    },
+    {
+        id: 'cambiar-de-obra',
+        tipo: 'opcional',
+        pantalla: 'inicio',
+        visibleSi: { alguno: ['obras.ver'] },
+        ambito: 'cualquiera',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Trabajar en varias obras'),
+        manual: 'empezar/elegir-obra',
+        pasos: [
+            {
+                ancla: 'global.obra-actual',
+                titulo: t('La obra en la que estás'),
+                descripcion: t('Todo lo que ves es de esta obra: actividades, firmas, incidentes y documentos.'),
+            },
+            {
+                ancla: 'global.boton-menu',
+                titulo: t('El menú'),
+                descripcion: t('Este botón muestra u oculta el menú. En el teléfono, ábrelo: abajo, junto a tu nombre, está Cambiar de obra.'),
+            },
+            {
+                ancla: 'global.menu-sesion',
+                titulo: t('Cambiar de obra'),
+                descripcion: t('Desde este menú cambias de obra o, si administras la empresa, vuelves a la vista de empresa.'),
+            },
+        ],
+    },
+    {
+        id: 'programar-actividades',
+        tipo: 'opcional',
+        pantalla: 'actividades',
+        visibleSi: { alguno: ['actividades.crear', 'actividades.planificar'] },
+        ambito: 'obra',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Charlas y capacitaciones'),
+        manual: 'obra/actividades',
+        pasos: [
+            {
+                ancla: 'actividades.vistas',
+                titulo: t('Lista o calendario'),
+                descripcion: t('La lista muestra lo de hoy y lo que falta completar; el calendario, el mes completo.'),
+            },
+            {
+                ancla: 'actividades.planificar',
+                titulo: t('Planificar el mes'),
+                descripcion: t('Arma de una vez los borradores del mes. Cada responsable completa después el detalle del día.'),
+                manual: 'obra/actividades',
+            },
+            {
+                ancla: 'actividades.nueva',
+                titulo: t('Una actividad suelta'),
+                descripcion: t('Para una charla o una capacitación que no estaba planificada.'),
+            },
+            {
+                ancla: 'actividades.por-completar',
+                titulo: t('Por completar'),
+                descripcion: t('Los borradores del plan que te tocan: ábrelos, escribe el tema y quedan programados.'),
+            },
+        ],
+    },
+    {
+        id: 'subir-documentos',
+        tipo: 'opcional',
+        pantalla: 'repositorio',
+        visibleSi: { todos: ['repositorio.subir'] },
+        ambito: 'cualquiera',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Guardar y versionar documentos'),
+        manual: 'obra/documentos',
+        pasos: [
+            {
+                ancla: 'repositorio.carpetas',
+                titulo: t('Cómo está ordenado'),
+                descripcion: t('Por carpeta. En DS44 · Cumplimiento, por sección del formulario de fiscalización.'),
+            },
+            {
+                ancla: 'repositorio.subir',
+                titulo: t('Subir un documento'),
+                descripcion: t('La plataforma guarda el archivo y su historial de versiones. No revisa su contenido: que sea correcto y esté al día es responsabilidad de quien lo sube.'),
+                manual: 'obra/documentos',
+            },
+        ],
+    },
+    {
+        id: 'cumplimiento-obra',
+        tipo: 'opcional',
+        pantalla: 'obra-detalle',
+        visibleSi: { todos: ['obras.detalle'] },
+        ambito: 'obra',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Qué le falta a la obra'),
+        manual: 'obra/cumplimiento',
+        pasos: [
+            {
+                ancla: 'obra-detalle.avance',
+                titulo: t('Avance y fases'),
+                descripcion: t('El avance cuenta solo lo que se le exige a esta obra. Las cuatro fases son la forma en que la plataforma ordena los requisitos: un requisito cuenta en la fase que sea.'),
+            },
+            {
+                ancla: 'obra-detalle.filtro',
+                titulo: t('Filtrar por estado'),
+                descripcion: t('Vencido, pendiente, incompleto, pendiente de firma o completado.'),
+            },
+            {
+                ancla: 'obra-detalle.requisitos',
+                titulo: t('Qué falta'),
+                descripcion: t('Cada fila dice qué falta, en palabras, y ofrece una sola acción. La plataforma muestra la evidencia registrada; no certifica que la obra cumpla.'),
+                manual: 'obra/cumplimiento',
+            },
+        ],
+    },
+];

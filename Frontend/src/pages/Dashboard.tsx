@@ -16,6 +16,7 @@ import type { Activity } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { ListaInicioSkeleton, AccesoEstadoSkeleton } from '../components/inicio/InicioSkeleton';
+import { ancla } from '../ayuda/registro';
 
 /**
  * Inicio de obra.
@@ -352,7 +353,7 @@ export default function Dashboard() {
                 </header>
 
                 {bloqueantes > 0 && !cargando && (
-                    <Link to="/my-signatures" className="inicio-aviso">
+                    <Link to="/my-signatures" className="inicio-aviso" {...ancla('inicio.aviso-ingreso')}>
                         <span className="inicio-aviso-icono">
                             <FiAlertTriangle size={18} />
                         </span>
@@ -372,7 +373,7 @@ export default function Dashboard() {
 
                 <section className="inicio-seccion">
                     <h2 className="inicio-rotulo">Accesos rápidos</h2>
-                    <div className="inicio-accesos">
+                    <div className="inicio-accesos" {...ancla('inicio.accesos')}>
                         {accesos.map((a) => (
                             <Link key={a.key} to={a.to} className="inicio-acceso">
                                 <span
@@ -395,7 +396,7 @@ export default function Dashboard() {
 
                 <div className="inicio-cols">
                     {/* ── Pendientes ─────────────────────────────────────────── */}
-                    <section className="inicio-panel">
+                    <section className="inicio-panel" {...ancla('inicio.pendientes')}>
                         <div className="inicio-panel-hd">
                             <h2 className="inicio-panel-titulo">Tus pendientes</h2>
                             {atrasados > 0 && (

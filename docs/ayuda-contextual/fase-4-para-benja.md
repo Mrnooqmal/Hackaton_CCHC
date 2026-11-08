@@ -48,6 +48,46 @@ Al agregar cada una, reemplaza el comentario por la imagen.
   "Onboarding DS 44" en la ficha). El manual la explica una vez como "incorporación".
 - La frase sobre el Hackathon CChC 2025 se quitó de la portada; si debe estar en algún lado, avísame.
 
+## Anclas de los recorridos: qué no romper
+
+Los recorridos guiados resaltan elementos marcados con `{...ancla('…')}` (Fase 5). Si mueves o
+quitas uno de estos elementos, conserva el `ancla(...)` en el elemento que cumple esa función. Si
+desaparece, `npm run build` falla y dice cuál quedó sin marcar. El texto que lo describe está en
+`src/ayuda/registro.ts`.
+
+| Archivo | Anclas | En qué elemento |
+|---|---|---|
+| `components/Header.tsx` | `global.boton-ayuda` (vía `ayuda/MenuAyuda.tsx`), `global.boton-menu`, `global.obra-actual` | Botón de ayuda, botón de tres líneas, nombre de la obra |
+| `components/Sidebar.tsx` | `global.menu-lateral`, `global.menu-sesion` | `<nav>` del menú, botón "Más opciones" |
+| `pages/Dashboard.tsx` | `inicio.aviso-ingreso`, `inicio.accesos`, `inicio.pendientes` | Aviso rojo de firmas para ingresar, grilla de accesos rápidos, panel "Tus pendientes" |
+| `pages/MySignatures.tsx` | `mis-firmas.pestanas`, `mis-firmas.lista`, `mis-firmas.avance` | Pestañas (prop `tabsAncla` de `PageHeader`), columna de la lista, columna de "Tu avance" |
+| `pages/IncidentReportar.tsx` | `incidente-reportar.tipo`, `.datos`, `.detalle`, `.evidencia` | Selector Hallazgo/Incidente y tres `FieldSection` (prop `ancla`) |
+| `pages/Activities.tsx` | `actividades.vistas`, `.planificar`, `.nueva`, `.por-completar` | Pestañas Lista/Calendario (`tabsAncla`), botones Planificar mes y Nueva actividad, sección "Del plan, por completar" |
+| `pages/DocumentsRepository.tsx` | `repositorio.carpetas`, `repositorio.subir` | Grilla de carpetas, botón Subir documento |
+| `components/obra/Ds44Fases.tsx` | `obra-detalle.avance`, `.filtro`, `.requisitos` | Avance con las fases, filtro por estado, lista de requisitos |
+| `ayuda/MenuAyuda.tsx` | `menu-ayuda.recorridos`, `.manual`, `.novedades` | Los tres grupos del menú de ayuda |
+
+`PageHeader` y `FieldSection` tienen ahora una prop opcional (`tabsAncla` y `ancla`) para esto; no
+cambia nada cuando no se usa.
+
+Los recorridos están en **borrador**: se revisan en dev con
+`/?recorrido=<id>&previa=1` (la ruta de cada uno la da `npm run recorridos:listar`). Mientras son
+borradores, sus textos se corrigen sin subir la versión.
+
+## Pendiente: firma sin conexión
+
+La otra sesión va a implementar la **firma sin conexión con vales**, la **firma asistida de
+documentos sin red** y una pantalla **"Preparar cuadrilla sin señal"**. Cuando eso entre a
+`pruebas`, hay que actualizar:
+
+- `terreno/firmar`: la sección "Sin conexión" (hoy dice, correctamente, que firmar requiere
+  conexión) y las preguntas frecuentes.
+- `obra/pedir-firmas`: la firma asistida sin red y la pantalla nueva.
+- `fuf/firmas`: "Firmar requiere conexión" (esta página espera además la revisión normativa).
+- Las capturas de esas pantallas.
+
+Por ahora quedan como están (decisión del 7 de noviembre de 2026).
+
 ## Direcciones viejas
 
 Las 33 direcciones anteriores siguen funcionando y llevan a la página nueva, con su sección

@@ -14,6 +14,7 @@ import { documentsApi } from '../../api/documents.api';
 import { etiquetaRequisito, coincideFiltro, FILTROS_ESTADO, type FiltroEstado } from '../../utils/etiquetaEstado';
 import IconoEstado from './IconoEstado';
 import type { Document } from '../../api/documents.api';
+import { ancla } from '../../ayuda/registro';
 
 export interface ModuloFase {
     key: string;
@@ -384,7 +385,7 @@ export default function Ds44Fases({
 
     return (
         <div className="ob-ds44">
-            <section className="ob-ds44__avance" aria-label="Avance del DS 44">
+            <section className="ob-ds44__avance" aria-label="Avance del DS 44" {...ancla('obra-detalle.avance')}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <span className="ob-rotulo">Avance DS 44 de la obra</span>
                     <span className="ob-cifra">{resumenTotal ? `${resumenTotal.progreso}%` : '—'}</span>
@@ -415,7 +416,7 @@ export default function Ds44Fases({
                 <section aria-label={`Requisitos de ${nombreFase}`} style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
                     <div className="ob-ds44__encabezado">
                         <h2 className="ob-h2">Requisitos de {nombreFase}</h2>
-                        <div className="ob-filtros" role="group" aria-label="Filtrar por estado">
+                        <div className="ob-filtros" role="group" aria-label="Filtrar por estado" {...ancla('obra-detalle.filtro')}>
                             {FILTROS.map((f) => (
                                 <button key={f.key} type="button" className="ob-filtro" aria-pressed={filtro === f.key}
                                     onClick={() => { setFiltro(f.key); setGrupoAbierto(undefined); }}>
@@ -427,7 +428,7 @@ export default function Ds44Fases({
 
                     {error && <div className="ds44-alert ds44-alert-danger" style={{ fontSize: '0.85rem' }}>{error}</div>}
 
-                    <div className="ob-lista">
+                    <div className="ob-lista" {...ancla('obra-detalle.requisitos')}>
                         {!completitud && <div className="ob-lista__vacia">Cargando los requisitos…</div>}
                         {completitud && visibles.length === 0 && (
                             <div className="ob-lista__vacia">No hay requisitos con este estado en {nombreFase}.</div>

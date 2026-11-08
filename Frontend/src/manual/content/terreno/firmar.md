@@ -15,6 +15,8 @@ Se firma en cuatro lugares:
 > **Tu PIN es tu firma.** Son **4 dígitos** que solo tú conoces. Al ingresarlo declaras que
 > leíste el documento. No lo compartas: equivale a tu firma de puño y letra.
 
+[Ver recorrido](recorrido:mis-firmas)
+
 ## Mis firmas
 
 Es la pantalla que más usa un trabajador. Está en el menú lateral, en **Mis firmas**, y en el

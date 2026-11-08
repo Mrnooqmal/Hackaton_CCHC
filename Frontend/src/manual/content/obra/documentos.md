@@ -11,6 +11,8 @@ Los documentos normativos los redacta tu empresa. El repositorio los **guarda, c
 versiones y su vigencia, y recoge las firmas** de quienes deben conocerlos.
 :::
 
+[Ver recorrido](recorrido:subir-documentos)
+
 ## Cómo está organizado
 
 Arriba hay dos pestañas:

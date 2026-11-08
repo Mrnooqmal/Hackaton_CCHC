@@ -90,7 +90,11 @@ import { ancla } from '../ayuda/registro';
 
 ## 3. Cambiar uno que ya existe
 
-Si cambias cualquier cosa de un recorrido (texto, pasos, segmentación), **sube su `version`** y corre:
+Mientras está en **borrador**, se corrige libremente: nadie lo ha visto, así que no hace falta
+subir la versión (solo correr `npm run recorridos:huellas`), y publicarlo tampoco la sube.
+
+Una vez **publicado**, si cambias cualquier cosa (texto, pasos, segmentación), **sube su `version`**
+y corre:
 
 ```bash
 npm run recorridos:huellas

@@ -353,6 +353,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                         type="button"
                                         ref={sessionTriggerRef}
                                         className="sidebar-menu-trigger"
+                                        {...ancla('global.menu-sesion')}
                                         onClick={() => setSessionMenuOpen((prev) => !prev)}
                                         title="Más opciones"
                                         aria-label="Más opciones"

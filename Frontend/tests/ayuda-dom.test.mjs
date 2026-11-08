@@ -89,3 +89,16 @@ test('bloqueo: cuenta bloqueos superpuestos, liberar es idempotente y avisa a lo
     bloquear()();
     assert.equal(avisos, 4);
 });
+
+test('esperarAncla: un ancla que ya está pero oculta se salta con un margen corto, sin esperar el plazo', async () => {
+    poner('<nav data-tour="global.menu-lateral" style="display:none"></nav>');
+    const t0 = Date.now();
+    assert.equal(await esperarAncla('global.menu-lateral', doc, { espera: 5000, esperaOculta: 100 }), null);
+    assert.ok(Date.now() - t0 < 1000, `tardó ${Date.now() - t0} ms`);
+});
+
+test('esperarAncla: un ancla que todavía no existe sí espera el plazo completo', async () => {
+    poner('<main></main>');
+    ventana.setTimeout(() => { doc.querySelector('main').innerHTML = '<nav data-tour="global.menu-lateral"></nav>'; }, 400);
+    assert.ok(await esperarAncla('global.menu-lateral', doc, { espera: 3000, esperaOculta: 100 }));
+});

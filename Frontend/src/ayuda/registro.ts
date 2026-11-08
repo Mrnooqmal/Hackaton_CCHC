@@ -69,7 +69,41 @@ export type PantallaKey = keyof typeof PANTALLAS;
 export const ANCLAS = {
     global: {
         'boton-ayuda': 'Botón de ayuda del encabezado',
-        'menu-lateral': 'Menú lateral con los módulos',
+        'menu-lateral': 'Menú lateral con los módulos (oculto en el teléfono)',
+        'boton-menu': 'Botón de tres líneas que muestra u oculta el menú lateral',
+        'obra-actual': 'Nombre de la obra en la que se está, en el encabezado (oculto en el teléfono)',
+        'menu-sesion': 'Menú de tres puntos junto al nombre, con Cambiar de obra y Cerrar sesión (oculto en el teléfono)',
+    },
+    inicio: {
+        'aviso-ingreso': 'Aviso de firmas obligatorias para entrar a la obra (solo si faltan)',
+        accesos: 'Accesos rápidos: Mis firmas, Actividades, Encuestas, Reportar incidente',
+        pendientes: 'Panel Tus pendientes',
+    },
+    'mis-firmas': {
+        pestanas: 'Pestañas Pendientes e Historial',
+        lista: 'Lista de documentos pendientes de firma',
+        avance: 'Panel Tu avance y próximos vencimientos',
+    },
+    'incidente-reportar': {
+        tipo: 'Selector Hallazgo o Incidente',
+        datos: 'Tipo de hallazgo, o detalles del incidente con su gravedad',
+        detalle: 'Descripción de lo que pasó, con el botón Dictar',
+        evidencia: 'Evidencia fotográfica',
+    },
+    actividades: {
+        vistas: 'Pestañas Lista y Calendario',
+        planificar: 'Botón Planificar mes (solo con permiso)',
+        nueva: 'Botón Nueva actividad',
+        'por-completar': 'Sección Del plan, por completar (solo si hay borradores)',
+    },
+    repositorio: {
+        carpetas: 'Carpetas del repositorio',
+        subir: 'Botón Subir documento',
+    },
+    'obra-detalle': {
+        avance: 'Avance de la obra y sus cuatro fases',
+        filtro: 'Filtro de requisitos por estado',
+        requisitos: 'Lista de requisitos de la fase elegida',
     },
     'menu-ayuda': {
         recorridos: 'Lista de recorridos de la pantalla, dentro del menú de ayuda',
@@ -86,6 +120,9 @@ export const pantallaDeAncla = (clave: AnclaKey): PantallaKey => clave.slice(0, 
 
 /** Atributo con que se marca un elemento: `<div {...ancla('global.menu-lateral')}>`. */
 export const ancla = (clave: AnclaKey) => ({ 'data-tour': clave });
+
+/** Lo que devuelve `ancla()`, para los componentes que lo reciben como prop. */
+export type AtributoAncla = ReturnType<typeof ancla>;
 
 /** Todas las anclas registradas, como `pantalla.ancla`. */
 export const todasLasAnclas = (): AnclaKey[] =>

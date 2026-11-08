@@ -111,3 +111,17 @@ test('el script real pasa sobre el proyecto tal como está (en dev)', () => {
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /ancla\(s\)/);
 });
+
+test('un borrador se corrige y se publica sin subir la versión; publicado, ya no', () => {
+    const borrador = def({ estado: 'borrador' });
+    const guardadas = calcularHuellas([borrador]);
+    assert.equal(guardadas['obras-intro'].borrador, true);
+    const corregido = def({ estado: 'borrador', titulo: { es: 'Texto corregido' } });
+    assert.deepEqual(revisarHuellas([corregido], guardadas).bloqueantes, [], 'corregir un borrador no bloquea');
+    assert.match(revisarHuellas([corregido], guardadas).desactualizadas.join(), /borrador modificado/);
+    const publicado = def({ estado: 'publicado', titulo: { es: 'Texto corregido' } });
+    assert.deepEqual(revisarHuellas([publicado], guardadas).bloqueantes, [], 'publicarlo no exige subir la versión');
+    const despues = calcularHuellas([publicado]);
+    assert.equal(despues['obras-intro'].borrador, undefined);
+    assert.match(revisarHuellas([def({ estado: 'publicado', titulo: { es: 'Otro' } })], despues).bloqueantes.join(), /cambió el contenido y no la versión/);
+});

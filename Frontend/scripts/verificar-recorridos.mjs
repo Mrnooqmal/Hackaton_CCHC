@@ -68,7 +68,9 @@ export const huellaDe = (def) => {
 };
 
 export const calcularHuellas = (recorridos) =>
-    Object.fromEntries([...recorridos].sort((a, b) => a.id.localeCompare(b.id)).map((d) => [d.id, { version: d.version, huella: huellaDe(d) }]));
+    Object.fromEntries([...recorridos].sort((a, b) => a.id.localeCompare(b.id)).map((d) => [d.id, {
+        version: d.version, huella: huellaDe(d), ...(d.estado === 'borrador' ? { borrador: true } : {}),
+    }]));
 
 /**
  * Compara las definiciones con las huellas guardadas.
@@ -84,8 +86,12 @@ export function revisarHuellas(recorridos, guardadas) {
         const g = guardadas[id];
         if (!g) { desactualizadas.push(`recorrido ${id}: nuevo, falta en huellas.json.`); continue; }
         if (a.version < g.version) bloqueantes.push(`recorrido ${id}: la versión bajó de ${g.version} a ${a.version}.`);
+        // Un borrador no lo ha visto nadie: se corrige sin subir la versión, y
+        // publicarlo tampoco la sube. Desde que se publica, sí.
+        else if (a.version === g.version && a.huella !== g.huella && g.borrador) desactualizadas.push(`recorrido ${id}: borrador modificado.`);
         else if (a.version === g.version && a.huella !== g.huella) bloqueantes.push(`recorrido ${id}: cambió el contenido y no la versión (${a.version}). Súbela.`);
         else if (a.version > g.version) desactualizadas.push(`recorrido ${id}: versión ${a.version}, huellas.json tiene la ${g.version}.`);
+        else if (Boolean(a.borrador) !== Boolean(g.borrador)) desactualizadas.push(`recorrido ${id}: cambió si es borrador.`);
     }
     for (const id of Object.keys(guardadas)) if (!actuales[id]) desactualizadas.push(`recorrido ${id}: ya no existe y sigue en huellas.json.`);
     return { bloqueantes, desactualizadas };

@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
 import { FormPage, FieldSection, PageHeader, Select, SegmentedControl } from '../components/ui';
 import { ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { ancla } from '../ayuda/registro';
 
 const INITIAL_FORM: CreateIncidentData = {
     tipo: 'incidente',
@@ -295,7 +296,7 @@ export default function IncidentReportar() {
                 maxWidth={880}
                 onSubmit={handleSubmit}
                 header={
-                    <div style={{ marginBottom: 'var(--space-8)' }}>
+                    <div style={{ marginBottom: 'var(--space-8)' }} {...ancla('incidente-reportar.tipo')}>
                     <SegmentedControl
                         ariaLabel="Tipo de reporte"
                         fullWidth={false}
@@ -326,7 +327,7 @@ export default function IncidentReportar() {
                     </>
                 }
             >
-                <FieldSection title={esHallazgoForm ? 'Tipo de hallazgo' : 'Detalles del incidente'} inline cols={3}>
+                <FieldSection title={esHallazgoForm ? 'Tipo de hallazgo' : 'Detalles del incidente'} inline cols={3} ancla={ancla('incidente-reportar.datos')}>
                     {esHallazgoForm && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                             <label className="form-label">Tipo de hallazgo <span style={{ color: 'var(--accent-text)' }}>*</span></label>
@@ -513,7 +514,7 @@ export default function IncidentReportar() {
                     </FieldSection>
                 )}
 
-                <FieldSection title="Descripción" inline>
+                <FieldSection title="Descripción" inline ancla={ancla('incidente-reportar.detalle')}>
                     <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <label className="form-label" style={{ margin: 0 }}>Detalle <span style={{ color: 'var(--accent-text)' }}>*</span></label>
@@ -550,7 +551,7 @@ export default function IncidentReportar() {
                     </div>
                 </FieldSection>
 
-                <FieldSection title="Evidencia fotográfica" inline description="Opcional, pero ayuda a la revisión">
+                <FieldSection title="Evidencia fotográfica" inline description="Opcional, pero ayuda a la revisión" ancla={ancla('incidente-reportar.evidencia')}>
                     <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                         <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch' }}>
                             <div className="upload-zone" style={{ flex: 1 }}>
