@@ -215,9 +215,10 @@ export default function SignatureRequests() {
                     const recipientsRes = await inboxApi.getRecipients(currentUserId, user?.tenantId || user?.empresaId || '');
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
-                        // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
-                        const assignedRuts = workers.filter(w => selectedWorkers.includes(w.personaId)).map(w => w.rut);
-                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
+                        // Por identificador. Antes se cruzaba por RUT, y la lista de
+                        // destinatarios nunca traía el RUT (está cifrado en la tabla):
+                        // el aviso no le llegaba a nadie.
+                        const recipientUserIds = allRecipients.filter(r => selectedWorkers.includes(r.personaId)).map(r => r.userId);
                         
                         if (recipientUserIds.length > 0) {
                             const isUrgent = newRequest.fechaLimite && new Date(newRequest.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs

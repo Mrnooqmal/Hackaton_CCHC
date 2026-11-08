@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FiShield, FiDownload, FiEdit3, FiCheck, FiX, FiClock } from 'react-icons/fi';
+import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
+import { FiShield, FiDownload, FiEdit3, FiCheck, FiX, FiClock, FiInfo } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, AlertBanner, Badge, Select } from '../components/ui';
 import type { BadgeVariant } from '../components/ui';
@@ -22,20 +23,21 @@ import {
  * pantalla solo evita ofrecer lo que igual se rechazaría.
  */
 
-type Pestana = 'consentimientos' | 'descarga' | 'solicitudes';
+type Pestana = 'aviso' | 'consentimientos' | 'descarga' | 'solicitudes';
 const TZ = 'America/Santiago';
 const fechaHora = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('es-CL', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' }) : '');
 const fecha = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('es-CL', { timeZone: TZ, dateStyle: 'medium' }) : '');
 const ETAPA_VARIANTE: Record<Etapa, BadgeVariant> = { recibida: 'warning', verificada: 'info', respondida: 'secondary', cerrada: 'success' };
 
 export default function MisDatos() {
-    const [pestana, setPestana] = useState<Pestana>('consentimientos');
+    const [pestana, setPestana] = useState<Pestana>('aviso');
     return (
         <div className="page-content md-pagina">
             <PageHeader
                 title="Mis datos y privacidad"
                 description="Decide qué autorizas, descarga una copia de tus datos y pide corregirlos o suprimirlos. Tu empleador es el responsable de tus datos; Build & Serve los trata por encargo."
                 tabs={[
+                    { id: 'aviso', label: 'Cómo se tratan', icon: <FiInfo size={14} /> },
                     { id: 'consentimientos', label: 'Consentimientos', icon: <FiShield size={14} /> },
                     { id: 'descarga', label: 'Descargar mis datos', icon: <FiDownload size={14} /> },
                     { id: 'solicitudes', label: 'Solicitudes', icon: <FiEdit3 size={14} /> },
@@ -44,6 +46,7 @@ export default function MisDatos() {
                 onTabChange={(id) => setPestana(id as Pestana)}
                 tabsLabel="Secciones de mis datos"
             />
+            {pestana === 'aviso' && <div className="md-cuerpo"><AvisoPrivacidad /></div>}
             {pestana === 'consentimientos' && <Consentimientos />}
             {pestana === 'descarga' && <Descarga />}
             {pestana === 'solicitudes' && <Solicitudes />}

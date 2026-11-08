@@ -53,7 +53,7 @@ Los nombres son la propuesta del equipo y se confirman al inicio de cada trimest
 
 ### 1.2 Canales para reportar
 
-- **Automáticos:** la alarma `EventoSospechoso` (y `FallosDependencia`, `PinBloqueado`) avisa por correo al tópico `AlertasOperacionTopic`; las alertas de la auditoría llegan además a la bandeja de quien tiene `empresa.auditoria` en la constructora afectada.
+- **Automáticos:** la alarma `EventoSospechoso` (y `FallosDependencia`, `PinBloqueado`, `ValesInvalidos`) avisa por correo al tópico `AlertasOperacionTopic`; las alertas de la auditoría llegan además a la bandeja de quien tiene `empresa.auditoria` en la constructora afectada. `ValesInvalidos` (D-35) significa que se anularon los vales sin conexión de una persona por cinco vales inexistentes: puede ser alguien probando PIN con una copia del almacenamiento de un equipo de terreno. Filtrar los logs por `VALES_INVALIDOS` (empresa y persona), preguntar a la constructora qué equipo se perdió o cambió de manos, y tratarlo como posible exposición de ese equipo: revocar las sesiones abiertas en él y, si la persona lo pide, restablecer su PIN.
 - **Personas:** cualquier persona (trabajador, constructora, equipo) reporta a `contacto@buildandserve.cl` con el asunto "Incidente de seguridad". Las constructoras tienen además el teléfono del coordinador.
 - Lo que se reporta queda como evento en el registro de incidentes (sección 7) aunque resulte no ser incidente.
 

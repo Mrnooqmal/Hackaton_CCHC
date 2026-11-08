@@ -1247,6 +1247,15 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         return persona.toSafeFormat({ incluirSalud });
     };
 
+    // ¿Puede ver la ficha completa de esta persona? La propia, siempre; la de
+    // otra, con `personas.detalle` (la pantalla de la ficha) o `personas.ver`.
+    // Sin eso, lo mismo que el listado (H-16). Hasta el 8 de noviembre de 2026
+    // solo el listado estaba recortado: GET /personas/{id} y /by-rut/{rut}
+    // entregaban RUT, fecha de nacimiento, teléfono y contacto de emergencia a
+    // cualquier sesión de la empresa (revisión de minimización, fila 7.5).
+    const puedeVerFicha = (persona) => persona.personaId === sesion?.personaId
+        || puede(PERMISSIONS.PERSONAS_DETALLE) || puede(PERMISSIONS.PERSONAS_VER);
+
     /**
      * Qué puede cambiar quien pide, campo por campo (PUT /personas/{id}).
      *
@@ -1653,6 +1662,11 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             // una sesión con la contraseña inicial consultaba si un RUT existe. El
             // alta de empresa usa hoy la licencia, sin esta ruta.
             if (!sesion) return sesionRes.respuesta;
+            // Decir si un RUT está registrado es un dato de la persona: solo
+            // para quien da de alta o ve el personal.
+            if (!puede(PERMISSIONS.PERSONAS_CREAR) && !puede(PERMISSIONS.PERSONAS_VER)) {
+                return error('No tienes permiso para consultar RUT', 403);
+            }
             const rut = event.queryStringParameters?.rut;
             if (!rut) return error('El parámetro rut es requerido', 400);
 
@@ -1665,7 +1679,9 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         if (method === 'GET' && personaId === 'by-rut' && action) {
             if (!sesion) return sesionRes.respuesta;
             const persona = await personaService.getByRut(tenantId, action);
-            if (!persona) return error('Persona no encontrada', 404);
+            // Sin permiso, un RUT ajeno responde igual que uno que no existe:
+            // buscar por RUT no puede servir para averiguar a quién pertenece.
+            if (!persona || !puedeVerFicha(persona)) return error('Persona no encontrada', 404);
             return success(fichaVisible(persona));
         }
 
@@ -1674,6 +1690,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             if (!sesion) return sesionRes.respuesta;
             const persona = await personaDelTenant(personaId);
             if (!persona) return error('Persona no encontrada', 404);
+            if (!puedeVerFicha(persona)) return success(listadoMinimo(persona));
             return success(fichaVisible(persona));
         }
 

@@ -3,6 +3,7 @@
  * sobre SUS datos, sin pasar por nadie y sin permisos especiales: la sesión
  * dice quién es, y nada de lo que llegue en el cuerpo puede cambiar eso.
  *
+ *   GET  /gobernanza/mis-datos/aviso                         aviso de privacidad (deber de información)
  *   GET  /gobernanza/mis-datos/consentimientos               finalidades, estado e historial
  *   POST /gobernanza/mis-datos/consentimientos/{finalidad}   { accion: otorgar|revocar, version }
  *   POST /gobernanza/mis-datos/exportacion                   { password } → copia en JSON
@@ -39,8 +40,11 @@ const C = require('../../lib/gobernanza/consentimiento');
 const D = require('../../lib/gobernanza/derechos');
 const auditoria = require('../../lib/gobernanza/auditoria');
 const { exportarTitular, consentimientosDe, historialConsentimientosDe, solicitudesDe } = require('./exportar');
+const { avisoDePrivacidad } = require('../../lib/gobernanza/aviso');
+const { TenantService } = require('../../lib/services/TenantService');
 
 const personaService = new PersonaService();
+const tenantService = new TenantService();
 const T = (env) => process.env[env];
 
 const LIMITE_EXPORTACIONES = 3;
@@ -291,6 +295,12 @@ module.exports.atender = async (event, { ahora = new Date(), config = D.configDe
         const persona = await personaService.getById(sesion.personaId);
         if (!persona || persona.tenantId !== sesion.tenantId) return error('No se encontró tu ficha', 404);
 
+        // El aviso de privacidad: lo que la persona tiene que saber antes de que
+        // se recojan sus datos (se muestra también en el enrolamiento) y siempre.
+        if (recurso === 'aviso' && method === 'GET' && !id) {
+            const tenant = await tenantService.getById(sesion.tenantId).catch(() => null);
+            return success(avisoDePrivacidad({ empresa: tenant?.nombre || null, config }));
+        }
         if (recurso === 'consentimientos' && method === 'GET' && !id) return await verConsentimientos(sesion);
         if (recurso === 'consentimientos' && method === 'POST' && id) return await cambiarConsentimiento(event, sesion, persona, id, body, { ahora });
         if (recurso === 'exportacion' && method === 'POST' && !id) return await exportar(event, sesion, persona, body, { ahora });

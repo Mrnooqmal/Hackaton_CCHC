@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinCasillas from '../components/PinCasillas';
+import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
 import { LARGO_PIN, LARGO_PIN_ANTERIOR } from '../utils/pin';
 import {
     FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
@@ -369,6 +370,12 @@ export default function EnrollMe() {
                             <li><FiShield size={17} /><strong>Cifrada</strong><span>nadie más puede verla</span></li>
                             <li><FiClock size={17} /><strong>1 minuto</strong><span>y queda lista</span></li>
                         </ul>
+
+                        {/* Deber de información (Ley 21.719): antes de crear la firma. */}
+                        <details className="aviso-privacidad-desplegable">
+                            <summary>Cómo se tratan tus datos</summary>
+                            <AvisoPrivacidad compacto />
+                        </details>
 
                         <button type="button" className="lp-submit enr-accion" onClick={() => irA('create-pin')}>
                             <span>Comenzar</span><FiArrowRight size={15} />

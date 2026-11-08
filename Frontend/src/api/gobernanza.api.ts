@@ -204,7 +204,23 @@ export interface ExportacionTitular {
     [k: string]: unknown;
 }
 
+/** Aviso de privacidad (deber de información, Ley 21.719). Sale de Backend/lib/gobernanza/aviso.js. */
+export interface AvisoPrivacidad {
+    version: string;
+    responsable: { nombre: string; rol: string; contacto: string };
+    encargados: { quien: string; que: string; donde: string; transferenciaInternacional: boolean; soloConConsentimiento?: string }[];
+    tratamientos: { categoria: string; datos: string; finalidad: string; conservacion: string; alVencer: string | null; contieneSalud: boolean }[];
+    bases: { tratamiento: string; base: string }[];
+    consentimientos: { finalidad: string; nombre: string; dato: string }[];
+    enElEquipo: string;
+    datosSensibles: string;
+    derechos: { derecho: string; que: string }[];
+    plazos: { respuestaDias: number; prorrogaDias: number; bloqueoDiasHabiles: number; texto: string };
+    reclamo: string;
+}
+
 export const privacidadApi = {
+    aviso: () => apiRequest<AvisoPrivacidad>('/gobernanza/mis-datos/aviso'),
     consentimientos: () =>
         apiRequest<{ finalidades: FinalidadConsentimiento[]; basesSinConsentimiento: { tratamiento: string; base: string }[]; historial: EventoConsentimiento[] }>('/gobernanza/mis-datos/consentimientos'),
     otorgar: (finalidad: string, version: string) =>

@@ -72,3 +72,50 @@ test('con personas.ver: la ficha completa', async () => {
     assert.equal(juan.rut, '12.345.678-5');
     assert.equal(juan.email, 'juan@ejemplo.cl');
 });
+
+// ─── La ficha de una persona (revisión de minimización, 8 de noviembre de 2026) ──
+
+const pedir = (ruta, permisos, quien = trabajadora) => personas.personasHandler({
+    requestContext: {
+        http: { method: 'GET', path: ruta.split('?')[0] },
+        authorizer: { lambda: { sessionId: 's', personaId: quien, tenantId, rol: 'trabajador', permisos, credencialProvisional: 'false' } },
+    },
+    rawPath: ruta.split('?')[0],
+    queryStringParameters: ruta.includes('?') ? Object.fromEntries(new URLSearchParams(ruta.split('?')[1])) : {},
+    headers: {},
+});
+const idDe = async (nombre) => JSON.parse((await listar('personas.ver')).body).data.personas.find((p) => p.nombre === nombre).personaId;
+
+test('GET /personas/{id} de otra persona sin permiso: lo mismo que el listado', async () => {
+    const juan = await idDe('Juan');
+    const res = await pedir(`/personas/${juan}`, 'actividades.ver');
+    assert.equal(res.statusCode, 200, res.body);
+    const ficha = JSON.parse(res.body).data;
+    const permitidos = new Set(['personaId', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'apellido', 'cargo']);
+    assert.deepEqual(Object.keys(ficha).filter((k) => !permitidos.has(k)), []);
+    assert.ok(!JSON.stringify(ficha).includes('12.345.678'), 'sin RUT');
+    assert.ok(!JSON.stringify(ficha).includes('juan@ejemplo.cl'), 'sin correo');
+    assert.ok(!JSON.stringify(ficha).includes('1985'), 'sin fecha de nacimiento');
+});
+
+test('con personas.detalle, la ficha de otra; la propia, siempre', async () => {
+    const juan = await idDe('Juan');
+    assert.equal(JSON.parse((await pedir(`/personas/${juan}`, 'personas.detalle')).body).data.rut, '12.345.678-5');
+    assert.equal(JSON.parse((await pedir(`/personas/${trabajadora}`, 'actividades.ver')).body).data.rut, '11.111.111-1');
+});
+
+test('por RUT: sin permiso, un RUT ajeno responde 404 como uno inexistente; el propio, la ficha', async () => {
+    const ajeno = await pedir('/personas/by-rut/12.345.678-5', 'actividades.ver');
+    const inexistente = await pedir('/personas/by-rut/22.222.222-2', 'actividades.ver');
+    assert.equal(ajeno.statusCode, 404);
+    assert.equal(ajeno.body, inexistente.body, 'no se distingue de uno que no existe');
+    assert.equal((await pedir('/personas/by-rut/12.345.678-5', 'personas.detalle')).statusCode, 200);
+    assert.equal(JSON.parse((await pedir('/personas/by-rut/11.111.111-1', 'actividades.ver')).body).data.personaId, trabajadora);
+});
+
+test('validar si un RUT existe exige poder crear o ver personas', async () => {
+    assert.equal((await pedir('/personas/validate?rut=12.345.678-5', 'actividades.ver')).statusCode, 403);
+    const r = await pedir('/personas/validate?rut=12.345.678-5', 'personas.crear');
+    assert.equal(r.statusCode, 200, r.body);
+    assert.equal(JSON.parse(r.body).data.existe, true);
+});

@@ -42,13 +42,12 @@ export interface SendMessageData {
 
 export interface InboxRecipient {
     userId: string;
+    personaId: string;
     nombre: string;
     apellido: string;
     nombreCompleto: string;
-    rut: string;
     rol: string;
     cargo: string;
-    email?: string;
 }
 
 // ========================================

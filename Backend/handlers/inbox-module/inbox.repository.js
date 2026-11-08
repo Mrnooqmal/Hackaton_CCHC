@@ -326,6 +326,10 @@ class InboxRepository {
             return u.cargo || '';
         };
 
+        // Para elegir a quién escribir basta el nombre, el rol y el cargo. Hasta
+        // el 8 de noviembre de 2026 iba también el correo de todo el personal a
+        // cualquier sesión (revisión de minimización, fila 7.5), y un `rut` que
+        // siempre llegaba vacío, porque en la tabla está cifrado.
         const users = allItems
             .filter(u => u.personaId !== currentUserId)
             .map(u => ({
@@ -334,10 +338,8 @@ class InboxRepository {
                 nombre: u.nombre,
                 apellido: u.apellido || '',
                 nombreCompleto: `${u.nombre} ${u.apellido || ''}`.trim(),
-                rut: u.rut,
                 rol: u.rol,
                 cargo: cargoEnObra(u),
-                email: u.email
             }));
 
         const grouped = {

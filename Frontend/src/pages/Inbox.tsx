@@ -571,7 +571,6 @@ export default function Inbox() {
         return filteredRecipients
             .filter(r =>
                 (r.nombreCompleto || '').toLowerCase().includes(q) ||
-                (r.rut || '').toLowerCase().includes(q) ||
                 (r.cargo || '').toLowerCase().includes(q)
             )
             .slice(0, 8);
@@ -1290,7 +1289,7 @@ export default function Inbox() {
                                                     <div>
                                                         <div className="font-semibold">{r.nombreCompleto}</div>
                                                         <div className="text-xs text-muted">
-                                                            {rolLabel(r.rol)}{r.cargo ? ` • ${r.cargo}` : ''} • {r.rut}
+                                                            {rolLabel(r.rol)}{r.cargo ? ` • ${r.cargo}` : ''}
                                                         </div>
                                                     </div>
                                                 </label>

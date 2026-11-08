@@ -8,16 +8,9 @@
  *   node scripts/registro-tratamientos.js
  */
 
-const { FUENTES, AL_VENCER } = require('../lib/gobernanza/inventario');
-
-const QUE_PASA = {
-    [AL_VENCER.SUPRIMIR]: 'Se suprime',
-    [AL_VENCER.ANONIMIZAR]: 'Se anonimiza (se conserva el hecho para los indicadores)',
-    [AL_VENCER.GRUPAL]: 'Se conserva completo hasta que vence el plazo del último involucrado; después se suprime',
-    [AL_VENCER.EMPRESA]: 'No vence por personas (es de la empresa)',
-    [AL_VENCER.TTL]: 'Vence solo (uso o fecha de expiración)',
-};
-const PLAZO = { evidencia: '5 años desde el término del vínculo', conveniencia: 'Hasta que la persona pida suprimirlo, o con la ficha', operacional: 'Mientras sirve (horas o días)' };
+const { FUENTES } = require('../lib/gobernanza/inventario');
+// Los mismos textos que ve el titular en su aviso de privacidad.
+const { PLAZO, QUE_PASA } = require('../lib/gobernanza/aviso');
 const celda = (s) => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 
 console.log('| Categoría | Datos | Finalidad | Clase | Plazo | Al vencer |');
