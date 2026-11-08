@@ -99,6 +99,26 @@ const registrarBloqueo = (personaId, fallos, segundos) => {
 
 const minutos = (segundos) => Math.ceil(segundos / 60);
 
+/**
+ * PIN de 6 dígitos desde el 8 de noviembre de 2026 (lib/utils/validation.js).
+ * Para firmar y para pedir vales solo se acepta uno de 6. Uno de 4 —el de antes—
+ * solo sirve para cambiarlo (`permitirAnterior`), y fuera de ese caso ni
+ * siquiera se compara con el guardado: no da pistas sobre el PIN viejo ni
+ * cuenta como intento fallido.
+ */
+const FORMATO_PIN = /^\d{6}$/;
+const FORMATO_PIN_ANTERIOR = /^\d{4}$/;
+const MENSAJE_DEBE_CAMBIAR = 'Los PIN de firma ahora son de 6 dígitos. Si el tuyo es de 4, cámbialo en Configuración antes de firmar.';
+
+/** Lo lanza `verificarConLimiteOLanzar` con un PIN de 4 fuera del cambio de PIN. */
+class PinDebeCambiarError extends Error {
+    constructor() {
+        super(MENSAJE_DEBE_CAMBIAR);
+        this.codigo = 'PIN_DEBE_CAMBIAR';
+        this.statusCode = 409;
+    }
+}
+
 /** Error que devuelve el bloqueo cuando se lanza desde una capa sin HTTP
  *  (PersonaService), para que el handler que sí tiene HTTP responda 423. */
 class PinBloqueadoError extends Error {
@@ -120,7 +140,7 @@ class PinBloqueadoError extends Error {
  *        inyectado para no crear una dependencia circular con validation.js.
  * @returns {Promise<{ok: boolean, bloqueada: boolean, hasta: string|null, mensaje: string|null}>}
  */
-async function verificarConLimite(persona, pinIngresado, verificar) {
+async function verificarConLimite(persona, pinIngresado, verificar, { permitirAnterior = false } = {}) {
     const ahora = new Date();
 
     if (persona.pinBloqueadaHasta && new Date(persona.pinBloqueadaHasta) > ahora) {
@@ -134,7 +154,18 @@ async function verificarConLimite(persona, pinIngresado, verificar) {
         };
     }
 
-    const valido = await verificar(pinIngresado, persona._pinHash, persona.personaId);
+    // Formato antes de comparar: ni un PIN de 4 (salvo para cambiarlo) ni algo
+    // que no sea un PIN llegan a scrypt, y no cuentan como intento.
+    const pin = typeof pinIngresado === 'string' ? pinIngresado : '';
+    const anterior = FORMATO_PIN_ANTERIOR.test(pin);
+    if (!FORMATO_PIN.test(pin) && !(permitirAnterior && anterior)) {
+        return {
+            ok: false, bloqueada: false, hasta: null, debeCambiar: anterior,
+            mensaje: anterior ? MENSAJE_DEBE_CAMBIAR : 'El PIN debe tener 6 dígitos.',
+        };
+    }
+
+    const valido = await verificar(pin, persona._pinHash, persona.personaId);
 
     if (valido) {
         await limpiar(persona.tenantId, persona.personaId);
@@ -162,9 +193,10 @@ async function verificarConLimite(persona, pinIngresado, verificar) {
  * (`PersonaService`). El llamador que sí tiene HTTP debe capturar
  * `err.codigo === 'PIN_BLOQUEADO'` y responder 423.
  */
-async function verificarConLimiteOLanzar(persona, pinIngresado, verificar) {
-    const r = await verificarConLimite(persona, pinIngresado, verificar);
+async function verificarConLimiteOLanzar(persona, pinIngresado, verificar, opciones = {}) {
+    const r = await verificarConLimite(persona, pinIngresado, verificar, opciones);
     if (r.bloqueada) throw new PinBloqueadoError(r.hasta);
+    if (r.debeCambiar) throw new PinDebeCambiarError();
     return r.ok;
 }
 
@@ -213,6 +245,8 @@ module.exports = {
     verificarConLimite,
     verificarConLimiteOLanzar,
     PinBloqueadoError,
+    PinDebeCambiarError,
+    MENSAJE_DEBE_CAMBIAR,
     NOMBRE_METRICA,
     CADA,
     DURACIONES_SEGUNDOS,

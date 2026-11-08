@@ -79,7 +79,7 @@ export default function PrepararCuadrilla() {
                                     {w.cargo && <span className="cuadrilla-vales__cargo"> · {w.cargo}</span>}
                                     <div className="cuadrilla-vales__estado">
                                         {deEstaObra
-                                            ? <><FiCheckCircle aria-hidden /> {deEstaObra.vales.length} firma(s) sin conexión, hasta las {hora(deEstaObra.expiraEn)}</>
+                                            ? <><FiCheckCircle aria-hidden /> {deEstaObra.cantidad} firma(s) sin conexión, hasta las {hora(deEstaObra.expiraEn)}</>
                                             : vales
                                                 ? 'Habilitada para otra obra'
                                                 : 'Sin firma sin conexión en este equipo'}

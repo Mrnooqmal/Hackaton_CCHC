@@ -29,10 +29,11 @@ export default function AvisoValesTurno() {
         try { setPospuesto(Boolean(selectedObraId && localStorage.getItem(clavePospuesto(selectedObraId)))); } catch { setPospuesto(false); }
     }, [selectedObraId]);
 
-    const u = user as (typeof user & { pinConfigurado?: boolean; obraIds?: string[] }) | null;
+    const u = user as (typeof user & { pinConfigurado?: boolean; pinDebeCambiar?: boolean; obraIds?: string[] }) | null;
     const personaId = u?.personaId;
     if (!u || !personaId || !isOnline || scope !== 'obra' || !selectedObraId || pospuesto) return null;
-    if (!u.habilitado || u.pinConfigurado === false) return null;
+    // Con un PIN de 4 (de antes) el servidor no emite vales: primero se cambia.
+    if (!u.habilitado || u.pinConfigurado === false || u.pinDebeCambiar) return null;
     if (!(u.obraIds || []).includes(selectedObraId)) return null;
     const quedan = valesDe(personaId, selectedObraId);
     if (quedan >= MINIMO) return null;

@@ -17,9 +17,20 @@
  *   explícito: son credenciales de un solo uso a nombre de quienes los
  *   desbloquearon, y el equipo puede pasar a otras manos.
  *
- * Funciones puras sobre un almacenamiento (por omisión `localStorage`) para que
- * se puedan probar sin navegador (Backend/tests/cola-firmas.test.js).
+ * ── Vales cifrados con el PIN ────────────────────────────────────────────────
+ * Los vales se guardan cifrados con una llave derivada del PIN de la persona
+ * (utils/valesCifrados). Sin red, tomar un vale exige el PIN; cinco PIN
+ * equivocados seguidos en este equipo borran los vales de esa persona, y hay que
+ * volver a habilitarla con señal. Ese contador vive en el mismo almacenamiento:
+ * frena a quien prueba PIN dentro de la app, no a quien copió el almacenamiento
+ * (a ese lo frena el servidor, ver valesCifrados).
+ *
+ * Funciones sobre un almacenamiento (por omisión `localStorage`) para que se
+ * puedan probar sin navegador (Backend/tests/cola-firmas.test.js y
+ * vales-cifrados.test.js).
  */
+
+import { abrirLlave, descifrarVale, type ValesCifrados } from './valesCifrados';
 
 export type TipoFirma = 'documento' | 'actividad' | 'encuesta';
 
@@ -43,9 +54,32 @@ export interface ValesDePersona {
     personaId: string;
     /** Obra del turno: los vales sirven para esa obra y para lo que no tiene obra. */
     obraId: string;
-    vales: string[];
+    /** Los vales, cifrados con el PIN (nunca en claro). */
+    cifrado: ValesCifrados;
     expiraEn: string;
+    /** PIN equivocados seguidos en este equipo. Al llegar a MAX_INTENTOS_EQUIPO se borran los vales. */
+    intentosFallidos?: number;
 }
+
+/** Lo que las pantallas ven de los vales de una persona: cuántos, de qué obra, hasta cuándo. */
+export interface ResumenVales {
+    personaId: string;
+    obraId: string;
+    expiraEn: string;
+    cantidad: number;
+}
+
+/** Firma que el servidor rechazó al sincronizar: se avisa con nombre hasta que alguien la vea. */
+export interface FirmaRechazada {
+    id: string;
+    workerName: string;
+    targetTitle: string;
+    motivo: string;
+    en: string;
+}
+
+/** PIN equivocados seguidos, en este equipo, antes de borrar los vales de la persona. */
+export const MAX_INTENTOS_EQUIPO = 5;
 
 export interface Almacen {
     getItem(clave: string): string | null;
@@ -57,6 +91,7 @@ export interface Almacen {
 
 const PREFIJO_COLA = 'firmasPendientes:';
 const PREFIJO_VALES = 'valesFirma:';
+const PREFIJO_RECHAZADAS = 'firmasRechazadas:';
 /** Claves anteriores, sin empresa. Ver `retirarClavesAnteriores`. */
 const CLAVES_ANTERIORES = ['pendingOfflineSignatures', 'offlineVales'];
 
@@ -111,12 +146,21 @@ export const quitarDeCola = (tenantId: string, id: string, almacen: Almacen = po
 
 // ─── Vales ───────────────────────────────────────────────────────────────────
 
-/** Los vales vigentes de la empresa. Los vencidos se descartan: no sirven para una firma nueva. */
+const cantidadDe = (v: Partial<ValesDePersona>): number =>
+    v && v.cifrado && Array.isArray(v.cifrado.vales) ? v.cifrado.vales.length : 0;
+
+/**
+ * Los vales vigentes de la empresa. Los vencidos se descartan (no sirven para una
+ * firma nueva), y también los que no vienen cifrados: los de antes de cifrar.
+ */
 export const leerVales = (tenantId: string | null, almacen: Almacen = porDefecto(), ahora = Date.now()): ValesDePersona[] =>
     tenantId
         ? leerJson<ValesDePersona>(almacen, PREFIJO_VALES + tenantId)
-            .filter((v) => new Date(v.expiraEn).getTime() > ahora && Array.isArray(v.vales) && v.vales.length > 0)
+            .filter((v) => new Date(v.expiraEn).getTime() > ahora && cantidadDe(v) > 0)
         : [];
+
+const escribirVales = (tenantId: string, lista: ValesDePersona[], almacen: Almacen) =>
+    escribirJson(almacen, PREFIJO_VALES + tenantId, lista.filter((v) => cantidadDe(v) > 0));
 
 /** Reemplaza los vales de una persona en la empresa (los recién emitidos). */
 export const guardarValesDe = (tenantId: string, entrada: ValesDePersona, almacen: Almacen = porDefecto()): void => {
@@ -124,26 +168,62 @@ export const guardarValesDe = (tenantId: string, entrada: ValesDePersona, almace
     escribirJson(almacen, PREFIJO_VALES + tenantId, [...lista, entrada]);
 };
 
+export type MotivoSinVale = 'sin_vales' | 'otra_obra' | 'pin_incorrecto' | 'bloqueado';
+
 /**
  * Toma un vale de la persona para firmar algo de `obraId` (null si es de la
- * empresa) y lo quita del equipo: un vale, una firma. Si los vales de la persona
- * son de otra obra, no toma ninguno: el servidor lo rechazaría al sincronizar y
- * la firma se perdería; mejor decirlo en el momento.
+ * empresa), con su PIN, y lo quita del equipo: un vale, una firma.
+ *
+ * - Vales de otra obra: no toma ninguno (el servidor lo rechazaría al
+ *   sincronizar y la firma se perdería; mejor decirlo en el momento).
+ * - PIN que no pasa la comprobación: no hay firma, y cuenta. Al quinto seguido
+ *   se borran los vales de la persona (`bloqueado`).
+ * - PIN que pasa: el contador vuelve a cero y se entrega el vale descifrado.
+ *
+ * Derivar la llave tarda (PBKDF2): mientras tanto otra firma pudo tomar un vale,
+ * o la persona pudo habilitarse de nuevo. Por eso, después de derivar, se relee
+ * el almacenamiento y se escribe sin más esperas.
  */
-export const valeParaFirma = (
+export const tomarVale = async (
     tenantId: string | null,
     personaId: string,
     obraId: string | null,
+    pin: string,
     almacen: Almacen = porDefecto(),
-): { vale: string } | { motivo: 'sin_vales' | 'otra_obra' } => {
+): Promise<{ vale: string } | { motivo: MotivoSinVale; quedan?: number }> => {
     if (!tenantId) return { motivo: 'sin_vales' };
+    const antes = leerVales(tenantId, almacen).find((v) => v.personaId === personaId);
+    if (!antes) return { motivo: 'sin_vales' };
+    if (obraId && antes.obraId !== obraId) return { motivo: 'otra_obra' };
+
+    let llave;
+    try {
+        llave = await abrirLlave(pin || '', antes.cifrado);
+    } catch {
+        return { motivo: 'sin_vales' };
+    }
+
+    // Desde aquí, sin esperas hasta escribir.
     const lista = leerVales(tenantId, almacen);
     const entrada = lista.find((v) => v.personaId === personaId);
-    if (!entrada || entrada.vales.length === 0) return { motivo: 'sin_vales' };
-    if (obraId && entrada.obraId !== obraId) return { motivo: 'otra_obra' };
-    const vale = entrada.vales.shift() as string;
-    escribirJson(almacen, PREFIJO_VALES + tenantId, lista.filter((v) => v.vales.length > 0));
-    return { vale };
+    if (!entrada || entrada.cifrado.sal !== antes.cifrado.sal || cantidadDe(entrada) === 0) return { motivo: 'sin_vales' };
+
+    if (!llave) {
+        const fallos = (entrada.intentosFallidos || 0) + 1;
+        if (fallos >= MAX_INTENTOS_EQUIPO) {
+            escribirVales(tenantId, lista.filter((v) => v.personaId !== personaId), almacen);
+            return { motivo: 'bloqueado' };
+        }
+        entrada.intentosFallidos = fallos;
+        escribirVales(tenantId, lista, almacen);
+        return { motivo: 'pin_incorrecto', quedan: MAX_INTENTOS_EQUIPO - fallos };
+    }
+
+    const cifrado = entrada.cifrado.vales.shift();
+    entrada.intentosFallidos = 0;
+    escribirVales(tenantId, lista, almacen);
+    if (!cifrado) return { motivo: 'sin_vales' };
+    return { vale: await descifrarVale(llave, cifrado) };
 };
 
 /**
@@ -158,12 +238,34 @@ export const valesDisponibles = (
 ): number => {
     const entrada = leerVales(tenantId, almacen).find((v) => v.personaId === personaId);
     if (!entrada || (obraId && entrada.obraId !== obraId)) return 0;
-    return entrada.vales.length;
+    return cantidadDe(entrada);
 };
 
 /** Los vales vigentes de la persona en el equipo (cuántos, de qué obra, hasta cuándo), o null. */
-export const valesDePersona = (tenantId: string | null, personaId: string, almacen: Almacen = porDefecto()): ValesDePersona | null =>
-    leerVales(tenantId, almacen).find((v) => v.personaId === personaId) ?? null;
+export const valesDePersona = (tenantId: string | null, personaId: string, almacen: Almacen = porDefecto()): ResumenVales | null => {
+    const v = leerVales(tenantId, almacen).find((x) => x.personaId === personaId);
+    return v ? { personaId: v.personaId, obraId: v.obraId, expiraEn: v.expiraEn, cantidad: cantidadDe(v) } : null;
+};
+
+// ─── Firmas rechazadas al sincronizar ────────────────────────────────────────
+
+/**
+ * Una firma que el servidor rechazó (por ejemplo, la del 1 de 256 PIN
+ * equivocados que pasa la comprobación) ya no se puede enviar. Se anota con el
+ * nombre de la persona para que alguien le pida firmar de nuevo, y queda hasta
+ * que alguien de la empresa lo vea. Como la cola, sobrevive al cierre de sesión.
+ */
+export const anotarRechazada = (tenantId: string, r: FirmaRechazada, almacen: Almacen = porDefecto()): void => {
+    const lista = leerJson<FirmaRechazada>(almacen, PREFIJO_RECHAZADAS + tenantId).filter((x) => x.id !== r.id);
+    escribirJson(almacen, PREFIJO_RECHAZADAS + tenantId, [...lista, r]);
+};
+
+export const leerRechazadas = (tenantId: string | null, almacen: Almacen = porDefecto()): FirmaRechazada[] =>
+    tenantId ? leerJson<FirmaRechazada>(almacen, PREFIJO_RECHAZADAS + tenantId) : [];
+
+export const olvidarRechazadas = (tenantId: string, almacen: Almacen = porDefecto()): void => {
+    try { almacen.removeItem(PREFIJO_RECHAZADAS + tenantId); } catch { /* sin almacenamiento */ }
+};
 
 /** "Cerrar sesión" explícito: se borran los vales de todas las empresas. La cola NO. */
 export const borrarTodosLosVales = (almacen: Almacen = porDefecto()): void => {
@@ -179,7 +281,7 @@ export const resumenDelEquipo = (almacen: Almacen = porDefecto(), ahora = Date.n
     for (const k of clavesConPrefijo(almacen, PREFIJO_VALES)) {
         vales += leerJson<ValesDePersona>(almacen, k)
             .filter((v) => new Date(v.expiraEn).getTime() > ahora)
-            .reduce((n, v) => n + (Array.isArray(v.vales) ? v.vales.length : 0), 0);
+            .reduce((n, v) => n + cantidadDe(v), 0);
     }
     for (const k of clavesConPrefijo(almacen, PREFIJO_COLA)) firmas += leerJson(almacen, k).length;
     return { vales, firmas };
@@ -195,6 +297,13 @@ export const resumenDelEquipo = (almacen: Almacen = porDefecto(), ahora = Date.n
 export const retirarClavesAnteriores = (almacen: Almacen = porDefecto()): void => {
     for (const k of CLAVES_ANTERIORES) {
         try { almacen.removeItem(k); } catch { /* sin almacenamiento */ }
+    }
+    // Vales en claro (de antes de cifrar con el PIN, solo existieron en dev):
+    // se descartan. Nunca se cifran después: no hay PIN con qué hacerlo.
+    for (const k of clavesConPrefijo(almacen, PREFIJO_VALES)) {
+        const lista = leerJson<Record<string, unknown>>(almacen, k);
+        const cifrados = lista.filter((v) => v && typeof v === 'object' && 'cifrado' in v && !('vales' in v));
+        if (cifrados.length !== lista.length) escribirJson(almacen, k, cifrados);
     }
 };
 

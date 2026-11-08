@@ -1664,6 +1664,73 @@ en la URL de CloudFront: con la redirección habrían fallado en cada archivo, y
 ahora verifican en `buildandserve.cl`. El enlace de las licencias, cuando falta
 `FRONTEND_URL`, también pasó al dominio propio.
 
+### D-35. Firma sin conexión con el PIN: vales cifrados en el equipo, sin oráculo, y PIN de 6 dígitos
+**Estado: decidido el 8 de noviembre de 2026; en dev, pendiente de prod. Las
+iteraciones de PBKDF2 se fijan con la medición en un Android de gama baja
+(`/medicion-pin` en dev).**
+
+**Qué se decidió.** Sin red, la firma solo se toma con el PIN del trabajador,
+también en la firma asistida:
+
+- al habilitar la firma sin conexión (con red, cuando el servidor ya comprobó el
+  PIN), el equipo guarda los vales cifrados con una llave derivada de ese PIN:
+  PBKDF2-HMAC-SHA256 (~300.000 iteraciones, guardadas con cada emisión) y
+  AES-CTR **sin etiqueta**, con sal nueva por emisión y contador distinto por
+  vale. Se cifran los 32 bytes crudos del vale, no su texto hex
+  (`Frontend/src/utils/valesCifrados.ts`);
+- un solo byte derivado de la llave dice si el PIN tecleado es plausible:
+  descarta 255 de cada 256 PIN equivocados. Cinco PIN equivocados seguidos en el
+  equipo borran los vales de esa persona (`colaFirmas.tomarVale`);
+- el servidor cuenta los vales inexistentes presentados a nombre de una persona
+  de la empresa y, al quinto, anula sus vales vigentes, registra
+  `VALES_INVALIDOS` y dispara la alarma `vales-invalidos` (umbral 1). El contador
+  vuelve a cero solo al emitir vales nuevos, que exige el PIN con red
+  (`ValeFirmaService.registrarInvalido`);
+- el PIN de firma pasa de 4 a 6 dígitos. Para firmar y pedir vales solo se
+  acepta uno de 6; uno de 4 solo sirve para cambiarlo y, fuera de eso, ni se
+  compara con el guardado ni cuenta como intento (409 `PIN_DEBE_CAMBIAR`). Quien
+  entra con uno de 4 pasa por el cambio de PIN antes de seguir (`pinLargo` en la
+  ficha; `pinDebeCambiar` en la sesión).
+
+**Por qué sin etiqueta.** Con AES-GCM, quien copie el almacenamiento del equipo
+prueba los PIN fuera de la app y la etiqueta le confirma el correcto: el PIN,
+que sirve con red para cualquier firma, quedaría expuesto. Con 300.000
+iteraciones, una RTX 4090 (hashcat, ~8,8·10⁹ iteraciones de PBKDF2-SHA256 por
+segundo) recorre los 10.000 PIN de 4 dígitos en menos de un segundo, y el millón
+de 6 dígitos en ~35 s; un notebook de 8 núcleos, en ~2,5 minutos y ~4 horas. Sin
+etiqueta y con un byte, la copia solo reduce los candidatos: ~39 con 4 dígitos y
+~3.900 con 6, que hay que confirmar contra el servidor, que corta al quinto.
+Probabilidad de acertar antes del corte: 13% con 4 dígitos, **0,13% con 6**. Por
+eso los 6 dígitos: sin el corte del servidor no cambiarían casi nada; con él,
+son los que llevan el 13% al 0,13%.
+
+**Costos aceptados.**
+- 1 de cada 256 PIN equivocados pasa el byte de comprobación: esa firma se guarda
+  con un vale que no existe, el servidor la rechaza al sincronizar y se avisa en
+  la app con el nombre de la persona hasta que alguien lo vea («tiene que firmar
+  de nuevo»), y cuenta para el corte del servidor.
+- Cualquier sesión de la empresa puede anular los vales de un compañero mandando
+  cinco vales inventados a su nombre. No gana ninguna firma, queda registrado y
+  dispara la alarma; la persona se vuelve a habilitar con señal.
+- El contador de 5 intentos del equipo vive en el mismo almacenamiento: frena a
+  quien prueba PIN dentro de la app, no a quien copió el almacenamiento (a ese lo
+  frena el servidor).
+- Sin WebCrypto (fuera de https) no se habilita la firma sin conexión: nunca se
+  vuelve a guardar un vale en claro.
+
+**Riesgo que queda.** Quien copie el almacenamiento de un equipo y además tenga
+una sesión de la empresa tiene un 0,13% de confirmar el PIN de una persona antes
+de que se anulen sus vales, y la alarma avisa al primer corte. Quien conoce el
+PIN firma, con o sin esto.
+
+**Verificación.** `Backend/tests/vales-cifrados.test.js` (WebCrypto real de Node:
+PIN bueno y malo, quinto intento, sin oráculo, qué queda guardado, sal e IV,
+vales en claro de antes), `vales-invalidos.test.js` (corte del servidor, métrica y
+alarma), `pin-seis-digitos.test.js` y `pin-pantallas.test.js` (formato, PIN de 4
+solo para cambiarlo, 409 en todas las rutas, cambio obligatorio), y la prueba de
+punta a punta (PIN de 4 rechazado al crearlo y al pedir vales; cinco vales
+inválidos anulan los de la persona).
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

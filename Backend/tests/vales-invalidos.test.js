@@ -123,3 +123,30 @@ test('sin empresa no se cuenta (nunca se adivina la empresa)', async () => {
     assert.deepEqual(r, { invalidos: 0, anulados: false });
     assert.equal(fila('p-1', A).valesInvalidos, undefined);
 });
+
+test('la métrica de la anulación lleva el stage que mira la alarma', async () => {
+    const lineas = [];
+    const previo = console.error;
+    const fn = process.env.AWS_LAMBDA_FUNCTION_NAME;
+    process.env.AWS_LAMBDA_FUNCTION_NAME = 'BuildAndServe-dev-signDocument';
+    console.error = (...a) => lineas.push(a.join(' '));
+    try {
+        for (let i = 0; i < MAX_VALES_INVALIDOS; i += 1) {
+            await ValeFirmaService.consumir({ vale: basura(), personaId: 'p-1', tenantId: A, obraId: OBRA });
+        }
+    } finally {
+        console.error = previo;
+        if (fn === undefined) delete process.env.AWS_LAMBDA_FUNCTION_NAME; else process.env.AWS_LAMBDA_FUNCTION_NAME = fn;
+    }
+    const linea = lineas.find((l) => l.startsWith('VALES_INVALIDOS '));
+    assert.ok(linea, 'queda registrada');
+    const emf = JSON.parse(linea.slice('VALES_INVALIDOS '.length));
+    assert.equal(emf.stage, 'dev');
+    assert.equal(emf.ValesInvalidos, 1);
+    assert.deepEqual(emf._aws.CloudWatchMetrics[0].Metrics, [{ Name: 'ValesInvalidos', Unit: 'Count' }]);
+    // La alarma existe y mira esa métrica con ese stage.
+    const yml = require('fs').readFileSync(require('path').join(__dirname, '..', 'serverless.yml'), 'utf8');
+    const alarma = yml.slice(yml.indexOf('    ValesInvalidosAlarm:'));
+    assert.match(alarma.slice(0, 1200), /MetricName: ValesInvalidos[\s\S]*Value: \$\{self:provider\.stage\}[\s\S]*Threshold: 1\n/);
+    assert.ok(!/rut|nombre/i.test(Object.keys(emf).join(',')), 'sin datos personales');
+});

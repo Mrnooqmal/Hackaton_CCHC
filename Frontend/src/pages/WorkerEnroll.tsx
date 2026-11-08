@@ -424,7 +424,7 @@ export default function WorkerEnroll() {
                     <div className="card" style={{ maxWidth: '500px', margin: '0 auto' }}>
                         <h2 className="card-title mb-4">Crear PIN de Seguridad</h2>
                         <p className="text-muted mb-6">
-                            El trabajador debe crear un PIN de 4 dígitos. Este PIN será utilizado
+                            El trabajador debe crear un PIN de 6 dígitos. Este PIN será utilizado
                             para firmar documentos y validar su identidad en el sistema.
                         </p>
 

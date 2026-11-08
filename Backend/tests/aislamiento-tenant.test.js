@@ -210,7 +210,7 @@ test('sin permiso de firma asistida no se firma por otra persona', async () => {
 
     const res = await documentos.sign(cuerpo(
         { ...sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), pathParameters: { id: 'd-a' } },
-        { personaId: 'otro-trabajador', tipoFirma: 'documento', pin: '1234' },
+        { personaId: 'otro-trabajador', tipoFirma: 'documento', pin: '123400' },
     ));
 
     assert.equal(res.statusCode, 403);
@@ -427,7 +427,7 @@ test('el PIN de quien ya lo tiene solo lo cambia esa persona', async () => {
 
     const res = await personas.personasHandler(cuerpo(
         eventoPersonas(sesionDe(EMPRESA_A), 'POST', '/personas/p-otro/set-pin'),
-        { pin: '9999' },
+        { pin: '999900' },
     ));
 
     assert.equal(res.statusCode, 403, 'reemplazar el PIN es poder firmar por esa persona');

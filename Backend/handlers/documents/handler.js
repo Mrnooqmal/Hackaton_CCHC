@@ -1167,6 +1167,7 @@ module.exports.sign = async (event) => {
             });
         } catch (firmaErr) {
             if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+            if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
             return error(firmaErr.message, 400);
         }
 
@@ -1305,6 +1306,7 @@ module.exports.signAssisted = async (event) => {
             });
         } catch (firmaErr) {
             if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+            if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
             return error(firmaErr.message, 400);
         }
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 import { Modal } from './ui';
 import { documentsApi, uploadsApi } from '../api/client';
 import PinInput from './PinInput';
@@ -133,8 +134,8 @@ export default function FirmaAsistidaModal({
 
     const handleSign = async () => {
         if (!selectedWorker || !selectedDocId) return;
-        if (!pin || pin.length < 4) {
-            setError('El trabajador debe ingresar su PIN de 4 dígitos.');
+        if (!pin || pin.length < LARGO_PIN) {
+            setError('El trabajador debe ingresar su PIN de 6 dígitos.');
             return;
         }
         if (!declared) {
@@ -230,7 +231,7 @@ export default function FirmaAsistidaModal({
                                 className="btn btn-primary"
                                 style={{ flex: 2 }}
                                 onClick={handleSign}
-                                disabled={submitting || pin.length < 4 || !declared}
+                                disabled={submitting || pin.length < LARGO_PIN || !declared}
                             >
                                 {submitting
                                     ? <><div className="fa-spinner" /> Firmando…</>
@@ -344,7 +345,7 @@ export default function FirmaAsistidaModal({
                             title={`${selectedWorker.nombre} ingresa su PIN`}
                             subtitle={navigator.onLine
                                 ? 'El trabajador introduce su clave personal de firma'
-                                : 'Sin señal: el PIN no se puede comprobar ahora. La firma usa la habilitación que hizo con su PIN al preparar la cuadrilla, y queda en el equipo hasta que vuelva la señal.'}
+                                : 'Sin señal: su PIN abre la firma sin conexión que habilitó al preparar la cuadrilla. La firma queda en el equipo hasta que vuelva la señal.'}
                             error={error ?? undefined}
                             disabled={submitting}
                         />

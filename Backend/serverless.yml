@@ -1579,6 +1579,34 @@ resources:
         AlarmActions:
           - !Ref AlertasOperacionTopic
 
+    # Vales de firma sin conexión anulados por vales inválidos
+    # (ValeFirmaService.registrarInvalido). En el equipo los vales están
+    # cifrados con el PIN y el equipo no confirma el PIN: quien copió el
+    # almacenamiento tiene que probar candidatos aquí, y al quinto vale inválido
+    # se anulan los de la persona. Uno solo ya importa: a quien solo se equivoca
+    # al teclear le pasa 1 de cada 256 veces, no cinco seguidas.
+    ValesInvalidosAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-vales-invalidos-${self:provider.stage}
+        AlarmDescription: >-
+          Se anularon los vales de firma sin conexión de una persona por cinco
+          vales inválidos. Revisar los logs filtrando por VALES_INVALIDOS: puede
+          ser alguien probando PIN con una copia del almacenamiento de un equipo.
+        Namespace: BuildAndServe
+        MetricName: ValesInvalidos
+        Dimensions:
+          - Name: stage
+            Value: ${self:provider.stage}
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
     # Detección de eventos sospechosos (D-31, lib/gobernanza/deteccion.js):
     # fuerza bruta contra una cuenta, contraseña reiterada al confirmar
     # identidad, exportaciones sobre el límite, acceso masivo a salud y

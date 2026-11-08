@@ -204,7 +204,10 @@ class ValeFirmaService {
                     Timestamp: Date.now(),
                     CloudWatchMetrics: [{ Namespace: 'BuildAndServe', Dimensions: [['stage']], Metrics: [{ Name: 'ValesInvalidos', Unit: 'Count' }] }],
                 },
-                stage: process.env.STAGE || 'desconocido',
+                // Sin STAGE en el entorno: sale del nombre de la función
+                // (`BuildAndServe-dev-…`), como en limitePin. Con otro valor la
+                // alarma, que filtra por stage, no la vería nunca.
+                stage: process.env.STAGE || process.env.AWS_LAMBDA_FUNCTION_NAME?.split('-')[1] || 'desconocido',
                 ValesInvalidos: 1,
                 tenantId,
                 personaId,

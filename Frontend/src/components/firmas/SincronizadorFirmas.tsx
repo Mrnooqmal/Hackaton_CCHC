@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { FiUploadCloud, FiWifiOff } from 'react-icons/fi';
+import { FiUploadCloud, FiWifiOff, FiAlertTriangle } from 'react-icons/fi';
 import { useOfflineSignature } from '../../hooks/useOfflineSignature';
 import { useToast } from '../../context/ToastContext';
 
@@ -13,11 +13,15 @@ import { useToast } from '../../context/ToastContext';
  *
  * La cola es de la empresa de la sesión (utils/colaFirmas): lo de otra empresa en
  * el mismo equipo espera a una sesión de esa empresa.
+ *
+ * Las firmas que el servidor rechazó (por ejemplo, la de un PIN equivocado que
+ * pasó la comprobación del equipo) se muestran con el nombre de la persona hasta
+ * que alguien marque "Entendido": esa persona tiene que firmar de nuevo.
  */
 const CADA_MS = 2 * 60 * 1000;
 
 export default function SincronizadorFirmas() {
-    const { isOnline, pendingCount, syncing, syncPendingSignatures } = useOfflineSignature();
+    const { isOnline, pendingCount, syncing, syncPendingSignatures, rechazadas, olvidarRechazadas } = useOfflineSignature();
     const { toast } = useToast();
     const avisando = useRef(false);
 
@@ -52,9 +56,29 @@ export default function SincronizadorFirmas() {
         return () => window.clearInterval(id);
     }, [isOnline, pendingCount, enviar]);
 
-    if (pendingCount === 0) return null;
+    const avisoRechazadas = rechazadas.length > 0 && (
+        <div className="sincronizador-firmas sincronizador-firmas--rechazadas" role="alert">
+            <FiAlertTriangle aria-hidden />
+            <div>
+                <strong>
+                    {rechazadas.length === 1 ? '1 firma tomada sin conexión no se validó' : `${rechazadas.length} firmas tomadas sin conexión no se validaron`}
+                    : tienen que firmar de nuevo.
+                </strong>
+                <ul>
+                    {rechazadas.map((r) => (
+                        <li key={r.id}>{r.workerName}: {r.targetTitle} ({r.motivo})</li>
+                    ))}
+                </ul>
+            </div>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={olvidarRechazadas}>Entendido</button>
+        </div>
+    );
+
+    if (pendingCount === 0) return avisoRechazadas || null;
 
     return (
+        <>
+        {avisoRechazadas}
         <div className="sincronizador-firmas" role="status" aria-live="polite">
             {isOnline ? <FiUploadCloud aria-hidden /> : <FiWifiOff aria-hidden />}
             <span>
@@ -67,5 +91,6 @@ export default function SincronizadorFirmas() {
                 </button>
             )}
         </div>
+        </>
     );
 }

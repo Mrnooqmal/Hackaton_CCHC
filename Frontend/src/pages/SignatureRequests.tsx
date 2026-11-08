@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 import {
     FiPlus,
     FiUsers,
@@ -290,7 +291,7 @@ export default function SignatureRequests() {
     };
 
     const handleSign = async () => {
-        if (!selectedRequest || !user?.personaId || pin.length !== 4) return;
+        if (!selectedRequest || !user?.personaId || pin.length !== LARGO_PIN) return;
         setSigning(true);
         setSignError('');
         try {
@@ -1384,8 +1385,8 @@ export default function SignatureRequests() {
                             <button
                                 className="btn btn-primary"
                                 onClick={handleSign}
-                                disabled={signing || pin.length !== 4}
-                                style={{ flex: 2, boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none' }}
+                                disabled={signing || pin.length !== LARGO_PIN}
+                                style={{ flex: 2, boxShadow: pin.length === LARGO_PIN ? 'var(--shadow-glow-primary)' : 'none' }}
                             >
                                 {signing
                                     ? <><div className="spinner" style={{ width: '16px', height: '16px' }} /> Firmando...</>
@@ -1465,7 +1466,7 @@ export default function SignatureRequests() {
                         }}>
                             <div className="flex items-center justify-center gap-2 mb-3">
                                 <FiShield size={18} style={{ color: 'var(--primary-500)' }} />
-                                <label className="font-medium">Ingresa tu PIN de 4 dígitos</label>
+                                <label className="font-medium">Ingresa tu PIN de 6 dígitos</label>
                             </div>
                             <PinInput
                                 onComplete={(completedPin) => setPin(completedPin)}

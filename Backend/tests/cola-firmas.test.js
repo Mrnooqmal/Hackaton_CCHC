@@ -20,20 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
-const FRONTEND = path.join(__dirname, '..', '..', 'Frontend');
-let ts;
-try { ts = require(path.join(FRONTEND, 'node_modules', 'typescript')); } catch { ts = null; }
-
-function cargarTs(nombre) {
-    assert.ok(ts, 'Falta Frontend/node_modules/typescript: corre `npm ci` en Frontend. Esta prueba no se salta.');
-    const archivo = path.join(FRONTEND, 'src', 'utils', nombre);
-    const { outputText } = ts.transpileModule(fs.readFileSync(archivo, 'utf8'), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-    });
-    const m = new Module(archivo);
-    m._compile(outputText, archivo);
-    return m.exports;
-}
+const { cargarTs, FRONTEND } = require('./cargar-ts');
 const cargarCola = () => cargarTs('colaFirmas.ts');
 
 /** Almacenamiento en memoria con la interfaz de localStorage. */
@@ -93,33 +80,42 @@ test('una firma escondida en la cola de otra empresa no se lee como propia', () 
 
 // ─── Vales ───────────────────────────────────────────────────────────────────
 
-test('vales: por empresa y persona, uno por firma, y los vencidos no sirven', () => {
+// Los vales se guardan cifrados con el PIN (ver vales-cifrados.test.js). Aquí,
+// con pocas iteraciones para que la suite sea rápida.
+const PIN = '482915';
+const hex = (n) => n.toString(16).padStart(64, '0');
+const conVales = async (c, a, tenantId, personaId, obraId, vales, { expiraEn = enUnaHora(), pin = PIN } = {}) => {
+    const { cifrarVales } = cargarTs('valesCifrados.ts');
+    c.guardarValesDe(tenantId, { personaId, obraId, cifrado: await cifrarVales(pin, vales, 1000), expiraEn }, a);
+};
+
+test('vales: por empresa y persona, uno por firma, y los vencidos no sirven', async () => {
     const c = cargarCola();
     const a = almacen();
-    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1', 'v2'], expiraEn: enUnaHora() }, a);
+    await conVales(c, a, 't-1', 'p-1', 'o-1', [hex(1), hex(2)]);
     assert.equal(c.valesDisponibles('t-1', 'p-1', a), 2);
-    assert.deepEqual(c.valeParaFirma('t-2', 'p-1', 'o-1', a), { motivo: 'sin_vales' }, 'los vales de una empresa no sirven en otra');
-    assert.deepEqual(c.valeParaFirma('t-1', 'p-1', 'o-1', a), { vale: 'v1' });
+    assert.deepEqual(await c.tomarVale('t-2', 'p-1', 'o-1', PIN, a), { motivo: 'sin_vales' }, 'los vales de una empresa no sirven en otra');
+    assert.deepEqual(await c.tomarVale('t-1', 'p-1', 'o-1', PIN, a), { vale: hex(1) });
     assert.equal(c.valesDisponibles('t-1', 'p-1', a), 1);
-    c.guardarValesDe('t-1', { personaId: 'p-2', obraId: 'o-1', vales: ['v3'], expiraEn: new Date(Date.now() - 1000).toISOString() }, a);
-    assert.deepEqual(c.valeParaFirma('t-1', 'p-2', 'o-1', a), { motivo: 'sin_vales' });
+    await conVales(c, a, 't-1', 'p-2', 'o-1', [hex(3)], { expiraEn: new Date(Date.now() - 1000).toISOString() });
+    assert.deepEqual(await c.tomarVale('t-1', 'p-2', 'o-1', PIN, a), { motivo: 'sin_vales' });
 });
 
-test('vales de otra obra: no se toma ninguno y se dice por qué; lo de la empresa sí se firma', () => {
+test('vales de otra obra: no se toma ninguno y se dice por qué; lo de la empresa sí se firma', async () => {
     // El servidor rechazaría la firma al sincronizar y se perdería: se avisa al firmar.
     const c = cargarCola();
     const a = almacen();
-    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1'], expiraEn: enUnaHora() }, a);
-    assert.deepEqual(c.valeParaFirma('t-1', 'p-1', 'o-2', a), { motivo: 'otra_obra' });
+    await conVales(c, a, 't-1', 'p-1', 'o-1', [hex(1)]);
+    assert.deepEqual(await c.tomarVale('t-1', 'p-1', 'o-2', PIN, a), { motivo: 'otra_obra' });
     assert.equal(c.valesDisponibles('t-1', 'p-1', a), 1, 'no se gastó');
-    assert.deepEqual(c.valeParaFirma('t-1', 'p-1', null, a), { vale: 'v1' }, 'un documento de empresa, sin obra');
+    assert.deepEqual(await c.tomarVale('t-1', 'p-1', null, PIN, a), { vale: hex(1) }, 'un documento de empresa, sin obra');
 });
 
-test('cerrar sesión a propósito borra los vales de todas las empresas y deja la cola', () => {
+test('cerrar sesión a propósito borra los vales de todas las empresas y deja la cola', async () => {
     const c = cargarCola();
     const a = almacen();
-    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1'], expiraEn: enUnaHora() }, a);
-    c.guardarValesDe('t-2', { personaId: 'p-9', obraId: 'o-9', vales: ['v9'], expiraEn: enUnaHora() }, a);
+    await conVales(c, a, 't-1', 'p-1', 'o-1', [hex(1)]);
+    await conVales(c, a, 't-2', 'p-9', 'o-9', [hex(9)]);
     c.agregarACola(firma('t-1', 'f1'), a);
     assert.deepEqual(c.resumenDelEquipo(a), { vales: 2, firmas: 1 });
 

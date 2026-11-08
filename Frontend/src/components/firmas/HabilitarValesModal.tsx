@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { LARGO_PIN } from '../../utils/pin';
 import { FiWifiOff } from 'react-icons/fi';
 import { Modal } from '../ui';
 import PinCasillas from '../PinCasillas';
@@ -35,7 +36,7 @@ export default function HabilitarValesModal({ isOpen, onClose, personaId, nombre
     }, [isOpen, personaId]);
 
     const habilitar = async (valor: string) => {
-        if (valor.length !== 4 || enviando) return;
+        if (valor.length !== LARGO_PIN || enviando) return;
         setEnviando(true);
         setError('');
         const r = await habilitarSinConexion(personaId, valor, obraId);
@@ -61,7 +62,7 @@ export default function HabilitarValesModal({ isOpen, onClose, personaId, nombre
             footer={
                 <>
                     <button type="button" className="btn btn-secondary" onClick={onClose} disabled={enviando}>Cancelar</button>
-                    <button type="button" className="btn btn-primary" onClick={() => habilitar(pin)} disabled={enviando || pin.length !== 4}>
+                    <button type="button" className="btn btn-primary" onClick={() => habilitar(pin)} disabled={enviando || pin.length !== LARGO_PIN}>
                         {enviando ? 'Habilitando…' : 'Habilitar'}
                     </button>
                 </>

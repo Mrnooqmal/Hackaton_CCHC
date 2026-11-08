@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -901,7 +902,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
     const handleFirmaRelator = async () => {
         if (!relatorSign || !user?.personaId) return;
-        if (!relatorPin || relatorPin.length < 4) { setRelatorError('Ingresa tu PIN para firmar.'); return; }
+        if (!relatorPin || relatorPin.length < LARGO_PIN) { setRelatorError('Ingresa tu PIN para firmar.'); return; }
         setRelatorSaving(true);
         setRelatorError(null);
         try {

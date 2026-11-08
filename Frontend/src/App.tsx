@@ -58,6 +58,8 @@ import { createPortal } from 'react-dom';
 // El manual (react-markdown + minisearch + contenido) se carga como chunk aparte:
 // solo se descarga al visitar /manual, sin engordar el bundle inicial de la app.
 const ManualLayout = lazy(() => import('./manual/ManualLayout'));
+// Medición de PBKDF2 en el teléfono (solo fuera de producción; ver la página).
+const MedicionPin = lazy(() => import('./pages/MedicionPin'));
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
@@ -120,7 +122,7 @@ function SessionExpiredModal() {
 const RUTAS_SIN_AMBITO = new Set([
   '/login', '/recuperar-clave', '/restablecer-clave', '/register-admin',
   '/onboarding', '/unauthorized', '/equipo', '/about',
-  '/change-password', '/enroll-me', '/seleccionar-obra',
+  '/change-password', '/enroll-me', '/seleccionar-obra', '/medicion-pin',
 ]);
 
 function AppContent() {
@@ -160,6 +162,7 @@ function AppContent() {
       <Route path="/unauthorized" element={<Unauthorized />} />
       <Route path="/equipo" element={<Equipo />} />
       <Route path="/about" element={<About />} />
+      <Route path="/medicion-pin" element={<Suspense fallback={null}><MedicionPin /></Suspense>} />
       {/* Manual de uso: sección nativa React (público + dentro del shell) */}
       <Route path="/manual/*" element={
         <Suspense fallback={<div className="route-outlet" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Cargando manual…</div>}>

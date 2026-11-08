@@ -538,6 +538,7 @@ module.exports.updateResponseStatus = async (event) => {
                 console.log(`✅ Firma digital creada para encuesta ${id}, trabajador ${workerId}`);
             } catch (firmaError) {
                 if (firmaError.codigo === 'PIN_BLOQUEADO') return error(firmaError.message, 423);
+                if (firmaError.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaError.message, 409);
                 console.error('Error validando firma:', firmaError.message);
                 // 400, como documentos y actividades. Era 401, y el cliente lee un
                 // 401 como sesión vencida: un PIN mal tecleado al responder una

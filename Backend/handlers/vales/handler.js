@@ -75,7 +75,7 @@ module.exports.emitir = async (event) => {
 
         const chequeo = await verificarConLimite(persona, body.pin, verifyPin);
         if (!chequeo.ok) {
-            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : 401);
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : (chequeo.debeCambiar ? 409 : 401));
         }
 
         const { vales, expiraEn, vigenciaHoras } = await ValeFirmaService.emitir({

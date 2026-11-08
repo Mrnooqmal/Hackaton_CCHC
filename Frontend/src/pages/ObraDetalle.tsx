@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, workersApi, signatureRequestsApi, tenantsApi, surveysApi } from '../api/client';
@@ -583,7 +584,7 @@ export default function ObraDetalle() {
     if (!cerrarInvModal || !obraId) return;
     const firmanteId = user?.personaId;
     if (!firmanteId) { setCerrarInvError('No se pudo identificar al firmante.'); return; }
-    if (!cerrarInvPin || cerrarInvPin.length < 4) { setCerrarInvError('Ingresa tu PIN para firmar el informe.'); return; }
+    if (!cerrarInvPin || cerrarInvPin.length < LARGO_PIN) { setCerrarInvError('Ingresa tu PIN para firmar el informe.'); return; }
     setCerrarInvSaving(true);
     setCerrarInvError(null);
     try {
@@ -978,7 +979,7 @@ export default function ObraDetalle() {
       setRegistroError('No se pudo identificar al firmante.');
       return;
     }
-    if (!registroPin || registroPin.length < 4) {
+    if (!registroPin || registroPin.length < LARGO_PIN) {
       setRegistroError('Ingresa tu PIN para firmar el registro.');
       return;
     }

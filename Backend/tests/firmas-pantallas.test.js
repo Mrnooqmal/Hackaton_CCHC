@@ -12,20 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
-const FRONTEND = path.join(__dirname, '..', '..', 'Frontend');
-let ts;
-try { ts = require(path.join(FRONTEND, 'node_modules', 'typescript')); } catch { ts = null; }
-
-function cargarTs(nombre) {
-    assert.ok(ts, 'Falta Frontend/node_modules/typescript: corre `npm ci` en Frontend. Esta prueba no se salta.');
-    const archivo = path.join(FRONTEND, 'src', 'utils', nombre);
-    const { outputText } = ts.transpileModule(fs.readFileSync(archivo, 'utf8'), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-    });
-    const m = new Module(archivo);
-    m._compile(outputText, archivo);
-    return m.exports;
-}
+const { cargarTs, FRONTEND } = require('./cargar-ts');
 
 function almacen() {
     const datos = new Map();
@@ -105,14 +92,16 @@ test('las copias guardan solo lo necesario para firmar: ni RUT, ni correo, ni sa
 
 // ─── Vales por obra ──────────────────────────────────────────────────────────
 
-test('vales disponibles: con obra, solo cuentan los de esa obra', () => {
+test('vales disponibles: con obra, solo cuentan los de esa obra', async () => {
     const c = cargarTs('colaFirmas.ts');
+    const { cifrarVales } = cargarTs('valesCifrados.ts');
     const a = almacen();
-    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1', 'v2'], expiraEn: enUnaHora() }, a);
+    const cifrado = await cifrarVales('482915', ['a'.repeat(64), 'b'.repeat(64)], 1000);
+    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', cifrado, expiraEn: enUnaHora() }, a);
     assert.equal(c.valesDisponibles('t-1', 'p-1', a, 'o-1'), 2);
     assert.equal(c.valesDisponibles('t-1', 'p-1', a, 'o-2'), 0, 'los de otra obra no sirven ahí');
     assert.equal(c.valesDisponibles('t-1', 'p-1', a), 2, 'sin obra, todos');
-    assert.equal(c.valesDePersona('t-1', 'p-1', a).obraId, 'o-1');
+    assert.deepEqual({ ...c.valesDePersona('t-1', 'p-1', a), expiraEn: undefined }, { personaId: 'p-1', obraId: 'o-1', cantidad: 2, expiraEn: undefined }, 'resumen sin los vales');
     assert.equal(c.valesDePersona('t-2', 'p-1', a), null, 'ni los de otra empresa');
 });
 
@@ -150,7 +139,7 @@ test('el sincronizador no corre dos envíos a la vez', () => {
     assert.ok(s.includes('if (!navigator.onLine || avisando.current) return;'));
 });
 
-test('firma asistida sin red: usa el vale del trabajador y la obra, y no simula comprobar el PIN', () => {
+test('firma asistida sin red: el PIN del trabajador abre su vale, para la obra', () => {
     const s = leerFront('components', 'FirmaAsistidaModal.tsx');
     const rama = s.slice(s.indexOf('if (!navigator.onLine) {\n            const nombre'));
     assert.ok(rama.length > 0, 'falta la rama sin red');
@@ -158,7 +147,8 @@ test('firma asistida sin red: usa el vale del trabajador y la obra, y no simula 
     assert.ok(cuerpo.includes('signDocument(selectedDocId,'), 'firma con el vale, vía la cola');
     assert.ok(cuerpo.includes('selectedWorker.personaId, nombre, pin, obraId)'), 'a nombre del trabajador y para la obra');
     assert.match(cuerpo, /if \(!r\.success\) \{[^}]*return; \}/, 'si no quedó guardada, no se da por firmada');
-    assert.ok(s.includes('Sin señal: el PIN no se puede comprobar ahora.'), 'dice la verdad sobre el PIN sin red');
+    assert.ok(s.includes('Sin señal: su PIN abre la firma sin conexión'), 'dice qué hace el PIN sin red');
+    assert.ok(!s.includes('el PIN no se puede comprobar'), 'ya no dice que el PIN no se comprueba');
 });
 
 test('mis firmas: las solicitudes de firma piden red; los documentos van por la cola', () => {

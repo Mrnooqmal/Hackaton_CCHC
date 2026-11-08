@@ -21,8 +21,10 @@ process.env.CREDENCIAL_PEPPER = 'pimienta-de-prueba';
 const limitePin = require('../lib/limitePin');
 const consultasAlLimite = [];
 let bloquear = false;
-limitePin.verificarConLimiteOLanzar = async (persona, pinIngresado, verificar) => {
+let opcionesAlLimite = null;
+limitePin.verificarConLimiteOLanzar = async (persona, pinIngresado, verificar, opciones = {}) => {
     consultasAlLimite.push(persona.personaId);
+    opcionesAlLimite = opciones;
     if (bloquear) throw Object.assign(new Error('Cuenta bloqueada temporalmente'), { codigo: 'PIN_BLOQUEADO' });
     return verificar(pinIngresado, persona._pinHash, persona.personaId);
 };
@@ -136,58 +138,58 @@ const rechaza = (promesa, codigo) => assert.rejects(promesa, (err) => err.codigo
 // ─── Con PIN: solo ella, probando el actual ─────────────────────────────────
 
 test('la propia persona cambia su PIN probando el actual', async () => {
-    await conPin('4821');
-    await svc().setPin(EMPRESA, DUENA, '7395', '4821', actor(DUENA));
-    assert.equal(await verifyPin('7395', ficha.pinHash, DUENA), true);
+    await conPin('482100');
+    await svc().setPin(EMPRESA, DUENA, '739500', '482100', actor(DUENA));
+    assert.equal(await verifyPin('739500', ficha.pinHash, DUENA), true);
 });
 
 test('sin el PIN actual no se cambia — aunque lo pida la propia persona', async () => {
-    await conPin('4821');
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(DUENA)), 'PIN_ACTUAL_REQUERIDO');
+    await conPin('482100');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(DUENA)), 'PIN_ACTUAL_REQUERIDO');
     assert.equal(escrituras.length, 0);
-    assert.equal(await verifyPin('4821', ficha.pinHash, DUENA), true, 'el PIN sigue siendo el de antes');
+    assert.equal(await verifyPin('482100', ficha.pinHash, DUENA), true, 'el PIN sigue siendo el de antes');
 });
 
 test('con el PIN actual incorrecto no se cambia, y el intento cuenta para el límite', async () => {
-    await conPin('4821');
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', '0000', actor(DUENA)), 'PIN_ACTUAL_INCORRECTO');
+    await conPin('482100');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', '000000', actor(DUENA)), 'PIN_ACTUAL_INCORRECTO');
     assert.equal(escrituras.length, 0);
     assert.deepEqual(consultasAlLimite, [DUENA], 'la prueba del PIN actual pasa por el límite de intentos');
 });
 
 test('con la cuenta bloqueada no se cambia: el bloqueo se respeta, no se esquiva', async () => {
-    await conPin('4821');
+    await conPin('482100');
     bloquear = true;
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', '4821', actor(DUENA)), 'PIN_BLOQUEADO');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', '482100', actor(DUENA)), 'PIN_BLOQUEADO');
     assert.equal(escrituras.length, 0);
 });
 
 test('otra persona no cambia un PIN existente, ni con permiso de enrolar ni sabiendo el PIN', async () => {
-    await conPin('4821');
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', '4821', actor(SUPERVISOR, true)), 'PIN_AJENO');
+    await conPin('482100');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', '482100', actor(SUPERVISOR, true)), 'PIN_AJENO');
     assert.equal(escrituras.length, 0);
     assert.deepEqual(consultasAlLimite, [], 'ni siquiera se consulta el PIN: no sirve de oráculo para adivinarlo');
 });
 
 test('el PIN nuevo no puede ser igual al actual', async () => {
-    await conPin('4821');
-    await rechaza(svc().setPin(EMPRESA, DUENA, '4821', '4821', actor(DUENA)), 'PIN_IGUAL');
+    await conPin('482100');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '482100', '482100', actor(DUENA)), 'PIN_IGUAL');
 });
 
 // ─── Sin PIN: ella, o quien puede enrolar ───────────────────────────────────
 
 test('sin PIN, la propia persona lo configura', async () => {
-    await svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(DUENA));
-    assert.equal(await verifyPin('7395', ficha.pinHash, DUENA), true);
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(DUENA));
+    assert.equal(await verifyPin('739500', ficha.pinHash, DUENA), true);
 });
 
 test('sin PIN, quien tiene permiso de enrolar lo configura (el trabajador lo teclea en su dispositivo)', async () => {
-    await svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(SUPERVISOR, true));
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(SUPERVISOR, true));
     assert.equal(escrituras.length, 1);
 });
 
 test('sin PIN, otra persona sin permiso de enrolar no lo configura', async () => {
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(SUPERVISOR, false)), 'PIN_AJENO');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(SUPERVISOR, false)), 'PIN_AJENO');
     assert.equal(escrituras.length, 0);
 });
 
@@ -195,24 +197,24 @@ test('sin PIN, otra persona sin permiso de enrolar no lo configura', async () =>
 
 test('si la persona configura su PIN mientras otro "configura el primero", no se sobrescribe', async () => {
     // Quien enrola lee "no tiene PIN"; antes de que escriba, la persona pone el suyo.
-    const pinDeElla = await hashPin('4821', DUENA);
+    const pinDeElla = await hashPin('482100', DUENA);
     alLeer = () => { ficha.pinHash = pinDeElla; };
 
-    await rechaza(svc().setPin(EMPRESA, DUENA, '1111', undefined, actor(SUPERVISOR, true)), 'PIN_CAMBIO_CONCURRENTE');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '111100', undefined, actor(SUPERVISOR, true)), 'PIN_CAMBIO_CONCURRENTE');
     assert.equal(ficha.pinHash, pinDeElla, 'el PIN de ella sigue ahí');
 });
 
 test('si el PIN cambia entre verificarlo y escribir, el cambio no procede', async () => {
-    await conPin('4821');
-    const otro = await hashPin('5555', DUENA);
+    await conPin('482100');
+    const otro = await hashPin('555500', DUENA);
     alLeer = () => { ficha.pinHash = otro; };   // otro cambio gana la carrera
 
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', '4821', actor(DUENA)), 'PIN_CAMBIO_CONCURRENTE');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', '482100', actor(DUENA)), 'PIN_CAMBIO_CONCURRENTE');
     assert.equal(ficha.pinHash, otro);
 });
 
 test('sin saber quién pide el cambio, no hay cambio', async () => {
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, undefined), 'PIN_SIN_ACTOR');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', undefined, undefined), 'PIN_SIN_ACTOR');
     assert.equal(escrituras.length, 0);
 });
 
@@ -220,18 +222,18 @@ test('sin saber quién pide el cambio, no hay cambio', async () => {
 
 test('la ficha recién creada guarda pinHash como NULL, y aun así su primer PIN se configura', async () => {
     assert.ok('pinHash' in ficha && ficha.pinHash === null, 'así lo escribe `crear`: presente y NULL');
-    await svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(DUENA));
-    assert.equal(await verifyPin('7395', ficha.pinHash, DUENA), true);
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(DUENA));
+    assert.equal(await verifyPin('739500', ficha.pinHash, DUENA), true);
 });
 
 test('cada configuración queda en el historial, con quién y si fue asistida — nunca el PIN', async () => {
-    await svc().setPin(EMPRESA, DUENA, '7395', undefined, { personaId: SUPERVISOR, nombre: 'Supervisor', puedeEnrolar: true });
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, { personaId: SUPERVISOR, nombre: 'Supervisor', puedeEnrolar: true });
     assert.equal(ficha.pinHistorial.length, 1);
     const [e] = ficha.pinHistorial;
     assert.equal(e.evento, 'configurado');
     assert.equal(e.por, SUPERVISOR);
     assert.equal(e.asistido, true);
-    assert.ok(!JSON.stringify(ficha.pinHistorial).includes('7395'));
+    assert.ok(!JSON.stringify(ficha.pinHistorial).includes('739500'));
     assert.ok(!JSON.stringify(ficha.pinHistorial).includes(ficha.pinHash));
 });
 
@@ -277,7 +279,7 @@ afterEach(() => {
 const restablecer = (motivo = MOTIVO, quien = admin) => svc().restablecerPin(EMPRESA, DUENA, motivo, quien);
 
 test('restablecer quita el PIN, limpia el bloqueo y deja registrado quién, cuándo y por qué', async () => {
-    await conPin('4821');
+    await conPin('482100');
     ficha.pinIntentosFallidos = 7;
     ficha.pinBloqueadaHasta = '2099-01-01T00:00:00.000Z';
 
@@ -292,7 +294,7 @@ test('restablecer quita el PIN, limpia el bloqueo y deja registrado quién, cuá
 });
 
 test('no hay restablecimiento sin aviso: el mensaje de bandeja va en la MISMA transacción', async () => {
-    await conPin('4821');
+    await conPin('482100');
     await restablecer();
     assert.equal(bandeja.length, 1);
     assert.equal(bandeja[0].recipientId, DUENA);
@@ -302,7 +304,7 @@ test('no hay restablecimiento sin aviso: el mensaje de bandeja va en la MISMA tr
 });
 
 test('si la transacción falla, no queda ni el restablecimiento ni el aviso', async () => {
-    await conPin('4821');
+    await conPin('482100');
     const antes = ficha.pinHash;
     fallarTransaccion = true;
     await assert.rejects(restablecer());
@@ -312,8 +314,8 @@ test('si la transacción falla, no queda ni el restablecimiento ni el aviso', as
 });
 
 test('si el PIN cambia entre leer y restablecer, no se restablece ni se avisa', async () => {
-    await conPin('4821');
-    const nuevo = await hashPin('9999', DUENA);
+    await conPin('482100');
+    const nuevo = await hashPin('999900', DUENA);
     alLeer = () => { ficha.pinHash = nuevo; };
     await rechaza(restablecer(), 'PIN_CAMBIO_CONCURRENTE');
     assert.equal(ficha.pinHash, nuevo);
@@ -321,7 +323,7 @@ test('si el PIN cambia entre leer y restablecer, no se restablece ni se avisa', 
 });
 
 test('sin motivo, o con uno de una palabra, no se restablece', async () => {
-    await conPin('4821');
+    await conPin('482100');
     await rechaza(restablecer(''), 'MOTIVO_REQUERIDO');
     await rechaza(restablecer('   olvido  '), 'MOTIVO_REQUERIDO');
     assert.ok(ficha.pinHash, 'el PIN sigue ahí');
@@ -333,7 +335,7 @@ test('sin PIN configurado no hay nada que restablecer', async () => {
 });
 
 test('los vales sin usar se anulan, en esta empresa y a nombre de quien restableció', async () => {
-    await conPin('4821');
+    await conPin('482100');
     const r = await restablecer();
     assert.deepEqual(valesRevocados, [{ personaId: DUENA, tenantId: EMPRESA, motivo: 'pin_restablecido', por: ADMIN }]);
     assert.equal(r.valesAnulados, 3);
@@ -341,7 +343,7 @@ test('los vales sin usar se anulan, en esta empresa y a nombre de quien restable
 });
 
 test('si anular los vales falla, el restablecimiento se mantiene pero se informa — no se calla', async () => {
-    await conPin('4821');
+    await conPin('482100');
     resultadoVales = new Error('DynamoDB caído');
     const r = await restablecer();
     assert.ok(!('pinHash' in ficha));
@@ -349,14 +351,14 @@ test('si anular los vales falla, el restablecimiento se mantiene pero se informa
 });
 
 test('con correo, se avisa también por correo; si falla, se informa', async () => {
-    await conPin('4821');
+    await conPin('482100');
     ficha.email = 'duena@ejemplo.cl';
     let r = await restablecer();
     assert.equal(r.avisoCorreo, 'enviado');
     assert.equal(correos[0].email, 'duena@ejemplo.cl');
     assert.equal(correos[0].porNombre, 'Admin Uno');
 
-    await conPin('4821');
+    await conPin('482100');
     ficha.pinRestablecido = null;
     resultadoCorreo = { sent: false, error: 'MessageRejected' };
     r = await restablecer();
@@ -364,7 +366,7 @@ test('con correo, se avisa también por correo; si falla, se informa', async () 
 });
 
 test('sin correo, el aviso queda solo en la bandeja', async () => {
-    await conPin('4821');
+    await conPin('482100');
     const r = await restablecer();
     assert.equal(r.avisoCorreo, 'sin-correo');
     assert.equal(correos.length, 0);
@@ -373,18 +375,18 @@ test('sin correo, el aviso queda solo en la bandeja', async () => {
 // ─── El PIN nuevo: dos personas distintas ───────────────────────────────────
 
 test('quien restableció NO puede asistir en el PIN nuevo, aunque pueda enrolar', async () => {
-    await conPin('4821');
+    await conPin('482100');
     await restablecer();
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, { ...admin, puedeEnrolar: true }), 'PIN_MISMA_PERSONA');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', undefined, { ...admin, puedeEnrolar: true }), 'PIN_MISMA_PERSONA');
     assert.ok(!('pinHash' in ficha));
 });
 
 test('otra persona con permiso de enrolar sí asiste, y quedan registradas las dos', async () => {
-    await conPin('4821');
+    await conPin('482100');
     await restablecer();
-    await svc().setPin(EMPRESA, DUENA, '7395', undefined, { personaId: OTRO, nombre: 'Otro', puedeEnrolar: true });
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, { personaId: OTRO, nombre: 'Otro', puedeEnrolar: true });
 
-    assert.equal(await verifyPin('7395', ficha.pinHash, DUENA), true);
+    assert.equal(await verifyPin('739500', ficha.pinHash, DUENA), true);
     assert.ok(!('pinRestablecido' in ficha), 'el restablecimiento pendiente se cierra');
     const [restablecido, configurado] = ficha.pinHistorial.slice(-2);
     assert.equal(restablecido.evento, 'restablecido');
@@ -396,17 +398,17 @@ test('otra persona con permiso de enrolar sí asiste, y quedan registradas las d
 });
 
 test('la propia persona configura su PIN nuevo sin ayuda', async () => {
-    await conPin('4821');
+    await conPin('482100');
     await restablecer();
-    await svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(DUENA));
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(DUENA));
     assert.equal(ficha.pinHistorial.at(-1).asistido, false);
 });
 
 test('quien se restablece su propio PIN puede configurar el nuevo: no está asistiendo a nadie', async () => {
     ficha.personaId = ADMIN;
-    await conPin('4821');
+    await conPin('482100');
     await svc().restablecerPin(EMPRESA, ADMIN, MOTIVO, admin);
-    await svc().setPin(EMPRESA, ADMIN, '7395', undefined, { ...admin, puedeEnrolar: true });
+    await svc().setPin(EMPRESA, ADMIN, '739500', undefined, { ...admin, puedeEnrolar: true });
     assert.equal(ficha.pinHistorial.at(-1).asistido, false);
 });
 
@@ -414,8 +416,37 @@ test('si el restablecimiento cambia mientras se asiste, la asistencia no procede
     // OTRO lee el restablecimiento de ADMIN y, antes de escribir, queda vigente
     // uno distinto —hecho por el propio OTRO—. La regla se evaluó contra el
     // leído, así que la escritura no puede proceder contra el vigente.
-    await conPin('4821');
+    await conPin('482100');
     await restablecer();
     alLeer = () => { ficha.pinRestablecido = { ...ficha.pinRestablecido, en: '2099-01-01T00:00:00.000Z', por: OTRO }; };
-    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, { personaId: OTRO, puedeEnrolar: true }), 'PIN_CAMBIO_CONCURRENTE');
+    await rechaza(svc().setPin(EMPRESA, DUENA, '739500', undefined, { personaId: OTRO, puedeEnrolar: true }), 'PIN_CAMBIO_CONCURRENTE');
+});
+
+// ─── PIN de 6 dígitos (8 de noviembre de 2026) ──────────────────────────────
+
+test('un PIN nuevo de 4 dígitos ya no se acepta', async () => {
+    await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, actor(DUENA)), 'PIN_INVALIDO');
+    assert.equal(escrituras.length, 0);
+});
+
+test('quien tiene un PIN de 4 lo cambia por uno de 6 probando el de 4, y queda marcado como de 6', async () => {
+    const { hashear } = require('../lib/credenciales');
+    ficha.pinHash = await hashear('4821', DUENA);   // un PIN de antes
+    assert.equal(Persona.fromDynamoItem(structuredClone(ficha)).toSafeFormat().pinDebeCambiar, true, 'debe cambiarlo');
+    await svc().setPin(EMPRESA, DUENA, '739500', '4821', actor(DUENA));
+    assert.equal(opcionesAlLimite.permitirAnterior, true, 'el cambio de PIN es lo único que acepta el de 4');
+    assert.equal(ficha.pinLargo, 6);
+    assert.equal(await verifyPin('739500', ficha.pinHash, DUENA), true);
+    assert.equal(Persona.fromDynamoItem(structuredClone(ficha)).toSafeFormat().pinDebeCambiar, false);
+});
+
+test('sin PIN no hay nada que cambiar, y el primero ya queda marcado como de 6', async () => {
+    assert.equal(Persona.fromDynamoItem(structuredClone(ficha)).toSafeFormat().pinDebeCambiar, false);
+    await svc().setPin(EMPRESA, DUENA, '739500', undefined, actor(DUENA));
+    assert.equal(ficha.pinLargo, 6);
+});
+
+test('restablecer quita también el largo: el PIN nuevo vuelve a marcarse al configurarse', async () => {
+    const fuente = require('fs').readFileSync(require('path').join(__dirname, '..', 'lib', 'services', 'PersonaService.js'), 'utf8');
+    assert.match(fuente, /REMOVE pinHash, pinCreatedAt, pinBloqueadaHasta, pinLargo/);
 });

@@ -81,7 +81,8 @@ const resumen = (r) => `HTTP ${r.status} ${JSON.stringify(r.cuerpo)?.slice(0, 30
 
 // ─── Flujos ──────────────────────────────────────────────────────────────────
 
-const PIN = '4827';
+// PIN de 6 dígitos desde el 8 de noviembre de 2026.
+const PIN = '482791';
 
 /**
  * Primer ingreso completo de una persona: contraseña inicial, cambio, PIN y
@@ -108,6 +109,10 @@ async function primerIngreso(c, { quien, rut, personaId }) {
     comprobar(`${quien}: el cambio emite una sesión nueva`, tokenNuevo && tokenNuevo !== tokenInicial, resumen(cambio));
     const token = tokenNuevo || tokenInicial;
 
+    // Un PIN de 4 dígitos ya no se acepta.
+    const corto = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: '4827' } });
+    comprobar(`${quien}: un PIN de 4 dígitos ya no se acepta (400)`, corto.status === 400 && /6 dígitos/.test(corto.cuerpo?.error || ''), resumen(corto));
+
     // Enseguida, sin esperar: dentro de los 60 s del caché del autorizador.
     const pin = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: PIN } });
     comprobar(`${quien}: crea su PIN inmediatamente después del cambio`, pin.status === 200, resumen(pin));
@@ -123,6 +128,7 @@ async function primerIngreso(c, { quien, rut, personaId }) {
     const me = await c.pedir('GET', '/auth/me', { token });
     comprobar(`${quien}: la sesión nueva es válida y ya no es provisional`,
         me.status === 200 && me.cuerpo?.data?.user?.passwordTemporal === false && me.cuerpo?.data?.user?.habilitado === true, resumen(me));
+    comprobar(`${quien}: con un PIN de 6 no se le pide cambiarlo`, me.cuerpo?.data?.user?.pinDebeCambiar === false, resumen(me));
 
     return token;
 }
@@ -239,6 +245,8 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     // Habilitar: el supervisor pide los vales de la trabajadora para la obra del turno.
     const sinAsignar = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraB, pin: PIN } });
     comprobar('vales para una obra a la que no está asignada: 404', sinAsignar.status === 404, resumen(sinAsignar));
+    const pinCorto = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: '4827' } });
+    comprobar('un PIN de 4 dígitos no pide vales: hay que cambiarlo (409)', pinCorto.status === 409, resumen(pinCorto));
     const emision = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN, deviceId: 'e2e' } });
     const vales = emision.cuerpo?.data?.vales || [];
     comprobar('admin: habilita a la trabajadora en la obra A (5 vales)', emision.status === 200 && vales.length === 5 && emision.cuerpo.data.obraId === obraA, resumen(emision), { detener: true });

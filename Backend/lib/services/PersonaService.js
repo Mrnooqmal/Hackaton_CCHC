@@ -53,7 +53,7 @@ const exigirEdadMinima = (fechaNacimiento) => {
 const { llaveDeTenant, PROPOSITOS } = require('../llaveTenant');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
-    validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol
+    validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol, LARGO_PIN,
 } = require('../utils/validation');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
@@ -728,7 +728,8 @@ class PersonaService {
             if (!esPropio) throw errorPin('Solo la propia persona puede cambiar su PIN', 'PIN_AJENO');
             if (!pinActual) throw errorPin('Debes ingresar tu PIN actual para cambiarlo', 'PIN_ACTUAL_REQUERIDO');
             // Lanza PIN_BLOQUEADO si la cuenta está bloqueada, y cuenta el fallo.
-            const ok = await verificarConLimiteOLanzar(persona, pinActual, verifyPin);
+            // El PIN actual puede ser uno de 4 (de antes): es justamente para cambiarlo.
+            const ok = await verificarConLimiteOLanzar(persona, pinActual, verifyPin, { permitirAnterior: true });
             if (!ok) throw errorPin('PIN actual incorrecto', 'PIN_ACTUAL_INCORRECTO');
             if (await verifyPin(pin, pinAnterior, personaId)) {
                 throw errorPin('El nuevo PIN no puede ser igual al PIN actual', 'PIN_IGUAL');
@@ -768,7 +769,7 @@ class PersonaService {
         let condicion;
         const valores = {
             ':pinHash': newPinHash, ':pinCreatedAt': now, ':updatedAt': now,
-            ':evento': [evento], ':vacia': [],
+            ':evento': [evento], ':vacia': [], ':largo': LARGO_PIN,
         };
         if (pinAnterior) {
             condicion = 'pinHash = :anterior';
@@ -786,7 +787,8 @@ class PersonaService {
             await this.dynamo.send(new UpdateCommand({
                 TableName: this.table,
                 Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
-                UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt,'
+                // `pinLargo`: el PIN es de 6 (los de antes no lo tienen y deben cambiarse).
+                UpdateExpression: 'SET pinHash = :pinHash, pinCreatedAt = :pinCreatedAt, updatedAt = :updatedAt, pinLargo = :largo,'
                     + ' pinHistorial = list_append(if_not_exists(pinHistorial, :vacia), :evento)'
                     + ' REMOVE pinRestablecido',
                 ConditionExpression: condicion,
@@ -884,7 +886,7 @@ class PersonaService {
                             Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
                             UpdateExpression: 'SET pinRestablecido = :rest, pinIntentosFallidos = :cero, updatedAt = :en,'
                                 + ' pinHistorial = list_append(if_not_exists(pinHistorial, :vacia), :evento)'
-                                + ' REMOVE pinHash, pinCreatedAt, pinBloqueadaHasta',
+                                + ' REMOVE pinHash, pinCreatedAt, pinBloqueadaHasta, pinLargo',
                             ConditionExpression: 'pinHash = :anterior',
                             ExpressionAttributeValues: {
                                 ':rest': restablecimiento,

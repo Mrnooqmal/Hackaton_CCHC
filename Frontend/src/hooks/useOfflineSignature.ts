@@ -13,6 +13,10 @@
  * turno. El PIN no se guarda nunca. Un vale robado sirve para firmar como esa
  * persona durante su vigencia y una sola vez; un PIN robado sirve para siempre.
  *
+ * Los vales se guardan cifrados con una llave derivada del PIN (utils/
+ * valesCifrados): sin red, firmar exige el PIN de la persona, también en la
+ * firma asistida. Cinco PIN equivocados seguidos en el equipo borran sus vales.
+ *
  * Dos consecuencias que la interfaz debe hacer visibles (ver `valesDe`):
  *
  *   1. Sin vales y sin red no se puede firmar sin conexión. Por eso se piden al
@@ -27,9 +31,11 @@
 import { useCallback, useState, useEffect } from 'react';
 import { documentsApi, activitiesApi, surveysApi, signaturesApi } from '../api/client';
 import {
-    leerCola, agregarACola, quitarDeCola, guardarValesDe, valeParaFirma, valesDisponibles, valesDePersona, nuevoIdFirma,
-    type FirmaPendiente, type TipoFirma,
+    leerCola, agregarACola, quitarDeCola, guardarValesDe, tomarVale, valesDisponibles, valesDePersona, nuevoIdFirma,
+    anotarRechazada, leerRechazadas, olvidarRechazadas, MAX_INTENTOS_EQUIPO,
+    type FirmaPendiente, type TipoFirma, type FirmaRechazada,
 } from '../utils/colaFirmas';
+import { cifrarVales, cifradoDisponible } from '../utils/valesCifrados';
 
 export type SignatureType = TipoFirma;
 export type OfflinePendingSignature = FirmaPendiente;
@@ -113,11 +119,21 @@ const SIN_VALES = 'No hay firma sin conexión habilitada para esta persona en es
 const OTRA_OBRA = 'La firma sin conexión de esta persona está habilitada para otra obra. '
     + 'Con señal, puede habilitarla para esta obra con su PIN.';
 
+const pinIncorrecto = (quedan = 0) => `PIN incorrecto. Quedan ${quedan} intento(s) en este equipo; `
+    + `después del ${MAX_INTENTOS_EQUIPO}º error se borra la firma sin conexión de esta persona.`;
+
+const BLOQUEADO = `${MAX_INTENTOS_EQUIPO} PIN equivocados seguidos: se borró la firma sin conexión de esta persona en este equipo. `
+    + 'Con señal, puede habilitarla de nuevo con su PIN.';
+
+const SIN_CIFRADO = 'Este navegador no permite guardar la firma sin conexión de forma segura. '
+    + 'Usa un navegador actualizado (Chrome o Safari) en la dirección https de la aplicación.';
+
 export function useOfflineSignature() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [syncing, setSyncing] = useState(false);
     const [pendingCount, setPendingCount] = useState(getPendingSignatures().length);
     const [enRevision, setEnRevision] = useState(0);
+    const [rechazadas, setRechazadas] = useState<FirmaRechazada[]>(leerRechazadas(empresa()));
 
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
@@ -140,7 +156,10 @@ export function useOfflineSignature() {
     // instancia del hook se entera por este evento (y por `storage`, si cambió
     // en otra pestaña) y refresca su conteo.
     useEffect(() => {
-        const refrescar = () => setPendingCount(getPendingSignatures().length);
+        const refrescar = () => {
+            setPendingCount(getPendingSignatures().length);
+            setRechazadas(leerRechazadas(empresa()));
+        };
         window.addEventListener(EVENTO_COLA, refrescar);
         window.addEventListener('storage', refrescar);
         return () => {
@@ -163,6 +182,8 @@ export function useOfflineSignature() {
         if (!navigator.onLine) {
             return { success: false, error: 'Necesitas señal para habilitar la firma sin conexión.' };
         }
+        // Sin WebCrypto no se habilita: los vales nunca se guardan en claro.
+        if (!cifradoDisponible()) return { success: false, error: SIN_CIFRADO };
         try {
             const res = await signaturesApi.emitirVales({ personaId, obraId, pin, cantidad, deviceId: deviceId() });
             if (!res.success || !res.data) {
@@ -170,7 +191,9 @@ export function useOfflineSignature() {
             }
             const tenantId = empresa();
             if (!tenantId) return { success: false, error: 'No hay una sesión activa en este equipo.' };
-            guardarValesDe(tenantId, { personaId, obraId: res.data.obraId, vales: res.data.vales, expiraEn: res.data.expiraEn });
+            // El servidor ya comprobó este PIN: la llave que sale de él es la buena.
+            const cifrado = await cifrarVales(pin, res.data.vales);
+            guardarValesDe(tenantId, { personaId, obraId: res.data.obraId, cifrado, expiraEn: res.data.expiraEn, intentosFallidos: 0 });
             avisarCambio();
             return { success: true, expiraEn: res.data.expiraEn };
         } catch (error: any) {
@@ -191,7 +214,7 @@ export function useOfflineSignature() {
         [],
     );
 
-    const createOfflineSignature = useCallback((
+    const createOfflineSignature = useCallback(async (
         type: SignatureType,
         targetId: string,
         targetTitle: string,
@@ -199,12 +222,21 @@ export function useOfflineSignature() {
         workerName: string,
         /** Obra de lo que se firma (null si es de la empresa). */
         obraId: string | null,
+        /** El PIN de la persona: descifra su vale. Sin él no hay firma. */
+        pin: string,
         surveyAnswers?: any[]
-    ): { sig: OfflinePendingSignature } | { error: string } => {
+    ): Promise<{ sig: OfflinePendingSignature } | { error: string }> => {
         const tenantId = empresa();
         if (!tenantId) return { error: SIN_VALES };
-        const tomado = valeParaFirma(tenantId, workerId, obraId);
-        if ('motivo' in tomado) return { error: tomado.motivo === 'otra_obra' ? OTRA_OBRA : SIN_VALES };
+        if (!cifradoDisponible()) return { error: SIN_CIFRADO };
+        const tomado = await tomarVale(tenantId, workerId, obraId, pin);
+        if ('motivo' in tomado) {
+            avisarCambio();
+            if (tomado.motivo === 'otra_obra') return { error: OTRA_OBRA };
+            if (tomado.motivo === 'pin_incorrecto') return { error: pinIncorrecto(tomado.quedan) };
+            if (tomado.motivo === 'bloqueado') return { error: BLOQUEADO };
+            return { error: SIN_VALES };
+        }
 
         const sig: FirmaPendiente = {
             id: nuevoIdFirma(),
@@ -227,16 +259,17 @@ export function useOfflineSignature() {
     }, [refreshPendingCount]);
 
     /** Guarda la firma para sincronizar, o explica por qué no se puede. */
-    const guardarParaDespues = useCallback((
+    const guardarParaDespues = useCallback(async (
         type: SignatureType,
         targetId: string,
         targetTitle: string,
         workerId: string,
         workerName: string,
         obraId: string | null,
+        pin: string,
         surveyAnswers?: any[]
-    ): { success: boolean; offline: boolean; error?: string } => {
-        const r = createOfflineSignature(type, targetId, targetTitle, workerId, workerName, obraId, surveyAnswers);
+    ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
+        const r = await createOfflineSignature(type, targetId, targetTitle, workerId, workerName, obraId, pin, surveyAnswers);
         if ('error' in r) return { success: false, offline: true, error: r.error };
         return { success: true, offline: true };
     }, [createOfflineSignature]);
@@ -250,7 +283,7 @@ export function useOfflineSignature() {
         obraId: string | null = null,
     ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
         if (!navigator.onLine) {
-            return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId);
+            return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId, pin);
         }
 
         try {
@@ -265,13 +298,13 @@ export function useOfflineSignature() {
             }
 
             if (isNetworkErrorResponse(response.error || '')) {
-                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId);
+                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId, pin);
             }
 
             return { success: false, offline: false, error: response.error };
         } catch (error: any) {
             if (isNetworkError(error)) {
-                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId);
+                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId, pin);
             }
             return { success: false, offline: false, error: error.message || 'Error desconocido' };
         }
@@ -286,7 +319,7 @@ export function useOfflineSignature() {
         obraId: string | null = null,
     ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
         if (!navigator.onLine) {
-            return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId);
+            return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId, pin);
         }
 
         try {
@@ -301,13 +334,13 @@ export function useOfflineSignature() {
             }
 
             if (isNetworkErrorResponse(response.error || '')) {
-                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId);
+                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId, pin);
             }
 
             return { success: false, offline: false, error: response.error };
         } catch (error: any) {
             if (isNetworkError(error)) {
-                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId);
+                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId, pin);
             }
             return { success: false, offline: false, error: error.message || 'Error desconocido' };
         }
@@ -323,7 +356,7 @@ export function useOfflineSignature() {
         obraId: string | null = null,
     ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
         if (!navigator.onLine) {
-            return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, responses);
+            return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, pin, responses);
         }
 
         try {
@@ -338,13 +371,13 @@ export function useOfflineSignature() {
             }
 
             if (isNetworkErrorResponse(response.error || '')) {
-                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, responses);
+                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, pin, responses);
             }
 
             return { success: false, offline: false, error: response.error };
         } catch (error: any) {
             if (isNetworkError(error)) {
-                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, responses);
+                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, pin, responses);
             }
             return { success: false, offline: false, error: error.message || 'Error desconocido' };
         }
@@ -414,11 +447,16 @@ export function useOfflineSignature() {
                     quitarDeCola(tenantId, sig.id);
                     synced++;
                 } else if (response && !isNetworkErrorResponse(response.error || '')) {
-                    // El servidor la rechazó (vale ya usado, o vencido hace
-                    // demasiado): reintentar no va a cambiar nada y dejarla en el
-                    // equipo solo acumula un PIN... ya no, pero sí una firma que
-                    // nunca va a entrar. Se descarta y se informa como fallida.
+                    // El servidor la rechazó (vale inválido —el 1 de 256 PIN
+                    // equivocados que pasa la comprobación—, ya usado, anulado o
+                    // vencido hace demasiado): reintentar no cambia nada. Se quita
+                    // de la cola y se anota con el nombre de la persona, para que
+                    // alguien le pida firmar de nuevo.
                     quitarDeCola(tenantId, sig.id);
+                    anotarRechazada(tenantId, {
+                        id: sig.id, workerName: sig.workerName, targetTitle: sig.targetTitle,
+                        motivo: response.error || 'La firma no se pudo validar.', en: new Date().toISOString(),
+                    });
                     failed++;
                 } else {
                     failed++;
@@ -429,6 +467,7 @@ export function useOfflineSignature() {
         }
 
         refreshPendingCount();
+        setRechazadas(leerRechazadas(tenantId));
         avisarCambio();
         setEnRevision(revision);
         setSyncing(false);
@@ -450,5 +489,13 @@ export function useOfflineSignature() {
         valesDe,
         detalleVales,
         necesitaVales,
+        /** Firmas que el servidor rechazó al sincronizar, con nombre, hasta que alguien las vea. */
+        rechazadas,
+        olvidarRechazadas: () => {
+            const t = empresa();
+            if (t) olvidarRechazadas(t);
+            setRechazadas([]);
+            avisarCambio();
+        },
     };
 }

@@ -95,7 +95,7 @@ module.exports.create = async (event) => {
 
         const chequeo = await verificarConLimite(persona, pin, verifyPin);
         if (!chequeo.ok) {
-            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : 401);
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : (chequeo.debeCambiar ? 409 : 401));
         }
 
         // Verificar que la solicitud existe y el trabajador está incluido

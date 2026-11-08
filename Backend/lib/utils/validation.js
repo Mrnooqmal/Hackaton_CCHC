@@ -83,18 +83,30 @@ const generateSignatureToken = () => {
 };
 
 /**
- * Hashea un PIN de 4 dígitos.
+ * Largo del PIN de firma. Era 4 hasta el 8 de noviembre de 2026: con 4 dígitos,
+ * quien copia el almacenamiento de un equipo y prueba fuera de la app deja ~39
+ * candidatos para confirmar contra el servidor (13% de acertar antes de que se
+ * anulen los vales); con 6, ~3.900 (0,13%). Ver Frontend/src/utils/valesCifrados.ts.
+ *
+ * Un PIN de 4 que ya existía solo sirve para cambiarlo (ver lib/limitePin.js).
+ */
+const LARGO_PIN = 6;
+const FORMATO_PIN = /^\d{6}$/;
+const FORMATO_PIN_ANTERIOR = /^\d{4}$/;
+
+/**
+ * Hashea un PIN de 6 dígitos.
  *
  * La función de costo y su formato viven en `lib/credenciales.js`; acá queda
  * solo la regla de negocio de qué es un PIN válido.
  *
- * @param {string} pin - PIN de 4 dígitos
+ * @param {string} pin - PIN de 6 dígitos
  * @param {string} personaId - ID de la persona, al que queda atada la credencial
  * @returns {Promise<string>} Hash del PIN, con su algoritmo y parámetros adentro
  */
 const hashPin = async (pin, personaId) => {
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-        throw new Error('PIN debe ser de 4 dígitos numéricos');
+    if (typeof pin !== 'string' || !FORMATO_PIN.test(pin)) {
+        throw new Error(`PIN debe ser de ${LARGO_PIN} dígitos numéricos`);
     }
 
     return credenciales.hashear(pin, personaId);
@@ -120,10 +132,10 @@ const validatePin = (pin) => {
     if (!pin) {
         return { valid: false, error: 'PIN es requerido' };
     }
-    if (typeof pin !== 'string' || pin.length !== 4) {
-        return { valid: false, error: 'PIN debe tener 4 dígitos' };
+    if (typeof pin !== 'string' || pin.length !== LARGO_PIN) {
+        return { valid: false, error: `PIN debe tener ${LARGO_PIN} dígitos` };
     }
-    if (!/^\d{4}$/.test(pin)) {
+    if (!FORMATO_PIN.test(pin)) {
         return { valid: false, error: 'PIN debe contener solo números' };
     }
     return { valid: true };
@@ -203,6 +215,9 @@ const normalizeRol = (rol) => {
 };
 
 module.exports = {
+    LARGO_PIN,
+    FORMATO_PIN,
+    FORMATO_PIN_ANTERIOR,
     validateRut,
     enmascararRut,
     validateRequired,

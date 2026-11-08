@@ -174,6 +174,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
                 // El límite de intentos (H-2) responde 423, no el 500 genérico
                 // del catch de más abajo.
                 if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+                if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
                 throw firmaErr;
             }
             return created({
@@ -284,6 +285,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
                 });
             } catch (firmaErr) {
                 if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+                if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
                 throw firmaErr;
             }
 

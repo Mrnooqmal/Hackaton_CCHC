@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { LARGO_PIN } from '../../utils/pin';
 import { FiAlertCircle, FiCheck, FiEdit3, FiX } from 'react-icons/fi';
 import PinInput from '../PinInput';
 import { Modal } from '../ui';
@@ -39,7 +40,7 @@ export function FichaFirma({ items }: { items: FichaFirmaItem[] }) {
 export interface FirmaModalProps {
     isOpen: boolean;
     onClose: () => void;
-    /** Recibe el PIN de 4 dígitos ya ingresado y la declaración marcada. */
+    /** Recibe el PIN de 6 dígitos ya ingresado y la declaración marcada. */
     onConfirm: (pin: string) => void | Promise<void>;
     firmando: boolean;
     error?: string;
@@ -91,7 +92,7 @@ function FirmaModalAbierto({
                     <button
                         className="btn btn-primary"
                         onClick={() => onConfirm(pin)}
-                        disabled={firmando || pin.length !== 4 || !declarado}
+                        disabled={firmando || pin.length !== LARGO_PIN || !declarado}
                     >
                         {firmando
                             ? <><div className="spinner" style={{ width: '16px', height: '16px' }} /> Firmando...</>

@@ -183,6 +183,10 @@
 .sincronizador-firmas > svg,
 .aviso-vales-turno > svg { flex-shrink: 0; color: var(--accent); }
 .aviso-vales-turno { border-left: 3px solid var(--accent); }
+.sincronizador-firmas--rechazadas { align-items: flex-start; border-left: 3px solid var(--danger-alerta); }
+.sincronizador-firmas--rechazadas > svg { color: var(--danger-alerta); }
+.sincronizador-firmas--rechazadas > div { flex: 1 1 260px; }
+.sincronizador-firmas--rechazadas ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 @media (max-width: 640px) {
   .sincronizador-firmas,
   .aviso-vales-turno { margin: var(--space-2) var(--space-3) 0; }

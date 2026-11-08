@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
@@ -246,7 +247,7 @@ export default function MySignatures() {
     };
 
     const handleSign = async (pin: string) => {
-        if (!selectedRequest || !user?.personaId || pin.length !== 4) return;
+        if (!selectedRequest || !user?.personaId || pin.length !== LARGO_PIN) return;
         setSigning(true);
         setError('');
         try {

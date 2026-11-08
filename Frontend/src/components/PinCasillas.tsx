@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 
 interface PinCasillasProps {
     id: string;
     value: string;
     onChange: (valor: string) => void;
-    /** Se llama al escribir el cuarto dígito. */
+    /** Se llama al escribir el último dígito. */
     onComplete?: (valor: string) => void;
     /** Muestra los dígitos en vez de puntos. */
     visible?: boolean;
@@ -12,12 +13,12 @@ interface PinCasillasProps {
     disabled?: boolean;
     autoFocus?: boolean;
     ariaLabel?: string;
+    /** Cuántos dígitos: 6 (el PIN de hoy). 4 solo para el PIN actual de antes, al cambiarlo. */
+    largo?: number;
 }
 
-const LARGO = 4;
-
 /**
- * PIN de 4 dígitos en casillas.
+ * PIN en casillas (6 dígitos; ver utils/pin).
  *
  * Por debajo es UN input numérico real, transparente y tendido sobre las
  * casillas: tocar cualquiera abre el teclado numérico del teléfono, y lectores
@@ -26,8 +27,9 @@ const LARGO = 4;
  */
 export default function PinCasillas({
     id, value, onChange, onComplete, visible = false, error = false, disabled = false,
-    autoFocus = false, ariaLabel = 'PIN de 4 dígitos',
+    autoFocus = false, ariaLabel = `PIN de ${LARGO_PIN} dígitos`, largo = LARGO_PIN,
 }: PinCasillasProps) {
+    const LARGO = largo;
     const [enfocado, setEnfocado] = useState(false);
 
     const cambiar = (e: React.ChangeEvent<HTMLInputElement>) => {

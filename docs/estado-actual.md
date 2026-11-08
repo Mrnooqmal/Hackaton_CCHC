@@ -103,7 +103,7 @@ infra/desplegar-infra-frontend.sh <commit>
 
 | Qué | Detalle |
 |---|---|
-| **Firma sin conexión con vales (prioritario)** | Los vales (D-3) existen en el backend y en el frontend, pero ninguna pantalla los pide: sin red no se puede firmar. La marcha blanca va a obras en regiones con mala señal. Diagnóstico en curso antes de escribir código. |
+| **Firma sin conexión con vales (prioritario)** | En dev las partes 1 a 4 (`c799480`) y el corte del servidor por vales inválidos (`eda87c2`, punta a punta 51 de 51). Hechas, por commitear: vales cifrados con el PIN, alarma `vales-invalidos`, PIN de 6 dígitos con cambio obligatorio y la página de medición (D-35). **Antes de prod:** Adrean mide PBKDF2 en un Android de gama baja en `https://d3pve67iu4s0dd.cloudfront.net/medicion-pin` y se ajusta `ITERACIONES` en `Frontend/src/utils/valesCifrados.ts` si la mediana se aleja mucho de 500 ms; la otra sesión ajusta el manual y los recorridos (textos abajo). |
 | Ley 21.719 (vigente el 1 de diciembre de 2026) | Revisión y ajustes del flujo: consentimiento, derechos del titular, auditoría y plan de incidentes (D-29 a D-32). |
 | Agrupar uploads y surveys en una función cada uno | Plan aprobado el 7 de noviembre de 2026. Las 5 funciones de uploads y las 4 de surveys pasan a una por módulo, con un enrutador por `event.routeKey` y las mismas rutas declaradas en `serverless.yml`. Cada función con ruta HTTP genera 4 recursos (función, permiso, grupo de logs e integración); las rutas se quedan, así que se ahorran 28 recursos (la rama `tours` deja el stack en 477, a 13 del tope de 490 del script). Se borran los grupos de logs de las funciones viejas (aprobado). Pruebas: enrutador por módulo, `identidad-desde-sesion.test.js` con el `routeKey` declarado, y sabotaje quitando una entrada del enrutador. |
 | Límite de tasa en la API | Checklist 2.8: sin plan de uso ni límite configurado. |
@@ -112,6 +112,19 @@ infra/desplegar-infra-frontend.sh <commit>
 | Filas parciales del checklist | 5.7, 7.1, 7.2, 7.4 y 7.5 del documento de gobernanza. |
 | Borrar la empresa TCC de prod | En prod hay dos empresas, "The Code Cookers" y "TCC", cada una con una persona y sin obras, documentos ni firmas (verificado el 30 de octubre). |
 | Borrar los restos de `hackatonbackend` | En esta cuenta, los artefactos de despliegue de `hackatonbackendv2` y `hackatonbackendv2-testeo` en el bucket de Serverless (30 objetos, ~383 MB). En la cuenta del perfil por omisión (`789925699187`), el stack `HackatonBackend-dev` en `DELETE_FAILED`, sin recursos vivos (verificado el 30 de octubre). |
+
+#### Textos del manual y de los recorridos que cambian con D-35 (para la sesión de `tours`)
+
+PIN de 6 dígitos (antes 4), y la firma sin conexión ya existe. En este árbol (`pruebas`):
+
+- `Frontend/src/manual/content/guia-inicio/instalacion.md`: líneas 41 («4 dígitos que solo tú eliges»), 48-49 («escribe los 4 dígitos», «Evita *1234*, *0000* o tu año de nacimiento» → *123456*, *000000* o tu fecha de nacimiento) y 123 («el PIN (4 dígitos)»).
+- `Frontend/src/manual/content/modulos/firmas.md`: línea 15 («Son 4 dígitos») y la sección `#sin-conexión`.
+- `Frontend/src/manual/content/ds44/firmas-digitales.md`: línea 17 («su PIN de 4 dígitos»).
+- `Frontend/src/manual/content/modulos/actividades.md`: líneas 420-421 («¿La asistencia se puede firmar sin señal? No por ahora»): ahora sí, con la firma sin conexión habilitada.
+
+En la rama `tours` (`b4fc05f`), los mismos textos en su nueva estructura: `empezar/ingresar.md` (41, 48, 123), `terreno/firmar.md` (15), `fuf/firmas.md` (25), `obra/actividades.md` (316), y en `Frontend/src/ayuda/recorridos.ts` la línea 168 («escribe tu PIN de 4 dígitos»).
+
+Lo nuevo, sin texto todavía en el manual: **Preparar cuadrilla sin señal** (cada persona escribe su PIN con señal y queda habilitada para 5 firmas durante 12 horas en esa obra), el **aviso al entrar** para habilitar la firma sin conexión, **sin señal se firma con el PIN** (cinco PIN equivocados seguidos borran la habilitación en ese equipo), el aviso de **firmas por enviar** y el de **firmas que no se validaron** (con el nombre de quien tiene que volver a firmar), **Firmas en revisión** (confirmar o rechazar con motivo), el aviso al **cerrar sesión** con vales o firmas pendientes, y el **cambio obligatorio a PIN de 6 dígitos** al entrar con uno de 4.
 
 ### Paso 3 a prod: fines de noviembre de 2026
 
@@ -181,6 +194,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-32 | Plan de respuesta a incidentes y contención (`docs/plan-respuesta-incidentes.md`) |
 | D-33 | (rama `tours`: recorridos guiados) |
 | D-34 | Producción solo en `buildandserve.cl`: la URL de CloudFront sale del CORS y se redirige con 301 |
+| D-35 | Firma sin conexión con el PIN: vales cifrados en el equipo sin oráculo, corte del servidor al quinto vale inválido, PIN de 6 dígitos |
 
 ### Hallazgos (sección 4)
 
