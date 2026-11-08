@@ -191,3 +191,29 @@ test('si no se puede mostrar ningún paso, se avisa a quien lo abrió', async ({
     expect(await page.evaluate(() => window.__noMostrado)).toBe(true);
     expect(await eventos(page)).toEqual([]);
 });
+
+// ─── El contador cuenta solo los pasos que se ven (revisión del 8 de noviembre) ───
+
+const contador = (page) => page.locator('.recorrido-globo__progreso');
+
+test('contador: si el último paso no está, el total no lo cuenta', async ({ page }) => {
+    await abrir(page, 'ultimo-ausente', '&espera=4000');
+    await expect(contador(page)).toHaveText('Paso 1 de 2');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(contador(page)).toHaveText('Paso 2 de 2');
+});
+
+test('contador: un paso del medio que no está tampoco cuenta, ni al volver atrás', async ({ page }) => {
+    await abrir(page, 'medio-ausente', '&espera=4000');
+    await expect(contador(page)).toHaveText('Paso 1 de 2');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(globo(page)).toContainText('Tercero');
+    await expect(contador(page)).toHaveText('Paso 2 de 2');
+    await page.getByRole('button', { name: 'Anterior' }).click();
+    await expect(contador(page)).toHaveText('Paso 1 de 2');
+});
+
+test('contador: un paso que sobra por soloSiNoSeVe no cuenta', async ({ page }) => {
+    await abrir(page, 'solo-si-no-se-ve');
+    await expect(contador(page)).toHaveText('Paso 1 de 2');
+});

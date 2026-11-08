@@ -169,6 +169,8 @@ test('programar-actividades sin borradores del plan: en "Una actividad suelta" y
     await expect(globo(page)).toContainText('Una actividad suelta');
     // Antes se quedaba esperando 4 s el paso "Por completar", sin señal.
     await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible({ timeout: 1500 });
+    // Y el contador no cuenta "Por completar", que no se va a mostrar (antes decía "3 de 4").
+    await expect(page.locator('.recorrido-globo__progreso')).toHaveText('Paso 3 de 3');
 });
 
 test('cambiar-de-obra en escritorio: un solo paso, el menú de tres puntos', async ({ page }) => {

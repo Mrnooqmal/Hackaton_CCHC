@@ -45,8 +45,13 @@ export interface PropsMotor {
     alturaCabecera?: number;
 }
 
-/** Paso en pantalla: cuál, su elemento (null si va centrado) y si es el último que se pudo mostrar. */
-interface Visible { indice: number; elemento: HTMLElement | null; mostrados: readonly number[]; finalForzado: boolean }
+/**
+ * Paso en pantalla: cuál, su elemento (null si va centrado), si es el último que
+ * se pudo mostrar y el `plan`: los pasos que de verdad se ven (los ya mostrados
+ * y los que siguen y hoy se pueden mostrar). De él sale "Paso N de M": un paso
+ * que se salta no cuenta.
+ */
+interface Visible { indice: number; elemento: HTMLElement | null; mostrados: readonly number[]; finalForzado: boolean; plan: readonly number[] }
 
 const avisar = (mensaje: string, datos: Record<string, unknown>) => console.warn(`[recorridos] ${mensaje}`, datos);
 
@@ -96,9 +101,11 @@ export default function MotorRecorrido({
             const otro = pasos[i].soloSiNoSeVe;
             return Boolean(otro && buscarAncla(otro, document));
         };
-        /** ¿Se podrá mostrar algún paso después de `i`? Uno que abre la ayuda cuenta: su ancla aparece al abrirla. */
-        const quedanDespues = (i: number) => pasos.some((p, j) => j > i && !sobra(j)
-            && (!p.ancla || p.accion === 'abrir_ayuda' || Boolean(buscarAncla(p.ancla, document))));
+        /** Los pasos después de `i` que hoy se pueden mostrar. Uno que abre la ayuda cuenta: su ancla aparece al abrirla. */
+        const siguientesVisibles = (i: number) => pasos.flatMap((p, j) => (j > i && !sobra(j)
+            && (!p.ancla || p.accion === 'abrir_ayuda' || Boolean(buscarAncla(p.ancla, document))) ? [j] : []));
+        const planDesde = (i: number, mostrados: readonly number[]) =>
+            [...new Set([...mostrados, i, ...siguientesVisibles(i)])].sort((a, b) => a - b);
         void (async () => {
             const previo = actual.current.visible;
             const mostrados = previo?.mostrados ?? [];
@@ -111,7 +118,8 @@ export default function MotorRecorrido({
                 const el = paso.ancla ? await esperarAncla(paso.ancla, document, { espera: esperaPaso, senal: control.signal }) : null;
                 if (control.signal.aborted) return;
                 if (!paso.ancla || el) {
-                    setVisible({ indice: i, elemento: el, mostrados: [...new Set([...mostrados, i])].sort((a, b) => a - b), finalForzado: !quedanDespues(i) });
+                    const conEste = [...new Set([...mostrados, i])].sort((a, b) => a - b);
+                    setVisible({ indice: i, elemento: el, mostrados: conEste, finalForzado: siguientesVisibles(i).length === 0, plan: planDesde(i, conEste) });
                     setResolviendo(false);
                     return;
                 }
@@ -126,7 +134,7 @@ export default function MotorRecorrido({
             }
             // Hacia adelante: el último que se vio pasa a ser el final, para que
             // completar siga saliendo del botón. Hacia atrás: se queda en el primero.
-            if (previo) setVisible(direccion === 1 ? { ...previo, finalForzado: true } : previo);
+            if (previo) setVisible(direccion === 1 ? { ...previo, finalForzado: true, plan: previo.mostrados } : previo);
             setResolviendo(false);
         })();
         return () => control.abort();
@@ -218,10 +226,12 @@ export default function MotorRecorrido({
 
     if (!visible) return null;
 
-    const { indice, mostrados } = visible;
+    const { indice, mostrados, plan } = visible;
     const paso = pasos[indice];
-    const total = pasos.length;
-    const esFinal = indice === total - 1 || visible.finalForzado;
+    const esFinal = indice === pasos.length - 1 || visible.finalForzado;
+    // "Paso N de M" sobre los pasos que de verdad se ven, no sobre los definidos.
+    const total = plan.length;
+    const posicion = plan.indexOf(indice) + 1;
     const esAnuncio = definicion.tipo === 'anuncio';
     const previo = [...mostrados].reverse().find((i) => i < indice);
     const idTitulo = `recorrido-${definicion.id}-titulo`;
@@ -300,7 +310,7 @@ export default function MotorRecorrido({
                     </Link>
                 )}
                 <div className="recorrido-globo__pie">
-                    {total > 1 && <span className="recorrido-globo__progreso" aria-live="polite">{textos.paso(indice + 1, total)}</span>}
+                    {total > 1 && <span className="recorrido-globo__progreso" aria-live="polite">{textos.paso(posicion, total)}</span>}
                     <div className="recorrido-globo__acciones">
                         {!esAnuncio && !esFinal && (
                             <button type="button" className="btn btn-ghost btn-sm" onClick={() => terminar({ tipo: 'omitir', ultimoPaso: indice })}>
