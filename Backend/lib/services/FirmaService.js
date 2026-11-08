@@ -196,7 +196,7 @@ class FirmaService {
         // con permiso lo confirme.
         let trazaOffline = null;
         if (metodo === 'VALE') {
-            const { ValeFirmaService, MOTIVOS } = require('./ValeFirmaService');
+            const { ValeFirmaService, MOTIVOS, MOTIVO_VALES_INVALIDOS } = require('./ValeFirmaService');
             const consumo = await ValeFirmaService.consumir({
                 vale: credencial.vale,
                 personaId: persona.personaId,
@@ -219,8 +219,13 @@ class FirmaService {
                     [MOTIVOS.DEMASIADO_VIEJO]: 'El vale de firma venció hace demasiado tiempo y ya no puede sincronizarse.',
                     [MOTIVOS.REVOCADO]: 'El vale de firma se anuló porque el PIN de esta persona se restableció. Debe firmar de nuevo con su PIN nuevo.',
                 }[consumo.motivo] || 'El vale de firma no es válido.';
+                const explicacionFinal = consumo.anulados
+                    ? 'El vale de firma no es válido. Por intentos con vales inválidos se anularon las firmas sin conexión de esta persona: debe habilitarse de nuevo con señal.'
+                    : (consumo.motivo === MOTIVOS.REVOCADO && consumo.motivoRevocacion === MOTIVO_VALES_INVALIDOS
+                        ? 'Las firmas sin conexión de esta persona se anularon por intentos con vales inválidos. Debe habilitarse de nuevo con señal.'
+                        : explicacion);
                 // Con código: quien llama lo responde como 400, no como 500.
-                throw Object.assign(new Error(explicacion), { codigo: 'VALE_RECHAZADO', motivo: consumo.motivo });
+                throw Object.assign(new Error(explicacionFinal), { codigo: 'VALE_RECHAZADO', motivo: consumo.motivo });
             }
             trazaOffline = {
                 valeEmitidoEn: consumo.vale.createdAt,

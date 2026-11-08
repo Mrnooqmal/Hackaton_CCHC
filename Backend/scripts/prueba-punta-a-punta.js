@@ -256,10 +256,23 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     comprobar('un vale de la obra A no firma en la obra B (400, "otra obra")',
         otraObra.status === 400 && /otra obra/.test(otraObra.cuerpo?.error || ''), resumen(otraObra));
 
+    // Cinco vales inexistentes a su nombre (lo que produce un PIN equivocado al
+    // descifrar en el equipo): al quinto se anulan sus vales vigentes.
+    const basura = () => require('crypto').randomBytes(32).toString('hex');
+    let ultimo;
+    for (let i = 0; i < 5; i += 1) ultimo = await asistir(a3, { vale: basura(), idFirmaLocal: `e2e-basura-${i}` });
+    comprobar('cinco vales inválidos: el quinto anula los vales de la persona',
+        ultimo.status === 400 && /se anularon las firmas sin conexión/.test(ultimo.cuerpo?.error || ''), resumen(ultimo));
+    const anulado = await asistir(a2, { vale: vales[2], idFirmaLocal: 'e2e-anulado' });
+    comprobar('...y un vale que era bueno ya no firma', anulado.status === 400 && /intentos con vales inválidos/.test(anulado.cuerpo?.error || ''), resumen(anulado));
+    const otraVez = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN, deviceId: 'e2e' } });
+    const vales2 = otraVez.cuerpo?.data?.vales || [];
+    comprobar('admin: la vuelve a habilitar con su PIN', otraVez.status === 200 && vales2.length === 5, resumen(otraVez), { detener: true });
+
     const baja = await c.pedir('DELETE', `/personas/${trabajadora}`, { token });
     comprobar('admin: desvincula a la trabajadora', baja.status === 200, resumen(baja), { detener: true });
 
-    const tardia = await asistir(a2, { vale: vales[1], idFirmaLocal: 'e2e-3' });
+    const tardia = await asistir(a2, { vale: vales2[0], idFirmaLocal: 'e2e-3' });
     comprobar('una firma con vale sincronizada después de desvincular entra', tardia.status === 200 && tardia.cuerpo.data.totalAsistentes === 1, resumen(tardia));
     const firmas = await c.pedir('GET', `/signatures/worker/${trabajadora}`, { token });
     const lista = firmas.cuerpo?.data?.firmas || firmas.cuerpo?.data?.signatures || firmas.cuerpo?.data || [];

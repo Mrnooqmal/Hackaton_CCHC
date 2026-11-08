@@ -81,6 +81,26 @@ const vencidoAl = (registro, momento) => new Date(registro.expiresAt) < new Date
 /** Motivo de anulación de los vales de una persona desvinculada (ver `consumir`). */
 const MOTIVO_DESVINCULACION = 'desvinculacion';
 
+const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
+
+/**
+ * Vales inválidos presentados a nombre de una persona antes de anular los suyos.
+ *
+ * En el equipo, los vales se guardan cifrados con una llave derivada del PIN,
+ * sin etiqueta de verificación y con un solo byte de comprobación (ver
+ * Frontend/src/utils/valesCifrados.ts). Quien copie el almacenamiento puede
+ * descartar PIN fuera de la app, pero le quedan cientos o miles de candidatos
+ * y solo puede confirmarlos presentando vales aquí. Cada vale que no existe,
+ * presentado a nombre de una persona de la empresa, cuenta; al quinto se anulan
+ * los vales vigentes de esa persona y queda registrado.
+ *
+ * El contador vuelve a cero solo al emitir vales nuevos, que exige el PIN con
+ * red. Un vale válido NO lo reinicia: quien ya acertó con un candidato no debe
+ * ganar más intentos para el resto.
+ */
+const MAX_VALES_INVALIDOS = 5;
+const MOTIVO_VALES_INVALIDOS = 'vales_invalidos';
+
 const MOTIVOS = {
     NO_EXISTE: 'no_existe',
     OTRA_PERSONA: 'otra_persona',
@@ -131,7 +151,69 @@ class ValeFirmaService {
             }));
         }
 
+        // Emitir exige el PIN con red: la persona demostró conocerlo. El conteo de
+        // vales inválidos empieza de nuevo.
+        try {
+            await docClient.send(new UpdateCommand({
+                TableName: PERSONAS_TABLE,
+                Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                UpdateExpression: 'SET valesInvalidos = :cero',
+                ConditionExpression: 'attribute_exists(PK)',
+                ExpressionAttributeValues: { ':cero': 0 },
+            }));
+        } catch (err) {
+            if (err.name !== 'ConditionalCheckFailedException') throw err;
+        }
+
         return { vales, expiraEn: expira.toISOString(), vigenciaHoras: VIGENCIA_HORAS };
+    }
+
+    /**
+     * Cuenta un vale inexistente presentado a nombre de una persona y, al quinto,
+     * anula sus vales vigentes. Solo cuenta para personas de la empresa de la
+     * sesión que sincroniza: la condición sobre la clave evita crear registros
+     * fantasma con un personaId inventado.
+     *
+     * @returns {Promise<{invalidos: number, anulados: boolean}>}
+     */
+    static async registrarInvalido({ personaId, tenantId }) {
+        if (!personaId || !tenantId) return { invalidos: 0, anulados: false };
+        let invalidos;
+        try {
+            const r = await docClient.send(new UpdateCommand({
+                TableName: PERSONAS_TABLE,
+                Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                UpdateExpression: 'ADD valesInvalidos :uno',
+                ConditionExpression: 'attribute_exists(PK)',
+                ExpressionAttributeValues: { ':uno': 1 },
+                ReturnValues: 'UPDATED_NEW',
+            }));
+            invalidos = Number(r.Attributes?.valesInvalidos || 0);
+        } catch (err) {
+            if (err.name === 'ConditionalCheckFailedException') return { invalidos: 0, anulados: false };
+            throw err;
+        }
+        if (invalidos < MAX_VALES_INVALIDOS || invalidos % MAX_VALES_INVALIDOS !== 0) return { invalidos, anulados: false };
+
+        const resultado = await ValeFirmaService.revocarDePersona(personaId, { tenantId, motivo: MOTIVO_VALES_INVALIDOS, por: null });
+        try {
+            // Métrica embebida (EMF), armada campo a campo como en `limitePin`:
+            // solo identificadores y conteos.
+            const linea = {
+                _aws: {
+                    Timestamp: Date.now(),
+                    CloudWatchMetrics: [{ Namespace: 'BuildAndServe', Dimensions: [['stage']], Metrics: [{ Name: 'ValesInvalidos', Unit: 'Count' }] }],
+                },
+                stage: process.env.STAGE || 'desconocido',
+                ValesInvalidos: 1,
+                tenantId,
+                personaId,
+                invalidos,
+                revocados: resultado.revocados,
+            };
+            console.error('VALES_INVALIDOS', JSON.stringify(linea));
+        } catch { /* registrar no puede romper la anulación */ }
+        return { invalidos, anulados: true };
     }
 
     /**
@@ -162,7 +244,12 @@ class ValeFirmaService {
         }));
 
         const registro = res.Item;
-        if (!registro) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
+        if (!registro) {
+            // Un vale que no existe es lo que produce un PIN equivocado al
+            // descifrar en el equipo: cuenta para la persona (ver MAX_VALES_INVALIDOS).
+            const { anulados } = await ValeFirmaService.registrarInvalido({ personaId, tenantId });
+            return { ok: false, motivo: MOTIVOS.NO_EXISTE, anulados };
+        }
         if (registro.personaId !== personaId) return { ok: false, motivo: MOTIVOS.OTRA_PERSONA };
         // La cola sin conexión la puede sincronizar cualquier sesión de la
         // empresa, nunca una de otra: el vale tiene que ser de la empresa de lo
@@ -193,7 +280,9 @@ class ValeFirmaService {
             }
             return { ok: false, motivo: MOTIVOS.YA_USADO };
         }
-        if (registro.revocadoEn && !porDesvinculacion) return { ok: false, motivo: MOTIVOS.REVOCADO };
+        if (registro.revocadoEn && !porDesvinculacion) {
+            return { ok: false, motivo: MOTIVOS.REVOCADO, motivoRevocacion: registro.motivoRevocacion || null };
+        }
 
         const ahora = new Date();
         const expira = new Date(registro.expiresAt);
@@ -239,7 +328,9 @@ class ValeFirmaService {
                         revocadoPorDesvinculacion: actual.motivoRevocacion === MOTIVO_DESVINCULACION,
                     };
                 }
-                if (!actual.usedAt && actual.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
+                if (!actual.usedAt && actual.revocadoEn) {
+                    return { ok: false, motivo: MOTIVOS.REVOCADO, motivoRevocacion: actual.motivoRevocacion || null };
+                }
                 return { ok: false, motivo: MOTIVOS.YA_USADO };
             }
             throw err;
@@ -333,6 +424,8 @@ module.exports = {
     MAX_POR_SOLICITUD,
     VALES_POR_TURNO,
     MOTIVO_DESVINCULACION,
+    MOTIVO_VALES_INVALIDOS,
+    MAX_VALES_INVALIDOS,
     VENTANA_REVISION_DIAS,
     MOTIVOS,
     hashVale,
