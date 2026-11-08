@@ -71,3 +71,32 @@ for (const [nombre, fn, path, cuerpo] of casos) {
         assert.equal(res.statusCode, 403, res.body);
     });
 }
+
+// ─── Un vale rechazado es un 400 con su motivo, no un 500 ────────────────────
+
+test('asistencia: un vale rechazado responde 400 con su motivo', async () => {
+    const { FirmaService } = require('../lib/services/FirmaService');
+    const original = FirmaService.crear;
+    FirmaService.crear = async () => { throw Object.assign(new Error('Este vale de firma es de otra obra.'), { codigo: 'VALE_RECHAZADO' }); };
+    const datos = {
+        'ACTIVITIES_TABLE': { activityId: 'a-1', tenantId: 't-1', estado: 'programada', asistentes: [], obraId: 'o-1' },
+    };
+    docClient.send = async (cmd) => {
+        const n = cmd.constructor.name;
+        const i = cmd.input || {};
+        if (n === 'GetCommand' && i.Key?.activityId) return { Item: datos.ACTIVITIES_TABLE };
+        if (n === 'GetCommand' && String(i.Key?.PK || '').startsWith('TENANT#') && String(i.Key?.SK || '').startsWith('METADATA#')) {
+            return { Item: { PK: 'TENANT#t-1', SK: 'METADATA#t-1', tenantId: 't-1', nombre: 'Constructora', estado: 'activo' } };
+        }
+        if (n === 'QueryCommand' && i.IndexName === 'personaId-index') return { Items: [{ PK: 'TENANT#t-1', SK: 'PERSONA#p-otra', personaId: 'p-otra' }] };
+        if (n === 'GetCommand' && String(i.Key?.SK || '').startsWith('PERSONA#')) return { Item: { PK: 'TENANT#t-1', SK: 'PERSONA#p-otra', personaId: 'p-otra', tenantId: 't-1', habilitado: true, nombre: 'Rosa' } };
+        return { Items: [] };
+    };
+    try {
+        const res = await actividades.registerAttendance(ev({ id: 'a-1' }, { personaId: 'p-otra', ...CON_VALE }));
+        assert.equal(res.statusCode, 400, res.body);
+        assert.match(JSON.parse(res.body).error, /otra obra/);
+    } finally {
+        FirmaService.crear = original;
+    }
+});

@@ -56,6 +56,23 @@ const ESTRATEGIAS_VALIDACION = {
     }
 };
 
+/** Estados en que una persona ya no firma nada nuevo (los mismos que niegan la sesión). */
+const ESTADOS_SIN_FIRMA = ['desvinculado', 'suspendido', 'inactivo'];
+
+/**
+ * Por qué una firma sin conexión no cuenta como cumplimiento hasta que alguien
+ * con permiso la confirma. Vacío = no requiere revisión.
+ */
+const motivosDeRevision = (traza) => {
+    if (!traza) return [];
+    const motivos = [];
+    if (traza.valeVencido) motivos.push('El vale de firma había vencido al sincronizar: la firma se registró pero requiere confirmación.');
+    if (traza.valeAnuladoPorDesvinculacion || traza.personaDesvinculada) {
+        motivos.push('La persona fue desvinculada antes de que la firma llegara al sistema: confirmar que la firma se tomó antes de la desvinculación.');
+    }
+    return motivos;
+};
+
 class FirmaService {
     /**
      * Crea una firma validando credenciales
@@ -114,6 +131,16 @@ class FirmaService {
         // Verificar que esté habilitada (excepto para enrolamiento)
         if (tipoFirma !== 'enrolamiento' && !persona.habilitado) {
             throw new Error('Persona no está habilitada. Debe completar el enrolamiento primero.');
+        }
+
+        // Una persona desvinculada (o suspendida, o inactiva) no firma nada
+        // nuevo. Se comprueba antes de validar el PIN, para no gastarle
+        // intentos. La excepción es la firma con vale: pudo tomarse en terreno
+        // antes de la desvinculación y sincronizarse después; entra, pero en
+        // revisión (más abajo).
+        const personaFuera = ESTADOS_SIN_FIRMA.includes(persona.estado);
+        if (personaFuera && metodo !== 'VALE') {
+            throw Object.assign(new Error('La persona está desvinculada de la empresa y no puede firmar.'), { codigo: 'PERSONA_DESVINCULADA' });
         }
 
         // Validar credencial con la estrategia correspondiente.
@@ -192,7 +219,8 @@ class FirmaService {
                     [MOTIVOS.DEMASIADO_VIEJO]: 'El vale de firma venció hace demasiado tiempo y ya no puede sincronizarse.',
                     [MOTIVOS.REVOCADO]: 'El vale de firma se anuló porque el PIN de esta persona se restableció. Debe firmar de nuevo con su PIN nuevo.',
                 }[consumo.motivo] || 'El vale de firma no es válido.';
-                throw new Error(explicacion);
+                // Con código: quien llama lo responde como 400, no como 500.
+                throw Object.assign(new Error(explicacion), { codigo: 'VALE_RECHAZADO', motivo: consumo.motivo });
             }
             trazaOffline = {
                 valeEmitidoEn: consumo.vale.createdAt,
@@ -206,6 +234,13 @@ class FirmaService {
                 idFirmaLocal: credencial.idFirmaLocal || null,
                 sincronizadaEn: new Date().toISOString(),
                 valeVencido: Boolean(consumo.vencido),
+                // La desvinculación: el vale se anuló por ella, o la persona ya
+                // estaba fuera al sincronizar. Con las dos fechas a la vista
+                // (anulación y firma en terreno, esta última declarada), quien
+                // revisa juzga si el acto fue antes.
+                valeAnuladoPorDesvinculacion: Boolean(consumo.revocadoPorDesvinculacion),
+                valeAnuladoEn: consumo.vale.revocadoEn || null,
+                personaDesvinculada: personaFuera,
             };
         }
 
@@ -249,10 +284,8 @@ class FirmaService {
             // Una firma sincronizada con un vale vencido no cuenta como
             // cumplimiento hasta que alguien con permiso la confirma. Los motores
             // de completitud deben ignorar las firmas con `requiereRevision`.
-            requiereRevision: trazaOffline?.valeVencido || false,
-            motivoRevision: trazaOffline?.valeVencido
-                ? 'El vale de firma había vencido al sincronizar: la firma se registró pero requiere confirmación.'
-                : null,
+            requiereRevision: motivosDeRevision(trazaOffline).length > 0,
+            motivoRevision: motivosDeRevision(trazaOffline).join(' ') || null,
             revision: null,
             offline: trazaOffline,
             createdAt: now.toISOString()

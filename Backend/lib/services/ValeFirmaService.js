@@ -78,6 +78,9 @@ const hashVale = (vale) => crypto.createHash('sha256').update(String(vale)).dige
 /** ¿El vale estaba vencido en ese momento? En un reintento cuenta cuándo se gastó, no cuándo se reintenta. */
 const vencidoAl = (registro, momento) => new Date(registro.expiresAt) < new Date(momento);
 
+/** Motivo de anulación de los vales de una persona desvinculada (ver `consumir`). */
+const MOTIVO_DESVINCULACION = 'desvinculacion';
+
 const MOTIVOS = {
     NO_EXISTE: 'no_existe',
     OTRA_PERSONA: 'otra_persona',
@@ -169,7 +172,11 @@ class ValeFirmaService {
         // obra (los documentos de empresa, como el Reglamento Interno). Un vale
         // sin obra no se acepta: desde que se exige al emitir, no debería existir.
         if (!registro.obraId || (obraId && registro.obraId !== obraId)) return { ok: false, motivo: MOTIVOS.OTRA_OBRA };
-        if (registro.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
+        // Un vale anulado por DESVINCULACIÓN se puede gastar igual, y la firma
+        // entra en revisión (ver FirmaService): pudo haberse tomado en terreno
+        // antes de desvincular, y descartarla destruiría evidencia. Cualquier
+        // otra anulación (PIN restablecido, contención) se rechaza.
+        const porDesvinculacion = Boolean(registro.revocadoEn) && registro.motivoRevocacion === MOTIVO_DESVINCULACION;
 
         // Reintento de la MISMA firma: el vale se gastó en un intento anterior
         // que no alcanzó a escribir la firma (o cuya respuesta se perdió). La
@@ -179,10 +186,14 @@ class ValeFirmaService {
         // gastar el vale perdía la firma: el reintento recibía "ya usado".
         if (registro.usedAt) {
             if (idFirmaLocal && registro.usadoPara === idFirmaLocal) {
-                return { ok: true, vale: registro, vencido: vencidoAl(registro, registro.usedAt), reintento: true };
+                return {
+                    ok: true, vale: registro, vencido: vencidoAl(registro, registro.usedAt), reintento: true,
+                    revocadoPorDesvinculacion: porDesvinculacion,
+                };
             }
             return { ok: false, motivo: MOTIVOS.YA_USADO };
         }
+        if (registro.revocadoEn && !porDesvinculacion) return { ok: false, motivo: MOTIVOS.REVOCADO };
 
         const ahora = new Date();
         const expira = new Date(registro.expiresAt);
@@ -199,13 +210,17 @@ class ValeFirmaService {
                 UpdateExpression: 'SET usedAt = :ahora, deviceIdUso = :dev, usadoPara = :para',
                 // Ni gastado ni revocado: con la condición simétrica de
                 // `revocarDePersona`, consumir y revocar se excluyen aunque
-                // lleguen a la vez.
-                ConditionExpression: '(attribute_not_exists(usedAt) OR usedAt = :nulo) AND attribute_not_exists(revocadoEn)',
+                // lleguen a la vez. Un vale anulado por desvinculación se gasta
+                // si sigue anulado por eso mismo.
+                ConditionExpression: porDesvinculacion
+                    ? '(attribute_not_exists(usedAt) OR usedAt = :nulo) AND motivoRevocacion = :desv'
+                    : '(attribute_not_exists(usedAt) OR usedAt = :nulo) AND attribute_not_exists(revocadoEn)',
                 ExpressionAttributeValues: {
                     ':ahora': ahora.toISOString(),
                     ':dev': deviceId || null,
                     ':para': idFirmaLocal || null,
                     ':nulo': null,
+                    ...(porDesvinculacion ? { ':desv': MOTIVO_DESVINCULACION } : {}),
                 },
             }));
         } catch (err) {
@@ -218,16 +233,19 @@ class ValeFirmaService {
                     TableName: VALES_TABLE, Key: { valeHash: registro.valeHash }, ConsistentRead: true,
                 }));
                 const actual = ahoraRes.Item || {};
-                if (actual.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
-                if (idFirmaLocal && actual.usadoPara === idFirmaLocal) {
-                    return { ok: true, vale: actual, vencido: vencidoAl(actual, actual.usedAt), reintento: true };
+                if (actual.usedAt && idFirmaLocal && actual.usadoPara === idFirmaLocal) {
+                    return {
+                        ok: true, vale: actual, vencido: vencidoAl(actual, actual.usedAt), reintento: true,
+                        revocadoPorDesvinculacion: actual.motivoRevocacion === MOTIVO_DESVINCULACION,
+                    };
                 }
+                if (!actual.usedAt && actual.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
                 return { ok: false, motivo: MOTIVOS.YA_USADO };
             }
             throw err;
         }
 
-        return { ok: true, vale: registro, vencido };
+        return { ok: true, vale: registro, vencido, revocadoPorDesvinculacion: porDesvinculacion };
     }
 
     /**
@@ -314,6 +332,7 @@ module.exports = {
     VIGENCIA_HORAS,
     MAX_POR_SOLICITUD,
     VALES_POR_TURNO,
+    MOTIVO_DESVINCULACION,
     VENTANA_REVISION_DIAS,
     MOTIVOS,
     hashVale,

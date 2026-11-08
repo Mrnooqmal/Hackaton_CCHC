@@ -499,3 +499,63 @@ test('un vale sin obra (anterior a esta regla) no se acepta', async () => {
     const r = await ValeFirmaService.consumir({ vale: vales[0], personaId: PERSONA, tenantId: EMPRESA, obraId: null });
     assert.equal(r.motivo, 'otra_obra');
 });
+
+// ─── Desvinculación ──────────────────────────────────────────────────────────
+//
+// Al desvincular se anulan los vales sin usar. Una firma ya tomada en terreno con
+// uno de ellos, que se sincroniza después, entra EN REVISIÓN: pudo ser anterior
+// a la desvinculación, y descartarla destruiría evidencia. Las firmas nuevas de
+// una persona desvinculada (con PIN) se rechazan.
+
+const desvinculada = { ...persona, estado: 'desvinculado' };
+
+test('un vale anulado por desvinculación se gasta, y la firma entra en revisión', async () => {
+    const { vales } = await ValeFirmaService.emitir({ obraId: OBRA, personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA, motivo: 'desvinculacion', por: 'p-admin' });
+
+    const firma = await firmarConVale(vales[0], { idFirmaLocal: 'local-1' });
+    assert.equal(firma.requiereRevision, true);
+    assert.match(firma.motivoRevision, /desvinculada/);
+    assert.equal(firma.offline.valeAnuladoPorDesvinculacion, true);
+    assert.ok(firma.offline.valeAnuladoEn, 'el acta guarda cuándo se anuló');
+    assert.ok(store.vales[0].usedAt, 'y el vale queda gastado: no sirve dos veces');
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-2' }), /ya se usó/);
+});
+
+test('el reintento de una firma con vale anulado por desvinculación sigue en revisión', async () => {
+    const { vales } = await ValeFirmaService.emitir({ obraId: OBRA, personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA, motivo: 'desvinculacion', por: 'p-admin' });
+    const restaurar = fallarProximaFirma();
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-1' }), /falla simulada/);
+    restaurar();
+    const firma = await firmarConVale(vales[0], { idFirmaLocal: 'local-1' });
+    assert.equal(firma.requiereRevision, true);
+});
+
+test('un vale anulado por otro motivo (PIN restablecido) se sigue rechazando', async () => {
+    const { vales } = await ValeFirmaService.emitir({ obraId: OBRA, personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    await ValeFirmaService.revocarDePersona(PERSONA, { tenantId: EMPRESA, motivo: 'pin_restablecido', por: 'p-admin' });
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-1' }), /se anuló/);
+    assert.equal(store.vales[0].usedAt, null);
+});
+
+test('una persona desvinculada no firma con PIN, y no se le gastan intentos', async () => {
+    const escriturasAntes = store.escrituras.length;
+    await assert.rejects(() => FirmaService.crear({
+        personaId: PERSONA, tenantId: EMPRESA, metodo: 'PIN', credencial: '1234', tipoFirma: 'trabajador',
+        referenciaId: 'd-1', referenciaTipo: 'document', persona: desvinculada,
+    }), /desvinculada/);
+    assert.equal(store.escrituras.length, escriturasAntes, 'ni contador de intentos ni nada');
+    assert.equal(store.firmas.length, 0);
+});
+
+test('la firma con vale de una persona ya desvinculada entra en revisión aunque el vale no se haya anulado', async () => {
+    // Si anular los vales falló al desvincular, igual no entra como cumplimiento.
+    const { vales } = await ValeFirmaService.emitir({ obraId: OBRA, personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    const firma = await FirmaService.crear({
+        personaId: PERSONA, tenantId: EMPRESA, metodo: 'VALE', credencial: { vale: vales[0], idFirmaLocal: 'local-1' },
+        tipoFirma: 'trabajador', referenciaId: 'd-1', referenciaTipo: 'document', persona: desvinculada,
+    });
+    assert.equal(firma.requiereRevision, true);
+    assert.equal(firma.offline.personaDesvinculada, true);
+});

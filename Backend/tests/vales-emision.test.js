@@ -100,3 +100,22 @@ test('la Ficha Básica de Salud no se responde con vale', async () => {
     assert.equal(res.statusCode, 400, res.body);
     assert.match(JSON.parse(res.body).error, /con señal/);
 });
+
+// ─── Desvinculación ──────────────────────────────────────────────────────────
+
+test('desvincular anula los vales sin usar de la persona, con su motivo', async () => {
+    assert.equal((await vales.emitir(ev({ pin: PIN, obraId: 'o-a' }))).statusCode, 200);
+    const r = await new PersonaService().eliminar(A, rosa, 'p-admin');
+    assert.equal(r.vales.revocados, 5);
+    const guardados = doble.items('VALES_TABLE');
+    assert.ok(guardados.every((v) => v.revocadoEn && v.motivoRevocacion === 'desvinculacion' && v.revocadoPor === 'p-admin'));
+});
+
+test('una persona desvinculada no recibe vales', async () => {
+    await new PersonaService().eliminar(A, rosa, 'p-admin');
+    // Pedidos por un supervisor con firma asistida, que la indica.
+    const res = await vales.emitir(ev({ personaId: rosa, pin: PIN, obraId: 'o-a' }, { personaId: 'p-supervisor', permisos: 'obra.firma_asistida' }));
+    assert.equal(res.statusCode, 400, res.body);
+    assert.match(JSON.parse(res.body).error, /desvinculada/);
+    assert.equal(doble.items('VALES_TABLE').length, 0);
+});

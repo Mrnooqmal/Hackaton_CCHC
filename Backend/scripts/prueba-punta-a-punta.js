@@ -34,6 +34,10 @@
  *      de CloudFront (D-34).
  *   5. Las respuestas de la API no se cachean.
  *   6. Cierre de sesión.
+ *   7. Firma sin conexión con vales, por la API: pedirlos para la obra del
+ *      turno, sincronizar una asistencia firmada con vale, reintentar la misma
+ *      firma, un vale de otra obra, y desvincular (la firma tardía entra en
+ *      revisión; con PIN ya no firma).
  *
  * Los correos de bienvenida van a `atorres@thecodecookers.cl`, verificado en
  * SES: llegan aunque la cuenta siga en sandbox.
@@ -197,6 +201,77 @@ async function recorrer(c, empresa, personasCreadas) {
     comprobar('trabajadora: cierra sesión', salida.status === 200, resumen(salida));
     const despues = await c.pedir('GET', '/auth/me', { token: tokenTrabajadora });
     comprobar('la sesión cerrada ya no vale', despues.status === 401, resumen(despues));
+
+    await firmaSinConexion(c, empresa, tokenAdmin, personaId);
+}
+
+/**
+ * Firma sin conexión con vales, por la API (sin pantallas). El administrador
+ * hace de supervisor: habilita a la trabajadora en su equipo con el PIN de ella y
+ * después sincroniza lo que se firmó sin red. Va al final porque desvincula a la
+ * trabajadora.
+ */
+async function firmaSinConexion(c, empresa, token, trabajadora) {
+    console.log('\n  Firma sin conexión (vales)');
+    const crearObra = async (nombre) => {
+        const r = await c.pedir('POST', '/obras', { token, cuerpo: { nombre } });
+        comprobar(`admin: crea la obra "${nombre}"`, r.status === 201, resumen(r), { detener: true });
+        return r.cuerpo.data.obra.obraId;
+    };
+    const obraA = await crearObra('Obra A E2E');
+    const obraB = await crearObra('Obra B E2E');
+    const asignar = await c.pedir('POST', `/personas/${trabajadora}/asignaciones`, { token, cuerpo: { obraId: obraA, cargos: [] } });
+    comprobar('admin: asigna a la trabajadora a la obra A', asignar.status === 200, resumen(asignar), { detener: true });
+
+    const crearActividad = async (obraId, titulo) => {
+        const r = await c.pedir('POST', '/activities', { token, cuerpo: {
+            tipo: 'OTRO', titulo, obraId, relatorId: empresa.adminPersonaId, asistentesRequeridos: [trabajadora],
+        } });
+        comprobar(`admin: crea la actividad "${titulo}"`, r.status === 201, resumen(r), { detener: true });
+        const datos = r.cuerpo.data;
+        return (Array.isArray(datos) ? datos[0] : (datos.actividades?.[0] || datos.activity || datos)).activityId;
+    };
+    const a1 = await crearActividad(obraA, 'Charla A1');
+    const a2 = await crearActividad(obraA, 'Charla A2');
+    const a3 = await crearActividad(obraA, 'Charla A3');
+    const b1 = await crearActividad(obraB, 'Charla B1');
+
+    // Habilitar: el supervisor pide los vales de la trabajadora para la obra del turno.
+    const sinAsignar = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraB, pin: PIN } });
+    comprobar('vales para una obra a la que no está asignada: 404', sinAsignar.status === 404, resumen(sinAsignar));
+    const emision = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN, deviceId: 'e2e' } });
+    const vales = emision.cuerpo?.data?.vales || [];
+    comprobar('admin: habilita a la trabajadora en la obra A (5 vales)', emision.status === 200 && vales.length === 5 && emision.cuerpo.data.obraId === obraA, resumen(emision), { detener: true });
+
+    const asistir = (actividad, cuerpo) => c.pedir('POST', `/activities/${actividad}/attendance`, {
+        token, cuerpo: { personaId: trabajadora, deviceId: 'e2e', timestampLocal: new Date().toISOString(), ...cuerpo },
+    });
+
+    const primera = await asistir(a1, { vale: vales[0], idFirmaLocal: 'e2e-1' });
+    comprobar('sincroniza una asistencia firmada con vale', primera.status === 200 && primera.cuerpo.data.totalAsistentes === 1, resumen(primera));
+    const reintento = await asistir(a1, { vale: vales[0], idFirmaLocal: 'e2e-1' });
+    comprobar('el reintento de la misma firma no la duplica', reintento.status === 200 && reintento.cuerpo.data.totalAsistentes === 1, resumen(reintento));
+
+    const otraObra = await asistir(b1, { vale: vales[1], idFirmaLocal: 'e2e-2' });
+    comprobar('un vale de la obra A no firma en la obra B (400, "otra obra")',
+        otraObra.status === 400 && /otra obra/.test(otraObra.cuerpo?.error || ''), resumen(otraObra));
+
+    const baja = await c.pedir('DELETE', `/personas/${trabajadora}`, { token });
+    comprobar('admin: desvincula a la trabajadora', baja.status === 200, resumen(baja), { detener: true });
+
+    const tardia = await asistir(a2, { vale: vales[1], idFirmaLocal: 'e2e-3' });
+    comprobar('una firma con vale sincronizada después de desvincular entra', tardia.status === 200 && tardia.cuerpo.data.totalAsistentes === 1, resumen(tardia));
+    const firmas = await c.pedir('GET', `/signatures/worker/${trabajadora}`, { token });
+    const lista = firmas.cuerpo?.data?.firmas || firmas.cuerpo?.data?.signatures || firmas.cuerpo?.data || [];
+    const deA2 = (Array.isArray(lista) ? lista : []).find((f) => f.referenciaId === a2);
+    const deA1 = (Array.isArray(lista) ? lista : []).find((f) => f.referenciaId === a1);
+    comprobar('...y queda en revisión; la anterior a la desvinculación no',
+        deA2?.requiereRevision === true && deA1 && deA1.requiereRevision === false, resumen(firmas));
+
+    const conPin = await asistir(a3, { pin: PIN });
+    comprobar('una persona desvinculada ya no firma con PIN (400)', conPin.status === 400 && /desvinculada/.test(conPin.cuerpo?.error || ''), resumen(conPin));
+    const mas = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN } });
+    comprobar('una persona desvinculada no recibe vales', mas.status === 400 || mas.status === 404, resumen(mas));
 }
 
 // ─── Principal ───────────────────────────────────────────────────────────────

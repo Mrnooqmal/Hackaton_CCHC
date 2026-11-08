@@ -65,6 +65,10 @@ module.exports.emitir = async (event) => {
         if (!persona.habilitado) {
             return error('La persona no ha completado su enrolamiento', 400);
         }
+        // Una persona desvinculada no recibe vales: sería firma a su nombre.
+        if (['desvinculado', 'suspendido', 'inactivo'].includes(persona.estado)) {
+            return error('La persona está desvinculada de la empresa', 400);
+        }
         if (!persona.tienePinConfigurado()) {
             return error('La persona no tiene PIN configurado', 400);
         }
