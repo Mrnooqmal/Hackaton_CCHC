@@ -272,6 +272,21 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     comprobar('una persona desvinculada ya no firma con PIN (400)', conPin.status === 400 && /desvinculada/.test(conPin.cuerpo?.error || ''), resumen(conPin));
     const mas = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN } });
     comprobar('una persona desvinculada no recibe vales', mas.status === 400 || mas.status === 404, resumen(mas));
+
+    // La pantalla "Firmas en revisión": la lista y la confirmación.
+    const enRevision = await c.pedir('GET', '/signatures/revision', { token });
+    const pendientes = enRevision.cuerpo?.data?.firmas || [];
+    const aRevisar = pendientes.find((f) => f.referenciaId === a2);
+    comprobar('firmas en revisión: lista la firma tardía, con su motivo y sus fechas',
+        enRevision.status === 200 && Boolean(aRevisar?.motivoRevision) && Boolean(aRevisar?.offline?.valeAnuladoEn)
+            && !pendientes.some((f) => f.referenciaId === a1), resumen(enRevision));
+    if (aRevisar) {
+        const confirmar = await c.pedir('PUT', `/signatures/${aRevisar.signatureId}/revision`, { token, cuerpo: { decision: 'confirmada' } });
+        comprobar('admin: confirma la firma en revisión', confirmar.status === 200, resumen(confirmar));
+        const despues = await c.pedir('GET', '/signatures/revision', { token });
+        comprobar('...y sale de la lista', despues.status === 200
+            && !(despues.cuerpo?.data?.firmas || []).some((f) => f.signatureId === aRevisar.signatureId), resumen(despues));
+    }
 }
 
 // ─── Principal ───────────────────────────────────────────────────────────────

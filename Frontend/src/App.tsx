@@ -21,6 +21,10 @@ import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 // Legacy UserManagement replaced by PersonasManagement
 import ChangePassword from './pages/ChangePassword';
+import SincronizadorFirmas from './components/firmas/SincronizadorFirmas';
+import PrepararCuadrilla from './pages/PrepararCuadrilla';
+import FirmasEnRevision from './pages/FirmasEnRevision';
+import AvisoValesTurno from './components/firmas/AvisoValesTurno';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Settings from './pages/Settings';
@@ -217,6 +221,8 @@ function AppContent() {
       <Route path="/activities/planificar" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_PLANIFICAR}><ActivityPlanificar /></ProtectedRoute>} />
       <Route path="/signature-requests" element={<ProtectedRoute><SignatureRequests /></ProtectedRoute>} />
       <Route path="/my-signatures" element={<ProtectedRoute><MySignatures /></ProtectedRoute>} />
+      <Route path="/firmas/preparar-cuadrilla" element={<ProtectedRoute requiredPermission={PERMISSIONS.OBRA_FIRMA_ASISTIDA}><PrepararCuadrilla /></ProtectedRoute>} />
+      <Route path="/firmas/revision" element={<ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}><FirmasEnRevision /></ProtectedRoute>} />
       <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
@@ -291,6 +297,10 @@ function AppContent() {
       {user && <Sidebar isOpen={isMobileMenuOpen} onClose={closeMobileMenu} />}
       <main className={user ? 'main-content' : 'auth-content'}>
         {user && <Header />}
+        {/* Firma sin conexión: envía lo pendiente desde cualquier pantalla y
+            ofrece habilitar el turno con señal. */}
+        {user && <SincronizadorFirmas />}
+        {user && <AvisoValesTurno />}
         <div className="route-outlet">
           {routes}
         </div>

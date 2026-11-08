@@ -17,12 +17,14 @@ import {
     FiShield,
     FiMapPin,
     FiRepeat,
-    FiMoreHorizontal
+    FiMoreHorizontal,
+    FiWifiOff
 } from 'react-icons/fi';
 import { surveysApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
+import { resumenDelEquipo } from '../utils/colaFirmas';
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -112,6 +114,8 @@ const navObra = (obraId: string | null): NavSection[] => [
         section: 'Cumplimiento',
         items: [
             { path: '/my-signatures', icon: FiEdit3, label: 'Mis firmas' },
+            { path: '/firmas/preparar-cuadrilla', icon: FiWifiOff, label: 'Preparar cuadrilla sin señal', permission: PERMISSIONS.OBRA_FIRMA_ASISTIDA },
+            { path: '/firmas/revision', icon: FiCheckSquare, label: 'Firmas en revisión', permission: PERMISSIONS.FIRMAS_CREAR },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
             { path: '/prescripciones', icon: FiShield, label: 'Prescripciones', permission: PERMISSIONS.REPOSITORIO_VER },
         ]
@@ -124,6 +128,24 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const { user, hasPermission, logout } = useAuth();
     const { selectedObraId, selectedObra, modoEmpresa, puedeGestionarEmpresa, puedeCambiarDeObra, cambiarDeObra } = useObraContext();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+    /**
+     * Cerrar sesión borra los vales de firma sin conexión del equipo (no las
+     * firmas por enviar, que se quedan). Si hay algo de eso, se dice con cuántos
+     * son, para que el supervisor no deje a su cuadrilla sin poder firmar por un
+     * toque equivocado.
+     */
+    const mensajeCierre = () => {
+        const { vales, firmas } = resumenDelEquipo();
+        const partes: string[] = [];
+        if (vales > 0) {
+            partes.push(`En este equipo hay ${vales} firma(s) sin conexión habilitada(s). Al cerrar sesión se borran, y quienes las habilitaron tendrán que volver a ingresar su PIN con señal.`);
+        }
+        if (firmas > 0) {
+            partes.push(`Además hay ${firmas} firma(s) por enviar: esas no se pierden, se envían la próxima vez que alguien de la empresa entre con señal en este equipo.`);
+        }
+        return partes.length ? `${partes.join(' ')} ¿Cerrar sesión igual?` : '¿Estás seguro de que quieres cerrar sesión?';
+    };
     const [showObraConfirm, setShowObraConfirm] = useState(false);
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
@@ -257,7 +279,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             <ConfirmModal
                 isOpen={showLogoutConfirm}
                 title="Cerrar sesión"
-                message="¿Estás seguro de que quieres cerrar sesión?"
+                message={mensajeCierre()}
                 confirmLabel="Cerrar sesión"
                 cancelLabel="Cancelar"
                 variant="danger"

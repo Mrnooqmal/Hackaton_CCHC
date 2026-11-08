@@ -226,6 +226,9 @@ class FirmaService {
                 valeEmitidoEn: consumo.vale.createdAt,
                 valeExpiraEn: consumo.vale.expiresAt,
                 dispositivoEmision: consumo.vale.deviceIdEmision || null,
+                // Quién preparó el equipo con los vales de esta persona (ella
+                // misma, o el supervisor en la firma asistida sin red).
+                valeEmitidoPor: consumo.vale.emitidoPor || null,
                 dispositivoUso: credencial.deviceId || null,
                 // Momento en que la persona firmó en terreno, según el reloj del
                 // dispositivo. Es declarado, no verificable: por eso se guarda

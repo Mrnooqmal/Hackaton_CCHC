@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { guardarCopia, leerCopia, deCuando } from '../utils/copiaLocal';
 import {
     FiCheck,
     FiClock,
@@ -16,6 +18,7 @@ import {
     FiRefreshCw,
     FiFilter,
     FiChevronRight,
+    FiWifiOff
 } from 'react-icons/fi';
 
 import {
@@ -155,6 +158,9 @@ export default function MySignatures() {
     const [showSignModal, setShowSignModal] = useState(false);
     const [signing, setSigning] = useState(false);
     const [error, setError] = useState('');
+    const { signDocument } = useOfflineSignature();
+    /** Si se está mostrando la copia guardada (sin red), desde cuándo. */
+    const [copiaDe, setCopiaDe] = useState<string | null>(null);
 
     // Historial: buscador + filtro por tipo + paginación. Crece con el
     // tiempo, así que no todo cabe en pantalla de una vez.
@@ -210,14 +216,32 @@ export default function MySignatures() {
                     .map(docToPendingItem)
                 : [];
             setPendingRequests([...onboardingDocs, ...requests]);
+            if (pendingRes.success || onboardingDocsRes.success) {
+                // Copia para firmar sin red: los documentos pendientes (las
+                // solicitudes de firma exigen señal igual, ver handleSign).
+                guardarCopia(`mis-firmas:${user.personaId}`, onboardingDocs);
+                setCopiaDe(null);
+            } else if (!navigator.onLine) {
+                usarCopia();
+            }
 
             if (historyRes.success && historyRes.data) {
                 setSignatureHistory(historyRes.data.historial);
             }
         } catch (error) {
             console.error('Error loading data:', error);
+            usarCopia();
         } finally {
             setLoading(false);
+        }
+    };
+
+    const usarCopia = () => {
+        if (!user?.personaId) return;
+        const copia = leerCopia<PendingItem[]>(`mis-firmas:${user.personaId}`);
+        if (copia) {
+            setPendingRequests(copia.datos);
+            setCopiaDe(copia.guardadaEn);
         }
     };
 
@@ -226,13 +250,35 @@ export default function MySignatures() {
         setSigning(true);
         setError('');
         try {
-            const response = selectedRequest.__kind === 'document' && selectedRequest.__documentId
-                ? await documentsApi.sign(selectedRequest.__documentId, {
-                    personaId: user.personaId,
-                    tipoFirma: 'documento',
+            // Un documento se firma por el hook: con red, con el PIN; sin red,
+            // con un vale de esta persona para la obra del documento, y se envía
+            // solo al volver la señal.
+            if (selectedRequest.__kind === 'document' && selectedRequest.__documentId) {
+                const r = await signDocument(
+                    selectedRequest.__documentId,
+                    selectedRequest.titulo || 'Documento',
+                    user.personaId,
+                    [user.nombre, (user as { apellido?: string }).apellido].filter(Boolean).join(' ') || 'Trabajador',
                     pin,
-                })
-                : await signaturesApi.create({
+                    selectedRequest.obraId || null,
+                );
+                if (!r.success) { setError(r.error || 'Error al firmar'); return; }
+                if (r.offline) {
+                    // Sin red: queda en el equipo; se saca de la lista para no firmarla dos veces.
+                    setPendingRequests((prev) => prev.filter((p) => p.__documentId !== selectedRequest.__documentId));
+                } else {
+                    await loadData();
+                }
+                setShowSignModal(false);
+                setSelectedRequest(null);
+                return;
+            }
+            // Una solicitud de firma no admite firma sin conexión: necesita señal.
+            if (!navigator.onLine) {
+                setError('Esta solicitud de firma necesita señal. Vuelve a intentarlo cuando tengas conexión.');
+                return;
+            }
+            const response = await signaturesApi.create({
                     personaId: user.personaId,
                     workerId: user.personaId,
                     pin,
@@ -384,6 +430,11 @@ export default function MySignatures() {
                 tarjetas/filas de abajo, que sí dependen de la respuesta,
                 se reemplazan por su esqueleto mientras `loading` es true. */}
             <div className="page-content" aria-busy={loading}>
+                {copiaDe && (
+                    <p className="aviso-copia-local" role="status">
+                        <FiWifiOff aria-hidden /> Sin señal: estás viendo los documentos guardados el {deCuando(copiaDe)}. Lo que firmes se guarda en el equipo y se envía solo.
+                    </p>
+                )}
                 {/* Pendientes / Historial son dos vistas de lo mismo, no un
                     filtro: van en el encabezado, como en Actividades, el
                     repositorio de documentos y las encuestas. */}

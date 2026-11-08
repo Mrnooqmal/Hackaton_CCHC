@@ -686,6 +686,76 @@ module.exports.revisar = async (event) => {
 };
 
 /**
+ * GET /signatures/revision - Firmas sin conexión que esperan confirmación.
+ *
+ * Una firma tomada con vale entra marcada `requiereRevision` si el vale venció
+ * antes de sincronizar o si la persona fue desvinculada antes de que llegara
+ * (ValeFirmaService, FirmaService). No cuenta como cumplimiento hasta que
+ * alguien con `firmas.crear` la confirma o la rechaza (PUT /signatures/{id}/revision):
+ * sin este listado, esas firmas quedaban sin nadie que las viera.
+ *
+ * Devuelve lo necesario para juzgar cada una (quién, qué, por qué y las fechas
+ * de la cadena: emisión y vencimiento del vale, firma en terreno declarada,
+ * anulación, sincronización); nada del RUT ni de la IP, que viven aparte.
+ */
+const listarEnRevision = async (event) => {
+    try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!sesionPuede(sesion, PERMISSIONS.FIRMAS_CREAR) && normalizeRol(sesion.rol) !== 'admin') {
+            return error('No tienes permiso para revisar firmas', 403);
+        }
+
+        const firmas = [];
+        let desde;
+        do {
+            const r = await docClient.send(new QueryCommand({
+                TableName: SIGNATURES_TABLE,
+                IndexName: 'tenantId-index',
+                KeyConditionExpression: 'tenantId = :t',
+                FilterExpression: 'requiereRevision = :si',
+                ExpressionAttributeValues: { ':t': sesion.tenantId, ':si': true },
+                ExclusiveStartKey: desde,
+            }));
+            firmas.push(...(r.Items || []));
+            desde = r.LastEvaluatedKey;
+        } while (desde);
+
+        const visibles = firmas
+            .filter((f) => f.tenantId === sesion.tenantId)
+            .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+            .map((f) => ({
+                signatureId: f.signatureId,
+                personaId: f.personaId,
+                personaNombre: f.personaNombre,
+                tipoFirma: f.tipoFirma,
+                referenciaId: f.referenciaId,
+                referenciaTipo: f.referenciaTipo,
+                obraId: f.obraId || null,
+                timestamp: f.timestamp,
+                motivoRevision: f.motivoRevision,
+                offline: f.offline || null,
+            }));
+        return success({ total: visibles.length, firmas: visibles });
+    } catch (err) {
+        console.error('Error listando firmas en revisión:', err);
+        return error('No se pudo listar las firmas en revisión', 500);
+    }
+};
+
+/**
+ * Una sola función para los dos listados de firmas (disputas y revisión), por
+ * `routeKey`: cada función con ruta HTTP suma 4 recursos al stack, que está
+ * cerca del tope (D-16), y una ruta más sobre una función existente suma 1.
+ */
+module.exports.listados = async (event) => (event?.routeKey === 'GET /signatures/revision'
+    ? listarEnRevision(event)
+    : module.exports.listDisputes(event));
+
+module.exports.listarEnRevision = listarEnRevision;
+
+/**
  * GET /signatures/disputes - Listar firmas en disputa
  */
 module.exports.listDisputes = async (event) => {

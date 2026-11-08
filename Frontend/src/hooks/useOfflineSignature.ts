@@ -27,7 +27,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { documentsApi, activitiesApi, surveysApi, signaturesApi } from '../api/client';
 import {
-    leerCola, agregarACola, quitarDeCola, guardarValesDe, valeParaFirma, valesDisponibles, nuevoIdFirma,
+    leerCola, agregarACola, quitarDeCola, guardarValesDe, valeParaFirma, valesDisponibles, valesDePersona, nuevoIdFirma,
     type FirmaPendiente, type TipoFirma,
 } from '../utils/colaFirmas';
 
@@ -35,6 +35,12 @@ export type SignatureType = TipoFirma;
 export type OfflinePendingSignature = FirmaPendiente;
 
 const DEVICE_KEY = 'deviceId';
+
+/** Avisa a las demás instancias del hook que la cola o los vales cambiaron. */
+export const EVENTO_COLA = 'cola-firmas-cambio';
+const avisarCambio = () => {
+    try { window.dispatchEvent(new CustomEvent(EVENTO_COLA)); } catch { /* sin window */ }
+};
 
 /**
  * Empresa de la sesión, leída en el momento: la cola y los vales se guardan por
@@ -69,7 +75,15 @@ const deviceId = (): string => {
 
 const getPendingSignatures = (): FirmaPendiente[] => leerCola(empresa());
 
-const valesDisponiblesDe = (personaId: string): number => valesDisponibles(empresa(), personaId);
+const valesDisponiblesDe = (personaId: string, obraId: string | null = null): number =>
+    valesDisponibles(empresa(), personaId, undefined, obraId);
+
+/**
+ * Una sola sincronización a la vez en la pestaña: la lanzan varias pantallas y
+ * el sincronizador del layout. El servidor ya es idempotente (idFirmaLocal), pero
+ * no hay motivo para mandar dos veces lo mismo.
+ */
+let sincronizacionEnCurso: Promise<{ synced: number; failed: number; enRevision: number }> | null = null;
 
 // ─── Detección de errores de red ─────────────────────────────────────────────
 
@@ -122,6 +136,19 @@ export function useOfflineSignature() {
         setPendingCount(getPendingSignatures().length);
     }, []);
 
+    // La cola la cambian varias pantallas y el sincronizador del layout: cada
+    // instancia del hook se entera por este evento (y por `storage`, si cambió
+    // en otra pestaña) y refresca su conteo.
+    useEffect(() => {
+        const refrescar = () => setPendingCount(getPendingSignatures().length);
+        window.addEventListener(EVENTO_COLA, refrescar);
+        window.addEventListener('storage', refrescar);
+        return () => {
+            window.removeEventListener(EVENTO_COLA, refrescar);
+            window.removeEventListener('storage', refrescar);
+        };
+    }, []);
+
     /**
      * Habilita la firma sin conexión de una persona en ESTE equipo. Es el único
      * momento en que el PIN entra al flujo, y requiere red.
@@ -144,6 +171,7 @@ export function useOfflineSignature() {
             const tenantId = empresa();
             if (!tenantId) return { success: false, error: 'No hay una sesión activa en este equipo.' };
             guardarValesDe(tenantId, { personaId, obraId: res.data.obraId, vales: res.data.vales, expiraEn: res.data.expiraEn });
+            avisarCambio();
             return { success: true, expiraEn: res.data.expiraEn };
         } catch (error: any) {
             return { success: false, error: error?.message || 'No se pudo habilitar la firma sin conexión.' };
@@ -151,11 +179,15 @@ export function useOfflineSignature() {
     }, []);
 
     /** Cuántos vales le quedan a una persona en este equipo. */
-    const valesDe = useCallback((personaId: string) => valesDisponiblesDe(personaId), []);
+    /** Cuántos vales le quedan; con `obraId`, solo los de esa obra. */
+    const valesDe = useCallback((personaId: string, obraId: string | null = null) => valesDisponiblesDe(personaId, obraId), []);
 
-    /** ¿Conviene pedir vales ahora que hay red? */
+    /** Los vales de la persona en el equipo: cuántos, de qué obra y hasta cuándo. */
+    const detalleVales = useCallback((personaId: string) => valesDePersona(empresa(), personaId), []);
+
+    /** ¿Conviene pedir vales para esta obra ahora que hay red? */
     const necesitaVales = useCallback(
-        (personaId: string, minimo = 3) => valesDisponiblesDe(personaId) < minimo,
+        (personaId: string, obraId: string, minimo = 3) => valesDisponiblesDe(personaId, obraId) < minimo,
         [],
     );
 
@@ -190,6 +222,7 @@ export function useOfflineSignature() {
         // tomada: quien firma tiene que saberlo en el momento.
         if (!agregarACola(sig)) return { error: 'No se pudo guardar la firma en este equipo: el almacenamiento está lleno.' };
         refreshPendingCount();
+        avisarCambio();
         return { sig };
     }, [refreshPendingCount]);
 
@@ -325,6 +358,13 @@ export function useOfflineSignature() {
      */
     const syncPendingSignatures = useCallback(async (): Promise<{ synced: number; failed: number; enRevision: number }> => {
         if (!navigator.onLine) return { synced: 0, failed: 0, enRevision: 0 };
+        if (sincronizacionEnCurso) return sincronizacionEnCurso;
+        sincronizacionEnCurso = sincronizar().finally(() => { sincronizacionEnCurso = null; });
+        return sincronizacionEnCurso;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshPendingCount]);
+
+    const sincronizar = async (): Promise<{ synced: number; failed: number; enRevision: number }> => {
 
         // Solo la cola de la empresa de esta sesión: la de otra empresa en el
         // mismo equipo espera a una sesión de esa empresa.
@@ -389,10 +429,11 @@ export function useOfflineSignature() {
         }
 
         refreshPendingCount();
+        avisarCambio();
         setEnRevision(revision);
         setSyncing(false);
         return { synced, failed, enRevision: revision };
-    }, [refreshPendingCount]);
+    };
 
     return {
         isOnline,
@@ -407,6 +448,7 @@ export function useOfflineSignature() {
         getPendingSignatures,
         habilitarSinConexion,
         valesDe,
+        detalleVales,
         necesitaVales,
     };
 }

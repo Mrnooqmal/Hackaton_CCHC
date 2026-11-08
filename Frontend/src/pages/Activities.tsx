@@ -16,6 +16,7 @@ import {
     FiEye,
     FiDownload,
     FiTrash2,
+    FiWifiOff
 } from 'react-icons/fi';
 import {
     activitiesApi,
@@ -50,6 +51,7 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { guardarCopia, leerCopia, deCuando } from '../utils/copiaLocal';
 import { useNavigate } from 'react-router-dom';
 
 // Catálogos de tipos, subtipos y periodicidad: compartidos con los
@@ -68,6 +70,8 @@ export default function Activities() {
     const { selectedObraId } = useObraContext();
     const [activities, setActivities] = useState<Activity[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
+    /** Si se está mostrando la copia guardada (sin red), desde cuándo. */
+    const [copiaDe, setCopiaDe] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [showAttendanceModal, setShowAttendanceModal] = useState(false);
     const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
@@ -197,11 +201,38 @@ export default function Activities() {
             if (workersRes.success && workersRes.data) {
                 setWorkers(workersRes.data);
             }
+            if (activitiesRes.success && activitiesRes.data && workersRes.success && workersRes.data) {
+                // Copia para firmar asistencia sin red: las actividades de la obra y
+                // de cada persona solo lo que usa esta pantalla (nunca RUT ni correo).
+                guardarCopia(`actividades:${selectedObraId}`, {
+                    activities: activitiesRes.data.activities.filter(a => a.obraId === selectedObraId),
+                    workers: (workersRes.data as Worker[]).map((w: Worker) => ({
+                        personaId: w.personaId, nombre: w.nombre, apellido: w.apellido, cargo: w.cargo,
+                        habilitado: w.habilitado,
+                        asignaciones: (w.asignaciones || []).filter((x: { obraId: string }) => x.obraId === selectedObraId),
+                    })),
+                });
+                setCopiaDe(null);
+            } else if (!navigator.onLine || !activitiesRes.success) {
+                const copia = leerCopia<{ activities: Activity[]; workers: Worker[] }>(`actividades:${selectedObraId}`);
+                if (copia) {
+                    setActivities(copia.datos.activities);
+                    setWorkers(copia.datos.workers);
+                    setCopiaDe(copia.guardadaEn);
+                }
+            }
             if (ausenciasRes && ausenciasRes.success && ausenciasRes.data) {
                 setAusencias(ausenciasRes.data.ausencias);
             }
         } catch (error) {
             console.error('Error loading data:', error);
+            // Sin red la petición lanza: se muestra la copia guardada, si la hay.
+            const copia = leerCopia<{ activities: Activity[]; workers: Worker[] }>(`actividades:${selectedObraId}`);
+            if (copia) {
+                setActivities(copia.datos.activities);
+                setWorkers(copia.datos.workers);
+                setCopiaDe(copia.guardadaEn);
+            }
         } finally {
             setLoading(false);
         }
@@ -825,6 +856,11 @@ export default function Activities() {
 
 
             <div className="page-content">
+                {copiaDe && (
+                    <p className="aviso-copia-local" role="status">
+                        <FiWifiOff aria-hidden /> Sin señal: estás viendo lo guardado el {deCuando(copiaDe)}. Las firmas se guardan en el equipo y se envían solas.
+                    </p>
+                )}
                 {/* Lista y calendario son dos vistas de lo mismo, no un filtro:
                     van en el encabezado, como las pestañas del detalle de obra.
                     Sin obra activa no hay nada que ver en ninguna de las dos. */}

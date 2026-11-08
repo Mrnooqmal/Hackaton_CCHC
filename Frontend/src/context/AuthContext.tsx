@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { purgarAlmacenOfflineAntiguo } from '../services/purgaOffline';
 import { borrarPreguntasEnCache } from '../utils/encuestas';
 import { borrarTodosLosVales } from '../utils/colaFirmas';
+import { borrarCopias } from '../utils/copiaLocal';
 import { EVENTO_SESION_CAIDA, authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
 
 export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
@@ -59,6 +60,10 @@ const limpiarDatosLocales = ({ cierreExplicito }: { cierreExplicito: boolean }) 
     if (cierreExplicito) {
         borrarTodosLosVales();
         borrarPreguntasEnCache();
+        // Las copias para firmar sin red (actividades del día, documentos
+        // pendientes): como los vales, se quedan al vencer la sesión y se van
+        // al cerrarla a propósito.
+        borrarCopias();
     }
     purgarAlmacenOfflineAntiguo();
 };

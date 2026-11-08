@@ -86,6 +86,28 @@ export interface ResolveDisputeData {
     nuevoEstado: 'valida' | 'revocada';
 }
 
+export interface FirmaEnRevision {
+    signatureId: string;
+    personaId: string;
+    personaNombre?: string;
+    tipoFirma?: string;
+    referenciaId?: string;
+    referenciaTipo?: string;
+    obraId?: string | null;
+    timestamp?: string;
+    motivoRevision?: string;
+    offline?: {
+        valeEmitidoEn?: string;
+        valeExpiraEn?: string;
+        valeEmitidoPor?: string | null;
+        firmadaSinConexionEn?: string | null;
+        sincronizadaEn?: string;
+        valeAnuladoEn?: string | null;
+        valeVencido?: boolean;
+        personaDesvinculada?: boolean;
+    } | null;
+}
+
 export interface ValesResponse {
     vales: string[];
     personaId: string;
@@ -108,6 +130,13 @@ export const signaturesApi = {
             method: 'POST',
             body: JSON.stringify(data),
         }),
+
+    /**
+     * Firmas sin conexión que esperan confirmación (vale vencido, o persona
+     * desvinculada antes de sincronizar). Exige `firmas.crear`.
+     */
+    enRevision: () =>
+        apiRequest<{ total: number; firmas: FirmaEnRevision[] }>('/signatures/revision'),
 
     /** Confirma o rechaza una firma sincronizada con un vale vencido. */
     revisar: (id: string, data: { decision: 'confirmada' | 'rechazada'; motivo?: string }) =>

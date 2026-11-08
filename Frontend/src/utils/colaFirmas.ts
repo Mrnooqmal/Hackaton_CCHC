@@ -146,8 +146,24 @@ export const valeParaFirma = (
     return { vale };
 };
 
-export const valesDisponibles = (tenantId: string | null, personaId: string, almacen: Almacen = porDefecto()): number =>
-    leerVales(tenantId, almacen).find((v) => v.personaId === personaId)?.vales.length ?? 0;
+/**
+ * Cuántos vales vigentes tiene la persona en el equipo. Con `obraId`, solo
+ * cuentan si son de esa obra: los de otra obra no sirven para firmar ahí.
+ */
+export const valesDisponibles = (
+    tenantId: string | null,
+    personaId: string,
+    almacen: Almacen = porDefecto(),
+    obraId: string | null = null,
+): number => {
+    const entrada = leerVales(tenantId, almacen).find((v) => v.personaId === personaId);
+    if (!entrada || (obraId && entrada.obraId !== obraId)) return 0;
+    return entrada.vales.length;
+};
+
+/** Los vales vigentes de la persona en el equipo (cuántos, de qué obra, hasta cuándo), o null. */
+export const valesDePersona = (tenantId: string | null, personaId: string, almacen: Almacen = porDefecto()): ValesDePersona | null =>
+    leerVales(tenantId, almacen).find((v) => v.personaId === personaId) ?? null;
 
 /** "Cerrar sesión" explícito: se borran los vales de todas las empresas. La cola NO. */
 export const borrarTodosLosVales = (almacen: Almacen = porDefecto()): void => {

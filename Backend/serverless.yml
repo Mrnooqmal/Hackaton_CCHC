@@ -1040,11 +1040,18 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Disputas y firmas en revisión: una función, dos rutas (handler.listados
+  # despacha por routeKey). Una ruta más suma 1 recurso; una función, 4 (D-16).
   listSignatureDisputes:
-    handler: handlers/signatures/handler.listDisputes
+    handler: handlers/signatures/handler.listados
     events:
       - httpApi:
           path: /signatures/disputes
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /signatures/revision
           method: GET
           authorizer:
             name: sesionUsuario

@@ -14,13 +14,13 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
 |---|---|---|---|
 | **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `14fa693` |
 | **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net` redirige con 301 a `buildandserve.cl` desde D-34), bucket `buildandserve-frontend` | `14fa693` |
-| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `7696a1b` |
-| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `7696a1b` |
+| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `a9cb667` |
+| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `3edfb8f` |
 | Ambos | Infra del frontend | Stack `BuildAndServe-frontend`: dos distribuciones, certificado, cabeceras, CSP y rol de publicación | `14fa693` |
 
 **Prod: `14fa693` desde el 7 de noviembre de 2026** (backend, frontend e infra del frontend, con los scripts). Incluye todo lo acumulado: D-26, D-27, H-16, H-17, Actividades 4 y 5 (D-29 a D-32), el resguardo del Expediente y D-34. Prueba de punta a punta en prod: 29 de 29. Verificado después: el stack tiene 470 recursos, el TTL de la auditoría está `ENABLED`, la alarma `evento-sospechoso-prod` en `OK`, `d30jksx91fodea.cloudfront.net` responde 301 a `https://buildandserve.cl/` y la API no acepta ese origen.
 
-**Dev: `7696a1b` desde el 8 de noviembre de 2026** (parte 1 de la firma sin conexión: la cola ya no se pierde al caer la sesión, separada por empresa, y reintento idempotente), backend y frontend, prueba de punta a punta 28 de 28. Respecto de prod cambian el backend de firmas y vales y el frontend de la cola.
+**Dev desde el 8 de noviembre de 2026:** backend `a9cb667` y frontend `3edfb8f` (partes 1 a 3 de la firma sin conexión: cola persistente por empresa con reintento idempotente, vales atados a persona y obra, desvinculación). Prueba de punta a punta 45 de 45, con el tramo de vales por la API contra AWS. Respecto de prod cambian el backend de firmas y vales y el frontend de la cola.
 
 **Cómo se verificó lo anterior (30 de octubre y 6 de noviembre de 2026).** Los scripts no dejan el commit escrito en AWS. El backend se identificó comparando el código del paquete de `personasModule` (`aws lambda get-function`) con el árbol `Backend/` de cada commit: prod coincide con `d750646` (paquete del 1 de octubre); dev, con `b7c3e88` (paquete del 15 de octubre a las 17:07, `UpdateStack` de Benjamin; `93b9a00` tiene el mismo código). El frontend, por la fecha de `index.html` en el bucket y por textos que solo existen desde ciertos commits: prod no tiene los de D-27 ni del footer nuevo; dev tiene los de `6aa53d1` y no los de `b3cb99c` (publicado por Benjamin el 23 de octubre, invalidación a las 10:33, 97 segundos después del commit: a confirmar que fue con el script).
 
@@ -85,6 +85,7 @@ infra/desplegar-infra-frontend.sh <commit>
 
 **Cuidados:**
 - **Si un deploy se corta:** revisa el estado del stack (`aws cloudformation describe-stacks`) y los `CodeSha256` de las funciones antes de reintentar, y limpia los worktrees colgados con `git worktree prune`.
+- **Si `serverless deploy` queda colgado:** pasó el 8 de noviembre de 2026: el stack quedó `UPDATE_COMPLETE` en un minuto y la CLI no volvió en 8 horas, así que el script no llegó a su verificación. Comprueba el estado del stack, compara el paquete de una Lambda con el commit (sus `.js` contra `git rev-parse <commit>:Backend/<archivo>`) y que todas las funciones compartan el mismo `CodeSha256`; si todo coincide, detén los procesos colgados y sigue.
 - **Si una publicación del frontend termina sin la línea `Publicado …`, no se publicó.** Compruébalo mirando la fecha de `index.html` en el bucket, y repite la publicación.
 - **Prueba de punta a punta:** `Backend/scripts/prueba-punta-a-punta.js`, desde `Backend/`:
   ```bash
