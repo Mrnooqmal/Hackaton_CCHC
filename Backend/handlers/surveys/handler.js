@@ -614,3 +614,23 @@ module.exports.updateResponseStatus = async (event) => {
         return error(err.message || 'Error interno al actualizar respuesta', 500);
     };
 }
+
+/**
+ * Una sola función para el módulo (8 de noviembre de 2026). Eran cuatro, y cada
+ * función con ruta HTTP suma 4 recursos al stack contra el tope de 500 (D-16).
+ * Las rutas siguen declaradas una por una en `serverless.yml`, con su
+ * autorizador; aquí solo se elige qué atiende cada una por `event.routeKey`,
+ * que pone API Gateway. Una ruta que no está en la tabla responde 404.
+ */
+const RUTAS_SURVEYS = {
+    'POST /surveys': module.exports.create,
+    'GET /surveys': module.exports.list,
+    'GET /surveys/{id}': module.exports.get,
+    'POST /surveys/{id}/responses/{workerId}': module.exports.updateResponseStatus,
+};
+module.exports.enrutar = async (event, contexto) => {
+    const atender = RUTAS_SURVEYS[event?.routeKey];
+    if (!atender) return error('Ruta no encontrada', 404);
+    return atender(event, contexto);
+};
+module.exports.RUTAS = RUTAS_SURVEYS;

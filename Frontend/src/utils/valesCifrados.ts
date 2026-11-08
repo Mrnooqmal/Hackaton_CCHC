@@ -30,14 +30,18 @@
  *
  * ── Parámetros ───────────────────────────────────────────────────────────────
  *
- * PBKDF2-HMAC-SHA256 con `ITERACIONES` (calibradas con /medicion-pin para que
- * derivar tarde del orden de medio segundo en un Android de gama baja). Las
+ * PBKDF2-HMAC-SHA256 con `ITERACIONES`. Fijadas el 8 de noviembre de 2026 con
+ * /medicion-pin en un Android 10 de gama baja (8 núcleos, 4 GB, Chrome 156):
+ * 300.000 iteraciones tardaron 182 ms de mediana, así que 600.000 rondan los
+ * 365 ms en ese equipo y no pasan de ~750 ms en uno el doble de lento. La
+ * protección principal es el corte del servidor al quinto vale inválido; esto
+ * solo encarece descartar PIN con una copia del almacenamiento (D-35). Las
  * iteraciones y la sal viajan con cada emisión: se pueden subir sin romper los
  * vales ya guardados. Sal de 16 bytes nueva en cada emisión; contador (IV) de 16
  * bytes distinto para cada vale.
  */
 
-export const ITERACIONES = 300_000;
+export const ITERACIONES = 600_000;
 export const VERSION = 1;
 
 export interface ValeCifrado {

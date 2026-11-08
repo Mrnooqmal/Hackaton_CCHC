@@ -176,9 +176,9 @@ test('sal nueva en cada emisión, contador distinto en cada vale, iteraciones gu
     if (conOtras) assert.notEqual(await v.descifrarVale(conOtras, x.vales[1]), hex(2));
 });
 
-test('las iteraciones de verdad: del orden de 300.000 (calibradas con /medicion-pin)', () => {
+test('las iteraciones de verdad: 600.000, fijadas con la medición del 8 de noviembre de 2026 (D-35)', () => {
     const { v } = modulos();
-    assert.ok(v.ITERACIONES >= 300000, `ITERACIONES = ${v.ITERACIONES}`);
+    assert.equal(v.ITERACIONES, 600000, 'si cambian, se registra en D-35 con su medición');
 });
 
 // ─── Lo de antes y los avisos ────────────────────────────────────────────────
@@ -228,7 +228,9 @@ test('el hook: comprueba WebCrypto antes de pedir vales, cifra con el PIN acepta
 
 test('al sincronizar, una firma rechazada se anota con nombre y el sincronizador la muestra', () => {
     const s = leerFront('hooks', 'useOfflineSignature.ts');
-    const rama = s.slice(s.indexOf("} else if (response && !isNetworkErrorResponse(response.error || '')) {"));
+    const i = s.indexOf('} else if (response && !(response as { reintentable?: boolean }).reintentable && !isNetworkErrorResponse(response.error || \'\')) {');
+    assert.ok(i > 0, 'la rama del rechazo definitivo');
+    const rama = s.slice(i);
     assert.ok(rama.slice(0, 900).includes('anotarRechazada(tenantId, {'));
     assert.ok(rama.slice(0, 900).includes('workerName: sig.workerName'));
     const sinc = leerFront('components', 'firmas', 'SincronizadorFirmas.tsx');

@@ -446,7 +446,7 @@ export function useOfflineSignature() {
                     if (datos?.firma?.requiereRevision || datos?.requiereRevision) revision++;
                     quitarDeCola(tenantId, sig.id);
                     synced++;
-                } else if (response && !isNetworkErrorResponse(response.error || '')) {
+                } else if (response && !(response as { reintentable?: boolean }).reintentable && !isNetworkErrorResponse(response.error || '')) {
                     // El servidor la rechazó (vale inválido —el 1 de 256 PIN
                     // equivocados que pasa la comprobación—, ya usado, anulado o
                     // vencido hace demasiado): reintentar no cambia nada. Se quita

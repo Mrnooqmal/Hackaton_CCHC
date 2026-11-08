@@ -4,6 +4,8 @@ service: BuildAndServe
 plugins:
   - serverless-prune-plugin
   - serverless-offline
+  # Todos los grupos de logs con la clave propia (ClaveDatos). Ver el plugin.
+  - ./plugins/logs-cifrados.js
 
 custom:
   prune:
@@ -1059,45 +1061,34 @@ functions:
   # ========================================
   # UPLOADS (Subida de archivos a S3)
   # ========================================
-  getUploadUrl:
-    handler: handlers/uploads/handler.getUploadUrl
+  # Una función para las cinco rutas (antes una por ruta: 16 recursos menos,
+  # D-16). Cada ruta sigue declarada con su autorizador; `enrutar` elige por
+  # `event.routeKey`. Los grupos de logs de las funciones anteriores
+  # (getUploadUrl, getDownloadUrl, confirmUpload, deleteUpload,
+  # getBatchDownloadUrls) se borraron al desplegar (aprobado el 7 de noviembre).
+  uploadsModule:
+    handler: handlers/uploads/handler.enrutar
     events:
       - httpApi:
           path: /uploads/presigned-url
           method: POST
           authorizer:
             name: sesionUsuario
-
-  getDownloadUrl:
-    handler: handlers/uploads/handler.getDownloadUrl
-    events:
       - httpApi:
           path: /uploads/download-url
           method: POST
           authorizer:
             name: sesionUsuario
-
-  confirmUpload:
-    handler: handlers/uploads/handler.confirmUpload
-    events:
       - httpApi:
           path: /uploads/confirm
           method: POST
           authorizer:
             name: sesionUsuario
-
-  deleteUpload:
-    handler: handlers/uploads/handler.deleteFile
-    events:
       - httpApi:
           path: /uploads/{fileKey}
           method: DELETE
           authorizer:
             name: sesionUsuario
-
-  getBatchDownloadUrls:
-    handler: handlers/uploads/handler.getBatchDownloadUrls
-    events:
       - httpApi:
           path: /uploads/batch-download-urls
           method: POST
@@ -1115,37 +1106,28 @@ functions:
           authorizer:
             name: sesionUsuario
 
-  # Surveys (Encuestas)
-  createSurvey:
-    handler: handlers/surveys/handler.create
+  # Surveys (Encuestas). Una función para las cuatro rutas (antes una por ruta:
+  # 12 recursos menos, D-16). `enrutar` elige por `event.routeKey`. Los grupos de
+  # logs de createSurvey, listSurveys, getSurvey y updateSurveyResponse se
+  # borraron al desplegar (aprobado el 7 de noviembre).
+  surveysModule:
+    handler: handlers/surveys/handler.enrutar
     events:
       - httpApi:
           path: /surveys
           method: POST
           authorizer:
             name: sesionUsuario
-
-  listSurveys:
-    handler: handlers/surveys/handler.list
-    events:
       - httpApi:
           path: /surveys
           method: GET
           authorizer:
             name: sesionUsuario
-
-  getSurvey:
-    handler: handlers/surveys/handler.get
-    events:
       - httpApi:
           path: /surveys/{id}
           method: GET
           authorizer:
             name: sesionUsuario
-
-  updateSurveyResponse:
-    handler: handlers/surveys/handler.updateResponseStatus
-    events:
       - httpApi:
           path: /surveys/{id}/responses/{workerId}
           method: POST
@@ -1295,6 +1277,12 @@ resources:
         - HttpApiRouteGetOnboardingLicenciaTokenVar
         - HttpApiRoutePostOnboardingCompletar
         - HttpApiRoutePostCspReporte
+        - HttpApiRoutePostAuthLogin
+        - HttpApiRoutePostAuthSelectDashtenant
+        - HttpApiRoutePostAuthForgotDashpassword
+        - HttpApiRoutePostAuthResetDashpassword
+        - HttpApiRoutePostAuthValidateDashtoken
+        - HttpApiRouteGetSignaturesVerifyTokenVar
       Properties:
         DefaultRouteSettings:
           ThrottlingBurstLimit: 200
@@ -1313,6 +1301,35 @@ resources:
           'POST /csp/reporte':
             ThrottlingBurstLimit: 10
             ThrottlingRateLimit: 5
+          # Rutas públicas de autenticación (checklist 2.8, 8 de noviembre de
+          # 2026). El límite es de la ruta para TODO el ambiente, no por
+          # persona ni por IP (HTTP API no lo distingue y WAF no se asocia a HTTP
+          # API): frena una avalancha, no a un atacante paciente. A ese lo frenan
+          # el límite de intentos por cuenta y la detección (D-9, D-31).
+          # El ingreso alcanza para el inicio de turno de varias obras a la vez
+          # (cada ingreso es ~112 ms de scrypt): 20 por segundo sostenidos.
+          'POST /auth/login':
+            ThrottlingBurstLimit: 40
+            ThrottlingRateLimit: 20
+          'POST /auth/select-tenant':
+            ThrottlingBurstLimit: 40
+            ThrottlingRateLimit: 20
+          # Cada una manda un correo: que no sirva para hacer spam ni para gastar
+          # la cuota de SES.
+          'POST /auth/forgot-password':
+            ThrottlingBurstLimit: 5
+            ThrottlingRateLimit: 2
+          'POST /auth/reset-password':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 5
+          'POST /auth/validate-token':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 5
+          # Verificación pública de una firma: la usa un fiscalizador de vez en
+          # cuando, no un programa.
+          'GET /signatures/verify/{token}':
+            ThrottlingBurstLimit: 20
+            ThrottlingRateLimit: 10
 
   Resources:
     # ==========================================
@@ -1351,6 +1368,23 @@ resources:
                 - kms:Decrypt
                 - kms:GenerateDataKey
               Resource: '*'
+            # Los grupos de logs del stack (plugins/logs-cifrados.js). Solo para
+            # grupos de logs de esta cuenta y región: la condición sobre el
+            # contexto de cifrado es la que recomienda AWS para esta llave.
+            - Sid: Uso desde CloudWatch Logs
+              Effect: Allow
+              Principal:
+                Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+              Action:
+                - kms:Encrypt*
+                - kms:Decrypt*
+                - kms:ReEncrypt*
+                - kms:GenerateDataKey*
+                - kms:Describe*
+              Resource: '*'
+              Condition:
+                ArnLike:
+                  'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
 
     ClaveDatosAlias:
       Type: AWS::KMS::Alias

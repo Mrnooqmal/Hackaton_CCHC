@@ -28,6 +28,12 @@ interface ApiResponse<T> {
     success: boolean;
     data?: T;
     error?: string;
+    /**
+     * El servidor no rechazó la petición por su contenido: estaba saturado (429,
+     * límite de tasa) o falló algo pasajero (5xx). Reintentar puede funcionar.
+     * La cola de firmas sin conexión NO descarta lo que vuelve así.
+     */
+    reintentable?: boolean;
 }
 
 /**
@@ -86,6 +92,20 @@ export async function apiRequest<T>(
         if (response.status === 401 && !endpoint.startsWith('/auth')) {
             avisarSesionCaida();
             return { success: false, error: 'Tu sesión expiró. Vuelve a iniciar sesión.' };
+        }
+
+        // Límite de tasa de la API (429) o una falla pasajera del servidor (5xx).
+        // API Gateway responde el 429 con `{ message }`, sin `success`: sin esto,
+        // la pantalla mostraba un error vacío.
+        if (response.status === 429 || response.status >= 500) {
+            const cuerpo = await response.json().catch(() => null);
+            return {
+                success: false,
+                reintentable: true,
+                error: response.status === 429
+                    ? 'Hay muchas solicitudes en este momento. Espera unos segundos y vuelve a intentarlo.'
+                    : (cuerpo?.error || 'El servidor no pudo responder. Vuelve a intentarlo en un momento.'),
+            };
         }
 
         const data = await response.json();
