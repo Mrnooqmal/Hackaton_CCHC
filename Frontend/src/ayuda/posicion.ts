@@ -7,6 +7,14 @@
 // en la mitad opuesta al elemento. En pantallas anchas flota junto al elemento,
 // en la posición pedida si cabe, o en la primera que quepa; si ninguna cabe,
 // también se ancla.
+//
+// Un elemento más alto que la pantalla (una lista larga de requisitos) no deja
+// lugar arriba ni abajo, y su centro queda justo en la mitad de la pantalla:
+// elegir el borde por el centro lo hacía saltar de abajo a arriba con cualquier
+// desplazamiento de un par de píxeles. Para él la posición es fija: al costado
+// si cabe, abajo a la derecha; si no, anclado abajo. Y una vez elegido el lado en
+// un paso, `recolocar` lo mantiene (solo sigue al elemento) mientras el
+// elemento y la pantalla no cambien de tamaño (lo decide el motor).
 
 import type { Posicion } from './tipos.ts';
 
@@ -44,24 +52,38 @@ export const anchoGlobo = (vista: Tamano) =>
 export const bordeLibre = (objetivo: Rect | null, vista: Tamano): 'abajo' | 'arriba' =>
     (!objetivo || objetivo.top + objetivo.height / 2 <= vista.height / 2 ? 'abajo' : 'arriba');
 
-function anclado(objetivo: Rect | null, globo: Tamano, vista: Tamano): Colocacion {
-    const borde = bordeLibre(objetivo, vista);
+/** ¿El elemento, con su halo, no cabe en el alto de la pantalla? */
+export const esMasAltoQueLaVista = (o: Rect, vista: Tamano) => o.height + 2 * HALO > vista.height - 2 * MARGEN;
+
+function anclado(objetivo: Rect | null, globo: Tamano, vista: Tamano, borde: 'abajo' | 'arriba' = bordeLibre(objetivo, vista)): Colocacion {
     const width = vista.width - 2 * MARGEN;
     return { modo: 'anclado', borde, left: MARGEN, width, top: borde === 'abajo' ? vista.height - MARGEN - globo.height : MARGEN };
 }
 
-function flotante(lado: Exclude<Posicion, 'auto'>, o: Rect, globo: Tamano, vista: Tamano): Colocacion | null {
+type Lado = Exclude<Posicion, 'auto'>;
+
+/** Coordenadas del globo en un lado del elemento, sin revisar si cabe. */
+function enLado(lado: Lado, o: Rect, globo: Tamano, vista: Tamano): { top: number; left: number } {
     const w = globo.width;
     const h = globo.height;
-    let top: number;
-    let left: number;
     if (lado === 'abajo' || lado === 'arriba') {
-        top = lado === 'abajo' ? o.top + o.height + HALO + SEPARACION : o.top - HALO - SEPARACION - h;
-        left = limitar(o.left + o.width / 2 - w / 2, MARGEN, vista.width - MARGEN - w);
-    } else {
-        left = lado === 'derecha' ? o.left + o.width + HALO + SEPARACION : o.left - HALO - SEPARACION - w;
-        top = limitar(o.top + o.height / 2 - h / 2, MARGEN, vista.height - MARGEN - h);
+        return {
+            top: lado === 'abajo' ? o.top + o.height + HALO + SEPARACION : o.top - HALO - SEPARACION - h,
+            left: limitar(o.left + o.width / 2 - w / 2, MARGEN, vista.width - MARGEN - w),
+        };
     }
+    return {
+        left: lado === 'derecha' ? o.left + o.width + HALO + SEPARACION : o.left - HALO - SEPARACION - w,
+        // Junto a un elemento más alto que la pantalla, abajo y fijo: su centro
+        // se mueve con cada desplazamiento.
+        top: esMasAltoQueLaVista(o, vista) ? vista.height - MARGEN - h : limitar(o.top + o.height / 2 - h / 2, MARGEN, vista.height - MARGEN - h),
+    };
+}
+
+function flotante(lado: Lado, o: Rect, globo: Tamano, vista: Tamano): Colocacion | null {
+    const w = globo.width;
+    const h = globo.height;
+    const { top, left } = enLado(lado, o, globo, vista);
     const r = { top, left, width: w, height: h };
     const dentro = top >= MARGEN && left >= MARGEN && top + h <= vista.height - MARGEN && left + w <= vista.width - MARGEN;
     return dentro && !seCruzan(r, conHalo(o)) ? { modo: 'flotante', lado, top, left, width: w } : null;
@@ -77,11 +99,32 @@ export function colocar(objetivo: Rect | null, globo: Tamano, vista: Tamano, pre
         const width = anchoGlobo(vista);
         return { modo: 'centrado', width, left: (vista.width - width) / 2, top: Math.max(MARGEN, (vista.height - globo.height) / 2) };
     }
-    if (vista.width < ANCHO_ANGOSTO) return anclado(objetivo, globo, vista);
+    const alto = esMasAltoQueLaVista(objetivo, vista);
+    if (vista.width < ANCHO_ANGOSTO) return anclado(objetivo, globo, vista, alto ? 'abajo' : undefined);
     const orden = preferida === 'auto' ? ORDEN_AUTO : [preferida, ...ORDEN_AUTO.filter((l) => l !== preferida)];
     for (const lado of orden) {
+        if (alto && (lado === 'abajo' || lado === 'arriba')) continue;
         const c = flotante(lado, objetivo, globo, vista);
         if (c) return c;
     }
-    return anclado(objetivo, globo, vista);
+    return anclado(objetivo, globo, vista, alto ? 'abajo' : undefined);
+}
+
+/**
+ * La misma elección de antes (modo, lado o borde) con las medidas de ahora: el
+ * globo sigue al elemento sin cambiar de lado. Lo usa el motor dentro de un paso
+ * mientras el elemento y la pantalla conservan su tamaño; el alto del globo sí
+ * puede cambiar (al anclarse cambia de ancho y con eso de alto). Si el lado
+ * elegido ya no cabe (la persona desplazó la página), queda dentro de la
+ * pantalla en vez de saltar al otro lado.
+ */
+export function recolocar(previa: Colocacion, objetivo: Rect | null, globo: Tamano, vista: Tamano): Colocacion {
+    if (previa.modo === 'anclado') return anclado(objetivo, globo, vista, previa.borde);
+    if (previa.modo === 'centrado' || !objetivo) return colocar(objetivo, globo, vista);
+    const { top, left } = enLado(previa.lado, objetivo, globo, vista);
+    return {
+        modo: 'flotante', lado: previa.lado, width: globo.width,
+        top: limitar(top, MARGEN, vista.height - MARGEN - globo.height),
+        left: limitar(left, MARGEN, vista.width - MARGEN - globo.width),
+    };
 }

@@ -233,3 +233,31 @@ test('si el paso siguiente aparece cuando la pantalla termina de cargar, vuelve 
     await page.getByRole('button', { name: 'Finalizar' }).click();
     expect(await eventos(page)).toEqual([{ tipo: 'completar', ultimoPaso: 1 }]);
 });
+
+test('un elemento más alto que la pantalla: el globo no cambia de lado aunque la página se mueva unos píxeles', async ({ page }) => {
+    // Revisión de Adrean (8 de noviembre de 2026): en cumplimiento-obra, con un
+    // grupo desplegado, el globo saltaba de abajo a arriba y de vuelta, sin que
+    // nadie desplazara la página. El elemento queda centrado y su centro, justo
+    // en la mitad: cualquier ajuste de un par de píxeles cambiaba el lado.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await abrir(page, 'alto');
+    await expect(globo(page)).toContainText('Lista larga');
+    await page.evaluate(() => {
+        const registro = [];
+        window.__lados = registro;
+        const mirar = () => {
+            const v = document.querySelector('.recorrido-globo')?.getAttribute('data-colocacion') ?? null;
+            if (v && registro[registro.length - 1] !== v) registro.push(v);
+            requestAnimationFrame(mirar);
+        };
+        mirar();
+    });
+    // La página se mueve sola unos píxeles, como cuando termina de cargar algo.
+    for (const dy of [3, -6, 4, -2, 5, -7, 2, 3, -4, 6, -5, 1]) {
+        await page.evaluate((d) => window.scrollBy(0, d), dy);
+        await page.waitForTimeout(60);
+    }
+    const lados = await page.evaluate(() => window.__lados);
+    expect(lados.length - 1, `cambió de lado: ${lados.join(' → ')}`).toBeLessThanOrEqual(1);
+    expect(lados[lados.length - 1]).toBe('anclado-abajo');
+});

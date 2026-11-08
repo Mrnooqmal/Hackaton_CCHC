@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HALO, MARGEN, anchoGlobo, colocar, seCruzan } from '../src/ayuda/posicion.ts';
+import { HALO, MARGEN, anchoGlobo, colocar, recolocar, seCruzan } from '../src/ayuda/posicion.ts';
 
 const conHalo = (r) => ({ top: r.top - HALO, left: r.left - HALO, width: r.width + 2 * HALO, height: r.height + 2 * HALO });
 const rectGlobo = (c, alto) => ({ top: c.top, left: c.left, width: c.width, height: alto });
@@ -59,4 +59,59 @@ test('un paso sin ancla va centrado', () => {
     assert.equal(c.modo, 'centrado');
     assert.equal(c.left, 16);
     assert.equal(c.top, 220);
+});
+
+// ─── Elementos más altos que la pantalla (revisión de Adrean, 8 de noviembre de 2026) ───
+// La lista de requisitos con un grupo desplegado: el globo saltaba de abajo a
+// arriba porque el borde se elegía por el centro del elemento, que queda justo en
+// la mitad de la pantalla.
+
+test('un elemento más alto que la pantalla y de todo el ancho: anclado abajo, pase lo que pase con su centro', () => {
+    const v = { width: 1280, height: 720 };
+    const g = { width: 360, height: 200 };
+    for (let top = -1400; top <= 0; top += 7) {
+        const c = colocar({ top, left: 40, width: 1200, height: 2000 }, g, v);
+        assert.equal(c.modo, 'anclado', `top ${top}`);
+        assert.equal(c.borde, 'abajo', `top ${top}`);
+    }
+    // En el teléfono, igual.
+    const t = { width: 360, height: 640 };
+    for (let top = -1400; top <= 0; top += 7) {
+        assert.equal(colocar({ top, left: 16, width: 328, height: 2000 }, { width: anchoGlobo(t), height: 200 }, t).borde, 'abajo', `360 px, top ${top}`);
+    }
+});
+
+test('un elemento más alto que la pantalla y angosto: al costado, abajo y fijo aunque la página se desplace', () => {
+    const v = { width: 1280, height: 720 };
+    const g = { width: 360, height: 200 };
+    const posiciones = new Set();
+    for (let top = -1400; top <= 0; top += 7) {
+        const o = { top, left: 40, width: 600, height: 2000 };
+        const c = colocar(o, g, v);
+        assert.equal(c.modo, 'flotante');
+        assert.equal(c.lado, 'derecha');
+        assert.ok(!seCruzan(rectGlobo(c, g.height), conHalo(o)), 'no tapa el elemento');
+        posiciones.add(`${c.top},${c.left}`);
+    }
+    assert.equal(posiciones.size, 1, `se movió: ${[...posiciones].join(' | ')}`);
+});
+
+test('recolocar mantiene el lado o el borde elegido y solo sigue al elemento', () => {
+    const v = { width: 1280, height: 800 };
+    const g = { width: 360, height: 180 };
+    const o = { top: 300, left: 500, width: 200, height: 60 };
+    const abajo = colocar(o, g, v);
+    assert.equal(abajo.lado, 'abajo');
+    // La página se desplazó y abajo ya no cabe: colocar elegiría arriba; recolocar no salta.
+    const movido = { ...o, top: 700 };
+    assert.equal(colocar(movido, g, v).lado, 'arriba');
+    const r = recolocar(abajo, movido, g, v);
+    assert.equal(r.modo, 'flotante');
+    assert.equal(r.lado, 'abajo');
+    assert.ok(r.top + g.height <= v.height - MARGEN, 'queda dentro de la pantalla');
+    // Anclado arriba se queda arriba, con el alto nuevo del globo.
+    const arriba = { modo: 'anclado', borde: 'arriba', top: MARGEN, left: MARGEN, width: 1248 };
+    const r2 = recolocar(arriba, { top: 0, left: 0, width: 100, height: 100 }, { width: 360, height: 260 }, v);
+    assert.equal(r2.borde, 'arriba');
+    assert.equal(r2.top, MARGEN);
 });

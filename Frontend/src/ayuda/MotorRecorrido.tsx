@@ -19,9 +19,9 @@ import type { KeyboardEvent as KeyboardEventReact } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
-import type { DefinicionRecorrido, EventoRecorrido } from './tipos';
+import type { DefinicionRecorrido, EventoRecorrido, Posicion } from './tipos';
 import { ATRIBUTOS_QUE_MUEVEN_ANCLAS, ESPERA_ANCLA_MS, ESPERA_SIGUIENTE_MS, buscarAncla, esperarAncla, traerALaVista } from './dom';
-import { ANCHO_ANGOSTO, HALO, anchoGlobo, colocar } from './posicion';
+import { ANCHO_ANGOSTO, HALO, anchoGlobo, colocar, recolocar } from './posicion';
 import type { Colocacion, Rect } from './posicion';
 import { TEXTOS } from './textos';
 import type { TextosMotor } from './textos';
@@ -82,6 +82,35 @@ const vista = () => ({ width: window.innerWidth, height: window.innerHeight });
 
 const mismaColocacion = (a: Colocacion | null, b: Colocacion | null) => JSON.stringify(a) === JSON.stringify(b);
 
+/** Cuánto tiene que cambiar el elemento para que cuente como un cambio de tamaño de verdad (y no redondeo de subpíxeles). */
+const TOLERANCIA_TAMANO = 4;
+
+/** El lado del globo elegido en un paso, y con qué medidas se eligió. */
+interface Eleccion { paso: Visible; ancho: number | null; alto: number | null; vista: { width: number; height: number }; colocacion: Colocacion }
+
+const parecidos = (a: number | null, b: number | null) => (a === null || b === null ? a === b : Math.abs(a - b) <= TOLERANCIA_TAMANO);
+
+/**
+ * Dónde va el globo. Dentro de un paso el lado no cambia mientras el elemento y
+ * la pantalla conserven su tamaño: solo sigue al elemento. Antes se elegía de
+ * nuevo en cada medición, y con un elemento más alto que la pantalla el globo
+ * saltaba de abajo a arriba y de vuelta (al anclarse cambia su ancho, con eso su
+ * alto, y con eso la medición siguiente).
+ */
+function elegirColocacion(eleccion: { current: Eleccion | null }, paso: Visible, objetivo: Rect | null, altoGlobo: number, preferida: Posicion | undefined): Colocacion {
+    const v = vista();
+    const tamGlobo = { width: anchoGlobo(v), height: altoGlobo };
+    const ancho = objetivo ? objetivo.width : null;
+    const alto = objetivo ? objetivo.height : null;
+    const e = eleccion.current;
+    if (e !== null && e.paso === paso && parecidos(e.ancho, ancho) && parecidos(e.alto, alto) && e.vista.width === v.width && e.vista.height === v.height) {
+        return recolocar(e.colocacion, objetivo, tamGlobo, v);
+    }
+    const c = colocar(objetivo, tamGlobo, v, preferida);
+    eleccion.current = { paso, ancho, alto, vista: v, colocacion: c };
+    return c;
+}
+
 export default function MotorRecorrido({
     definicion, alEvento, alTerminar, abrirAyuda, alNoMostrar, textos = TEXTOS, espera = ESPERA_ANCLA_MS, alturaCabecera = 0,
 }: PropsMotor) {
@@ -97,6 +126,7 @@ export default function MotorRecorrido({
     /** Alto del globo: cambia con el contenido de cada paso, con la clase de anclado o al cargar las fuentes. */
     const [altoGlobo, setAltoGlobo] = useState(0);
     const globoRef = useRef<HTMLDivElement>(null);
+    const eleccion = useRef<Eleccion | null>(null);
     const terminado = useRef(false);
     // Lo último conocido, para los manejadores que no se rehacen en cada render.
     // Ninguno entra en las dependencias de la resolución de pasos: quien monta el
@@ -226,7 +256,11 @@ export default function MotorRecorrido({
         };
         window.addEventListener('scroll', medir, true);
         window.addEventListener('resize', medir);
+        // Y si el propio elemento cambia de tamaño (se despliega un grupo de requisitos).
+        const observador = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(medir);
+        observador?.observe(el);
         return () => {
+            observador?.disconnect();
             cancelAnimationFrame(cuadro);
             window.removeEventListener('scroll', medir, true);
             window.removeEventListener('resize', medir);
@@ -247,8 +281,7 @@ export default function MotorRecorrido({
     useLayoutEffect(() => {
         const globo = globoRef.current;
         if (!visible || !globo) return;
-        const v = vista();
-        const c = colocar(objetivo, { width: anchoGlobo(v), height: globo.offsetHeight }, v, pasos[visible.indice]?.posicion);
+        const c = elegirColocacion(eleccion, visible, objetivo, globo.offsetHeight, pasos[visible.indice]?.posicion);
         setColocacion((previa) => (mismaColocacion(previa, c) ? previa : c));
     }, [visible, objetivo, pasos, altoGlobo]);
 

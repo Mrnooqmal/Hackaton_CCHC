@@ -53,6 +53,9 @@ const CASOS: Record<string, DefinicionRecorrido> = {
     // El primer paso está y el siguiente llega cuando la pantalla termina de cargar
     // (el botón Subir documento antes que las carpetas del repositorio).
     'siguiente-tarde': base('siguiente-tarde', [paso('global.boton-ayuda', 'Primero'), paso('menu-ayuda.manual', 'Llegó después')]),
+    // Un elemento más alto que la pantalla y de todo el ancho (la lista de
+    // requisitos con un grupo desplegado): el globo no puede saltar de lado.
+    'alto': base('alto', [paso('global.obra-actual', 'Lista larga')]),
     // Ningún paso está en la pantalla.
     'nada': base('nada', [paso('menu-ayuda.novedades', 'No existe'), paso('menu-ayuda.recorridos', 'Tampoco')]),
 };
@@ -86,6 +89,7 @@ function Pagina() {
             <main style={{ paddingTop: 80, paddingInline: 16 }}>
                 <p>Contenido de la pantalla.</p>
                 {mostrarTarde && <button type="button" data-tour="menu-ayuda.manual" style={{ width: 200, height: 40 }}>Llegó tarde</button>}
+                {def.id === 'alto' && <section data-tour="global.obra-actual" style={{ height: 2000, border: '1px solid', background: 'linear-gradient(#eef, #fee)' }}>Lista larga</section>}
                 <div style={{ height: 1800 }} />
                 <nav data-tour="global.menu-lateral" style={{ width: 300, height: 120, border: '1px solid' }}>Lejos</nav>
                 <div style={{ height: 400 }} />
