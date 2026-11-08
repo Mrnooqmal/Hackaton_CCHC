@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { purgarAlmacenOfflineAntiguo } from '../services/purgaOffline';
 import { borrarPreguntasEnCache } from '../utils/encuestas';
+import { borrarTodosLosVales } from '../utils/colaFirmas';
 import { EVENTO_SESION_CAIDA, authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
 
 export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
@@ -33,30 +34,32 @@ interface AuthContextType {
 }
 
 /**
- * Borra del dispositivo todo rastro de la sesión.
+ * Borra del dispositivo la sesión, y según el caso, los vales.
  *
- * En un equipo compartido de terreno —que es el caso normal— lo que queda en el
- * navegador después de cerrar sesión queda al alcance del siguiente que lo tome.
- * Por eso además de la sesión se borran los vales de firma, que son credenciales
- * de un solo uso a nombre de quien los desbloqueó, y la base del modo sin
- * conexión anterior, que guardaba PIN en claro.
+ * - **Siempre** se borra la sesión (token, empresa, persona).
+ * - **Nunca** se borra la cola de firmas tomadas sin red (utils/colaFirmas): son
+ *   actos que ya ocurrieron en terreno. Antes se borraba al caer la sesión, y un
+ *   turno largo sin señal —la sesión dura 6 horas— perdía todas las firmas. La
+ *   cola es por empresa: la sincroniza la próxima sesión de esa empresa.
+ * - Los **vales** y las preguntas de encuestas guardadas para responder sin red
+ *   se borran solo con un "Cerrar sesión" explícito (`cierreExplicito`). Al
+ *   vencer la sesión o ante un 401 se conservan: el supervisor que vuelve a
+ *   entrar a mitad de turno no pierde los vales de su cuadrilla. Al cerrar
+ *   sesión a propósito, el equipo puede pasar a otras manos, y los vales son
+ *   credenciales de un solo uso a nombre de quienes los desbloquearon.
  *
- * Tiene una consecuencia deliberada: lo que hubiera quedado sin sincronizar se
- * pierde. Vale más eso que dejar credenciales de otra persona en un dispositivo
- * que va a usar alguien más.
+ * La base del modo sin conexión anterior, que guardaba PIN en claro, se purga
+ * siempre.
  */
-const limpiarDatosLocales = () => {
+const limpiarDatosLocales = ({ cierreExplicito }: { cierreExplicito: boolean }) => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('session_id');
     localStorage.removeItem('tenant_id');
     localStorage.removeItem('persona_id');
-    localStorage.removeItem('pendingOfflineSignatures');
-    // Los vales de firma sin conexión son credenciales de un solo uso a nombre de
-    // quienes los desbloquearon: no sobreviven al cierre de sesión en un equipo
-    // compartido.
-    localStorage.removeItem('offlineVales');
-    // Preguntas de las encuestas asignadas, guardadas para responder sin red.
-    borrarPreguntasEnCache();
+    if (cierreExplicito) {
+        borrarTodosLosVales();
+        borrarPreguntasEnCache();
+    }
     purgarAlmacenOfflineAntiguo();
 };
 
@@ -78,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // caminos terminan igual: se limpia el dispositivo y se muestra el aviso.
     useEffect(() => {
         const alCaerLaSesion = () => {
-            limpiarDatosLocales();
+            limpiarDatosLocales({ cierreExplicito: false });
             setUser(null);
             setSession(null);
             setSessionExpired(true);
@@ -92,7 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const ms = new Date(expiresAt).getTime() - Date.now();
         if (ms <= 0) return;
         expiryTimerRef.current = setTimeout(() => {
-            limpiarDatosLocales();
+            limpiarDatosLocales({ cierreExplicito: false });
             setUser(null);
             setSession(null);
             setSessionExpired(true);
@@ -243,7 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sessionId) {
             await authApi.logout(sessionId);
         }
-        limpiarDatosLocales();
+        limpiarDatosLocales({ cierreExplicito: true });
         setUser(null);
         setSession(null);
     };

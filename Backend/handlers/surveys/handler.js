@@ -24,6 +24,7 @@ const { TenantService } = require('../../lib/services/TenantService');
 const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
 const {
@@ -466,7 +467,11 @@ module.exports.updateResponseStatus = async (event) => {
         // Cada quien responde por sí mismo. Responder por otro es el equivalente a
         // la firma asistida (el trabajador teclea su PIN en el dispositivo de quien
         // asiste) y exige ese permiso.
-        if (workerId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+        // Con un vale y sin PIN, es una respuesta tomada sin red que se sincroniza:
+        // la puede subir cualquier sesión de la empresa (el vale prueba el
+        // consentimiento; FirmaService lo rechaza si es de otra persona o empresa).
+        const firmaConVale = !pin && Boolean(vale);
+        if (workerId !== sesion.personaId && !firmaConVale && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para responder por otra persona', 403);
         }
 
@@ -511,9 +516,7 @@ module.exports.updateResponseStatus = async (event) => {
                     tenantId: survey.tenantId,
                     obraId: survey.obraId || null,
                     metodo: vale ? 'VALE' : 'PIN',
-                    credencial: vale
-                        ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-                        : pin,
+                    credencial: vale ? ValeFirmaService.credencialDelCuerpo(body) : pin,
                     tipoFirma: 'encuesta',
                     referenciaId: id,
                     referenciaTipo: 'survey',

@@ -7,6 +7,7 @@ const { s3Client } = require('../../lib/clients/s3');
 const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
@@ -1099,7 +1100,13 @@ module.exports.sign = async (event) => {
         // Quien tiene la sesión firma por sí mismo. Firmar por otro es la firma
         // asistida (el trabajador teclea SU PIN en el dispositivo de quien asiste)
         // y exige ese permiso: el PIN sigue siendo la prueba del consentimiento.
-        if (signerPersonaId !== sesion.personaId
+        //
+        // Con un vale y sin PIN es distinto: es una firma tomada sin red que se
+        // sincroniza, y la puede subir cualquier sesión de la empresa. El vale ya
+        // prueba el consentimiento (esa persona lo desbloqueó con su PIN), y
+        // FirmaService lo rechaza si es de otra persona o de otra empresa.
+        const firmaConVale = !body.pin && Boolean(body.vale);
+        if (signerPersonaId !== sesion.personaId && !firmaConVale
             && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para registrar la firma de otra persona', 403);
         }
@@ -1142,9 +1149,7 @@ module.exports.sign = async (event) => {
         };
 
         const metodo = body.vale ? 'VALE' : 'PIN';
-        const credencial = body.vale
-            ? { vale: body.vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-            : body.pin;
+        const credencial = body.vale ? ValeFirmaService.credencialDelCuerpo(body) : body.pin;
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({

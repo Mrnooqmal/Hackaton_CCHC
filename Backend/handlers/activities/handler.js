@@ -5,6 +5,7 @@ const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile, horaChileHHMM } = require('../../lib/utils/fechaChile');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PERMISSIONS } = require('../../lib/permissions');
@@ -791,7 +792,11 @@ module.exports.registerAttendance = async (event) => {
         // Cada quien firma su asistencia. Firmar por otro es la firma asistida (el
         // trabajador teclea su PIN en el dispositivo de quien asiste) y exige ese
         // permiso; el PIN, que acá ya era obligatorio, sigue siendo la prueba.
-        if (personas[0] !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+        // Con un vale y sin PIN, es una firma tomada sin red que se sincroniza: la
+        // puede subir cualquier sesión de la empresa (el vale prueba el
+        // consentimiento; FirmaService lo rechaza si es de otra persona o empresa).
+        const firmaConVale = !pin && Boolean(vale);
+        if (personas[0] !== sesion.personaId && !firmaConVale && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para registrar la asistencia de otra persona', 403);
         }
 
@@ -837,9 +842,7 @@ module.exports.registerAttendance = async (event) => {
                     tenantId: activity.tenantId,
                     obraId: activity.obraId || null,
                     metodo,
-                    credencial: vale
-                        ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-                        : pin,
+                    credencial: vale ? ValeFirmaService.credencialDelCuerpo(body) : pin,
                     tipoFirma: 'actividad',
                     referenciaId: id,
                     referenciaTipo: 'activity',

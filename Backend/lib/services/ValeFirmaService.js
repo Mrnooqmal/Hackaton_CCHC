@@ -68,9 +68,13 @@ const VENTANA_REVISION_DIAS = 30;
 /** Igual que el token de sesión: se guarda el hash, el vale solo existe en el dispositivo. */
 const hashVale = (vale) => crypto.createHash('sha256').update(String(vale)).digest('hex');
 
+/** ¿El vale estaba vencido en ese momento? En un reintento cuenta cuándo se gastó, no cuándo se reintenta. */
+const vencidoAl = (registro, momento) => new Date(registro.expiresAt) < new Date(momento);
+
 const MOTIVOS = {
     NO_EXISTE: 'no_existe',
     OTRA_PERSONA: 'otra_persona',
+    OTRA_EMPRESA: 'otra_empresa',
     YA_USADO: 'ya_usado',
     DEMASIADO_VIEJO: 'demasiado_viejo',
     REVOCADO: 'revocado',
@@ -123,7 +127,7 @@ class ValeFirmaService {
      *
      * @returns {Promise<{ok: boolean, motivo?: string, vale?: object, vencido?: boolean}>}
      */
-    static async consumir({ vale, personaId, deviceId = null }) {
+    static async consumir({ vale, personaId, tenantId = null, deviceId = null, idFirmaLocal = null }) {
         if (!vale) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
 
         // Lectura directa por clave primaria, y consistente.
@@ -144,8 +148,24 @@ class ValeFirmaService {
         const registro = res.Item;
         if (!registro) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
         if (registro.personaId !== personaId) return { ok: false, motivo: MOTIVOS.OTRA_PERSONA };
+        // La cola sin conexión la puede sincronizar cualquier sesión de la
+        // empresa, nunca una de otra: el vale tiene que ser de la empresa de lo
+        // que se firma.
+        if (tenantId && registro.tenantId !== tenantId) return { ok: false, motivo: MOTIVOS.OTRA_EMPRESA };
         if (registro.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
-        if (registro.usedAt) return { ok: false, motivo: MOTIVOS.YA_USADO };
+
+        // Reintento de la MISMA firma: el vale se gastó en un intento anterior
+        // que no alcanzó a escribir la firma (o cuya respuesta se perdió). La
+        // firma la identifica el equipo con `idFirmaLocal`, que se anota al
+        // gastar. Con el mismo identificador es la misma firma y sigue; con otro
+        // es un segundo uso y se rechaza. Sin esto, una falla justo después de
+        // gastar el vale perdía la firma: el reintento recibía "ya usado".
+        if (registro.usedAt) {
+            if (idFirmaLocal && registro.usadoPara === idFirmaLocal) {
+                return { ok: true, vale: registro, vencido: vencidoAl(registro, registro.usedAt), reintento: true };
+            }
+            return { ok: false, motivo: MOTIVOS.YA_USADO };
+        }
 
         const ahora = new Date();
         const expira = new Date(registro.expiresAt);
@@ -159,7 +179,7 @@ class ValeFirmaService {
             await docClient.send(new UpdateCommand({
                 TableName: VALES_TABLE,
                 Key: { valeHash: registro.valeHash },
-                UpdateExpression: 'SET usedAt = :ahora, deviceIdUso = :dev',
+                UpdateExpression: 'SET usedAt = :ahora, deviceIdUso = :dev, usadoPara = :para',
                 // Ni gastado ni revocado: con la condición simétrica de
                 // `revocarDePersona`, consumir y revocar se excluyen aunque
                 // lleguen a la vez.
@@ -167,22 +187,44 @@ class ValeFirmaService {
                 ExpressionAttributeValues: {
                     ':ahora': ahora.toISOString(),
                     ':dev': deviceId || null,
+                    ':para': idFirmaLocal || null,
                     ':nulo': null,
                 },
             }));
         } catch (err) {
             // La condición falló: otro intento lo gastó primero, o se revocó
-            // entre la lectura y la escritura. Se relee para decir cuál.
+            // entre la lectura y la escritura. Se relee para decir cuál. Si el
+            // que lo gastó fue un intento de esta misma firma (dos envíos a la
+            // vez), es el mismo caso que el reintento.
             if (err.name === 'ConditionalCheckFailedException') {
                 const ahoraRes = await docClient.send(new GetCommand({
                     TableName: VALES_TABLE, Key: { valeHash: registro.valeHash }, ConsistentRead: true,
                 }));
-                return { ok: false, motivo: ahoraRes.Item?.revocadoEn ? MOTIVOS.REVOCADO : MOTIVOS.YA_USADO };
+                const actual = ahoraRes.Item || {};
+                if (actual.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
+                if (idFirmaLocal && actual.usadoPara === idFirmaLocal) {
+                    return { ok: true, vale: actual, vencido: vencidoAl(actual, actual.usedAt), reintento: true };
+                }
+                return { ok: false, motivo: MOTIVOS.YA_USADO };
             }
             throw err;
         }
 
         return { ok: true, vale: registro, vencido };
+    }
+
+    /**
+     * La credencial de una firma con vale, tal como la manda el equipo. Una sola
+     * definición para los tres caminos que aceptan vales (documento, asistencia
+     * y encuesta).
+     */
+    static credencialDelCuerpo(body = {}) {
+        return {
+            vale: body.vale,
+            deviceId: body.deviceId || null,
+            timestampLocal: body.timestampLocal || null,
+            idFirmaLocal: typeof body.idFirmaLocal === 'string' && body.idFirmaLocal ? body.idFirmaLocal.slice(0, 100) : null,
+        };
     }
 
     /**

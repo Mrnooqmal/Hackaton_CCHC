@@ -44,7 +44,7 @@ type TabType = 'pendientes' | 'historial';
 export default function SignatureRequests() {
     const { user, hasPermission } = useAuth();
     const canCrearSolicitud = hasPermission(PERMISSIONS.FIRMAS_CREAR);
-    const { isOnline, pendingCount, syncPendingSignatures } = useOfflineSignature();
+    const { isOnline, pendingCount, syncPendingSignatures, getPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
     const [requests, setRequests] = useState<SignatureRequest[]>([]);
     const [offlinePending, setOfflinePending] = useState<OfflinePendingSignature[]>([]);
@@ -91,14 +91,9 @@ export default function SignatureRequests() {
         loadOfflinePending();
     }, [isOnline]);
 
+    // La cola de la empresa de esta sesión (utils/colaFirmas).
     const loadOfflinePending = () => {
-        try {
-            const stored = localStorage.getItem('pendingOfflineSignatures');
-            const pending: OfflinePendingSignature[] = stored ? JSON.parse(stored) : [];
-            setOfflinePending(pending.filter(s => !s.synced));
-        } catch {
-            setOfflinePending([]);
-        }
+        setOfflinePending(getPendingSignatures());
     };
 
     const handleSyncOffline = async () => {

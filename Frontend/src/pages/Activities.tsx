@@ -386,9 +386,16 @@ export default function Activities() {
         const nombre = worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador';
         setSignatureError('');
 
-        // Offline-first: guarda localmente con el PIN de este trabajador.
+        // Sin red: la firma se guarda en el equipo con un vale de este
+        // trabajador (el PIN no se guarda). Solo se avanza si de verdad quedó
+        // guardada: antes se avanzaba igual y, sin vales, la pantalla daba la
+        // firma por tomada sin haberla guardado.
         if (!navigator.onLine) {
-            await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin);
+            const resultado = await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin);
+            if (!resultado.success) {
+                setSignatureError(resultado.error || 'No se pudo guardar la firma en este equipo.');
+                return;
+            }
             advanceSigning(1, 0);
             return;
         }

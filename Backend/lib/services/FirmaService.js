@@ -173,12 +173,18 @@ class FirmaService {
             const consumo = await ValeFirmaService.consumir({
                 vale: credencial.vale,
                 personaId: persona.personaId,
+                // La empresa de lo que se firma: un vale de otra empresa no entra.
+                tenantId: tenantId || persona.tenantId,
                 deviceId: credencial.deviceId || null,
+                // Identifica la firma en el equipo: un reintento de la misma
+                // firma no se rechaza por "ya usado" (ver ValeFirmaService).
+                idFirmaLocal: credencial.idFirmaLocal || null,
             });
             if (!consumo.ok) {
                 const explicacion = {
                     [MOTIVOS.NO_EXISTE]: 'El vale de firma no es válido.',
                     [MOTIVOS.OTRA_PERSONA]: 'El vale de firma no es válido.',
+                    [MOTIVOS.OTRA_EMPRESA]: 'El vale de firma no es válido.',
                     [MOTIVOS.YA_USADO]: 'Este vale de firma ya se usó.',
                     [MOTIVOS.DEMASIADO_VIEJO]: 'El vale de firma venció hace demasiado tiempo y ya no puede sincronizarse.',
                     [MOTIVOS.REVOCADO]: 'El vale de firma se anuló porque el PIN de esta persona se restableció. Debe firmar de nuevo con su PIN nuevo.',
@@ -194,6 +200,7 @@ class FirmaService {
                 // dispositivo. Es declarado, no verificable: por eso se guarda
                 // aparte del `timestamp` del servidor y nunca lo reemplaza.
                 firmadaSinConexionEn: credencial.timestampLocal || null,
+                idFirmaLocal: credencial.idFirmaLocal || null,
                 sincronizadaEn: new Date().toISOString(),
                 valeVencido: Boolean(consumo.vencido),
             };

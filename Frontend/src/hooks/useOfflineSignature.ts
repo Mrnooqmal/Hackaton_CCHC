@@ -26,32 +26,23 @@
 
 import { useCallback, useState, useEffect } from 'react';
 import { documentsApi, activitiesApi, surveysApi, signaturesApi } from '../api/client';
+import {
+    leerCola, agregarACola, quitarDeCola, guardarValesDe, tomarVale, valesDisponibles, nuevoIdFirma,
+    type FirmaPendiente, type TipoFirma,
+} from '../utils/colaFirmas';
 
-export type SignatureType = 'documento' | 'actividad' | 'encuesta';
+export type SignatureType = TipoFirma;
+export type OfflinePendingSignature = FirmaPendiente;
 
-export interface OfflinePendingSignature {
-    id: string;
-    type: SignatureType;
-    targetId: string;
-    targetTitle: string;
-    workerId: string;
-    workerName: string;
-    /** Vale de un solo uso. Reemplaza al PIN, que ya no se guarda. */
-    vale: string;
-    timestamp: string;
-    synced: boolean;
-    surveyAnswers?: any[];
-}
-
-interface ValesDePersona {
-    personaId: string;
-    vales: string[];
-    expiraEn: string;
-}
-
-const OFFLINE_SIGNATURES_KEY = 'pendingOfflineSignatures';
-const VALES_KEY = 'offlineVales';
 const DEVICE_KEY = 'deviceId';
+
+/**
+ * Empresa de la sesión, leída en el momento: la cola y los vales se guardan por
+ * empresa, y una sesión solo ve y sincroniza los de la suya (ver utils/colaFirmas).
+ */
+const empresa = (): string | null => {
+    try { return localStorage.getItem('tenant_id'); } catch { return null; }
+};
 
 /**
  * Identificador del equipo. Es TRAZA, no credencial: el servidor lo guarda para
@@ -74,63 +65,11 @@ const deviceId = (): string => {
     }
 };
 
-// ─── Firmas pendientes de sincronizar ────────────────────────────────────────
+// ─── Firmas pendientes de sincronizar (por empresa) ──────────────────────────
 
-const getPendingSignatures = (): OfflinePendingSignature[] => {
-    try {
-        const stored = localStorage.getItem(OFFLINE_SIGNATURES_KEY);
-        return stored ? JSON.parse(stored) : [];
-    } catch {
-        return [];
-    }
-};
+const getPendingSignatures = (): FirmaPendiente[] => leerCola(empresa());
 
-const savePendingSignature = (sig: OfflinePendingSignature): void => {
-    const pending = getPendingSignatures();
-    pending.push(sig);
-    localStorage.setItem(OFFLINE_SIGNATURES_KEY, JSON.stringify(pending));
-};
-
-const removePendingSignature = (id: string): void => {
-    const pending = getPendingSignatures().filter(s => s.id !== id);
-    localStorage.setItem(OFFLINE_SIGNATURES_KEY, JSON.stringify(pending));
-};
-
-// ─── Vales disponibles en el equipo ──────────────────────────────────────────
-
-const leerVales = (): ValesDePersona[] => {
-    try {
-        const stored = localStorage.getItem(VALES_KEY);
-        const lista: ValesDePersona[] = stored ? JSON.parse(stored) : [];
-        // Los vencidos se descartan solos: ocupan espacio y ya no sirven para una
-        // firma nueva (para una ya tomada, el servidor decide; ver el encabezado).
-        const ahora = Date.now();
-        return lista.filter(v => new Date(v.expiraEn).getTime() > ahora && v.vales.length > 0);
-    } catch {
-        return [];
-    }
-};
-
-const guardarVales = (lista: ValesDePersona[]): void => {
-    try {
-        localStorage.setItem(VALES_KEY, JSON.stringify(lista));
-    } catch {
-        /* almacenamiento lleno o bloqueado: se sigue sin vales */
-    }
-};
-
-/** Toma un vale de la persona y lo quita del equipo (un vale, una firma). */
-const tomarVale = (personaId: string): string | null => {
-    const lista = leerVales();
-    const entrada = lista.find(v => v.personaId === personaId);
-    if (!entrada || entrada.vales.length === 0) return null;
-    const vale = entrada.vales.shift() as string;
-    guardarVales(lista);
-    return vale;
-};
-
-const valesDisponiblesDe = (personaId: string): number =>
-    leerVales().find(v => v.personaId === personaId)?.vales.length ?? 0;
+const valesDisponiblesDe = (personaId: string): number => valesDisponibles(empresa(), personaId);
 
 // ─── Detección de errores de red ─────────────────────────────────────────────
 
@@ -196,9 +135,9 @@ export function useOfflineSignature() {
             if (!res.success || !res.data) {
                 return { success: false, error: res.error || 'No se pudo habilitar la firma sin conexión.' };
             }
-            const lista = leerVales().filter(v => v.personaId !== personaId);
-            lista.push({ personaId, vales: res.data.vales, expiraEn: res.data.expiraEn });
-            guardarVales(lista);
+            const tenantId = empresa();
+            if (!tenantId) return { success: false, error: 'No hay una sesión activa en este equipo.' };
+            guardarValesDe(tenantId, { personaId, vales: res.data.vales, expiraEn: res.data.expiraEn });
             return { success: true, expiraEn: res.data.expiraEn };
         } catch (error: any) {
             return { success: false, error: error?.message || 'No se pudo habilitar la firma sin conexión.' };
@@ -222,11 +161,13 @@ export function useOfflineSignature() {
         workerName: string,
         surveyAnswers?: any[]
     ): OfflinePendingSignature | null => {
-        const vale = tomarVale(workerId);
-        if (!vale) return null;
+        const tenantId = empresa();
+        const vale = tomarVale(tenantId, workerId);
+        if (!tenantId || !vale) return null;
 
-        const sig: OfflinePendingSignature = {
-            id: `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        const sig: FirmaPendiente = {
+            id: nuevoIdFirma(),
+            tenantId,
             type,
             targetId,
             targetTitle,
@@ -234,10 +175,11 @@ export function useOfflineSignature() {
             workerName,
             vale,
             timestamp: new Date().toISOString(),
-            synced: false,
-            surveyAnswers
+            surveyAnswers,
         };
-        savePendingSignature(sig);
+        // Si el equipo no pudo guardarla (almacenamiento lleno), no se da por
+        // tomada: quien firma tiene que saberlo en el momento.
+        if (!agregarACola(sig)) return null;
         refreshPendingCount();
         return sig;
     }, [refreshPendingCount]);
@@ -371,8 +313,13 @@ export function useOfflineSignature() {
     const syncPendingSignatures = useCallback(async (): Promise<{ synced: number; failed: number; enRevision: number }> => {
         if (!navigator.onLine) return { synced: 0, failed: 0, enRevision: 0 };
 
+        // Solo la cola de la empresa de esta sesión: la de otra empresa en el
+        // mismo equipo espera a una sesión de esa empresa.
+        const tenantId = empresa();
+        if (!tenantId) return { synced: 0, failed: 0, enRevision: 0 };
+
         setSyncing(true);
-        const pending = getPendingSignatures();
+        const pending = leerCola(tenantId);
         let synced = 0;
         let failed = 0;
         let revision = 0;
@@ -383,6 +330,9 @@ export function useOfflineSignature() {
                     vale: sig.vale,
                     deviceId: deviceId(),
                     timestampLocal: sig.timestamp,
+                    // Identifica esta firma: si un intento anterior gastó el vale
+                    // y no alcanzó a escribirla, el servidor acepta el reintento.
+                    idFirmaLocal: sig.id,
                 };
                 let response;
                 if (sig.type === 'documento') {
@@ -408,14 +358,14 @@ export function useOfflineSignature() {
                 if (response?.success) {
                     const datos: any = response.data;
                     if (datos?.firma?.requiereRevision || datos?.requiereRevision) revision++;
-                    removePendingSignature(sig.id);
+                    quitarDeCola(tenantId, sig.id);
                     synced++;
                 } else if (response && !isNetworkErrorResponse(response.error || '')) {
                     // El servidor la rechazó (vale ya usado, o vencido hace
                     // demasiado): reintentar no va a cambiar nada y dejarla en el
                     // equipo solo acumula un PIN... ya no, pero sí una firma que
                     // nunca va a entrar. Se descarta y se informa como fallida.
-                    removePendingSignature(sig.id);
+                    quitarDeCola(tenantId, sig.id);
                     failed++;
                 } else {
                     failed++;

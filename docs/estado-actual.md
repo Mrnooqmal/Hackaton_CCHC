@@ -124,6 +124,7 @@ infra/desplegar-infra-frontend.sh <commit>
 
 | Qué | Detalle |
 |---|---|
+| Crear actividades sin red | Hoy crear una actividad exige red (`ActivityNueva` llama a la API). Quedó fuera del plan de firma sin conexión (7 de noviembre de 2026): una charla armada en terreno sin señal no se puede crear ni, por lo tanto, firmar. Los vales ya quedan atados a persona y obra, no a cada actividad, así que la firma estará lista cuando esto exista. |
 | Timeout de la función de lotes de supresión | `gobernanzaLotes` tiene un timeout de 300 s, pero HTTP API corta a los 30 s: un lote grande se ejecuta, pero quien lo lanza recibe un error. Candidato a pasar a la cola (D-17, D-24). |
 | H-15, decisión de producto | El Registro AT/EP y la investigación de accidentes traen datos de salud sin el resguardo de los documentos de salud. El Expediente consolidado ya lo tiene (`f38fb75`). |
 | Protocolo de notificación de brechas (checklist 7.4) | Ya existe con qué responder qué se expuso (D-19) y el plan de respuesta (D-32). Falta la validación legal de plazos y responsables. |

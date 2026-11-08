@@ -383,3 +383,78 @@ test('con asignación pendiente sí se declara y se usa el nombre de estado', as
         assert.ok(expresion.includes(valor), `${valor} se declara pero no se usa`);
     }
 });
+
+// ─── Reintento de la misma firma (idFirmaLocal) ─────────────────────────────
+//
+// El vale se gasta antes de escribir la firma. Si la escritura falla justo
+// después, el reintento recibía "ya usado" y la firma tomada en terreno se
+// perdía. Ahora el equipo identifica cada firma (`idFirmaLocal`), el servidor lo
+// anota al gastar el vale, y un reintento con el mismo identificador sigue.
+
+/** Hace fallar la próxima escritura de la firma (no la de su traza). */
+const fallarProximaFirma = () => {
+    const anterior = docClient.send;
+    let fallo = false;
+    docClient.send = async (cmd) => {
+        if (!fallo && cmd.constructor.name === 'PutCommand' && !cmd.input.TableName?.includes('ales')
+            && !String(cmd.input.Item?.signatureId || '').includes('#')) {
+            fallo = true;
+            throw new Error('falla simulada al escribir la firma');
+        }
+        return anterior(cmd);
+    };
+    return () => { docClient.send = anterior; };
+};
+const firmasEscritas = () => store.firmas.filter((f) => f.estado === 'valida');
+
+test('si la firma falla después de gastar el vale, el reintento de la misma firma entra una vez', async () => {
+    const { vales } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    const restaurar = fallarProximaFirma();
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-1' }), /falla simulada/);
+    restaurar();
+    assert.ok(store.vales[0].usedAt, 'el vale quedó gastado por el primer intento');
+    assert.equal(firmasEscritas().length, 0);
+
+    const firma = await firmarConVale(vales[0], { idFirmaLocal: 'local-1' });
+    assert.equal(firma.estado, 'valida');
+    assert.equal(firma.offline.idFirmaLocal, 'local-1');
+    assert.equal(firmasEscritas().length, 1, 'exactamente una firma');
+});
+
+test('con otro idFirmaLocal, o sin él, un vale gastado sigue sin servir', async () => {
+    const { vales } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    await firmarConVale(vales[0], { idFirmaLocal: 'local-1' });
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-2' }), /ya se usó/);
+    await assert.rejects(() => firmarConVale(vales[0]), /ya se usó/);
+});
+
+test('dos envíos a la vez de la misma firma no se rechazan entre sí', async () => {
+    const { vales } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    const [a, b] = await Promise.all([
+        ValeFirmaService.consumir({ vale: vales[0], personaId: PERSONA, tenantId: EMPRESA, idFirmaLocal: 'local-1' }),
+        ValeFirmaService.consumir({ vale: vales[0], personaId: PERSONA, tenantId: EMPRESA, idFirmaLocal: 'local-1' }),
+    ]);
+    assert.equal(a.ok && b.ok, true);
+    assert.equal([a, b].filter((r) => r.reintento).length, 1, 'uno gasta el vale y el otro es el reintento');
+});
+
+test('un reintento después del vencimiento no manda a revisión una firma tomada a tiempo', async () => {
+    // Cuenta cuándo se gastó el vale, no cuándo llega el reintento.
+    const { vales } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: EMPRESA, cantidad: 1 });
+    const restaurar = fallarProximaFirma();
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-1' }), /falla simulada/);
+    restaurar();
+    store.vales[0].expiresAt = new Date(Date.now() - 60 * 1000).toISOString();
+    store.vales[0].usedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+
+    const firma = await firmarConVale(vales[0], { idFirmaLocal: 'local-1' });
+    assert.equal(firma.requiereRevision, false);
+});
+
+test('un vale de otra empresa no firma, y no se gasta', async () => {
+    const { vales } = await ValeFirmaService.emitir({ personaId: PERSONA, tenantId: 't-otra', cantidad: 1 });
+    await assert.rejects(() => firmarConVale(vales[0], { idFirmaLocal: 'local-1' }), /no es válido/);
+    assert.equal(store.vales[0].usedAt, null);
+    const r = await ValeFirmaService.consumir({ vale: vales[0], personaId: PERSONA, tenantId: EMPRESA });
+    assert.equal(r.motivo, 'otra_empresa');
+});
