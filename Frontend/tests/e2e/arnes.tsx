@@ -50,6 +50,9 @@ const CASOS: Record<string, DefinicionRecorrido> = {
         { ...paso('global.boton-ayuda', 'Solo si se ve la ayuda'), soloSiNoSeVe: 'global.boton-ayuda' },
         paso('global.menu-lateral', 'Lejos'),
     ]),
+    // El primer paso está y el siguiente llega cuando la pantalla termina de cargar
+    // (el botón Subir documento antes que las carpetas del repositorio).
+    'siguiente-tarde': base('siguiente-tarde', [paso('global.boton-ayuda', 'Primero'), paso('menu-ayuda.manual', 'Llegó después')]),
     // Ningún paso está en la pantalla.
     'nada': base('nada', [paso('menu-ayuda.novedades', 'No existe'), paso('menu-ayuda.recorridos', 'Tampoco')]),
 };

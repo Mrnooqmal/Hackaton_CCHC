@@ -126,7 +126,7 @@ test('los opcionales de una pantalla aparecen en su ayuda y se abren desde ahí'
     await page.locator('[data-tour="global.boton-ayuda"]').click();
     await page.getByRole('region', { name: 'Ayuda' }).getByRole('button', { name: /Hallazgo, incidente o accidente/ }).click();
     const titulos = await recorrerHastaElFinal(page);
-    expect(titulos).toEqual(['¿Hallazgo o incidente?', 'Qué y dónde', 'Qué pasó', 'Fotos']);
+    expect(titulos).toEqual(['¿Hallazgo o incidente?', 'Qué y dónde', 'Qué pasó', 'Fotos', 'Revisar y enviar']);
 });
 
 // ─── Lo que encontró la revisión en dev (8 de noviembre de 2026) ─────────────
@@ -153,10 +153,10 @@ test('reportar y subir-documentos no aparecen en la ayuda de la vista de empresa
     await expect(page.getByRole('region', { name: 'Ayuda' })).toContainText('No hay recorridos para esta pantalla.');
 });
 
-test('subir-documentos dentro de una obra pasa del primer paso al segundo', async ({ page }) => {
+test('subir-documentos dentro de una obra: subir y la versión nueva sobre la carpeta DS44', async ({ page }) => {
     await prepararApp(page, 'admin-obra');
     await vistaPrevia(page, '/documents-repository', 'subir-documentos');
-    expect(await recorrerHastaElFinal(page)).toEqual(['Cómo está ordenado', 'Subir un documento']);
+    expect(await recorrerHastaElFinal(page)).toEqual(['Subir un documento', 'Una versión nueva, no otro archivo']);
 });
 
 test('programar-actividades sin borradores del plan: en "Una actividad suelta" ya se puede finalizar', async ({ page }) => {
@@ -167,10 +167,58 @@ test('programar-actividades sin borradores del plan: en "Una actividad suelta" y
     await expect(globo(page)).toContainText('Planificar el mes');
     await page.getByRole('button', { name: 'Siguiente' }).click();
     await expect(globo(page)).toContainText('Una actividad suelta');
-    // Antes se quedaba esperando 4 s el paso "Por completar", sin señal.
-    await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible({ timeout: 1500 });
-    // Y el contador no cuenta "Por completar", que no se va a mostrar (antes decía "3 de 4").
-    await expect(page.locator('.recorrido-globo__progreso')).toHaveText('Paso 3 de 3');
+    // El contador no cuenta "Por completar", que no se va a mostrar (antes decía "3 de 5").
+    await expect(page.locator('.recorrido-globo__progreso')).toHaveText('Paso 3 de 4');
+    // Y Siguiente no se queda esperando 4 s ese paso: salta al buscador.
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(globo(page)).toContainText('Buscar', { timeout: 1500 });
+    await expect(page.locator('.recorrido-globo__progreso')).toHaveText('Paso 4 de 4');
+    await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible();
+});
+
+// ─── Pasos nuevos (propuesta aprobada el 8 de noviembre de 2026) ─────────────
+
+test('encontrar-documentos: pestañas, buscador, carpetas y la carpeta DS44', async ({ page }) => {
+    await prepararApp(page, 'admin-obra');
+    await vistaPrevia(page, '/documents-repository', 'encontrar-documentos');
+    expect(await recorrerHastaElFinal(page)).toEqual(['General o Personal', 'Buscar', 'Las carpetas', 'DS44 · Cumplimiento']);
+});
+
+/** Abre un recorrido desde el menú de ayuda de la pantalla en la que se está. */
+async function abrirDesdeLaAyuda(page, titulo) {
+    await page.locator('[data-tour="global.boton-ayuda"]').click();
+    await page.getByRole('region', { name: 'Ayuda' }).getByRole('button', { name: titulo }).click();
+}
+
+const yaHizoSuIntroduccion = [{ recorridoId: 'inicio-gestion', version: 1, estado: 'completado', ultimoPaso: 5, cierres: 0, actualizadoEn: '2026-11-07T00:00:00Z' }];
+
+test('encontrar-documentos en Personal: la carpeta DS44 no está y su paso se salta', async ({ page }) => {
+    await prepararApp(page, 'supervisor', { progreso: yaHizoSuIntroduccion });
+    await page.goto('/documents-repository');
+    await page.getByRole('tab', { name: /Personal/ }).click();
+    await abrirDesdeLaAyuda(page, /Encontrar un documento/);
+    // Sin documentos asignados no hay carpetas: quedan las pestañas y el buscador.
+    expect(await recorrerHastaElFinal(page)).toEqual(['General o Personal', 'Buscar']);
+});
+
+test('reportar un hallazgo: sin el paso de afectados, que aparece solo en acción subestándar', async ({ page }) => {
+    await prepararApp(page, 'admin-obra');
+    await vistaPrevia(page, '/incidents/reportar', 'reportar');
+    expect(await recorrerHastaElFinal(page)).toEqual(['¿Hallazgo o incidente?', 'Qué y dónde', 'Qué pasó', 'Fotos', 'Revisar y enviar']);
+});
+
+test('reportar un incidente: los seis pasos, con el afectado', async ({ page }) => {
+    await prepararApp(page, 'supervisor', { progreso: yaHizoSuIntroduccion });
+    await page.goto('/incidents/reportar');
+    await page.getByRole('radio', { name: 'Incidente' }).click();
+    await abrirDesdeLaAyuda(page, /Hallazgo, incidente o accidente/);
+    expect(await recorrerHastaElFinal(page)).toEqual(['¿Hallazgo o incidente?', 'Qué y dónde', 'Quién resultó afectado', 'Qué pasó', 'Fotos', 'Revisar y enviar']);
+});
+
+test('gestionar-incidentes: listado, filtros, gestión e investigaciones', async ({ page }) => {
+    await prepararApp(page, 'supervisor');
+    await vistaPrevia(page, '/incidents', 'gestionar-incidentes');
+    expect(await recorrerHastaElFinal(page)).toEqual(['Listado y estadísticas', 'Encontrar un evento', 'Gestionar un evento', 'Investigaciones']);
 });
 
 test('cambiar-de-obra en escritorio: un solo paso, el menú de tres puntos', async ({ page }) => {

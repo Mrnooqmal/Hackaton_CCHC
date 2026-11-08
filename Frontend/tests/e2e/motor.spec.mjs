@@ -217,3 +217,19 @@ test('contador: un paso que sobra por soloSiNoSeVe no cuenta', async ({ page }) 
     await abrir(page, 'solo-si-no-se-ve');
     await expect(contador(page)).toHaveText('Paso 1 de 2');
 });
+
+test('si el paso siguiente aparece cuando la pantalla termina de cargar, vuelve Siguiente y el contador lo cuenta', async ({ page }) => {
+    await abrir(page, 'siguiente-tarde', '&tarde=3000');
+    await expect(globo(page)).toContainText('Primero');
+    // Mientras carga, lo que hay por delante es solo este paso: Finalizar y sin
+    // contador (con un solo paso no se muestra).
+    await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible();
+    await expect(contador(page)).toHaveCount(0);
+    // Al aparecer el siguiente, el primer paso deja de ser el final.
+    await expect(contador(page)).toHaveText('Paso 1 de 2', { timeout: 4000 });
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(globo(page)).toContainText('Llegó después');
+    await expect(contador(page)).toHaveText('Paso 2 de 2');
+    await page.getByRole('button', { name: 'Finalizar' }).click();
+    expect(await eventos(page)).toEqual([{ tipo: 'completar', ultimoPaso: 1 }]);
+});

@@ -59,6 +59,9 @@ export function visible(el: Element): boolean {
     return true;
 }
 
+/** Atributos cuyo cambio puede hacer aparecer o desaparecer un ancla. */
+export const ATRIBUTOS_QUE_MUEVEN_ANCLAS = ['class', 'style', 'hidden', 'data-tour'];
+
 /** ¿Hay en la página algún elemento con esa ancla, visible o no? */
 const existeAncla = (clave: AnclaKey, doc: Document) => doc.querySelector(selectorDe(clave, doc)) !== null;
 
@@ -97,7 +100,7 @@ export function esperarAncla(clave: AnclaKey, doc: Document, { espera = ESPERA_A
             const el = buscarAncla(clave, doc);
             if (el) terminar(el);
         });
-        observador.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'data-tour'] });
+        observador.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ATRIBUTOS_QUE_MUEVEN_ANCLAS });
         const plazo = win.setTimeout(() => terminar(buscarAncla(clave, doc)), existeAncla(clave, doc) ? Math.min(esperaOculta, espera) : espera);
         senal?.addEventListener('abort', alCancelar);
     });

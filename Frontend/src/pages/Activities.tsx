@@ -920,7 +920,7 @@ export default function Activities() {
                     y el calendario; el historial trae sus propios controles. */}
                 <div className="tbar act-toolbar">
                     {/* Buscador y filtro son un solo control: se consultan juntos */}
-                    <div className="act-filterbar">
+                    <div className="act-filterbar" {...ancla('actividades.buscar')}>
                         <div className="act-filterbar-search">
                             <FiSearch size={15} aria-hidden="true" />
                             <input

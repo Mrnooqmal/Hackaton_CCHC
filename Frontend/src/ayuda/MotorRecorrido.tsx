@@ -20,7 +20,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
 import type { DefinicionRecorrido, EventoRecorrido } from './tipos';
-import { ESPERA_ANCLA_MS, ESPERA_SIGUIENTE_MS, buscarAncla, esperarAncla, traerALaVista } from './dom';
+import { ATRIBUTOS_QUE_MUEVEN_ANCLAS, ESPERA_ANCLA_MS, ESPERA_SIGUIENTE_MS, buscarAncla, esperarAncla, traerALaVista } from './dom';
 import { ANCHO_ANGOSTO, HALO, anchoGlobo, colocar } from './posicion';
 import type { Colocacion, Rect } from './posicion';
 import { TEXTOS } from './textos';
@@ -53,6 +53,24 @@ export interface PropsMotor {
  */
 interface Visible { indice: number; elemento: HTMLElement | null; mostrados: readonly number[]; finalForzado: boolean; plan: readonly number[] }
 
+/** Lo que queda por delante del paso a la vista, recalculado si la página cambia después de mostrarlo. */
+interface PorDelante { indice: number; finalForzado: boolean; plan: readonly number[] }
+
+/** Un paso que solo hace falta si otro elemento no se ve, y ese elemento se ve. */
+const sobraPaso = (pasos: DefinicionRecorrido['pasos'], i: number) => {
+    const otro = pasos[i].soloSiNoSeVe;
+    return Boolean(otro && buscarAncla(otro, document));
+};
+
+/** Los pasos después de `i` que hoy se pueden mostrar. Uno que abre la ayuda cuenta: su ancla aparece al abrirla. */
+const siguientesVisibles = (pasos: DefinicionRecorrido['pasos'], i: number) => pasos.flatMap((p, j) => (j > i && !sobraPaso(pasos, j)
+    && (!p.ancla || p.accion === 'abrir_ayuda' || Boolean(buscarAncla(p.ancla, document))) ? [j] : []));
+
+const planDesde = (pasos: DefinicionRecorrido['pasos'], i: number, mostrados: readonly number[]) =>
+    [...new Set([...mostrados, i, ...siguientesVisibles(pasos, i)])].sort((a, b) => a - b);
+
+const mismoPlan = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, k) => x === b[k]);
+
 const avisar = (mensaje: string, datos: Record<string, unknown>) => console.warn(`[recorridos] ${mensaje}`, datos);
 
 const rectDe = (el: HTMLElement): Rect => {
@@ -69,6 +87,8 @@ export default function MotorRecorrido({
 }: PropsMotor) {
     const pasos = definicion.pasos;
     const [visible, setVisible] = useState<Visible | null>(null);
+    /** Lo de adelante del paso a la vista, si cambió después de mostrarlo (ver más abajo). */
+    const [porDelante, setPorDelante] = useState<PorDelante | null>(null);
     const [destino, setDestino] = useState<{ desde: number; direccion: 1 | -1; n: number }>({ desde: 0, direccion: 1, n: 0 });
     /** Buscando el paso siguiente: los botones no hacen nada (un segundo toque no reinicia la búsqueda). */
     const [resolviendo, setResolviendo] = useState(false);
@@ -96,16 +116,6 @@ export default function MotorRecorrido({
     useEffect(() => {
         const control = new AbortController();
         const { desde, direccion } = destino;
-        /** Un paso que solo hace falta si otro elemento no se ve, y ese elemento se ve. */
-        const sobra = (i: number) => {
-            const otro = pasos[i].soloSiNoSeVe;
-            return Boolean(otro && buscarAncla(otro, document));
-        };
-        /** Los pasos después de `i` que hoy se pueden mostrar. Uno que abre la ayuda cuenta: su ancla aparece al abrirla. */
-        const siguientesVisibles = (i: number) => pasos.flatMap((p, j) => (j > i && !sobra(j)
-            && (!p.ancla || p.accion === 'abrir_ayuda' || Boolean(buscarAncla(p.ancla, document))) ? [j] : []));
-        const planDesde = (i: number, mostrados: readonly number[]) =>
-            [...new Set([...mostrados, i, ...siguientesVisibles(i)])].sort((a, b) => a - b);
         void (async () => {
             const previo = actual.current.visible;
             const mostrados = previo?.mostrados ?? [];
@@ -113,13 +123,14 @@ export default function MotorRecorrido({
             const esperaPaso = previo ? Math.min(espera, ESPERA_SIGUIENTE_MS) : espera;
             for (let i = desde; i >= 0 && i < pasos.length; i += direccion) {
                 const paso = pasos[i];
-                if (sobra(i)) continue;
+                if (sobraPaso(pasos, i)) continue;
                 if (paso.accion === 'abrir_ayuda') actual.current.abrirAyuda?.();
                 const el = paso.ancla ? await esperarAncla(paso.ancla, document, { espera: esperaPaso, senal: control.signal }) : null;
                 if (control.signal.aborted) return;
                 if (!paso.ancla || el) {
                     const conEste = [...new Set([...mostrados, i])].sort((a, b) => a - b);
-                    setVisible({ indice: i, elemento: el, mostrados: conEste, finalForzado: siguientesVisibles(i).length === 0, plan: planDesde(i, conEste) });
+                    setPorDelante(null);
+                    setVisible({ indice: i, elemento: el, mostrados: conEste, finalForzado: siguientesVisibles(pasos, i).length === 0, plan: planDesde(pasos, i, conEste) });
                     setResolviendo(false);
                     return;
                 }
@@ -134,11 +145,34 @@ export default function MotorRecorrido({
             }
             // Hacia adelante: el último que se vio pasa a ser el final, para que
             // completar siga saliendo del botón. Hacia atrás: se queda en el primero.
+            setPorDelante(null);
             if (previo) setVisible(direccion === 1 ? { ...previo, finalForzado: true, plan: previo.mostrados } : previo);
             setResolviendo(false);
         })();
         return () => control.abort();
     }, [destino, pasos, espera, definicion, terminar]);
+
+    // El primer paso puede aparecer antes de que la pantalla termine de cargar
+    // (el botón Subir documento está antes que las carpetas). Lo que se vio por
+    // delante en ese momento no es definitivo: mientras el paso está a la vista,
+    // cada cambio de la página vuelve a calcular el contador y si el botón dice
+    // Siguiente o Finalizar. Va en un estado aparte para no volver a desplazar
+    // la página ni mover el foco.
+    useEffect(() => {
+        if (!visible || resolviendo) return;
+        const { indice, mostrados } = visible;
+        let cuadro = 0;
+        const recalcular = () => {
+            cuadro = 0;
+            const plan = planDesde(pasos, indice, mostrados);
+            const finalForzado = siguientesVisibles(pasos, indice).length === 0;
+            setPorDelante((previo) => (previo && previo.indice === indice && previo.finalForzado === finalForzado && mismoPlan(previo.plan, plan)
+                ? previo : { indice, finalForzado, plan }));
+        };
+        const observador = new MutationObserver(() => { if (!cuadro) cuadro = requestAnimationFrame(recalcular); });
+        observador.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ATRIBUTOS_QUE_MUEVEN_ANCLAS });
+        return () => { observador.disconnect(); if (cuadro) cancelAnimationFrame(cuadro); };
+    }, [visible, resolviendo, pasos]);
 
     // Salir de la pantalla a mitad de camino cuenta como cerrar. Si nunca se
     // mostró un paso (o el modo estricto de React monta y desmonta antes de
@@ -226,9 +260,11 @@ export default function MotorRecorrido({
 
     if (!visible) return null;
 
-    const { indice, mostrados, plan } = visible;
+    const { indice, mostrados } = visible;
+    const vigente = porDelante?.indice === indice ? porDelante : visible;
+    const { plan } = vigente;
     const paso = pasos[indice];
-    const esFinal = indice === pasos.length - 1 || visible.finalForzado;
+    const esFinal = indice === pasos.length - 1 || vigente.finalForzado;
     // "Paso N de M" sobre los pasos que de verdad se ven, no sobre los definidos.
     const total = plan.length;
     const posicion = plan.indexOf(indice) + 1;

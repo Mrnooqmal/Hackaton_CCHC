@@ -462,7 +462,7 @@ export default function Ds44Fases({
                 </section>
 
                 {modulosFase.length > 0 && (
-                    <aside className="ob-modulos" aria-label={`Módulos de ${nombreFase}`}>
+                    <aside className="ob-modulos" aria-label={`Módulos de ${nombreFase}`} {...ancla('obra-detalle.modulos')}>
                         <h2 className="ob-h2" style={{ fontSize: '0.9375rem', marginBottom: 4 }}>Módulos de {nombreFase}</h2>
                         <p className="ob-modulos__intro">Donde se registra el trabajo del día a día que después acredita los requisitos.</p>
                         {modulosFase.map((m) => (

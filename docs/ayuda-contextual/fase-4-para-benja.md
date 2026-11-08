@@ -61,10 +61,12 @@ desaparece, `npm run build` falla y dice cuál quedó sin marcar. El texto que l
 | `components/Sidebar.tsx` | `global.menu-lateral`, `global.menu-sesion` | `<nav>` del menú, botón "Más opciones" |
 | `pages/Dashboard.tsx` | `inicio.aviso-ingreso`, `inicio.accesos`, `inicio.pendientes` | Aviso rojo de firmas para ingresar, grilla de accesos rápidos, panel "Tus pendientes" |
 | `pages/MySignatures.tsx` | `mis-firmas.pestanas`, `mis-firmas.lista`, `mis-firmas.avance` | Pestañas (prop `tabsAncla` de `PageHeader`), columna de la lista, columna de "Tu avance" |
-| `pages/IncidentReportar.tsx` | `incidente-reportar.tipo`, `.datos`, `.detalle`, `.evidencia` | Selector Hallazgo/Incidente y tres `FieldSection` (prop `ancla`) |
-| `pages/Activities.tsx` | `actividades.vistas`, `.planificar`, `.nueva`, `.por-completar` | Pestañas Lista/Calendario (`tabsAncla`), botones Planificar mes y Nueva actividad, sección "Del plan, por completar" |
-| `pages/DocumentsRepository.tsx` | `repositorio.carpetas`, `repositorio.subir` | Grilla de carpetas, botón Subir documento |
-| `components/obra/Ds44Fases.tsx` | `obra-detalle.avance`, `.filtro`, `.requisitos` | Avance con las fases, filtro por estado, lista de requisitos |
+| `pages/IncidentReportar.tsx` | `incidente-reportar.tipo`, `.datos`, `.afectados`, `.detalle`, `.evidencia`, `.envio` | Selector Hallazgo/Incidente y las `FieldSection` (prop `ancla`). `.afectados` va en las dos secciones de afectados (la del incidente y la del hallazgo de acción subestándar); `.envio`, en "Confirmación de envío" |
+| `pages/Incidents.tsx` | `incidentes.pestanas`, `.filtros`, `.lista` | Pestañas Listado/Estadísticas (`tabsAncla`), barra de hallazgos/incidentes con buscador y filtros, lista de eventos |
+| `pages/Activities.tsx` | `actividades.vistas`, `.planificar`, `.nueva`, `.por-completar`, `.buscar` | Pestañas Lista/Calendario (`tabsAncla`), botones Planificar mes y Nueva actividad, sección "Del plan, por completar", buscador con el filtro por tipo |
+| `pages/DocumentsRepository.tsx` | `repositorio.ambito`, `.buscar`, `.carpetas`, `.ds44`, `.subir` | Pestañas General/Personal (`tabsAncla`), buscador, grilla de carpetas, botón de la carpeta DS44 · Cumplimiento, botón Subir documento |
+| `components/obra/ObraCabecera.tsx` | `obra-detalle.pestanas`, `.exportar` | Pestañas Resumen/Cumplimiento DS 44, botón Exportar FUF |
+| `components/obra/Ds44Fases.tsx` | `obra-detalle.avance`, `.filtro`, `.requisitos`, `.modulos` | Avance con las fases, filtro por estado, lista de requisitos, columna "Módulos de la fase" |
 | `ayuda/MenuAyuda.tsx` | `menu-ayuda.recorridos`, `.manual`, `.novedades` | Los tres grupos del menú de ayuda |
 
 `PageHeader` y `FieldSection` tienen ahora una prop opcional (`tabsAncla` y `ancla`) para esto; no
@@ -87,6 +89,32 @@ documentos sin red** y una pantalla **"Preparar cuadrilla sin señal"**. Cuando 
 - Las capturas de esas pantallas.
 
 Por ahora quedan como están (decisión del 7 de noviembre de 2026).
+
+## Pendiente: "Firmar mi asistencia" según un permiso
+
+En `pages/Activities.tsx`, el botón **Firmar mi asistencia** se muestra según el nombre del rol
+(`canSelfSign = user?.rol === 'trabajador'`), no según un permiso. La regla del proyecto es
+segmentar por permiso: un rol personalizado de la empresa que asiste a charlas no ve el botón, y
+un trabajador al que le dan más permisos lo sigue viendo por su nombre de rol. Debería depender
+de un permiso (por ejemplo, uno de "firmar mi asistencia", o `actividades.ver` sin
+`actividades.crear`).
+
+Lo mismo pasa en `pages/DocumentsRepository.tsx` (`canViewGeneral = user?.rol !== 'trabajador'`,
+que decide si se ve la pestaña General o solo "Mis documentos").
+
+El recorrido `mis-actividades` (pendiente, ver abajo) se segmenta con "ve actividades y no las
+crea", que es lo más cercano mientras tanto. Decisión de Adrean (8 de noviembre de 2026):
+anotarlo aquí para Benja.
+
+## Pendiente: recorridos que esperan la firma sin conexión
+
+Aprobados el 8 de noviembre de 2026, pero se escriben cuando la firma sin conexión llegue a
+`pruebas` (cambia el registro de asistencia y Mis firmas). Los textos propuestos están en
+`fase-5-propuesta-pasos-nuevos.md`:
+
+- `registrar-asistencia` (2b): lo de hoy, quién falta, historial.
+- `mis-actividades` (2c): firmar la asistencia y el atraso.
+- `mis-firmas`: el paso 1 con el comprobante y el paso nuevo "Tu PIN es tu firma".
 
 ## Direcciones viejas
 

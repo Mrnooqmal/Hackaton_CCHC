@@ -6,7 +6,17 @@
   },
   "cumplimiento-obra": {
     "version": 1,
-    "huella": "4938fbc6bc43116683e56e9fb268c5f6c667a6f6704d50f21434f4bfacbc7c42",
+    "huella": "8f423d05459a32965dda74f166c2aa570b0294a72e2274c016973c08f2c9fe09",
+    "borrador": true
+  },
+  "encontrar-documentos": {
+    "version": 1,
+    "huella": "2ff80ed99a7f059e5f7611f40c13258c67e62484b222d51fdf9094e3b1347abe",
+    "borrador": true
+  },
+  "gestionar-incidentes": {
+    "version": 1,
+    "huella": "f67310b5728f150f297ba8cdfc3065901c37cc599163f3f16fa789397b1300d9",
     "borrador": true
   },
   "inicio-empresa": {
@@ -31,17 +41,17 @@
   },
   "programar-actividades": {
     "version": 1,
-    "huella": "b93560848a873f486698f08406817b7d1e097a8014e2675155f644833428d7fd",
+    "huella": "6192b964df7a9f3b3c14aafa1e69b8945444f14b17fac46b821d319c1bfcac93",
     "borrador": true
   },
   "reportar": {
     "version": 1,
-    "huella": "ac91a53cdb8f816bf3e6f1d7570f0d95825fddc7d48c298f98c87ae54d13927f",
+    "huella": "b8fb4498e1f3bd1bc48d06cd7bcf58da7c1050d562efac47296f7b1963051705",
     "borrador": true
   },
   "subir-documentos": {
     "version": 1,
-    "huella": "95b778a5406a1a0e0000795b8d6f17e2c4fde203349928da96c1438e1a1d727a",
+    "huella": "9b1eddcd4bcd4ff9a694de589eee0f8a814dfedac029787cf70ebf60ef269a39",
     "borrador": true
   }
 }

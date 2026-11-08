@@ -1,4 +1,16 @@
-# Fase 5 · Propuesta de pasos nuevos (borrador, sin implementar)
+# Fase 5 · Propuesta de pasos nuevos
+
+> **Estado (8 de noviembre de 2026):** aprobada por Adrean. Implementado, en borrador:
+> `encontrar-documentos`, `subir-documentos`, `programar-actividades` con el buscador,
+> `cumplimiento-obra` con 6 pasos, `reportar` con 6 pasos y `gestionar-incidentes`.
+> **Pendientes hasta que la firma sin conexión llegue a `pruebas`:** `registrar-asistencia` (2b),
+> `mis-actividades` (2c) y los pasos nuevos de `mis-firmas` (4). El paso de Investigaciones de
+> Incidentes se queda. Los formularios no se recorren (el manual los cubre).
+>
+> Ajustes al implementar: el paso de afectados de Reportar aparece en un incidente y, en un
+> hallazgo, solo al elegir acción subestándar (así es la pantalla). "Revisar y enviar" dice que se
+> marca la declaración y que se avisa al equipo de prevención, que es lo que muestra el formulario.
+> El buscador de Actividades busca por título o descripción y filtra por tipo.
 
 Pedido de Adrean (2026-11-08): los recorridos de las pantallas más completas se quedan cortos.
 Se revisó pantalla por pantalla lo que de verdad muestra (código del worktree `tours` + manual).

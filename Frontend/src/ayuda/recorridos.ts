@@ -201,6 +201,11 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
                 descripcion: t('El tipo de hallazgo y la etapa de la obra. En un incidente, además, su gravedad: leve, grave o fatal. Los graves y fatales se investigan.'),
             },
             {
+                ancla: 'incidente-reportar.afectados',
+                titulo: t('Quién resultó afectado'),
+                descripcion: t('Si hubo una persona afectada, búscala por nombre o RUT. Es opcional. En un hallazgo, este campo aparece al elegir acción subestándar.'),
+            },
+            {
                 ancla: 'incidente-reportar.detalle',
                 titulo: t('Qué pasó'),
                 descripcion: t('Cuéntalo con claridad. Puedes dictarlo si lo autorizaste en Mis datos y privacidad.'),
@@ -208,7 +213,12 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
             {
                 ancla: 'incidente-reportar.evidencia',
                 titulo: t('Fotos'),
-                descripcion: t('Una foto ayuda a entender y a corregir. El reporte queda con tu nombre como quien lo hizo.'),
+                descripcion: t('Una foto ayuda a entender y a corregir. Súbela o tómala con la cámara del teléfono.'),
+            },
+            {
+                ancla: 'incidente-reportar.envio',
+                titulo: t('Revisar y enviar'),
+                descripcion: t('Marca la declaración y envía. El reporte queda con tu nombre y se avisa al equipo de prevención de la obra, que lo revisa y le da seguimiento.'),
             },
         ],
     },
@@ -272,6 +282,11 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
                 titulo: t('Por completar'),
                 descripcion: t('Los borradores del plan que te tocan: ábrelos, escribe el tema y quedan programados.'),
             },
+            {
+                ancla: 'actividades.buscar',
+                titulo: t('Buscar'),
+                descripcion: t('Encuentra una actividad de hoy o del calendario por su título o descripción, o filtra por tipo.'),
+            },
         ],
     },
     {
@@ -287,15 +302,15 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         manual: 'obra/documentos',
         pasos: [
             {
-                ancla: 'repositorio.carpetas',
-                titulo: t('Cómo está ordenado'),
-                descripcion: t('Por carpeta. En DS44 · Cumplimiento, por sección del formulario de fiscalización.'),
-            },
-            {
                 ancla: 'repositorio.subir',
                 titulo: t('Subir un documento'),
-                descripcion: t('La plataforma guarda el archivo y su historial de versiones. No revisa su contenido: que sea correcto y esté al día es responsabilidad de quien lo sube.'),
+                descripcion: t('Elige el tipo, ponle un título y adjunta el archivo (hasta 10 MB). Según el tipo, queda en su carpeta. La plataforma no revisa el contenido: que sea correcto y esté al día es responsabilidad de quien lo sube.'),
                 manual: 'obra/documentos',
+            },
+            {
+                ancla: 'repositorio.ds44',
+                titulo: t('Una versión nueva, no otro archivo'),
+                descripcion: t('Si un documento del formulario se renueva, no subas uno aparte. Ábrelo desde DS44 · Cumplimiento y usa Publicar nueva versión: así queda el historial y se vuelve a pedir la firma.'),
             },
         ],
     },
@@ -312,9 +327,14 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         manual: 'obra/cumplimiento',
         pasos: [
             {
+                ancla: 'obra-detalle.pestanas',
+                titulo: t('Resumen y cumplimiento'),
+                descripcion: t('En Resumen están los datos de la obra, su dotación y el órgano preventivo que le exige el DS 44. Aquí, en Cumplimiento, está lo que se le pide y en qué va cada requisito.'),
+            },
+            {
                 ancla: 'obra-detalle.avance',
                 titulo: t('Avance y fases'),
-                descripcion: t('El avance cuenta solo lo que se le exige a esta obra. Las cuatro fases son la forma en que la plataforma ordena los requisitos: un requisito cuenta en la fase que sea.'),
+                descripcion: t('El avance cuenta solo lo que se le exige a esta obra. La fase En curso pasa sola a la siguiente cuando se completa, y puedes resolver requisitos de cualquier fase cuando quieras.'),
             },
             {
                 ancla: 'obra-detalle.filtro',
@@ -324,8 +344,88 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
             {
                 ancla: 'obra-detalle.requisitos',
                 titulo: t('Qué falta'),
-                descripcion: t('Cada fila dice qué falta, en palabras, y ofrece una sola acción. La plataforma muestra la evidencia registrada; no certifica que la obra cumpla.'),
+                descripcion: t('Cada fila dice qué falta y ofrece una sola acción: Cargar el documento, elegir Firmantes, Recordar a quien no firma, Registrar un envío o responder Sí o No. La plataforma muestra la evidencia; no certifica que la obra cumpla.'),
                 manual: 'obra/cumplimiento',
+            },
+            {
+                ancla: 'obra-detalle.modulos',
+                titulo: t('Módulos de la fase'),
+                descripcion: t('Aquí se registra el trabajo de cada día: estructura preventiva, registro de actividad, investigaciones, medidas correctivas. Lo que registras acredita los requisitos de al lado.'),
+            },
+            {
+                ancla: 'obra-detalle.exportar',
+                titulo: t('Exportar FUF'),
+                descripcion: t('Abre el reporte imprimible del formulario de fiscalización, con el estado de cada requisito. Útil para tenerlo a mano en una fiscalización.'),
+            },
+        ],
+    },
+    {
+        id: 'encontrar-documentos',
+        tipo: 'opcional',
+        pantalla: 'repositorio',
+        visibleSi: { todos: ['repositorio.ver'] },
+        ambito: 'obra',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Encontrar un documento'),
+        manual: 'obra/documentos',
+        pasos: [
+            {
+                ancla: 'repositorio.ambito',
+                titulo: t('General o Personal'),
+                descripcion: t('En General están los documentos de la obra y de la empresa. En Personal, solo los que te asignaron a ti para leer o firmar. Si solo ves Mis documentos, esos son los tuyos.'),
+            },
+            {
+                ancla: 'repositorio.buscar',
+                titulo: t('Buscar'),
+                descripcion: t('Escribe parte del nombre y busca en todo el repositorio, sin abrir carpeta por carpeta.'),
+            },
+            {
+                ancla: 'repositorio.carpetas',
+                titulo: t('Las carpetas'),
+                descripcion: t('Empresa, obra, registros y actividades, documentos de personas y otros. Solo aparecen las que tienen algo. Dentro de cada una, el ojo abre el documento y la flecha lo descarga.'),
+            },
+            {
+                ancla: 'repositorio.ds44',
+                titulo: t('DS44 · Cumplimiento'),
+                descripcion: t('No es una carpeta de archivos: es el formulario de fiscalización, ordenado por sección. Muestra qué documento acredita cada requisito, de esta obra o de la empresa, y qué falta.'),
+                manual: 'obra/documentos',
+            },
+        ],
+    },
+    {
+        id: 'gestionar-incidentes',
+        tipo: 'opcional',
+        pantalla: 'incidentes',
+        visibleSi: { todos: ['incidentes.historial'] },
+        ambito: 'obra',
+        version: 1,
+        reiniciarAlPublicar: false,
+        estado: 'borrador',
+        titulo: t('Seguir los incidentes de la obra'),
+        manual: 'obra/incidentes',
+        pasos: [
+            {
+                ancla: 'incidentes.pestanas',
+                titulo: t('Listado y estadísticas'),
+                descripcion: t('En Listado están los eventos de la obra. En Estadísticas, los totales, la tasa de accidentabilidad y la tendencia, para descargar en CSV o PDF.'),
+            },
+            {
+                ancla: 'incidentes.filtros',
+                titulo: t('Encontrar un evento'),
+                descripcion: t('Separa hallazgos e incidentes, busca por descripción y filtra por gravedad, por abiertos o cerrados y por etapa.'),
+            },
+            {
+                ancla: 'incidentes.lista',
+                titulo: t('Gestionar un evento'),
+                descripcion: t('Tócalo para ver su detalle. Ahí defines el responsable, el plazo y el cierre, y quien tiene el permiso lo califica como accidente.'),
+                manual: 'obra/incidentes',
+            },
+            {
+                ancla: 'incidentes.lista',
+                titulo: t('Investigaciones'),
+                descripcion: t('Los graves y fatales se investigan. La investigación y sus medidas se registran en Detalle de obra, en las fases Verificar y Actuar.'),
             },
         ],
     },

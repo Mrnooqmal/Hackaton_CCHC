@@ -372,7 +372,7 @@ export default function IncidentReportar() {
                 </FieldSection>
 
                 {!esHallazgoForm && (
-                    <FieldSection title="Trabajador afectado" inline>
+                    <FieldSection title="Trabajador afectado" inline ancla={ancla('incidente-reportar.afectados')}>
                         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                             <label className="form-label">Buscar trabajador</label>
                             <div style={{ position: 'relative' }}>
@@ -430,7 +430,7 @@ export default function IncidentReportar() {
                 )}
 
                 {esHallazgoForm && formData.tipoHallazgo === 'accion' && (
-                    <FieldSection title="Trabajador(es) afectado(s)" inline description="Opcional">
+                    <FieldSection title="Trabajador(es) afectado(s)" inline description="Opcional" ancla={ancla('incidente-reportar.afectados')}>
                         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                             {afectados.map((afectado, idx) => (
                                 <div key={idx}>
@@ -600,7 +600,7 @@ export default function IncidentReportar() {
                     </div>
                 </FieldSection>
 
-                <FieldSection title="Confirmación de envío" inline>
+                <FieldSection title="Confirmación de envío" inline ancla={ancla('incidente-reportar.envio')}>
                     <div className="full-width inc-confirm-box">
                         <div className="inc-confirm-meta">
                             <span>Reportado por <strong>{[user?.nombre, user?.apellidoPaterno, user?.apellidoMaterno].filter(Boolean).join(' ')}</strong></span>
