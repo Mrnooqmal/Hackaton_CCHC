@@ -13,7 +13,9 @@
 /**
  * Pantallas con sesión. `ruta` es el patrón de `App.tsx` (el build comprueba que
  * siga existiendo); `null` para lo que no es una ruta. `manual`: la página del
- * manual que abre la ayuda de esa pantalla.
+ * manual que abre la ayuda de esa pantalla. `requiereObra`: sin una obra elegida
+ * la pantalla no muestra su contenido (Reportar, Actividades, Repositorio…), así
+ * que un recorrido sobre ella tiene que ser de ámbito `obra`.
  */
 export const PANTALLAS = {
     global: { ruta: null, descripcion: 'Elementos presentes en todas las pantallas (encabezado, menú lateral)' },
@@ -29,7 +31,7 @@ export const PANTALLAS = {
     'enrolar-trabajador': { ruta: '/workers/enroll', descripcion: 'Enrolar trabajador', manual: 'empresa/personas' },
     obras: { ruta: '/obras', descripcion: 'Obras', manual: 'empresa/obras' },
     'obra-nueva': { ruta: '/obras/nueva', descripcion: 'Crear obra', manual: 'empresa/obras' },
-    'obra-detalle': { ruta: '/obras/:obraId', descripcion: 'Detalle de una obra', manual: 'obra/cumplimiento' },
+    'obra-detalle': { ruta: '/obras/:obraId', descripcion: 'Detalle de una obra', manual: 'obra/cumplimiento', requiereObra: true },
     prescripciones: { ruta: '/prescripciones', descripcion: 'Prescripciones', manual: 'obra/prescripciones' },
     'prescripcion-nueva': { ruta: '/prescripciones/nueva', descripcion: 'Registrar prescripción', manual: 'obra/prescripciones' },
     'prescripcion-implementar': { ruta: '/prescripciones/:id/implementar', descripcion: 'Implementar prescripción', manual: 'obra/prescripciones' },
@@ -37,16 +39,16 @@ export const PANTALLAS = {
     'estructura-organo': { ruta: '/estructura/organos/:organoId', descripcion: 'Órgano preventivo', manual: 'obra/estructura' },
     'cargos-onboarding': { ruta: '/cargos-onboarding', descripcion: 'Cargos y kits de incorporación', manual: 'empresa/cargos' },
     'catalogos-actividad': { ruta: '/catalogos-actividad', descripcion: 'Catálogos de actividades', manual: 'empresa/cargos' },
-    repositorio: { ruta: '/documents-repository', descripcion: 'Repositorio de documentos', manual: 'obra/documentos' },
+    repositorio: { ruta: '/documents-repository', descripcion: 'Repositorio de documentos', manual: 'obra/documentos', requiereObra: true },
     encuestas: { ruta: '/surveys', descripcion: 'Encuestas', manual: 'terreno/encuestas' },
     'encuesta-nueva': { ruta: '/surveys/nueva', descripcion: 'Crear encuesta', manual: 'obra/encuestas' },
     'encuesta-detalle': { ruta: '/surveys/:surveyId', descripcion: 'Detalle de encuesta', manual: 'terreno/encuestas' },
     'encuesta-responder': { ruta: '/surveys/:surveyId/responder', descripcion: 'Responder encuesta', manual: 'terreno/encuestas' },
-    incidentes: { ruta: '/incidents', descripcion: 'Hallazgos e incidentes', manual: 'terreno/reportar' },
-    'incidente-reportar': { ruta: '/incidents/reportar', descripcion: 'Reportar hallazgo o incidente', manual: 'terreno/reportar' },
-    actividades: { ruta: '/activities', descripcion: 'Actividades', manual: 'obra/actividades' },
-    'actividad-nueva': { ruta: '/activities/nueva', descripcion: 'Crear actividad', manual: 'obra/actividades' },
-    'actividad-planificar': { ruta: '/activities/planificar', descripcion: 'Planificar el mes', manual: 'obra/actividades' },
+    incidentes: { ruta: '/incidents', descripcion: 'Hallazgos e incidentes', manual: 'terreno/reportar', requiereObra: true },
+    'incidente-reportar': { ruta: '/incidents/reportar', descripcion: 'Reportar hallazgo o incidente', manual: 'terreno/reportar', requiereObra: true },
+    actividades: { ruta: '/activities', descripcion: 'Actividades', manual: 'obra/actividades', requiereObra: true },
+    'actividad-nueva': { ruta: '/activities/nueva', descripcion: 'Crear actividad', manual: 'obra/actividades', requiereObra: true },
+    'actividad-planificar': { ruta: '/activities/planificar', descripcion: 'Planificar el mes', manual: 'obra/actividades', requiereObra: true },
     'solicitudes-firma': { ruta: '/signature-requests', descripcion: 'Solicitudes de firma', manual: 'obra/pedir-firmas' },
     'mis-firmas': { ruta: '/my-signatures', descripcion: 'Mis firmas', manual: 'terreno/firmar' },
     bandeja: { ruta: '/inbox', descripcion: 'Bandeja de entrada', manual: 'terreno/avisos' },
@@ -56,7 +58,7 @@ export const PANTALLAS = {
     'mis-datos': { ruta: '/mis-datos', descripcion: 'Mis datos y privacidad', manual: 'terreno/mis-datos' },
     'cambiar-contrasena': { ruta: '/change-password', descripcion: 'Cambiar contraseña', manual: 'empezar/mi-cuenta' },
     enrolamiento: { ruta: '/enroll-me', descripcion: 'Mi enrolamiento', manual: 'empezar/ingresar' },
-} as const satisfies Record<string, { ruta: string | null; descripcion: string; manual?: string }>;
+} as const satisfies Record<string, { ruta: string | null; descripcion: string; manual?: string; requiereObra?: boolean }>;
 
 export type PantallaKey = keyof typeof PANTALLAS;
 

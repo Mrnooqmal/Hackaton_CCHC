@@ -51,11 +51,12 @@ test('un paso cuyo ancla no existe se salta y queda en la consola; el último vi
     page.on('console', (m) => { if (m.type() === 'warning') avisos.push(m.text()); });
     await abrir(page, 'faltante', '&espera=300');
     await expect(globo(page)).toContainText('Botón de ayuda');
-    await page.getByRole('button', { name: 'Siguiente' }).click();
-    await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible({ timeout: 3000 });
+    // El paso que sigue tampoco está: este ya es el final, sin tener que tocar Siguiente.
+    await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Siguiente' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Finalizar' }).click();
     expect(await eventos(page)).toEqual([{ tipo: 'completar', ultimoPaso: 1 }]);
-    expect(avisos.filter((a) => a.includes('ancla no encontrada')).length).toBe(2);
+    expect(avisos.filter((a) => a.includes('ancla no encontrada')).length).toBe(1);
 });
 
 test('cerrar con la X en el primer paso registra un cierre, no un completado (fallas 3 y 4)', async ({ page }) => {
@@ -136,4 +137,57 @@ test.describe('a 360 px', () => {
             if (titulo === 'Botón de ayuda') await page.getByRole('button', { name: 'Siguiente' }).click();
         }
     });
+});
+
+// ─── Lo que encontró la revisión en dev (8 de noviembre de 2026) ─────────────
+
+test('si el último paso no está en la pantalla, el anterior ya muestra Finalizar, sin esperar', async ({ page }) => {
+    await abrir(page, 'ultimo-ausente', '&espera=4000');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(globo(page)).toContainText('Segundo');
+    // Antes había que esperar el plazo completo, sin señal, y un segundo toque lo reiniciaba.
+    await expect(page.getByRole('button', { name: 'Finalizar' })).toBeVisible({ timeout: 1500 });
+    await page.getByRole('button', { name: 'Finalizar' }).click();
+    expect(await eventos(page)).toEqual([{ tipo: 'completar', ultimoPaso: 1 }]);
+});
+
+test('un paso del medio que no está se salta en un segundo, no con la espera de la carga', async ({ page }) => {
+    await abrir(page, 'medio-ausente', '&espera=8000');
+    await expect(globo(page)).toContainText('Primero');
+    const t0 = Date.now();
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(globo(page)).toContainText('Tercero', { timeout: 3000 });
+    expect(Date.now() - t0).toBeLessThan(2500);
+});
+
+test('mientras busca el paso siguiente, tocar Siguiente otra vez no reinicia la búsqueda', async ({ page }) => {
+    await abrir(page, 'medio-ausente', '&espera=8000');
+    await expect(globo(page)).toContainText('Primero');
+    const siguiente = page.getByRole('button', { name: 'Siguiente' });
+    await siguiente.click();
+    // Mientras busca, el botón queda inactivo: un segundo toque no hace nada.
+    await expect(siguiente).toBeDisabled({ timeout: 300 });
+    await expect(siguiente).toHaveAttribute('aria-busy', 'true');
+    await expect(globo(page)).toContainText('Tercero', { timeout: 3000 });
+});
+
+test('con la página redibujándose seguido (y un abrirAyuda nuevo en cada render), el recorrido arranca y avanza', async ({ page }) => {
+    // Antes, cada render reiniciaba la espera del ancla: el primer paso ausente
+    // nunca terminaba de saltarse y el recorrido no arrancaba.
+    await abrir(page, 'primero-ausente', '&espera=1000&redibujar=250');
+    await expect(globo(page)).toContainText('Botón de ayuda', { timeout: 4000 });
+});
+
+test('soloSiNoSeVe: el paso aparece solo si el otro elemento no está a la vista', async ({ page }) => {
+    await abrir(page, 'solo-si-no-se-ve');
+    await expect(globo(page)).toContainText('Solo si el menú no se ve');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+    await expect(globo(page)).toContainText('Lejos');
+});
+
+test('si no se puede mostrar ningún paso, se avisa a quien lo abrió', async ({ page }) => {
+    await abrir(page, 'nada', '&espera=300');
+    await expect.poll(() => page.evaluate(() => window.__terminado)).toBe(true);
+    expect(await page.evaluate(() => window.__noMostrado)).toBe(true);
+    expect(await eventos(page)).toEqual([]);
 });

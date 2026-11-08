@@ -14,7 +14,7 @@ import type { DefinicionRecorrido, Paso, Texto } from './tipos.ts';
 
 export interface Contexto {
     /** Claves de pantalla, con su ruta (`null` si no es una ruta). */
-    readonly pantallas: Readonly<Record<string, { readonly ruta: string | null }>>;
+    readonly pantallas: Readonly<Record<string, { readonly ruta: string | null; readonly requiereObra?: boolean }>>;
     /** Anclas registradas, como `pantalla.ancla`. */
     readonly anclas: ReadonlySet<string>;
     readonly permisos: ReadonlySet<string>;
@@ -24,7 +24,7 @@ export interface Contexto {
 
 const CLAVES_RECORRIDO = new Set(['id', 'tipo', 'pantalla', 'visibleSi', 'ambito', 'version', 'reiniciarAlPublicar',
     'vigenciaDesde', 'vigenciaHasta', 'estado', 'titulo', 'manual', 'pasos']);
-const CLAVES_PASO = new Set(['ancla', 'titulo', 'descripcion', 'posicion', 'accion', 'manual']);
+const CLAVES_PASO = new Set(['ancla', 'titulo', 'descripcion', 'posicion', 'accion', 'manual', 'soloSiNoSeVe']);
 const CLAVES_VISIBLE = new Set(['todos', 'alguno', 'ninguno']);
 const CLAVES_TEXTO = new Set(['es']);
 
@@ -72,6 +72,7 @@ function validarPaso(def: DefinicionRecorrido, paso: Paso, i: number, ctx: Conte
         if (paso.accion === 'abrir_ayuda') errores.push(`${donde}: abrir la ayuda sin un ancla del menú de ayuda no señala nada.`);
         return;
     }
+    if (paso.soloSiNoSeVe !== undefined && !ctx.anclas.has(paso.soloSiNoSeVe)) errores.push(`${donde}: soloSiNoSeVe nombra un ancla que no está registrada: "${String(paso.soloSiNoSeVe)}".`);
     if (!ctx.anclas.has(paso.ancla)) { errores.push(`${donde}: el ancla "${String(paso.ancla)}" no está registrada.`); return; }
     const pantalla = paso.ancla.slice(0, paso.ancla.indexOf('.'));
     if (paso.accion === 'abrir_ayuda') {
@@ -103,6 +104,9 @@ function validarRecorrido(def: DefinicionRecorrido, ctx: Contexto, errores: stri
     const pantalla = ctx.pantallas[def.pantalla];
     if (!pantalla) errores.push(`${donde}: la pantalla "${String(def.pantalla)}" no está registrada.`);
     else if (pantalla.ruta === null) errores.push(`${donde}: "${def.pantalla}" no es una pantalla con ruta; un recorrido vive en una pantalla real.`);
+    else if (pantalla.requiereObra && def.ambito !== 'obra') {
+        errores.push(`${donde}: la pantalla ${def.pantalla} solo muestra su contenido dentro de una obra; el ámbito tiene que ser obra.`);
+    }
 
     const v = def.visibleSi;
     if (!v || typeof v !== 'object') {

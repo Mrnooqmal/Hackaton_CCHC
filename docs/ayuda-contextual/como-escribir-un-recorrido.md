@@ -83,6 +83,23 @@ import { ancla } from '../ayuda/registro';
 
 **Cuándo se lanza solo:** como máximo un recorrido automático por sesión, primero los anuncios y después los obligatorios. Nunca con un modal, una confirmación, el cambio obligatorio de contraseña o el enrolamiento en curso, y nunca si no se pudo leer el progreso. Todo lo demás queda en el menú de ayuda.
 
+**Qué mostrar (regla de la revisión del 8 de noviembre de 2026):** un recorrido específico muestra
+solo las partes de **su pantalla** que sirven para **esa tarea**. Nada de volver a mostrar el menú
+lateral, el encabezado ni cosas generales: eso queda solo en las tres introducciones de Inicio.
+
+**Pantallas que necesitan obra:** en el registro, las pantallas con `requiereObra: true` (Reportar,
+Actividades, Repositorio, Detalle de obra…) no muestran su contenido en la vista de empresa. Un
+recorrido sobre ellas tiene que ser de ámbito `obra`: el build lo exige.
+
+**Pasos solo para el teléfono:** `soloSiNoSeVe: '<ancla>'` muestra el paso solo si esa otra ancla no
+está a la vista. Por ejemplo, "abre el menú" (`global.boton-menu`) con
+`soloSiNoSeVe: 'global.menu-sesion'` aparece en el teléfono, donde el menú lateral está oculto, y no
+en el escritorio.
+
+**Anclas que no siempre están:** si un paso apunta a algo que puede faltar (un botón que depende de
+un permiso, una sección que solo aparece con datos), el motor lo salta. Si después de un paso no
+queda ninguno que se pueda mostrar, ese paso ya muestra **Finalizar**.
+
 **Límites (los verifica el build):**
 - Hasta 20 pasos.
 - Título de hasta 80 caracteres y descripción de hasta 300.

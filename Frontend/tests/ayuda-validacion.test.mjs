@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { validarRecorridos } from '../src/ayuda/validacion.ts';
 
 const ctx = {
-    pantallas: { global: { ruta: null }, 'menu-ayuda': { ruta: null }, obras: { ruta: '/obras' }, personas: { ruta: '/personas' } },
-    anclas: new Set(['global.boton-ayuda', 'obras.boton-nueva', 'personas.tabla', 'menu-ayuda.manual']),
+    pantallas: { global: { ruta: null }, 'menu-ayuda': { ruta: null }, obras: { ruta: '/obras' }, personas: { ruta: '/personas' }, actividades: { ruta: '/activities', requiereObra: true } },
+    anclas: new Set(['global.boton-ayuda', 'global.menu-sesion', 'obras.boton-nueva', 'personas.tabla', 'menu-ayuda.manual', 'actividades.nueva']),
     permisos: new Set(['obras.ver', 'obras.crear', 'personas.ver']),
     manual: new Set(['modulos/obras', 'modulos/firmas']),
 };
@@ -113,4 +113,16 @@ test('validar no modifica las definiciones (falla 10)', () => {
     const antes = JSON.stringify(def);
     validarRecorridos(Object.freeze([Object.freeze(def)]), ctx);
     assert.equal(JSON.stringify(def), antes);
+});
+
+test('una pantalla que requiere obra exige ámbito obra (lo que dejó a reportar y subir-documentos sin arrancar en la vista de empresa)', () => {
+    const enActividades = (ambito) => base({ pantalla: 'actividades', ambito, pasos: [paso({ ancla: 'actividades.nueva' })] });
+    falla(enActividades('cualquiera'), /solo muestra su contenido dentro de una obra/);
+    falla(enActividades('empresa'), /solo muestra su contenido dentro de una obra/);
+    assert.deepEqual(errores([enActividades('obra')]), []);
+});
+
+test('soloSiNoSeVe tiene que nombrar un ancla registrada', () => {
+    assert.deepEqual(errores([base({ pasos: [paso({ ancla: 'global.boton-ayuda', soloSiNoSeVe: 'global.menu-sesion' })] })]), []);
+    falla(base({ pasos: [paso({ ancla: 'global.boton-ayuda', soloSiNoSeVe: 'global.no-existe' })] }), /soloSiNoSeVe nombra un ancla que no está registrada/);
 });

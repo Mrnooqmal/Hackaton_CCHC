@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
+import { useToast } from '../context/ToastContext';
 import { enviarProgreso, leerProgreso } from '../api/ayuda.api';
 import { RECORRIDOS } from './recorridos';
 import { colaAutomatica, deLaPantalla, enlaceDeRecorrido, entradaDeEvento, hoyEnChile, manualDePantalla, novedades, pantallaDeRuta } from './reglas';
@@ -46,7 +47,8 @@ const marcarAutomatico = () => {
     try { sessionStorage.setItem(CLAVE_AUTOMATICO, sesionActual() || ''); } catch { /* sin almacenamiento: a lo más se repite */ }
 };
 
-interface Activo { def: DefinicionRecorrido; persistir: boolean; ruta: string }
+/** `manual`: lo abrió la persona (ayuda, "Ver recorrido" o vista previa); si no se puede mostrar, se le dice. */
+interface Activo { def: DefinicionRecorrido; persistir: boolean; ruta: string; manual: boolean }
 
 /**
  * Recorrido pedido en la URL: `?recorrido=<id>` lo abre (el "Ver recorrido" del
@@ -78,6 +80,18 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
     const [registrar, setRegistrar] = useState(true);
     const [activo, setActivo] = useState<Activo | null>(null);
     const [menuAbierto, setMenuAbierto] = useState(false);
+    // `toast` es un objeto nuevo en cada render de ToastProvider (y cada aviso
+    // de la app lo vuelve a dibujar): se usa desde un ref para que ningún efecto
+    // ni callback de acá dependa de él.
+    const { toast } = useToast();
+    const toastRef = useRef(toast);
+    useEffect(() => { toastRef.current = toast; });
+    // Estables: el motor no debe reiniciar la búsqueda de un paso porque el
+    // proveedor se volvió a dibujar (ver MotorRecorrido).
+    const abrirAyuda = useCallback(() => setMenuAbierto(true), []);
+    const avisarNoSePuedeMostrar = useCallback(() => {
+        toastRef.current.info('Este recorrido no se puede mostrar ahora: lo que explica no está en esta pantalla.');
+    }, []);
     const [previa, setPrevia] = useState<Pedido | null>(null);
     const enviando = useRef(false);
     const progresoRef = useRef(progreso);
@@ -143,7 +157,7 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
         const t = window.setTimeout(() => {
             if (bloqueado() || automaticoUsado()) return;
             marcarAutomatico();
-            setActivo({ def: primero, persistir: true, ruta });
+            setActivo({ def: primero, persistir: true, ruta, manual: false });
         }, PAUSA_AUTOMATICO_MS);
         return () => window.clearTimeout(t);
     }, [quien, scopeElegido, cargado, registrar, activo, previa, hayBloqueo, pantalla, progreso, persona, hoy, location.pathname]);
@@ -167,8 +181,16 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
             setPrevia(null);
             if (!def) { console.warn('[recorridos] recorrido pedido en la URL que no existe', { recorrido: previa.id }); return; }
             if (!previa.previa && !enlaceDeRecorrido(def, persona, hoy)) return;
+            // Un recorrido de ámbito obra, pedido en la vista de empresa: la
+            // pantalla no tiene su contenido y no se vería nada. Se dice qué hacer.
+            if (def.ambito !== 'cualquiera' && persona.ambito !== def.ambito) {
+                toastRef.current.info(def.ambito === 'obra'
+                    ? 'Este recorrido es para dentro de una obra. Entra a una obra y vuelve a abrirlo.'
+                    : 'Este recorrido es para la vista de empresa. Cambia a la vista de empresa y vuelve a abrirlo.');
+                return;
+            }
             marcarAutomatico();
-            setActivo({ def, persistir: !previa.previa, ruta: previa.ruta });
+            setActivo({ def, persistir: !previa.previa, ruta: previa.ruta, manual: true });
         }, 0);
         return () => window.clearTimeout(t);
     }, [previa, quien, scopeElegido, activo, location.pathname, persona, hoy]);
@@ -182,7 +204,7 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
         const def = RECORRIDOS.find((d) => d.id === id);
         if (!def) return;
         setMenuAbierto(false);
-        setActivo({ def, persistir: true, ruta: location.pathname });
+        setActivo({ def, persistir: true, ruta: location.pathname, manual: true });
     }, [location.pathname]);
 
     const alTerminar = useCallback(() => {
@@ -217,7 +239,8 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
                     definicion={activo.def}
                     alEvento={(ev) => { if (activo.persistir) registrarEvento(activo.def, ev); }}
                     alTerminar={alTerminar}
-                    abrirAyuda={() => setMenuAbierto(true)}
+                    abrirAyuda={abrirAyuda}
+                    alNoMostrar={activo.manual ? avisarNoSePuedeMostrar : undefined}
                     alturaCabecera={alturaCabecera}
                 />
             )}

@@ -20,7 +20,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
 import type { DefinicionRecorrido, EventoRecorrido } from './tipos';
-import { ESPERA_ANCLA_MS, esperarAncla, traerALaVista } from './dom';
+import { ESPERA_ANCLA_MS, ESPERA_SIGUIENTE_MS, buscarAncla, esperarAncla, traerALaVista } from './dom';
 import { ANCHO_ANGOSTO, HALO, anchoGlobo, colocar } from './posicion';
 import type { Colocacion, Rect } from './posicion';
 import { TEXTOS } from './textos';
@@ -36,6 +36,8 @@ export interface PropsMotor {
     /** Se llama al terminar desde el globo, haya evento o no. */
     alTerminar: () => void;
     abrirAyuda?: () => void;
+    /** Se llama si no se pudo mostrar ningún paso (los elementos no están en esta pantalla ahora). */
+    alNoMostrar?: () => void;
     textos?: TextosMotor;
     /** Espera máxima por cada ancla, en ms. */
     espera?: number;
@@ -58,11 +60,13 @@ const vista = () => ({ width: window.innerWidth, height: window.innerHeight });
 const mismaColocacion = (a: Colocacion | null, b: Colocacion | null) => JSON.stringify(a) === JSON.stringify(b);
 
 export default function MotorRecorrido({
-    definicion, alEvento, alTerminar, abrirAyuda, textos = TEXTOS, espera = ESPERA_ANCLA_MS, alturaCabecera = 0,
+    definicion, alEvento, alTerminar, abrirAyuda, alNoMostrar, textos = TEXTOS, espera = ESPERA_ANCLA_MS, alturaCabecera = 0,
 }: PropsMotor) {
     const pasos = definicion.pasos;
     const [visible, setVisible] = useState<Visible | null>(null);
     const [destino, setDestino] = useState<{ desde: number; direccion: 1 | -1; n: number }>({ desde: 0, direccion: 1, n: 0 });
+    /** Buscando el paso siguiente: los botones no hacen nada (un segundo toque no reinicia la búsqueda). */
+    const [resolviendo, setResolviendo] = useState(false);
     const [objetivo, setObjetivo] = useState<Rect | null>(null);
     const [colocacion, setColocacion] = useState<Colocacion | null>(null);
     /** Alto del globo: cambia con el contenido de cada paso, con la clase de anclado o al cargar las fuentes. */
@@ -70,8 +74,11 @@ export default function MotorRecorrido({
     const globoRef = useRef<HTMLDivElement>(null);
     const terminado = useRef(false);
     // Lo último conocido, para los manejadores que no se rehacen en cada render.
-    const actual = useRef<{ visible: Visible | null; alEvento: typeof alEvento; alTerminar: typeof alTerminar }>({ visible: null, alEvento, alTerminar });
-    useEffect(() => { actual.current = { visible, alEvento, alTerminar }; });
+    // Ninguno entra en las dependencias de la resolución de pasos: quien monta el
+    // motor suele pasarlos como funciones nuevas en cada render, y eso reiniciaba
+    // la espera de un ancla cada vez que el proveedor se volvía a dibujar.
+    const actual = useRef({ visible: null as Visible | null, alEvento, alTerminar, abrirAyuda, alNoMostrar });
+    useEffect(() => { actual.current = { visible, alEvento, alTerminar, abrirAyuda, alNoMostrar }; });
 
     const terminar = useCallback((evento?: EventoRecorrido) => {
         if (terminado.current) return;
@@ -84,16 +91,28 @@ export default function MotorRecorrido({
     useEffect(() => {
         const control = new AbortController();
         const { desde, direccion } = destino;
+        /** Un paso que solo hace falta si otro elemento no se ve, y ese elemento se ve. */
+        const sobra = (i: number) => {
+            const otro = pasos[i].soloSiNoSeVe;
+            return Boolean(otro && buscarAncla(otro, document));
+        };
+        /** ¿Se podrá mostrar algún paso después de `i`? Uno que abre la ayuda cuenta: su ancla aparece al abrirla. */
+        const quedanDespues = (i: number) => pasos.some((p, j) => j > i && !sobra(j)
+            && (!p.ancla || p.accion === 'abrir_ayuda' || Boolean(buscarAncla(p.ancla, document))));
         void (async () => {
             const previo = actual.current.visible;
             const mostrados = previo?.mostrados ?? [];
+            // La pantalla puede estar cargando solo al principio.
+            const esperaPaso = previo ? Math.min(espera, ESPERA_SIGUIENTE_MS) : espera;
             for (let i = desde; i >= 0 && i < pasos.length; i += direccion) {
                 const paso = pasos[i];
-                if (paso.accion === 'abrir_ayuda') abrirAyuda?.();
-                const el = paso.ancla ? await esperarAncla(paso.ancla, document, { espera, senal: control.signal }) : null;
+                if (sobra(i)) continue;
+                if (paso.accion === 'abrir_ayuda') actual.current.abrirAyuda?.();
+                const el = paso.ancla ? await esperarAncla(paso.ancla, document, { espera: esperaPaso, senal: control.signal }) : null;
                 if (control.signal.aborted) return;
                 if (!paso.ancla || el) {
-                    setVisible({ indice: i, elemento: el, mostrados: [...new Set([...mostrados, i])].sort((a, b) => a - b), finalForzado: false });
+                    setVisible({ indice: i, elemento: el, mostrados: [...new Set([...mostrados, i])].sort((a, b) => a - b), finalForzado: !quedanDespues(i) });
+                    setResolviendo(false);
                     return;
                 }
                 avisar('ancla no encontrada: se salta el paso', { recorrido: definicion.id, version: definicion.version, paso: i + 1, ancla: paso.ancla });
@@ -101,15 +120,17 @@ export default function MotorRecorrido({
             // Se acabaron los pasos en esa dirección.
             if (mostrados.length === 0) {
                 avisar('ningún paso se pudo mostrar: no se registra progreso', { recorrido: definicion.id, version: definicion.version, pantalla: definicion.pantalla });
+                actual.current.alNoMostrar?.();
                 terminar();
                 return;
             }
             // Hacia adelante: el último que se vio pasa a ser el final, para que
             // completar siga saliendo del botón. Hacia atrás: se queda en el primero.
             if (previo) setVisible(direccion === 1 ? { ...previo, finalForzado: true } : previo);
+            setResolviendo(false);
         })();
         return () => control.abort();
-    }, [destino, pasos, abrirAyuda, espera, definicion, terminar]);
+    }, [destino, pasos, espera, definicion, terminar]);
 
     // Salir de la pantalla a mitad de camino cuenta como cerrar. Si nunca se
     // mostró un paso (o el modo estricto de React monta y desmonta antes de
@@ -207,11 +228,15 @@ export default function MotorRecorrido({
     const idTexto = `recorrido-${definicion.id}-texto`;
 
     const siguiente = () => {
+        if (resolviendo) return;
         if (esFinal) { terminar({ tipo: 'completar', ultimoPaso: indice }); return; }
+        setResolviendo(true);
         setDestino((d) => ({ desde: indice + 1, direccion: 1, n: d.n + 1 }));
     };
     const anterior = () => {
-        if (previo !== undefined) setDestino((d) => ({ desde: previo, direccion: -1, n: d.n + 1 }));
+        if (resolviendo || previo === undefined) return;
+        setResolviendo(true);
+        setDestino((d) => ({ desde: previo, direccion: -1, n: d.n + 1 }));
     };
 
     const teclado = (e: KeyboardEventReact<HTMLDivElement>) => {
@@ -285,7 +310,7 @@ export default function MotorRecorrido({
                         {previo !== undefined && (
                             <button type="button" className="btn btn-secondary btn-sm" onClick={anterior}>{textos.anterior}</button>
                         )}
-                        <button type="button" className="btn btn-primary btn-sm" data-principal onClick={siguiente}>
+                        <button type="button" className="btn btn-primary btn-sm" data-principal onClick={siguiente} aria-busy={resolviendo} disabled={resolviendo}>
                             {esFinal ? (esAnuncio ? textos.entendido : textos.finalizar) : textos.siguiente}
                         </button>
                     </div>

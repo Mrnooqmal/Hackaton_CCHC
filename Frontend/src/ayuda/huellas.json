@@ -1,7 +1,7 @@
 {
   "cambiar-de-obra": {
     "version": 1,
-    "huella": "e016c66f1990bfa2650001a277956965c9184d6231aafff890dbbbc6a4ce1e9e",
+    "huella": "4d61a7e5c5f3977f72ccf6a033d99b91b28d944cecfc35d99af4264c83312a9c",
     "borrador": true
   },
   "cumplimiento-obra": {
@@ -16,12 +16,12 @@
   },
   "inicio-gestion": {
     "version": 1,
-    "huella": "b189027c1d27d94d4d1a2dcfb7d42f80f433e280f3a069d759a516366bd598e7",
+    "huella": "775cd20ff2135796d27fc7c9840c633fb2522767282d24b40da31fdccecdb3c3",
     "borrador": true
   },
   "inicio-terreno": {
     "version": 1,
-    "huella": "64b6ad7fab7e17b86ba5465c455b2c7a5c16447114408f2476a7b630f97a2a1b",
+    "huella": "18c509557a3038e1a38415b3a022444f0d82985ff2fd13b811502d4ab7174935",
     "borrador": true
   },
   "mis-firmas": {
@@ -36,12 +36,12 @@
   },
   "reportar": {
     "version": 1,
-    "huella": "87de64edd2dd312bdb7dbe7ded5d035ce546cc192901692992b4dc61c3ea47b1",
+    "huella": "ac91a53cdb8f816bf3e6f1d7570f0d95825fddc7d48c298f98c87ae54d13927f",
     "borrador": true
   },
   "subir-documentos": {
     "version": 1,
-    "huella": "f5f74929830f4262f50d24ba18674bba1000595fa1ff2860bb1bfaf16d5195e2",
+    "huella": "95b778a5406a1a0e0000795b8d6f17e2c4fde203349928da96c1438e1a1d727a",
     "borrador": true
   }
 }

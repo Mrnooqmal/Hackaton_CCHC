@@ -60,7 +60,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
             {
                 ancla: 'global.boton-ayuda',
                 titulo: t('¿Tienes dudas?'),
-                descripcion: t('En cada pantalla, este botón tiene guías como esta y la página del manual que la explica.'),
+                descripcion: t('En cada pantalla, este botón tiene guías como esta y la página del manual que la explica. Ábrelo cuando quieras o cuando lo necesites.'),
                 manual: 'empezar/ayuda',
             },
         ],
@@ -79,8 +79,8 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         pasos: [
             {
                 ancla: 'global.obra-actual',
-                titulo: t('La obra en la que estás'),
-                descripcion: t('Todo lo que ves es de esta obra: actividades, firmas, incidentes y documentos.'),
+                titulo: t('Dónde estás trabajando'),
+                descripcion: t('Aquí ves en qué estás: una obra o la vista de empresa. Las pantallas muestran lo de ahí: sus actividades, firmas, incidentes y documentos.'),
             },
             {
                 ancla: 'global.menu-lateral',
@@ -99,13 +99,13 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
             },
             {
                 ancla: 'inicio.pendientes',
-                titulo: t('También lo tuyo'),
-                descripcion: t('Tus propias firmas y encuestas aparecen aquí, como las de cualquier persona.'),
+                titulo: t('Tus propios pendientes'),
+                descripcion: t('Además de gestionar, tú también firmas documentos y respondes encuestas. Lo que te toca a ti, personalmente, aparece en esta lista.'),
             },
             {
                 ancla: 'global.boton-ayuda',
                 titulo: t('Ayuda en cada pantalla'),
-                descripcion: t('Guías como esta y el manual de la pantalla en la que estás.'),
+                descripcion: t('Guías como esta y el manual de la pantalla en la que estás. Ábrela cuando quieras o cuando lo necesites.'),
                 manual: 'empezar/ayuda',
             },
         ],
@@ -182,7 +182,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         tipo: 'opcional',
         pantalla: 'incidente-reportar',
         visibleSi: {},
-        ambito: 'cualquiera',
+        ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
         estado: 'borrador',
@@ -221,23 +221,21 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         version: 1,
         reiniciarAlPublicar: false,
         estado: 'borrador',
-        titulo: t('Trabajar en varias obras'),
+        titulo: t('Cambiar de obra'),
         manual: 'empezar/elegir-obra',
         pasos: [
             {
-                ancla: 'global.obra-actual',
-                titulo: t('La obra en la que estás'),
-                descripcion: t('Todo lo que ves es de esta obra: actividades, firmas, incidentes y documentos.'),
-            },
-            {
+                // Solo en el teléfono: ahí el menú lateral (con el menú de tres puntos) está oculto.
                 ancla: 'global.boton-menu',
-                titulo: t('El menú'),
-                descripcion: t('Este botón muestra u oculta el menú. En el teléfono, ábrelo: abajo, junto a tu nombre, está Cambiar de obra.'),
+                soloSiNoSeVe: 'global.menu-sesion',
+                titulo: t('Abre el menú'),
+                descripcion: t('Toca este botón para abrir el menú. Abajo, junto a tu nombre, está el menú de tres puntos con Cambiar de obra.'),
             },
             {
                 ancla: 'global.menu-sesion',
                 titulo: t('Cambiar de obra'),
-                descripcion: t('Desde este menú cambias de obra o, si administras la empresa, vuelves a la vista de empresa.'),
+                descripcion: t('Toca aquí y elige Cambiar de obra. Si administras la empresa, desde aquí también vuelves a la vista de empresa.'),
+                manual: 'empezar/elegir-obra',
             },
         ],
     },
@@ -281,7 +279,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         tipo: 'opcional',
         pantalla: 'repositorio',
         visibleSi: { todos: ['repositorio.subir'] },
-        ambito: 'cualquiera',
+        ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
         estado: 'borrador',

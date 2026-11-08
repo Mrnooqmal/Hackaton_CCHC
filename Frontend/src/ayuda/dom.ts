@@ -16,6 +16,14 @@ export const ESPERA_ANCLA_MS = 4000;
 export const ESPERA_ANCLA_OCULTA_MS = 300;
 
 /**
+ * Espera para los pasos que siguen al primero. Con el primer paso a la vista la
+ * pantalla ya está dibujada: lo que no aparece en un segundo no va a aparecer
+ * (por ejemplo, "Por completar" cuando no hay borradores del plan), y esperar
+ * los 4 s de la carga dejaba a la persona sin respuesta al tocar Siguiente.
+ */
+export const ESPERA_SIGUIENTE_MS = 1000;
+
+/**
  * Selector de un ancla. Las claves salen del registro (minúsculas, dígitos,
  * guiones y un punto), nunca de texto de un recorrido; igual se escapan, por si
  * algún día el registro admite otra cosa (falla 7).

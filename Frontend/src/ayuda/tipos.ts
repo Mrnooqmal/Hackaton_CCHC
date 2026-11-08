@@ -85,6 +85,12 @@ export interface VisibleSi {
 export interface Paso {
     /** Elemento a resaltar. Sin ancla, el paso se muestra centrado, sin resaltar nada. */
     readonly ancla?: AnclaKey;
+    /**
+     * El paso se muestra solo si este otro elemento NO está a la vista. Sirve
+     * para un paso que solo hace falta en el teléfono: por ejemplo, "abre el
+     * menú" cuando el menú lateral está oculto.
+     */
+    readonly soloSiNoSeVe?: AnclaKey;
     readonly titulo: Texto;
     readonly descripcion: Texto;
     readonly posicion?: Posicion;
