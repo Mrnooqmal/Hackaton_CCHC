@@ -41,6 +41,8 @@ export interface FirmaPendiente {
 
 export interface ValesDePersona {
     personaId: string;
+    /** Obra del turno: los vales sirven para esa obra y para lo que no tiene obra. */
+    obraId: string;
     vales: string[];
     expiraEn: string;
 }
@@ -122,15 +124,26 @@ export const guardarValesDe = (tenantId: string, entrada: ValesDePersona, almace
     escribirJson(almacen, PREFIJO_VALES + tenantId, [...lista, entrada]);
 };
 
-/** Toma un vale de la persona y lo quita del equipo: un vale, una firma. */
-export const tomarVale = (tenantId: string | null, personaId: string, almacen: Almacen = porDefecto()): string | null => {
-    if (!tenantId) return null;
+/**
+ * Toma un vale de la persona para firmar algo de `obraId` (null si es de la
+ * empresa) y lo quita del equipo: un vale, una firma. Si los vales de la persona
+ * son de otra obra, no toma ninguno: el servidor lo rechazaría al sincronizar y
+ * la firma se perdería; mejor decirlo en el momento.
+ */
+export const valeParaFirma = (
+    tenantId: string | null,
+    personaId: string,
+    obraId: string | null,
+    almacen: Almacen = porDefecto(),
+): { vale: string } | { motivo: 'sin_vales' | 'otra_obra' } => {
+    if (!tenantId) return { motivo: 'sin_vales' };
     const lista = leerVales(tenantId, almacen);
     const entrada = lista.find((v) => v.personaId === personaId);
-    if (!entrada || entrada.vales.length === 0) return null;
+    if (!entrada || entrada.vales.length === 0) return { motivo: 'sin_vales' };
+    if (obraId && entrada.obraId !== obraId) return { motivo: 'otra_obra' };
     const vale = entrada.vales.shift() as string;
     escribirJson(almacen, PREFIJO_VALES + tenantId, lista.filter((v) => v.vales.length > 0));
-    return vale;
+    return { vale };
 };
 
 export const valesDisponibles = (tenantId: string | null, personaId: string, almacen: Almacen = porDefecto()): number =>

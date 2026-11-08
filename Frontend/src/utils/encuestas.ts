@@ -96,9 +96,17 @@ export interface EncuestaEnCache {
     descripcion?: string;
     preguntas: SurveyQuestion[];
     esFichaSalud?: boolean;
+    /** Obra de la encuesta (null si es de la empresa): ata el vale de firma. */
+    obraId?: string | null;
 }
 
 export const guardarPreguntasEnCache = (survey: Survey): void => {
+    // La Ficha Básica de Salud se responde solo con señal: no se guarda para
+    // responderla sin red (y si quedó una copia de antes, se quita).
+    if (survey.esFichaSalud) {
+        try { localStorage.removeItem(CLAVE_CACHE(survey.surveyId)); } catch { /* sin almacenamiento */ }
+        return;
+    }
     if (!survey.preguntas?.length) return;
     const copia: EncuestaEnCache = {
         surveyId: survey.surveyId,
@@ -106,6 +114,7 @@ export const guardarPreguntasEnCache = (survey: Survey): void => {
         descripcion: survey.descripcion,
         preguntas: survey.preguntas,
         esFichaSalud: survey.esFichaSalud,
+        obraId: survey.obraId ?? null,
     };
     try {
         localStorage.setItem(CLAVE_CACHE(survey.surveyId), JSON.stringify(copia));

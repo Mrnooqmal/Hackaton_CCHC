@@ -486,6 +486,13 @@ module.exports.updateResponseStatus = async (event) => {
             return error('Trabajador no está asignado a esta encuesta', 404);
         }
 
+        // La Ficha Básica de Salud se responde solo con señal: una respuesta tomada
+        // sin red queda en el equipo, en claro, hasta sincronizar, y en un equipo
+        // compartido la lee quien lo tome.
+        if (esFichaSalud(survey) && vale && !pin) {
+            return error('La Ficha Básica de Salud se responde con señal: no admite firma sin conexión.', 400);
+        }
+
         // Responder la Ficha Básica de Salud exige el consentimiento vigente de
         // quien responde (lib/gobernanza/consentimiento.js). Sin él, o revocado,
         // no se recibe ni un dato: se rechaza antes de pedir el PIN.

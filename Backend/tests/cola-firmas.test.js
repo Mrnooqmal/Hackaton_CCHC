@@ -24,9 +24,9 @@ const FRONTEND = path.join(__dirname, '..', '..', 'Frontend');
 let ts;
 try { ts = require(path.join(FRONTEND, 'node_modules', 'typescript')); } catch { ts = null; }
 
-function cargarCola() {
+function cargarTs(nombre) {
     assert.ok(ts, 'Falta Frontend/node_modules/typescript: corre `npm ci` en Frontend. Esta prueba no se salta.');
-    const archivo = path.join(FRONTEND, 'src', 'utils', 'colaFirmas.ts');
+    const archivo = path.join(FRONTEND, 'src', 'utils', nombre);
     const { outputText } = ts.transpileModule(fs.readFileSync(archivo, 'utf8'), {
         compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
     });
@@ -34,6 +34,7 @@ function cargarCola() {
     m._compile(outputText, archivo);
     return m.exports;
 }
+const cargarCola = () => cargarTs('colaFirmas.ts');
 
 /** Almacenamiento en memoria con la interfaz de localStorage. */
 function almacen({ lleno = false } = {}) {
@@ -95,20 +96,30 @@ test('una firma escondida en la cola de otra empresa no se lee como propia', () 
 test('vales: por empresa y persona, uno por firma, y los vencidos no sirven', () => {
     const c = cargarCola();
     const a = almacen();
-    c.guardarValesDe('t-1', { personaId: 'p-1', vales: ['v1', 'v2'], expiraEn: enUnaHora() }, a);
+    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1', 'v2'], expiraEn: enUnaHora() }, a);
     assert.equal(c.valesDisponibles('t-1', 'p-1', a), 2);
-    assert.equal(c.tomarVale('t-2', 'p-1', a), null, 'los vales de una empresa no sirven en otra');
-    assert.equal(c.tomarVale('t-1', 'p-1', a), 'v1');
+    assert.deepEqual(c.valeParaFirma('t-2', 'p-1', 'o-1', a), { motivo: 'sin_vales' }, 'los vales de una empresa no sirven en otra');
+    assert.deepEqual(c.valeParaFirma('t-1', 'p-1', 'o-1', a), { vale: 'v1' });
     assert.equal(c.valesDisponibles('t-1', 'p-1', a), 1);
-    c.guardarValesDe('t-1', { personaId: 'p-2', vales: ['v3'], expiraEn: new Date(Date.now() - 1000).toISOString() }, a);
-    assert.equal(c.tomarVale('t-1', 'p-2', a), null);
+    c.guardarValesDe('t-1', { personaId: 'p-2', obraId: 'o-1', vales: ['v3'], expiraEn: new Date(Date.now() - 1000).toISOString() }, a);
+    assert.deepEqual(c.valeParaFirma('t-1', 'p-2', 'o-1', a), { motivo: 'sin_vales' });
+});
+
+test('vales de otra obra: no se toma ninguno y se dice por qué; lo de la empresa sí se firma', () => {
+    // El servidor rechazaría la firma al sincronizar y se perdería: se avisa al firmar.
+    const c = cargarCola();
+    const a = almacen();
+    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1'], expiraEn: enUnaHora() }, a);
+    assert.deepEqual(c.valeParaFirma('t-1', 'p-1', 'o-2', a), { motivo: 'otra_obra' });
+    assert.equal(c.valesDisponibles('t-1', 'p-1', a), 1, 'no se gastó');
+    assert.deepEqual(c.valeParaFirma('t-1', 'p-1', null, a), { vale: 'v1' }, 'un documento de empresa, sin obra');
 });
 
 test('cerrar sesión a propósito borra los vales de todas las empresas y deja la cola', () => {
     const c = cargarCola();
     const a = almacen();
-    c.guardarValesDe('t-1', { personaId: 'p-1', vales: ['v1'], expiraEn: enUnaHora() }, a);
-    c.guardarValesDe('t-2', { personaId: 'p-9', vales: ['v9'], expiraEn: enUnaHora() }, a);
+    c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', vales: ['v1'], expiraEn: enUnaHora() }, a);
+    c.guardarValesDe('t-2', { personaId: 'p-9', obraId: 'o-9', vales: ['v9'], expiraEn: enUnaHora() }, a);
     c.agregarACola(firma('t-1', 'f1'), a);
     assert.deepEqual(c.resumenDelEquipo(a), { vales: 2, firmas: 1 });
 
@@ -150,7 +161,7 @@ test('el hook guarda por empresa y manda idFirmaLocal al sincronizar', () => {
     assert.ok(s.includes('const pending = leerCola(tenantId);'), 'sincroniza solo la cola de la empresa de la sesión');
     assert.ok(s.includes('idFirmaLocal: sig.id,'), 'cada envío lleva el identificador de la firma');
     assert.ok(s.includes('quitarDeCola(tenantId, sig.id)'));
-    assert.ok(s.includes('if (!agregarACola(sig)) return null;'), 'una firma que no se pudo guardar no se da por tomada');
+    assert.match(s, /if \(!agregarACola\(sig\)\) return \{ error:/, 'una firma que no se pudo guardar no se da por tomada');
 });
 
 test('la asistencia sin red no avanza si la firma no quedó guardada', () => {
@@ -159,4 +170,36 @@ test('la asistencia sin red no avanza si la firma no quedó guardada', () => {
     assert.ok(rama.length > 0, 'falta la rama sin red de la asistencia');
     const hastaAvanzar = rama.slice(0, rama.indexOf('advanceSigning(1, 0);'));
     assert.match(hastaAvanzar, /if \(!resultado\.success\) \{[\s\S]*?return;/);
+});
+
+// ─── Ficha de salud y obra en las pantallas ──────────────────────────────────
+
+test('la Ficha Básica de Salud no se guarda para responder sin red, y borra una copia anterior', () => {
+    const a = almacen();
+    const previo = global.localStorage;
+    global.localStorage = a;
+    try {
+        const e = cargarTs('encuestas.ts');
+        a.setItem('encuesta-preguntas:salud-1', '{"viejo":true}');
+        e.guardarPreguntasEnCache({ surveyId: 'salud-1', titulo: 'Ficha', esFichaSalud: true, preguntas: [{ questionId: 'q1' }] });
+        assert.equal(a.getItem('encuesta-preguntas:salud-1'), null);
+        e.guardarPreguntasEnCache({ surveyId: 'enc-1', titulo: 'Clima', obraId: 'o-1', preguntas: [{ questionId: 'q1' }] });
+        assert.equal(JSON.parse(a.getItem('encuesta-preguntas:enc-1')).obraId, 'o-1', 'la copia lleva la obra, que ata el vale');
+    } finally {
+        global.localStorage = previo;
+    }
+});
+
+test('las pantallas pasan la obra de lo que se firma, y la ficha de salud no se firma sin red', () => {
+    const act = leerFront('pages', 'Activities.tsx');
+    assert.equal((act.match(/signActivity\([\s\S]*?\.obraId \|\| null,?\s*\)/g) || []).length, 3, 'las tres firmas de asistencia pasan la obra de la actividad');
+    const red = act.slice(act.indexOf("if (errMsg.includes('fetch') || errMsg.includes('network')) {"));
+    assert.match(red.slice(0, red.indexOf('advanceSigning(1, 0);')), /if \(!resultado\.success\) \{[\s\S]*?return;/,
+        'la caída a sin red por error de red tampoco avanza sin guardar');
+    const enc = leerFront('pages', 'SurveyResponder.tsx');
+    assert.match(enc, /if \(encuesta\.esFichaSalud && !navigator\.onLine\) \{[\s\S]*?return;/);
+    assert.ok(enc.includes('encuesta.obraId ?? null'));
+    const hook = leerFront('hooks', 'useOfflineSignature.ts');
+    assert.ok(hook.includes('signaturesApi.emitirVales({ personaId, obraId, pin, cantidad'), 'los vales se piden para la obra del turno');
+    assert.match(hook, /obraId: string,\s*cantidad = 5,/, '5 vales por turno');
 });

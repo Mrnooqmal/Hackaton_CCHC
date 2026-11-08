@@ -89,6 +89,8 @@ export interface ResolveDisputeData {
 export interface ValesResponse {
     vales: string[];
     personaId: string;
+    /** Obra del turno: el vale sirve para esa obra y para lo que no tiene obra. */
+    obraId: string;
     expiraEn: string;
     vigenciaHoras: number;
     mensaje: string;
@@ -101,7 +103,7 @@ export const signaturesApi = {
      * vales sí, y no sirven para nada más que firmar en nombre de esa persona
      * durante su vigencia.
      */
-    emitirVales: (data: { personaId?: string; pin: string; cantidad?: number; deviceId?: string }) =>
+    emitirVales: (data: { personaId?: string; obraId: string; pin: string; cantidad?: number; deviceId?: string }) =>
         apiRequest<ValesResponse>('/firmas/vales', {
             method: 'POST',
             body: JSON.stringify(data),

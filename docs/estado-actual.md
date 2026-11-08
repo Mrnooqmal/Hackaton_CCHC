@@ -14,13 +14,13 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
 |---|---|---|---|
 | **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `14fa693` |
 | **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net` redirige con 301 a `buildandserve.cl` desde D-34), bucket `buildandserve-frontend` | `14fa693` |
-| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `55a6605` |
-| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `55a6605` |
+| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `7696a1b` |
+| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `7696a1b` |
 | Ambos | Infra del frontend | Stack `BuildAndServe-frontend`: dos distribuciones, certificado, cabeceras, CSP y rol de publicación | `14fa693` |
 
 **Prod: `14fa693` desde el 7 de noviembre de 2026** (backend, frontend e infra del frontend, con los scripts). Incluye todo lo acumulado: D-26, D-27, H-16, H-17, Actividades 4 y 5 (D-29 a D-32), el resguardo del Expediente y D-34. Prueba de punta a punta en prod: 29 de 29. Verificado después: el stack tiene 470 recursos, el TTL de la auditoría está `ENABLED`, la alarma `evento-sospechoso-prod` en `OK`, `d30jksx91fodea.cloudfront.net` responde 301 a `https://buildandserve.cl/` y la API no acepta ese origen.
 
-**Dev: `55a6605` desde el 7 de noviembre de 2026**, backend y frontend, prueba de punta a punta 28 de 28. El código de las Lambdas es el mismo que en prod: entre `55a6605` y `14fa693` solo cambian un script de infra, pruebas y documentos.
+**Dev: `7696a1b` desde el 8 de noviembre de 2026** (parte 1 de la firma sin conexión: la cola ya no se pierde al caer la sesión, separada por empresa, y reintento idempotente), backend y frontend, prueba de punta a punta 28 de 28. Respecto de prod cambian el backend de firmas y vales y el frontend de la cola.
 
 **Cómo se verificó lo anterior (30 de octubre y 6 de noviembre de 2026).** Los scripts no dejan el commit escrito en AWS. El backend se identificó comparando el código del paquete de `personasModule` (`aws lambda get-function`) con el árbol `Backend/` de cada commit: prod coincide con `d750646` (paquete del 1 de octubre); dev, con `b7c3e88` (paquete del 15 de octubre a las 17:07, `UpdateStack` de Benjamin; `93b9a00` tiene el mismo código). El frontend, por la fecha de `index.html` en el bucket y por textos que solo existen desde ciertos commits: prod no tiene los de D-27 ni del footer nuevo; dev tiene los de `6aa53d1` y no los de `b3cb99c` (publicado por Benjamin el 23 de octubre, invalidación a las 10:33, 97 segundos después del commit: a confirmar que fue con el script).
 
@@ -48,6 +48,7 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
 7. **Los mensajes pegados en la conversación son de la persona responsable:** se actúa sin pedir reconfirmación.
 8. **Pruebas:**
    - Todo cambio lleva pruebas, y se comprueba que fallen al sabotear lo que protegen: se aplica un cambio que rompe la garantía, se corre la prueba y se restaura.
+   - **Los sabotajes se hacen en una copia aparte** (un `git worktree` o una carpeta temporal con los archivos copiados), **nunca sobre el árbol con cambios sin commitear**, y los scripts corren con `bash` explícito. Motivo: el 7 de noviembre de 2026 un script de sabotaje corrido en zsh no separó la lista de archivos (`$F`), las copias de respaldo no se hicieron y los 12 sabotajes quedaron acumulados sobre la parte 1 de la firma sin conexión, sin commitear. Se revirtieron a mano.
    - `npm test` en `Backend/` no puede tocar AWS: `tests/sin-aws.js` lo impide.
    - El frontend tiene que pasar `tsc -b`, porque `npm run build` lo corre y sin eso no se puede publicar.
 9. **Español en todo** (código, textos y documentos) y sin emojis.

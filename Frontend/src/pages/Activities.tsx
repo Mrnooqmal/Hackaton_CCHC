@@ -391,7 +391,7 @@ export default function Activities() {
         // guardada: antes se avanzaba igual y, sin vales, la pantalla daba la
         // firma por tomada sin haberla guardado.
         if (!navigator.onLine) {
-            const resultado = await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin);
+            const resultado = await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin, selectedActivity.obraId || null);
             if (!resultado.success) {
                 setSignatureError(resultado.error || 'No se pudo guardar la firma en este equipo.');
                 return;
@@ -415,7 +415,12 @@ export default function Activities() {
         // Error de red → cae a offline para este trabajador.
         const errMsg = (response.error || '').toLowerCase();
         if (errMsg.includes('fetch') || errMsg.includes('network')) {
-            await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin);
+            // Igual que sin red: solo se avanza si la firma quedó guardada.
+            const resultado = await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin, selectedActivity.obraId || null);
+            if (!resultado.success) {
+                setSignatureError(resultado.error || 'No se pudo guardar la firma en este equipo.');
+                return;
+            }
             advanceSigning(1, 0);
             return;
         }
@@ -594,7 +599,8 @@ export default function Activities() {
                 selfSignActivity.titulo,
                 user.personaId,
                 user.nombre || 'Trabajador',
-                pin
+                pin,
+                selfSignActivity.obraId || null,
             );
 
             if (result.success) {

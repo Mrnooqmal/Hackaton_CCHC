@@ -56,8 +56,15 @@ const VALES_TABLE = process.env.VALES_TABLE || 'ValesFirma';
 /** Vigencia de un vale: un turno. */
 const VIGENCIA_HORAS = 12;
 
-/** Cuántos vales se emiten por solicitud (una firma consume uno). */
+/** Tope de vales por solicitud (una firma consume uno). */
 const MAX_POR_SOLICITUD = 20;
+
+/**
+ * Cuántos se emiten si no se pide otra cantidad: un turno de terreno firma pocas
+ * cosas (la charla, una entrega de EPP, alguna encuesta), y menos vales en el
+ * equipo es menos lo que puede usar quien lo tome.
+ */
+const VALES_POR_TURNO = 5;
 
 /**
  * Hasta cuándo se acepta un vale vencido, mandando la firma a revisión. Después
@@ -75,6 +82,7 @@ const MOTIVOS = {
     NO_EXISTE: 'no_existe',
     OTRA_PERSONA: 'otra_persona',
     OTRA_EMPRESA: 'otra_empresa',
+    OTRA_OBRA: 'otra_obra',
     YA_USADO: 'ya_usado',
     DEMASIADO_VIEJO: 'demasiado_viejo',
     REVOCADO: 'revocado',
@@ -87,8 +95,12 @@ class ValeFirmaService {
      * @returns {Promise<{vales: string[], expiraEn: string}>} los vales EN CLARO.
      *          Es la única vez que existen fuera del dispositivo: no se guardan.
      */
-    static async emitir({ personaId, tenantId, cantidad = 10, deviceId = null, emitidoPor = null }) {
-        const n = Math.min(Math.max(Number(cantidad) || 1, 1), MAX_POR_SOLICITUD);
+    static async emitir({ personaId, tenantId, obraId, cantidad = VALES_POR_TURNO, deviceId = null, emitidoPor = null }) {
+        // El vale queda atado a la persona y a la obra del turno (no a cada
+        // documento o actividad, para que una charla armada en terreno también se
+        // pueda firmar). Sin obra no se emite.
+        if (!obraId) throw new Error('Falta la obra del turno para emitir vales');
+        const n = Math.min(Math.max(Number(cantidad) || VALES_POR_TURNO, 1), MAX_POR_SOLICITUD);
         const ahora = new Date();
         const expira = new Date(ahora.getTime() + VIGENCIA_HORAS * 60 * 60 * 1000);
 
@@ -102,6 +114,7 @@ class ValeFirmaService {
                     valeHash: hashVale(vale),
                     personaId,
                     tenantId,
+                    obraId,
                     // Traza, no condición (ver el encabezado).
                     deviceIdEmision: deviceId || null,
                     emitidoPor: emitidoPor || personaId,
@@ -127,7 +140,7 @@ class ValeFirmaService {
      *
      * @returns {Promise<{ok: boolean, motivo?: string, vale?: object, vencido?: boolean}>}
      */
-    static async consumir({ vale, personaId, tenantId = null, deviceId = null, idFirmaLocal = null }) {
+    static async consumir({ vale, personaId, tenantId = null, obraId = null, deviceId = null, idFirmaLocal = null }) {
         if (!vale) return { ok: false, motivo: MOTIVOS.NO_EXISTE };
 
         // Lectura directa por clave primaria, y consistente.
@@ -152,6 +165,10 @@ class ValeFirmaService {
         // empresa, nunca una de otra: el vale tiene que ser de la empresa de lo
         // que se firma.
         if (tenantId && registro.tenantId !== tenantId) return { ok: false, motivo: MOTIVOS.OTRA_EMPRESA };
+        // El vale de la obra X sirve para lo de la obra X y para lo que no tiene
+        // obra (los documentos de empresa, como el Reglamento Interno). Un vale
+        // sin obra no se acepta: desde que se exige al emitir, no debería existir.
+        if (!registro.obraId || (obraId && registro.obraId !== obraId)) return { ok: false, motivo: MOTIVOS.OTRA_OBRA };
         if (registro.revocadoEn) return { ok: false, motivo: MOTIVOS.REVOCADO };
 
         // Reintento de la MISMA firma: el vale se gastó en un intento anterior
@@ -296,6 +313,7 @@ module.exports = {
     VALES_TABLE,
     VIGENCIA_HORAS,
     MAX_POR_SOLICITUD,
+    VALES_POR_TURNO,
     VENTANA_REVISION_DIAS,
     MOTIVOS,
     hashVale,

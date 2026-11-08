@@ -27,7 +27,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { documentsApi, activitiesApi, surveysApi, signaturesApi } from '../api/client';
 import {
-    leerCola, agregarACola, quitarDeCola, guardarValesDe, tomarVale, valesDisponibles, nuevoIdFirma,
+    leerCola, agregarACola, quitarDeCola, guardarValesDe, valeParaFirma, valesDisponibles, nuevoIdFirma,
     type FirmaPendiente, type TipoFirma,
 } from '../utils/colaFirmas';
 
@@ -95,6 +95,10 @@ const isNetworkErrorResponse = (errorMsg: string): boolean => {
 const SIN_VALES = 'No hay firma sin conexión habilitada para esta persona en este equipo. '
     + 'Con señal, pídele que ingrese su PIN para habilitarla.';
 
+/** Los vales son de la obra del turno: no sirven para firmar algo de otra obra. */
+const OTRA_OBRA = 'La firma sin conexión de esta persona está habilitada para otra obra. '
+    + 'Con señal, puede habilitarla para esta obra con su PIN.';
+
 export function useOfflineSignature() {
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [syncing, setSyncing] = useState(false);
@@ -125,19 +129,21 @@ export function useOfflineSignature() {
     const habilitarSinConexion = useCallback(async (
         personaId: string,
         pin: string,
-        cantidad = 10,
+        /** Obra del turno: los vales sirven para esa obra y para lo que no tiene obra. */
+        obraId: string,
+        cantidad = 5,
     ): Promise<{ success: boolean; error?: string; expiraEn?: string }> => {
         if (!navigator.onLine) {
             return { success: false, error: 'Necesitas señal para habilitar la firma sin conexión.' };
         }
         try {
-            const res = await signaturesApi.emitirVales({ personaId, pin, cantidad, deviceId: deviceId() });
+            const res = await signaturesApi.emitirVales({ personaId, obraId, pin, cantidad, deviceId: deviceId() });
             if (!res.success || !res.data) {
                 return { success: false, error: res.error || 'No se pudo habilitar la firma sin conexión.' };
             }
             const tenantId = empresa();
             if (!tenantId) return { success: false, error: 'No hay una sesión activa en este equipo.' };
-            guardarValesDe(tenantId, { personaId, vales: res.data.vales, expiraEn: res.data.expiraEn });
+            guardarValesDe(tenantId, { personaId, obraId: res.data.obraId, vales: res.data.vales, expiraEn: res.data.expiraEn });
             return { success: true, expiraEn: res.data.expiraEn };
         } catch (error: any) {
             return { success: false, error: error?.message || 'No se pudo habilitar la firma sin conexión.' };
@@ -159,11 +165,14 @@ export function useOfflineSignature() {
         targetTitle: string,
         workerId: string,
         workerName: string,
+        /** Obra de lo que se firma (null si es de la empresa). */
+        obraId: string | null,
         surveyAnswers?: any[]
-    ): OfflinePendingSignature | null => {
+    ): { sig: OfflinePendingSignature } | { error: string } => {
         const tenantId = empresa();
-        const vale = tomarVale(tenantId, workerId);
-        if (!tenantId || !vale) return null;
+        if (!tenantId) return { error: SIN_VALES };
+        const tomado = valeParaFirma(tenantId, workerId, obraId);
+        if ('motivo' in tomado) return { error: tomado.motivo === 'otra_obra' ? OTRA_OBRA : SIN_VALES };
 
         const sig: FirmaPendiente = {
             id: nuevoIdFirma(),
@@ -173,15 +182,15 @@ export function useOfflineSignature() {
             targetTitle,
             workerId,
             workerName,
-            vale,
+            vale: tomado.vale,
             timestamp: new Date().toISOString(),
             surveyAnswers,
         };
         // Si el equipo no pudo guardarla (almacenamiento lleno), no se da por
         // tomada: quien firma tiene que saberlo en el momento.
-        if (!agregarACola(sig)) return null;
+        if (!agregarACola(sig)) return { error: 'No se pudo guardar la firma en este equipo: el almacenamiento está lleno.' };
         refreshPendingCount();
-        return sig;
+        return { sig };
     }, [refreshPendingCount]);
 
     /** Guarda la firma para sincronizar, o explica por qué no se puede. */
@@ -191,10 +200,11 @@ export function useOfflineSignature() {
         targetTitle: string,
         workerId: string,
         workerName: string,
+        obraId: string | null,
         surveyAnswers?: any[]
     ): { success: boolean; offline: boolean; error?: string } => {
-        const sig = createOfflineSignature(type, targetId, targetTitle, workerId, workerName, surveyAnswers);
-        if (!sig) return { success: false, offline: true, error: SIN_VALES };
+        const r = createOfflineSignature(type, targetId, targetTitle, workerId, workerName, obraId, surveyAnswers);
+        if ('error' in r) return { success: false, offline: true, error: r.error };
         return { success: true, offline: true };
     }, [createOfflineSignature]);
 
@@ -203,10 +213,11 @@ export function useOfflineSignature() {
         documentTitle: string,
         workerId: string,
         workerName: string,
-        pin: string
+        pin: string,
+        obraId: string | null = null,
     ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
         if (!navigator.onLine) {
-            return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName);
+            return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId);
         }
 
         try {
@@ -221,13 +232,13 @@ export function useOfflineSignature() {
             }
 
             if (isNetworkErrorResponse(response.error || '')) {
-                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName);
+                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId);
             }
 
             return { success: false, offline: false, error: response.error };
         } catch (error: any) {
             if (isNetworkError(error)) {
-                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName);
+                return guardarParaDespues('documento', documentId, documentTitle, workerId, workerName, obraId);
             }
             return { success: false, offline: false, error: error.message || 'Error desconocido' };
         }
@@ -238,10 +249,11 @@ export function useOfflineSignature() {
         activityTitle: string,
         workerId: string,
         workerName: string,
-        pin: string
+        pin: string,
+        obraId: string | null = null,
     ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
         if (!navigator.onLine) {
-            return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName);
+            return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId);
         }
 
         try {
@@ -256,13 +268,13 @@ export function useOfflineSignature() {
             }
 
             if (isNetworkErrorResponse(response.error || '')) {
-                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName);
+                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId);
             }
 
             return { success: false, offline: false, error: response.error };
         } catch (error: any) {
             if (isNetworkError(error)) {
-                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName);
+                return guardarParaDespues('actividad', activityId, activityTitle, workerId, workerName, obraId);
             }
             return { success: false, offline: false, error: error.message || 'Error desconocido' };
         }
@@ -274,10 +286,11 @@ export function useOfflineSignature() {
         workerId: string,
         workerName: string,
         responses: any[],
-        pin: string
+        pin: string,
+        obraId: string | null = null,
     ): Promise<{ success: boolean; offline: boolean; error?: string }> => {
         if (!navigator.onLine) {
-            return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, responses);
+            return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, responses);
         }
 
         try {
@@ -292,13 +305,13 @@ export function useOfflineSignature() {
             }
 
             if (isNetworkErrorResponse(response.error || '')) {
-                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, responses);
+                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, responses);
             }
 
             return { success: false, offline: false, error: response.error };
         } catch (error: any) {
             if (isNetworkError(error)) {
-                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, responses);
+                return guardarParaDespues('encuesta', surveyId, surveyTitle, workerId, workerName, obraId, responses);
             }
             return { success: false, offline: false, error: error.message || 'Error desconocido' };
         }

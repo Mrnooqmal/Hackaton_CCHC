@@ -73,6 +73,8 @@ export interface Survey {
     updatedAt?: string;
     /** La Ficha Básica de Salud: sus respuestas son datos de salud. */
     esFichaSalud?: boolean;
+    /** Obra de la encuesta; null si es de la empresa. Ata el vale de firma sin conexión. */
+    obraId?: string | null;
 }
 
 /** Lo que el listado dice de cada encuesta, para quien la mira. */

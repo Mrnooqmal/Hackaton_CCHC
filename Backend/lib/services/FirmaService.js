@@ -175,6 +175,8 @@ class FirmaService {
                 personaId: persona.personaId,
                 // La empresa de lo que se firma: un vale de otra empresa no entra.
                 tenantId: tenantId || persona.tenantId,
+                // La obra de lo que se firma (null si es de la empresa).
+                obraId: obraId || null,
                 deviceId: credencial.deviceId || null,
                 // Identifica la firma en el equipo: un reintento de la misma
                 // firma no se rechaza por "ya usado" (ver ValeFirmaService).
@@ -185,6 +187,7 @@ class FirmaService {
                     [MOTIVOS.NO_EXISTE]: 'El vale de firma no es válido.',
                     [MOTIVOS.OTRA_PERSONA]: 'El vale de firma no es válido.',
                     [MOTIVOS.OTRA_EMPRESA]: 'El vale de firma no es válido.',
+                    [MOTIVOS.OTRA_OBRA]: 'Este vale de firma es de otra obra.',
                     [MOTIVOS.YA_USADO]: 'Este vale de firma ya se usó.',
                     [MOTIVOS.DEMASIADO_VIEJO]: 'El vale de firma venció hace demasiado tiempo y ya no puede sincronizarse.',
                     [MOTIVOS.REVOCADO]: 'El vale de firma se anuló porque el PIN de esta persona se restableció. Debe firmar de nuevo con su PIN nuevo.',
