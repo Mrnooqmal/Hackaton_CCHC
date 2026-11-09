@@ -720,7 +720,7 @@ module.exports.list = async (event) => {
         );
 
         return success({
-            activities: await descifrarActividadesDeTenant(activities, tenantId),
+            activities: (await descifrarActividadesDeTenant(activities, tenantId)).map((a) => vistaActividad(a, ses.sesion)),
             types: ACTIVITY_TYPES,
             capacitacionSubtipos: CAPACITACION_SUBTIPOS,
         });
@@ -728,6 +728,27 @@ module.exports.list = async (event) => {
         console.error('Error listing activities:', err);
         return error(err.message, 500);
     }
+};
+
+/**
+ * Lo que ve de los OTROS asistentes quien no organiza actividades ni gestiona
+ * personal (fila 7.5, 8 de noviembre de 2026). `actividades.ver` lo tiene
+ * también el trabajador, y recibía de cada actividad de la empresa el RUT de
+ * todos los asistentes y del relator. Para firmar la suya y ver cuántas firmas
+ * hay le basta saber quién está: su propia entrada completa, de las demás el
+ * identificador.
+ */
+const veAsistentes = (sesion) => sesionPuede(sesion, PERMISSIONS.ACTIVIDADES_CREAR) || sesionPuede(sesion, PERMISSIONS.PERSONAS_DETALLE);
+const vistaActividad = (act, sesion) => {
+    if (!act || veAsistentes(sesion)) return act;
+    const propia = (x) => x && x.personaId === sesion.personaId;
+    return {
+        ...act,
+        ...(Array.isArray(act.asistentes) ? { asistentes: act.asistentes.map((a) => (propia(a) ? a : { personaId: a?.personaId })) } : {}),
+        ...(act.firmaRelator && !propia(act.firmaRelator) ? {
+            firmaRelator: { personaId: act.firmaRelator.personaId, nombre: act.firmaRelator.nombre, timestamp: act.firmaRelator.timestamp },
+        } : {}),
+    };
 };
 
 /**
@@ -749,7 +770,7 @@ module.exports.get = async (event) => {
             return error('Actividad no encontrada', 404);
         }
 
-        return success(await descifrarActividadDeTenant(actividad, ses.sesion.tenantId));
+        return success(vistaActividad(await descifrarActividadDeTenant(actividad, ses.sesion.tenantId), ses.sesion));
     } catch (err) {
         console.error('Error getting activity:', err);
         return error(err.message, 500);

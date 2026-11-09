@@ -38,6 +38,18 @@ const incidenteDelTenant = async (incidentId, sesion) => {
     return item && item.tenantId === sesion.tenantId ? item : null;
 };
 
+/**
+ * Quién lee qué incidentes (fila 7.5, 8 de noviembre de 2026).
+ *
+ * `GET /incidents` y `GET /incidents/{id}` solo exigían sesión: un trabajador
+ * recibía todos los incidentes de la empresa, con el nombre del afectado, el
+ * relato, la gravedad y los días perdidos, y en la ficha además el RUT y las
+ * lesiones. La pantalla ya escondía el historial sin `incidentes.historial`;
+ * la API no. Ahora, sin ese permiso, cada persona lee solo lo que reportó.
+ */
+const veHistorial = (sesion) => sesionPuede(sesion, PERMISSIONS.INCIDENTES_HISTORIAL);
+const puedeLeer = (incidente, sesion) => Boolean(incidente) && (veHistorial(sesion) || incidente.reportadoPor === sesion.personaId);
+
 /** Error 404 uniforme para lo que no es de la empresa de la sesión. */
 const noEncontrado = () => jsonResponse({ success: false, error: 'Incidente no encontrado' }, 404);
 const sinPermiso = (mensaje) => jsonResponse({ success: false, error: mensaje }, 403);
@@ -220,13 +232,14 @@ async function list(request) {
         if (!ses.ok) return ses.respuesta;
         const { obraId, tipo, estado, fechaInicio, fechaFin } = request.query || {};
         const tenantId = ses.sesion.tenantId;
-        const { items, total } = await incidentsRepo.list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin });
+        const { items: todos } = await incidentsRepo.list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin });
+        const items = veHistorial(ses.sesion) ? todos : todos.filter((i) => i.reportadoPor === ses.sesion.personaId);
 
         // Return in format expected by frontend: data is the array, total is top-level
         return jsonResponse({
             success: true,
             data: items,
-            total
+            total: items.length
         });
     } catch (err) {
         console.error('Error in list incidents:', err);
@@ -238,7 +251,8 @@ async function get(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        // El mismo 404 que si no existiera: sin permiso, ni saber que está.
+        if (!puedeLeer(await incidenteDelTenant(request.params.id, ses.sesion), ses.sesion)) return noEncontrado();
         const result = await incidentsRepo.get(request.params.id);
         return jsonResponse(result);
     } catch (err) {
@@ -427,7 +441,7 @@ async function getDocuments(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        if (!puedeLeer(await incidenteDelTenant(request.params.id, ses.sesion), ses.sesion)) return noEncontrado();
         const result = await incidentsRepo.getDocuments(request.params.id);
         return jsonResponse(result);
     } catch (err) {

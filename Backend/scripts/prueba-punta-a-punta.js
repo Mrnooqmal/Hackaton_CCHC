@@ -166,6 +166,19 @@ async function recorrer(c, empresa, personasCreadas) {
     // El historial de firmas de otra persona es parte de su ficha (H-17).
     const historialAjeno = await c.pedir('GET', `/signature-requests/history/${empresa.adminPersonaId}`, { token: tokenTrabajadora });
     comprobar('trabajadora: no ve el historial de firmas de otra persona (404)', historialAjeno.status === 404, resumen(historialAjeno));
+    // Minimización (fila 7.5): la ficha ajena, la búsqueda por RUT, los
+    // destinatarios de la bandeja y los incidentes, sin datos de otros.
+    const fichaAjena = await c.pedir('GET', `/personas/${empresa.adminPersonaId}`, { token: tokenTrabajadora });
+    comprobar('trabajadora: la ficha de otra persona llega como en el listado (sin RUT ni correo)',
+        fichaAjena.status === 200 && !('rut' in (fichaAjena.cuerpo?.data || {})) && !('email' in (fichaAjena.cuerpo?.data || {})), resumen(fichaAjena));
+    const validar = await c.pedir('GET', '/personas/validate?rut=11.111.111-1', { token: tokenTrabajadora });
+    comprobar('trabajadora: no consulta si un RUT está registrado (403)', validar.status === 403, resumen(validar));
+    const destinatarios = await c.pedir('GET', '/inbox/recipients', { token: tokenTrabajadora });
+    comprobar('trabajadora: los destinatarios de la bandeja llegan sin correo ni RUT',
+        destinatarios.status === 200 && (destinatarios.cuerpo?.data?.recipients || []).every((r) => !('email' in r) && !('rut' in r)), resumen(destinatarios));
+    const incidentesAjenos = await c.pedir('GET', '/incidents', { token: tokenTrabajadora });
+    comprobar('trabajadora: sin historial de incidentes, solo ve lo que reportó (nada)',
+        incidentesAjenos.status === 200 && (incidentesAjenos.cuerpo?.data || []).length === 0, resumen(incidentesAjenos));
     const altaAjena = await c.pedir('POST', '/personas', {
         token: tokenTrabajadora,
         cuerpo: { rut: desechable.rutAlAzar(10_000_000, 25_000_000), nombre: 'No', rol: 'trabajador' },

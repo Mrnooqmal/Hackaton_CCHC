@@ -83,6 +83,43 @@ const PERMISOS_SUBIR_DOC = [
 const puedeSubir = (sesion) => PERMISOS_SUBIR_DOC.some((p) => sesionPuede(sesion, p));
 
 /**
+ * Lo que ve de las asignaciones y firmas de OTRAS personas quien no gestiona
+ * documentos ni personal (fila 7.5, 8 de noviembre de 2026).
+ *
+ * `GET /documents` y `GET /documents/{id}` solo exigen sesión: un trabajador
+ * recibía, de cada documento de la empresa, el RUT y la IP de todos los que lo
+ * firmaron. Para firmar lo suyo y ver su cumplimiento le basta su propia
+ * asignación y su propia firma; de las demás, solo que existen y su estado.
+ * Quien tiene `repositorio.ver` o `personas.detalle` ve todo, como antes.
+ *
+ * El PDF firmado sí lleva el anexo con el RUT de cada firmante: es el documento
+ * legal, el mismo para todos los que lo firman (ver `downloadSigned`).
+ */
+const veFirmantes = (sesion) => sesionPuede(sesion, PERMISSIONS.REPOSITORIO_VER) || sesionPuede(sesion, PERMISSIONS.PERSONAS_DETALLE);
+const vistaDocumento = (doc, sesion) => {
+    if (!doc || veFirmantes(sesion)) return doc;
+    const propia = (x) => x && x.personaId === sesion.personaId;
+    return {
+        ...doc,
+        ...(Array.isArray(doc.asignaciones) ? {
+            asignaciones: doc.asignaciones.map((a) => (propia(a) ? a : { personaId: a?.personaId, estado: a?.estado })),
+        } : {}),
+        ...(Array.isArray(doc.firmas) ? {
+            firmas: doc.firmas.map((f) => (propia(f) ? f : { personaId: f?.personaId, tipoFirma: f?.tipoFirma, timestamp: f?.timestamp })),
+        } : {}),
+        // Las versiones anteriores archivan sus firmas y asignaciones, con los
+        // mismos datos: de cada versión queda todo menos esos arreglos.
+        ...(Array.isArray(doc.versiones) ? {
+            versiones: doc.versiones.map((v) => {
+                if (!v || typeof v !== 'object') return v;
+                const { firmasArchivadas, asignacionesArchivadas, firmas, asignaciones, ...resto } = v;
+                return resto;
+            }),
+        } : {}),
+    };
+};
+
+/**
  * Documento de la empresa de la sesión, o null.
  *
  * `DocumentsTable` está indexada por `documentId` a secas: leer o escribir con el
@@ -432,7 +469,7 @@ module.exports.list = conAuditoriaSalud(async (event) => {
         anotarDocumentosSalud(documents);
 
         return success({
-            documents: await descifrarDocumentosDeTenant(documents, tenantId),
+            documents: (await descifrarDocumentosDeTenant(documents, tenantId)).map((d) => vistaDocumento(d, sesion)),
             types: DOCUMENT_TYPES,
         });
     } catch (err) {
@@ -464,7 +501,7 @@ module.exports.get = conAuditoriaSalud(async (event) => {
         }
         anotarDocumentosSalud([doc]);
 
-        return success(await descifrarDocumentoDeTenant(doc, sesion.tenantId));
+        return success(vistaDocumento(await descifrarDocumentoDeTenant(doc, sesion.tenantId), sesion));
     } catch (err) {
         console.error('Error getting document:', err);
         return error(err.message, 500);
