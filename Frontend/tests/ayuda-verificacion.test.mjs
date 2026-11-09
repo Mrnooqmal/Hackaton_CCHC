@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-    anclasEnCodigo, calcularHuellas, huellaDe, pendienteNormativa, revisarHuellas, revisarManual, rutasDeApp, verificarRegistro,
+    anclasEnCodigo, calcularHuellas, huellaDe, pendienteNormativa, revisarHuellas, revisarManual, rutasDeApp, sepublica, verificarRegistro,
 } from '../scripts/verificar-recorridos.mjs';
 
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
@@ -91,19 +91,29 @@ test('un recorrido nuevo o uno borrado piden actualizar huellas, sin bloquear', 
 
 test('manual: un "Ver recorrido" a un recorrido que no existe rompe el build', () => {
     const paginas = [{ slug: 'terreno/firmar.md', texto: 'Ver [aquí](recorrido:firmas-intro) y [allá](recorrido:no-existe).' }];
-    assert.deepEqual(revisarManual({ paginas, idsRecorridos: ['firmas-intro'], ambiente: 'dev' }),
+    assert.deepEqual(revisarManual({ paginas, idsRecorridos: ['firmas-intro'] }),
         ['manual terreno/firmar.md: "Ver recorrido" nombra un recorrido que no existe: no-existe.']);
 });
 
-test('manual: una página pendiente de revisión normativa no pasa en prod ni sin ambiente; en dev sí', () => {
+test('manual: una página pendiente de revisión normativa no se publica en prod ni sin ambiente, y no rompe el build; en dev sí se publica', () => {
     const pendiente = '---\nrevision: pendiente-normativa\n---\n# FUF\n';
     assert.equal(pendienteNormativa(pendiente), true);
     assert.equal(pendienteNormativa('# FUF\n\nrevision: pendiente-normativa\n'), false, 'solo cuenta en el frontmatter');
     assert.equal(pendienteNormativa('---\nrevision: lista\n---\n# FUF\n'), false);
-    const paginas = [{ slug: 'fuf/index.md', texto: pendiente }];
-    assert.equal(revisarManual({ paginas, idsRecorridos: [], ambiente: 'prod' }).length, 1);
-    assert.equal(revisarManual({ paginas, idsRecorridos: [], ambiente: undefined }).length, 1);
-    assert.deepEqual(revisarManual({ paginas, idsRecorridos: [], ambiente: 'dev' }), []);
+    assert.equal(sepublica(pendiente, 'prod'), false);
+    assert.equal(sepublica(pendiente, undefined), false);
+    assert.equal(sepublica(pendiente, 'dev'), true);
+    assert.equal(sepublica('# Firmar\n', 'prod'), true);
+    assert.deepEqual(revisarManual({ paginas: [{ slug: 'fuf/index.md', texto: pendiente }], idsRecorridos: [] }), [], 'ya no rompe el build');
+});
+
+test('el script real pasa también en prod: FUF queda fuera y nada del registro ni de los recorridos lleva a ella', () => {
+    for (const ambiente of ['prod', undefined]) {
+        const env = { ...process.env };
+        if (ambiente === undefined) delete env.VITE_AMBIENTE; else env.VITE_AMBIENTE = ambiente;
+        const r = spawnSync(process.execPath, ['scripts/verificar-recorridos.mjs'], { cwd: RAIZ, encoding: 'utf8', env });
+        assert.equal(r.status, 0, `${ambiente}: ${r.stderr}`);
+    }
 });
 
 test('el script real pasa sobre el proyecto tal como está (en dev)', () => {

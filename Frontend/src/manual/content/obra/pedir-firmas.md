@@ -29,6 +29,31 @@ abre la firma en **su** equipo y le pasa el teléfono a la persona:
    ![Firma asistida: la persona escribe su PIN](/img/firmas/firma-asistida-pin.png)
 
 Queda registrado que la persona declaró haber leído el documento antes de firmar.
+
+### Sin señal en terreno
+
+La firma asistida también funciona **sin señal**. Cada persona escribe su propio PIN como
+siempre; la firma queda guardada en tu equipo y **se envía sola cuando vuelve la señal**. Arriba
+de la pantalla ves cuántas quedan por enviar, por ejemplo *5 firmas por enviar*.
+
+- Si la persona **ya escribió su PIN con señal en tu equipo**, un error de tipeo se detecta al
+  momento y lo corrige ahí mismo.
+- Si no, su PIN se revisa **cuando vuelve la señal**. Si estaba mal, aparece un aviso con su
+  nombre y lo que firmaba: *la firma no se validó, tiene que firmar de nuevo*. Pídele que vuelva
+  a firmar; con **Entendido** cierras el aviso.
+
+Para que los errores de tipeo se detecten al momento en terreno, antes de salir puedes abrir
+**Preparar cuadrilla sin señal** (en el menú lateral, con la obra elegida) y pedirle a cada
+persona que escriba ahí su PIN con señal. Es opcional: sin ese paso se firma igual.
+::::
+
+:::: solo firmas.crear
+## Firmas en revisión
+
+Una firma tomada sin señal que llega **mucho después** de firmarse, o después de que la persona
+dejó la empresa, no cuenta como cumplimiento de inmediato: queda en **Firmas en revisión** (en el
+menú lateral). Ahí ves quién firmó, qué y cuándo, y la **confirmas** o la **rechazas** con un
+motivo. Si no hay ninguna, verás **No hay firmas en revisión**.
 ::::
 
 ## Firma del relator

@@ -10,10 +10,12 @@
 //   5. Si cambió el contenido de un recorrido, subió su versión, y
 //      `src/ayuda/huellas.json` está al día.
 //   6. Manual: cada enlace "Ver recorrido" (`recorrido:<id>`) nombra un
-//      recorrido que existe, y en prod no se publica una página marcada
-//      `revision: pendiente-normativa` (la sección FUF y DS 44 espera revisión).
-//      El ambiente es VITE_AMBIENTE, como con los borradores: sin la variable,
-//      prod.
+//      recorrido que existe.
+//   7. En prod, una página marcada `revision: pendiente-normativa` (la sección
+//      FUF y DS 44 espera revisión) no se publica (vite-manual-pendiente.ts),
+//      así que cuenta como inexistente: ni el registro ni un recorrido pueden
+//      llevar a ella. El ambiente es VITE_AMBIENTE, como con los borradores:
+//      sin la variable, prod.
 //
 //   node scripts/verificar-recorridos.mjs                       verifica
 //   node scripts/verificar-recorridos.mjs --actualizar-huellas  verifica y reescribe huellas.json
@@ -25,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { paginaDeArchivo, pendienteNormativa } from '../src/manual/publicacion.ts';
 
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
 const SRC = join(RAIZ, 'src');
@@ -121,22 +124,22 @@ export function verificarRegistro({ pantallas, anclas, rutasApp, manual, usos, a
     return errores;
 }
 
-/** Frontmatter `revision: pendiente-normativa` al comienzo de una página. */
-export const pendienteNormativa = (texto) => /^---\r?\n(?:[\s\S]*?\r?\n)?revision:\s*pendiente-normativa\s*\r?\n[\s\S]*?---/.test(texto);
+/** Frontmatter `revision: pendiente-normativa` (src/manual/publicacion.ts). */
+export { pendienteNormativa };
+
+/** Si una página se publica en el ambiente: en prod, no las pendientes de revisión normativa. */
+export const sepublica = (texto, ambiente) => ambiente === 'dev' || !pendienteNormativa(texto);
 
 /**
  * Revisión del manual. `paginas`: [{ slug, texto }]. `idsRecorridos`: los que
- * existen. `ambiente`: VITE_AMBIENTE.
+ * existen.
  */
-export function revisarManual({ paginas, idsRecorridos, ambiente }) {
+export function revisarManual({ paginas, idsRecorridos }) {
     const errores = [];
     const existen = new Set(idsRecorridos);
     for (const { slug, texto } of paginas) {
         for (const m of texto.matchAll(/\]\(recorrido:([^)\s]*)\)/g)) {
             if (!existen.has(m[1])) errores.push(`manual ${slug}: "Ver recorrido" nombra un recorrido que no existe: ${m[1]}.`);
-        }
-        if (ambiente !== 'dev' && pendienteNormativa(texto)) {
-            errores.push(`manual ${slug}: está pendiente de revisión normativa y no se publica en prod. Quita la marca (revision: pendiente-normativa y el aviso) cuando esté revisada.`);
         }
     }
     return errores;
@@ -150,9 +153,12 @@ const archivos = (dir, exts) => readdirSync(dir, { withFileTypes: true }).flatMa
     return exts.some((x) => d.name.endsWith(x)) ? [p] : [];
 });
 
-const paginasDelManual = () => {
+/** Páginas del manual que se publican en el ambiente (las pendientes de revisión, solo en dev). */
+const paginasDelManual = (ambiente) => {
     const base = join(SRC, 'manual', 'content');
-    return new Set(archivos(base, ['.md']).map((f) => relative(base, f).split(sep).join('/').replace(/\.md$/, '').replace(/\/index$/, '')));
+    return new Set(archivos(base, ['.md'])
+        .filter((f) => sepublica(readFileSync(f, 'utf8'), ambiente))
+        .map((f) => paginaDeArchivo(relative(base, f).split(sep).join('/'))));
 };
 
 async function principal() {
@@ -162,7 +168,7 @@ async function principal() {
     const { validarRecorridos } = await import('../src/ayuda/validacion.ts');
     const { PERMISSIONS } = await import('../src/permissions.ts');
 
-    const manual = paginasDelManual();
+    const manual = paginasDelManual(process.env.VITE_AMBIENTE);
     const anclas = todasLasAnclas();
     const codigo = archivos(SRC, ['.ts', '.tsx']).map((f) => ({ ruta: relative(RAIZ, f).split(sep).join('/'), texto: readFileSync(f, 'utf8') }));
     const { usos, aMano } = anclasEnCodigo(codigo);
@@ -186,7 +192,6 @@ async function principal() {
     errores.push(...revisarManual({
         paginas: archivos(base, ['.md']).map((f) => ({ slug: relative(base, f).split(sep).join('/'), texto: readFileSync(f, 'utf8') })),
         idsRecorridos: RECORRIDOS.map((d) => d.id),
-        ambiente: process.env.VITE_AMBIENTE,
     }));
     if (!actualizar) errores.push(...desactualizadas.map((e) => `${e} Corre npm run recorridos:huellas.`));
 

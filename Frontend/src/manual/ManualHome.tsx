@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import Callout from './Callout';
+import { existePagina } from './content';
 import { permisoDePagina } from './manualNav';
 import { useFiltroManual } from './filtro';
 
@@ -82,8 +83,9 @@ export default function ManualHome() {
                     <p>
                         La validez jurídica del PIN como firma electrónica está en consulta. La firma
                         funciona y deja trazabilidad completa, pero <strong>no debe usarse como única
-                        prueba legal</strong> hasta tener respuesta oficial. Ver{' '}
-                        <Link to="/manual/fuf/firmas">Firmas</Link>.
+                        prueba legal</strong> hasta tener respuesta oficial.
+                        {/* FUF no se publica en prod mientras espera la revisión normativa. */}
+                        {existePagina('fuf/firmas') && <> Ver <Link to="/manual/fuf/firmas">Firmas</Link>.</>}
                     </p>
                 </Callout>
             </section>

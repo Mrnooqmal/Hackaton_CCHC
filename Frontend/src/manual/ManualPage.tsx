@@ -7,7 +7,9 @@ import rehypeSlug from 'rehype-slug';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 import Callout from './Callout';
 import { normalizeVitepressContainers, remarkCalloutData } from './remarkCallout';
-import type { ManualDoc } from './content';
+import { existePagina, type ManualDoc } from './content';
+import { resolverEnlace } from './publicacion';
+import { destinoDe } from './redirecciones';
 import { useRecorridos } from '../ayuda/contexto';
 
 /** `recorrido:<id>` pasa tal cual; todo lo demás, con la limpieza de siempre (sin `javascript:`). */
@@ -28,24 +30,20 @@ function EnlaceRecorrido({ id, children }: { id: string; children: ReactNode }) 
     return destino ? <Link to={destino} className="manual-ver-recorrido">{children}</Link> : null;
 }
 
-/** Reescribe los enlaces del manual a rutas SPA (/manual/...) o externas. */
+/**
+ * Reescribe los enlaces del manual a rutas SPA (/manual/...) o externas. Un
+ * enlace a una página que no se publica en este build (pendiente de revisión
+ * normativa, en prod) queda como texto: nunca un enlace roto.
+ */
 function MdLink({ href = '', children }: ComponentPropsWithoutRef<'a'>) {
-    const url = String(href);
-
-    if (url.startsWith('recorrido:')) return <EnlaceRecorrido id={url.slice('recorrido:'.length)}>{children}</EnlaceRecorrido>;
-
-    if (/^(https?:|mailto:|tel:)/.test(url)) {
-        return <a href={url} target="_blank" rel="noopener noreferrer">{children}</a>;
+    const e = resolverEnlace(String(href), existePagina, destinoDe);
+    switch (e.tipo) {
+        case 'recorrido': return <EnlaceRecorrido id={e.url.slice('recorrido:'.length)}>{children}</EnlaceRecorrido>;
+        case 'externo': return <a href={e.url} target="_blank" rel="noopener noreferrer">{children}</a>;
+        case 'ancla': return <a href={e.url}>{children}</a>; // ancla en la misma página
+        case 'interno': return <Link to={e.to}>{children}</Link>;
+        case 'texto': return <>{children}</>;
     }
-    if (url.startsWith('#')) {
-        return <a href={url}>{children}</a>; // ancla en la misma página
-    }
-
-    // Enlaces internos del manual (root-relativos: /modulos/x, /ds44/x…).
-    let to = url.replace(/\.(md|html)(?=$|#)/, '');
-    if (!to.startsWith('/')) to = '/' + to;
-    to = '/manual' + to;
-    return <Link to={to}>{children}</Link>;
 }
 
 /** Imágenes del manual: las capturas viven en public/manual-img (antes /img). */

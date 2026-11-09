@@ -1,57 +1,46 @@
 {
   "cambiar-de-obra": {
     "version": 1,
-    "huella": "4d61a7e5c5f3977f72ccf6a033d99b91b28d944cecfc35d99af4264c83312a9c",
-    "borrador": true
+    "huella": "8e9e751eaf7ef72f086619cb1f583d4ece6f495b02daa0f4aba58a06c97c8f46"
   },
   "cumplimiento-obra": {
     "version": 1,
-    "huella": "8f423d05459a32965dda74f166c2aa570b0294a72e2274c016973c08f2c9fe09",
-    "borrador": true
+    "huella": "70336f7316afa260065b2b1dfd99f58a837c50269bd4c448b8171b0473072a45"
   },
   "encontrar-documentos": {
     "version": 1,
-    "huella": "2ff80ed99a7f059e5f7611f40c13258c67e62484b222d51fdf9094e3b1347abe",
-    "borrador": true
+    "huella": "fc404bd06168e1cafe041f7724da27960e75d7edd5374b5d2a6fa2a036ec047e"
   },
   "gestionar-incidentes": {
     "version": 1,
-    "huella": "f67310b5728f150f297ba8cdfc3065901c37cc599163f3f16fa789397b1300d9",
-    "borrador": true
+    "huella": "222a4b963fbdfaf7122d281e1baa06fa41cc60a8d0d3e5296c9ef20aa9daf518"
   },
   "inicio-empresa": {
     "version": 1,
-    "huella": "e43a0663fa6cc1a7dd7a81850d2985285fd2afe92982226a0a9fa9ed507811ed",
-    "borrador": true
+    "huella": "b0313bf05bb8beac839ede1168199ce786ddddb17cee71b0dd83fd9ea68e474a"
   },
   "inicio-gestion": {
     "version": 1,
-    "huella": "775cd20ff2135796d27fc7c9840c633fb2522767282d24b40da31fdccecdb3c3",
-    "borrador": true
+    "huella": "987d13cc9c467c9a8c72c94b8fa9d77920c8772266cbc06843b1c39ec91dd212"
   },
   "inicio-terreno": {
     "version": 1,
-    "huella": "18c509557a3038e1a38415b3a022444f0d82985ff2fd13b811502d4ab7174935",
-    "borrador": true
+    "huella": "83d2e47ead440c3ec734c4c68a3d76746c9443414f3ebf001c2ef9d79fad0ed6"
   },
   "mis-firmas": {
     "version": 1,
-    "huella": "2c498aa2ea61f029794ce2df3a731eea69e0937094b02183a58260b1c6bc1178",
-    "borrador": true
+    "huella": "1d3388c0ef1947bd94163b35ad821df13674f2ba559e542206e177469b06d58f"
   },
   "programar-actividades": {
     "version": 1,
-    "huella": "6192b964df7a9f3b3c14aafa1e69b8945444f14b17fac46b821d319c1bfcac93",
-    "borrador": true
+    "huella": "80567d5d972400d8ea99af8773bbe5ba9349efa6cefcb40077c935c2301b65c9"
   },
   "reportar": {
     "version": 1,
-    "huella": "b8fb4498e1f3bd1bc48d06cd7bcf58da7c1050d562efac47296f7b1963051705",
-    "borrador": true
+    "huella": "6e2d13408ae8b8f7a007aa8bde83aad6c3d28b3ad72258fee6094e55c325865e"
   },
   "subir-documentos": {
     "version": 1,
-    "huella": "9b1eddcd4bcd4ff9a694de589eee0f8a814dfedac029787cf70ebf60ef269a39",
-    "borrador": true
+    "huella": "f1d52bd05b8c95a6eb69eee1d8a0a453133e26430c5d657ea99cfdd0644d6bf5"
   }
 }

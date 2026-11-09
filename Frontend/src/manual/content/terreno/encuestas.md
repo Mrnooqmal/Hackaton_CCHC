@@ -22,7 +22,9 @@ respuestas, y puedes tocar **Actualizar respuesta** (se vuelve a firmar).
 > Las encuestas pendientes también aparecen en [Inicio](/empezar/elegir-obra) y como
 > un número junto a **Encuestas** en el menú lateral.
 
-> Para enviar la respuesta necesitas conexión, porque se firma con tu PIN.
+> Sin señal también puedes responder: la respuesta se firma con tu PIN, queda guardada en el
+> equipo y se envía sola cuando vuelve la señal. La **Ficha Básica de Salud** es la excepción:
+> se responde con señal.
 
 ## La Ficha Básica de Salud
 

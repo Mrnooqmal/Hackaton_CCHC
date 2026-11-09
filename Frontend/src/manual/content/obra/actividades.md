@@ -314,7 +314,8 @@ Está **vencida**: pasó su día sin realizarse (sin cerrarse con asistencia). E
 para regularizarla o reprogramarla.
 
 **¿La asistencia se puede firmar sin señal?**
-No por ahora: firmar requiere conexión. Ver [Firmas](/terreno/firmar#sin-conexión).
+Sí. Cada persona firma con su PIN, la firma queda guardada en el equipo y se envía sola cuando
+vuelve la señal. Ver [Firmar sin conexión](/terreno/firmar#sin-conexión).
 
 **¿Cómo programo la charla diaria que se repite todos los días?**
 Usa **Planificar mes**: un ítem de tipo *Charla 5 Minutos* con periodicidad *diaria* genera

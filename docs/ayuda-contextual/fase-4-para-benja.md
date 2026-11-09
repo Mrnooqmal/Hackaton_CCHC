@@ -28,7 +28,8 @@ Al agregar cada una, reemplaza el comentario por la imagen.
 - `roles/*`: cada página de rol es ahora una lista de tareas con enlace.
 - `fuf/index`: reescrita. Planificar, Hacer, Verificar, Actuar queda como **esquema propio de la
   plataforma**, no como estructura del decreto. **Toda la sección FUF y DS 44 espera revisión
-  normativa** (la coordina Adrean): mientras tenga la marca, el build de prod falla.
+  normativa** (la coordina Adrean): mientras tenga la marca, queda fuera del build de prod (en dev
+  se ve) y los enlaces a ella desde otras páginas se muestran como texto.
 - Introducciones cortas en las páginas que juntan contenido de varias.
 - `terreno/firmar`: sección "Firmar tu asistencia a una actividad" (antes estaba dentro de
   Actividades).
@@ -72,23 +73,27 @@ desaparece, `npm run build` falla y dice cuál quedó sin marcar. El texto que l
 `PageHeader` y `FieldSection` tienen ahora una prop opcional (`tabsAncla` y `ancla`) para esto; no
 cambia nada cuando no se usa.
 
-Los recorridos están en **borrador**: se revisan en dev con
-`/?recorrido=<id>&previa=1` (la ruta de cada uno la da `npm run recorridos:listar`). Mientras son
-borradores, sus textos se corrigen sin subir la versión.
+Los 11 recorridos se **publicaron** el 8 de noviembre de 2026, después de la revisión de Adrean
+en dev. Desde ahora, cambiar el contenido de uno exige subir su versión; uno nuevo empieza en
+borrador y se revisa en dev con `/?recorrido=<id>&previa=1` (la ruta la da
+`npm run recorridos:listar`).
 
-## Pendiente: firma sin conexión
+## Firma sin conexión
 
-La otra sesión va a implementar la **firma sin conexión con vales**, la **firma asistida de
-documentos sin red** y una pantalla **"Preparar cuadrilla sin señal"**. Cuando eso entre a
-`pruebas`, hay que actualizar:
+**Manual actualizado (8 de noviembre de 2026)** con el comportamiento final: sin señal siempre se
+firma con el PIN; si la persona ya escribió su PIN con señal en ese equipo, el error de tipeo se
+detecta al momento, y si no, se valida al volver la señal (si estaba mal, tiene que firmar de
+nuevo); las firmas se envían solas y se ve cuántas quedan. Páginas: `terreno/firmar` (Sin
+conexión), `obra/pedir-firmas` (Sin señal en terreno y Firmas en revisión) y la pregunta de
+`obra/actividades`. También el PIN de 6 dígitos en `empezar/ingresar`, `terreno/firmar`,
+`fuf/firmas` y el recorrido `mis-firmas`.
 
-- `terreno/firmar`: la sección "Sin conexión" (hoy dice, correctamente, que firmar requiere
-  conexión) y las preguntas frecuentes.
-- `obra/pedir-firmas`: la firma asistida sin red y la pantalla nueva.
-- `fuf/firmas`: "Firmar requiere conexión" (esta página espera además la revisión normativa).
-- Las capturas de esas pantallas.
+Quedan para después:
 
-Por ahora quedan como están (decisión del 7 de noviembre de 2026).
+- Los recorridos `registrar-asistencia` y `mis-actividades`, y los pasos nuevos de `mis-firmas`
+  (el comprobante y "Tu PIN es tu firma").
+- Las capturas de las pantallas nuevas (Preparar cuadrilla sin señal, Firmas en revisión, el aviso
+  de firmas por enviar).
 
 ## Pendiente: "Firmar mi asistencia" según un permiso
 

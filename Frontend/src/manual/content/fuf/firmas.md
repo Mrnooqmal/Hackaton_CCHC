@@ -22,7 +22,7 @@ pero **por ahora no debe usarse como única prueba legal** hasta tener la respue
 
 | Forma | ¿Cuándo se usa? |
 | --- | --- |
-| **PIN propio** | La persona firma desde su sesión, con su PIN de 4 dígitos. |
+| **PIN propio** | La persona firma desde su sesión, con su PIN de 6 dígitos. |
 | **Firma asistida** | La persona firma en el equipo de un supervisor, escribiendo **su** PIN. |
 | **Firma del relator** | El relator certifica que la capacitación se realizó, además de los asistentes. |
 
@@ -45,10 +45,13 @@ riesgos o un procedimiento), las firmas de la versión anterior **quedan en el h
 dejan de valer para la nueva**: quienes la habían firmado deben firmarla otra vez. La
 plataforma se los pide automáticamente. Ver [Documentos](/obra/documentos#publicar-una-nueva-versión).
 
-## Firmar requiere conexión
+## Firmar sin señal
 
-Por ahora, firmar requiere conexión a internet. Una firma que no llega al servidor no se da
-por hecha.
+Sin señal se firma igual, con el PIN. La firma queda guardada en el equipo con la fecha y hora
+en que se firmó, y se envía sola cuando vuelve la señal. El servidor valida el PIN al recibirla:
+si estaba mal, la firma no se registra y la persona tiene que firmar de nuevo. Una firma que
+llega mucho después, o después de que la persona dejó la empresa, queda en revisión hasta que
+alguien de la obra la confirme o la rechace. Ver [Firmar sin conexión](/terreno/firmar#sin-conexión).
 
 ## Quién firma según el documento
 

@@ -5,12 +5,13 @@ import { MANUAL_SECTIONS, permisoDePagina } from './manualNav';
 import { filtrarMarkdown, useFiltroManual } from './filtro';
 import FiltroManualProvider from './FiltroManualProvider';
 import Callout from './Callout';
-import { getDoc } from './content';
+import { existePagina, getDoc } from './content';
 import { extractHeadings } from './headings';
 import { searchManual, type SearchResult } from './search';
 import ManualHome from './ManualHome';
 import ManualPage from './ManualPage';
 import { ANCLAS_MOVIDAS, destinoDe } from './redirecciones';
+import { redireccionPublicada } from './publicacion';
 import './manual.css';
 
 /** Ruta relativa a /manual (sin barra inicial ni final). '' = portada. */
@@ -122,7 +123,7 @@ function Sidebar({
             </button>
             <ManualSearch />
             <VerTodo />
-            {MANUAL_SECTIONS.map((sec) => ({ sec, items: sec.items.filter((it) => puede(it.permiso)) }))
+            {MANUAL_SECTIONS.map((sec) => ({ sec, items: sec.items.filter((it) => puede(it.permiso) && existePagina(it.link)) }))
                 .filter(({ items }) => items.length > 0)
                 .map(({ sec, items }) => (
                 <div key={sec.slug} className="manual-sidebar__group">
@@ -204,7 +205,9 @@ function ManualLayoutContenido() {
     // nueva, con su ancla. También una sección que se fue a otra página.
     const ancla = decodeURIComponent(hash.replace(/^#/, ''));
     if (rel && !doc) {
-        const destino = destinoDe(rel, ancla);
+        // Si la página nueva no se publica en este build (FUF en prod, mientras
+        // espera la revisión normativa), a la portada del manual.
+        const destino = redireccionPublicada(rel, ancla, existePagina, destinoDe);
         if (destino) return <Navigate to={destino} replace />;
     }
     const anclaMovida = doc && ancla ? ANCLAS_MOVIDAS[`${rel}#${ancla}`] : undefined;

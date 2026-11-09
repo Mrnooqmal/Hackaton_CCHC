@@ -13,9 +13,10 @@
 // el sistema custodia evidencia, no valida el contenido de los documentos ni
 // garantiza el cumplimiento legal.
 //
-// Recorridos iniciales (Fase 5, aprobados el 7 de noviembre de 2026): todos en
-// BORRADOR hasta que Adrean y Benja los revisen en dev con la vista previa. El
-// build de prod no los incluye (vite-borradores.ts). Las tres introducciones de
+// Recorridos iniciales (Fase 5, aprobados el 7 de noviembre de 2026): nacieron
+// en BORRADOR (el build de prod no incluye borradores: vite-borradores.ts) y se
+// publicaron el 8 de noviembre de 2026, tras la revisión de Adrean en dev con
+// la vista previa. Un recorrido nuevo empieza en borrador. Las tres introducciones de
 // Inicio se reparten por permiso para que cada persona calce con una sola:
 // sin `obras.ver` (terreno), con `obras.ver` y sin `empresa.ver` (gestión de
 // obra), con `empresa.ver` (vista de empresa).
@@ -37,7 +38,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'cualquiera',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Tu pantalla de Inicio'),
         manual: 'roles/trabajador',
         pasos: [
@@ -73,7 +74,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Inicio para quien gestiona la obra'),
         manual: 'empezar/elegir-obra',
         pasos: [
@@ -118,7 +119,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'empresa',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('La vista de empresa'),
         manual: 'roles/administrador',
         pasos: [
@@ -153,7 +154,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'cualquiera',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Firmar lo que te asignan'),
         manual: 'terreno/firmar',
         pasos: [
@@ -165,7 +166,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
             {
                 ancla: 'mis-firmas.lista',
                 titulo: t('Cómo se firma'),
-                descripcion: t('Toca Firmar, lee el documento con Ver documento, escribe tu PIN de 4 dígitos y marca que lo leíste. La firma queda registrada con fecha y hora.'),
+                descripcion: t('Toca Firmar, lee el documento con Ver documento, escribe tu PIN de 6 dígitos y marca que lo leíste. La firma queda registrada con fecha y hora.'),
                 manual: 'terreno/firmar',
             },
             {
@@ -185,7 +186,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Hallazgo, incidente o accidente'),
         manual: 'terreno/reportar',
         pasos: [
@@ -230,7 +231,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'cualquiera',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Cambiar de obra'),
         manual: 'empezar/elegir-obra',
         pasos: [
@@ -257,7 +258,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Charlas y capacitaciones'),
         manual: 'obra/actividades',
         pasos: [
@@ -297,7 +298,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Guardar y versionar documentos'),
         manual: 'obra/documentos',
         pasos: [
@@ -322,7 +323,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Qué le falta a la obra'),
         manual: 'obra/cumplimiento',
         pasos: [
@@ -367,7 +368,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Encontrar un documento'),
         manual: 'obra/documentos',
         pasos: [
@@ -402,7 +403,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         ambito: 'obra',
         version: 1,
         reiniciarAlPublicar: false,
-        estado: 'borrador',
+        estado: 'publicado',
         titulo: t('Seguir los incidentes de la obra'),
         manual: 'obra/incidentes',
         pasos: [

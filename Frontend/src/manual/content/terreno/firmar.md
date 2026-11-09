@@ -12,7 +12,7 @@ Se firma en cuatro lugares:
 - **Encuestas** — al enviar tus respuestas. Ver [Encuestas](/terreno/encuestas).
 - **Firma asistida** — cuando alguien firma en el equipo de su supervisor (ver más abajo).
 
-> **Tu PIN es tu firma.** Son **4 dígitos** que solo tú conoces. Al ingresarlo declaras que
+> **Tu PIN es tu firma.** Son **6 dígitos** que solo tú conoces. Al ingresarlo declaras que
 > leíste el documento. No lo compartas: equivale a tu firma de puño y letra.
 
 [Ver recorrido](recorrido:mis-firmas)
@@ -67,9 +67,22 @@ dirige la charla: [Registrar la asistencia](/obra/asistencia#registrar-la-asiste
 
 ## Sin conexión
 
-**Para firmar necesitas conexión a internet.** Si la pierdes en medio de una firma, la
-plataforma te avisa y no la da por hecha. Si la señal en tu obra es mala, busca un punto con
-cobertura o usa la red de la instalación de faena.
+**Sin señal también puedes firmar, con tu PIN.** Sirve para los documentos de **Mis firmas**,
+tu asistencia a una actividad y la firma asistida. No tienes que preparar ni activar nada antes.
+
+- Sin señal ves los documentos tal como estaban la última vez que entraste con señal en ese
+  equipo. Firmas igual que siempre: lees, escribes tu PIN y confirmas.
+- La firma queda guardada en el equipo y **se envía sola cuando vuelve la señal**. Mientras
+  tanto, arriba de la pantalla ves cuántas quedan, por ejemplo *2 firmas por enviar*. Con
+  señal, **Enviar ahora** las manda en el momento.
+- Si **ya escribiste tu PIN con señal en ese equipo**, un error de tipeo se detecta al momento
+  y lo corriges ahí mismo.
+- Si no, tu PIN se revisa **cuando vuelve la señal**. Si estaba mal, la firma no se valida y
+  aparece un aviso con tu nombre: *no se validó, tiene que firmar de nuevo*. Vuelve a firmar
+  con el PIN correcto.
+
+Los intentos con un PIN equivocado cuentan igual que con señal: después de varios, la firma se
+bloquea por un tiempo (ver las preguntas frecuentes).
 
 ## Validez legal de la firma con PIN
 

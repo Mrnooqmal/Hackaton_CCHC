@@ -110,7 +110,8 @@ test.describe('a 360 px', () => {
         expect(p.x + p.width).toBeLessThanOrEqual(360);
         expect(p.y + p.height).toBeLessThanOrEqual(640);
         await expect(panel.getByRole('link', { name: 'Abrir el manual de esta pantalla' })).toHaveAttribute('href', '/manual/empezar/elegir-obra');
-        await expect(panel).toContainText('No hay recorridos para esta pantalla.');
+        // Con los recorridos publicados, Inicio ofrece su introducción.
+        await expect(panel.getByText('Tu pantalla de Inicio')).toBeVisible();
         await page.screenshot({ path: 'test-results/menu-ayuda-360.png' });
         await page.keyboard.press('Escape');
         await expect(panel).toHaveCount(0);
