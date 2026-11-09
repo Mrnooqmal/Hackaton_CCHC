@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
+import { plural } from '../utils/plural';
 import { FiCalendar, FiCheck, FiClock, FiPaperclip, FiSend, FiUploadCloud } from 'react-icons/fi';
 import { Select } from './ui';
 import { documentsApi } from '../api/documents.api';
@@ -81,7 +83,7 @@ export default function DistribucionPanel({ distribucion, tenantId, obraId = nul
             setEditandoVigencia(false);
             await onCambio();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error al guardar la fecha de vigencia.');
+            setError(mensajeDeError(e, 'Error al guardar la fecha de vigencia.'));
         } finally {
             setGuardando(false);
         }
@@ -109,7 +111,7 @@ export default function DistribucionPanel({ distribucion, tenantId, obraId = nul
             cerrarFormulario();
             await onCambio();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error al registrar la constancia.');
+            setError(mensajeDeError(e, 'Error al registrar la constancia.'));
         } finally {
             setGuardando(false);
         }
@@ -274,7 +276,7 @@ export default function DistribucionPanel({ distribucion, tenantId, obraId = nul
                 </div>
                 {resultado.excluidos > 0 && (
                     <p className="dp-nota">
-                        {resultado.excluidos} destinatario(s) fuera del denominador: no existen en este ámbito
+                        {plural(resultado.excluidos, 'destinatario', 'destinatarios')} fuera del denominador: no existen en este ámbito
                         y no informarles no penaliza.
                     </p>
                 )}

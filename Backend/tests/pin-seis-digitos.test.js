@@ -92,7 +92,7 @@ test('todas las rutas que firman con PIN responden 409 a PIN_DEBE_CAMBIAR', () =
     }
     assert.match(leer('handlers', 'personas-module', 'handler.js'), /PIN_DEBE_CAMBIAR: 409/);
     for (const archivo of [['handlers', 'vales', 'handler.js'], ['handlers', 'signatures', 'handler.js']]) {
-        assert.match(leer(...archivo), /chequeo\.bloqueada \? 423 : \(chequeo\.debeCambiar \? 409 : 401\)/, archivo.join('/'));
+        assert.match(leer(...archivo), /chequeo\.bloqueada \? 423 : \(chequeo\.debeCambiar \? 409 : 400\)/, archivo.join('/'));
     }
 });
 

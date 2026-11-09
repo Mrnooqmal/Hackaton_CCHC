@@ -376,7 +376,7 @@ export default function PersonaNueva() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">Nombre <span style={{ color: 'var(--danger-500)' }}>*</span></label>
-                        <input className="form-input" name="nombre" value={form.nombre} onChange={handleChange} placeholder="Nombre(s)" autoComplete="given-name" />
+                        <input className="form-input" name="nombre" value={form.nombre} onChange={handleChange} placeholder="Nombres" autoComplete="given-name" />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">Apellido paterno</label>

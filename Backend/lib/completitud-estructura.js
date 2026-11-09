@@ -12,6 +12,7 @@
  * documento: el contenido es responsabilidad de quien lo sube.
  */
 
+const { plural } = require('./utils/plural');
 const C = require('./completitud');
 const EP = require('./estructura-preventiva');
 
@@ -155,7 +156,7 @@ const DEFINICIONES_ESTRUCTURA = [
             if (realizadas === debidas.length) return { estado: E.CUMPLIDO, detalle: `${realizadas} de ${debidas.length} reuniones con acta.` };
             return {
                 estado: realizadas > 0 ? E.PARCIAL : E.VENCIDO,
-                detalle: `${debidas.length - realizadas} reunión(es) ordinaria(s) sin acta.`,
+                detalle: `${plural(debidas.length - realizadas, 'reunión ordinaria', 'reuniones ordinarias')} sin acta.`,
             };
         },
     },
@@ -178,8 +179,8 @@ const DEFINICIONES_ESTRUCTURA = [
             // responsabilidad de quien lo redacta: no se verifica.
             const conActa = realizadas.filter((r) => r.actaDocumentoId).length;
             return conActa === realizadas.length
-                ? { estado: E.CUMPLIDO, detalle: `${conActa} acta(s) adjunta(s).` }
-                : { estado: E.PARCIAL, detalle: `${realizadas.length - conActa} reunión(es) realizada(s) sin acta.` };
+                ? { estado: E.CUMPLIDO, detalle: `${plural(conActa, 'acta adjunta', 'actas adjuntas')}.` }
+                : { estado: E.PARCIAL, detalle: `${plural(realizadas.length - conActa, 'reunión realizada', 'reuniones realizadas')} sin acta.` };
         },
     },
     // El ítem 37 vive en `completitud-documental.js`: se acredita con la

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { plural } from '../utils/plural';
 import { LARGO_PIN } from '../utils/pin';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -1795,8 +1796,8 @@ export default function ObraDetalle() {
                     <div className="font-medium" style={{ fontSize: '0.9rem' }}>{el.titulo}</div>
                     <div className="text-muted" style={{ fontSize: '0.78rem' }}>
                       {el.articulo}
-                      {el.accion === 'incidentes' && ` · ${incCount} incidente(s)`}
-                      {el.accion === 'investigaciones' && ` · ${invPend} investigación(es) pendiente(s)`}
+                      {el.accion === 'incidentes' && ` · ${plural(incCount, 'incidente', 'incidentes')}`}
+                      {el.accion === 'investigaciones' && ` · ${plural(invPend, 'investigación pendiente', 'investigaciones pendientes')}`}
                       {el.accion === 'simulacro' && ` · ${hasSimulacro ? 'Ensayo registrado' : 'Sin ensayo en el periodo'}`}
                       {el.key === 'REG_VIGILANCIA' && ` · ${enVigilancia} en vigilancia`}
                     </div>
@@ -1831,7 +1832,7 @@ export default function ObraDetalle() {
         key: 'eventos',
         nombre: 'Eventos sobrevinientes',
         que: 'Registros que solo se crean cuando ocurre el hecho. No cuentan como faltante.',
-        estado: eventosRegistrados > 0 ? `${eventosRegistrados} registro(s)` : 'Sin eventos en el período',
+        estado: eventosRegistrados > 0 ? plural(eventosRegistrados, 'registro', 'registros') : 'Sin eventos en el período',
         contenido: (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
             {DS44_DO_EVENTOS.map((ev) => {
@@ -1840,7 +1841,7 @@ export default function ObraDetalle() {
                 <div key={ev.key} className="ds44-doc-row">
                   <div style={{ minWidth: 0 }}>
                     <div className="font-medium" style={{ fontSize: '0.9rem' }}>{ev.titulo}</div>
-                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>{ev.articulo} · {ocurrencias > 0 ? `${ocurrencias} registro(s)` : 'Sin eventos'}</div>
+                    <div className="text-muted" style={{ fontSize: '0.78rem' }}>{ev.articulo} · {ocurrencias > 0 ? plural(ocurrencias, 'registro', 'registros') : 'Sin eventos'}</div>
                   </div>
                   <button className="btn btn-secondary btn-sm" type="button" onClick={() => openDoCreate('documento', ev)}>
                     Registrar
@@ -1921,7 +1922,7 @@ export default function ObraDetalle() {
         key: 'investigaciones',
         nombre: 'Investigaciones AT/EP',
         que: 'Informes obligatorios de incidentes graves y fatales, con árbol de causas (Art. 71).',
-        estado: investigacionesPendientes.length > 0 ? `${investigacionesPendientes.length} pendiente(s)` : 'Sin investigaciones pendientes',
+        estado: investigacionesPendientes.length > 0 ? plural(investigacionesPendientes.length, 'pendiente', 'pendientes') : 'Sin investigaciones pendientes',
         contenido: investigacionesPendientes.length === 0
           ? <p className="text-muted" style={{ margin: 0, fontSize: '0.875rem' }}>No hay investigaciones AT/EP pendientes en esta obra.</p>
           : (
@@ -1940,7 +1941,7 @@ export default function ObraDetalle() {
                       <div key={inc.incidentId} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{inc.descripcion || inc.incidentId}</div>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''} · {(inc.medidasCorrectivas || []).length} medida(s)</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''} · {plural((inc.medidasCorrectivas || []).length, 'medida', 'medidas')}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
                           <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver / investigar</button>
@@ -1978,7 +1979,7 @@ export default function ObraDetalle() {
                     {medidas?.resumen && (
                       <div className="text-muted" style={{ fontSize: '0.8rem', flexShrink: 0 }}>
                         {medidas.resumen.verificadas}/{medidas.resumen.total} verificadas
-                        {medidas.resumen.vencidas > 0 && ` · ${medidas.resumen.vencidas} vencida(s)`}
+                        {medidas.resumen.vencidas > 0 && ` · ${plural(medidas.resumen.vencidas, 'vencida', 'vencidas')}`}
                       </div>
                     )}
                   </div>
@@ -2718,7 +2719,7 @@ export default function ObraDetalle() {
         isOpen={!!onboardingUploadModal?.show}
         onClose={() => setOnboardingUploadModal(null)}
         title="Documentos de onboarding generados"
-        subtitle={`${onboardingUploadModal?.addedWorkers.length ?? 0} trabajador(es) asignado(s). Puedes subir los archivos ahora o desde el perfil de cada trabajador.`}
+        subtitle={`${plural(onboardingUploadModal?.addedWorkers.length ?? 0, 'trabajador asignado', 'trabajadores asignados')}. Puedes subir los archivos ahora o desde el perfil de cada trabajador.`}
         size="lg" 
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
@@ -2896,7 +2897,7 @@ export default function ObraDetalle() {
                               className="btn btn-primary btn-sm"
                               onClick={() => handleUpdateCargos(worker)}
                               disabled={updatingWorkers === workerId}
-                              title="Guardar el/los cargo(s) del trabajador en esta obra"
+                              title="Guardar los cargos del trabajador en esta obra"
                             >
                               Guardar cargo
                             </button>
@@ -2948,7 +2949,7 @@ export default function ObraDetalle() {
                           className="btn btn-primary btn-sm"
                           onClick={() => handleAddWorker(worker)}
                           disabled={updatingWorkers === workerId || updatingWorkers === 'multiple'}
-                          title="Asigna al trabajador a la obra con el/los cargo(s) marcados"
+                          title="Asigna al trabajador a la obra con los cargos marcados"
                         >
                           Agregar a obra
                         </button>
@@ -3220,7 +3221,7 @@ export default function ObraDetalle() {
             <label className="form-label">Características DO (definen qué elementos aplican)</label>
             <label className="checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
               <input type="checkbox" name="faenaCompartida" checked={Boolean(editData?.faenaCompartida)} onChange={handleEditChange} />
-              <span>Faena compartida con otra(s) entidad(es) — Art. 20</span>
+              <span>Faena compartida con otras entidades — Art. 20</span>
             </label>
             <label className="checkbox-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
               <input type="checkbox" name="tieneMaquinaria" checked={Boolean(editData?.tieneMaquinaria)} onChange={handleEditChange} />

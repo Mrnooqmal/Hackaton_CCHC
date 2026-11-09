@@ -165,8 +165,7 @@
    "N firmas por enviar" (SincronizadorFirmas) y el aviso para habilitar la
    firma sin conexión del turno (AvisoValesTurno). Van bajo la cabecera, en
    todas las pantallas. */
-.sincronizador-firmas,
-.aviso-vales-turno {
+.sincronizador-firmas {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -178,31 +177,22 @@
   background: var(--surface-card);
   font-size: 14px;
 }
-.sincronizador-firmas > span,
-.aviso-vales-turno > span { flex: 1 1 220px; }
-.sincronizador-firmas > svg,
-.aviso-vales-turno > svg { flex-shrink: 0; color: var(--accent); }
-.aviso-vales-turno { border-left: 3px solid var(--accent); }
+.sincronizador-firmas > span { flex: 1 1 220px; }
+.sincronizador-firmas > svg { flex-shrink: 0; color: var(--accent); }
 .sincronizador-firmas--rechazadas { align-items: flex-start; border-left: 3px solid var(--danger-alerta); }
 .sincronizador-firmas--rechazadas > svg { color: var(--danger-alerta); }
-.sincronizador-firmas--rechazadas > div { flex: 1 1 260px; }
-.sincronizador-firmas--rechazadas ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+.sincronizador-firmas--rechazadas ul { flex: 1 1 260px; margin: 0; padding-left: var(--space-4); }
 @media (max-width: 640px) {
-  .sincronizador-firmas,
-  .aviso-vales-turno { margin: var(--space-2) var(--space-3) 0; }
+  .sincronizador-firmas { margin: var(--space-2) var(--space-3) 0; }
 }
 
-/* Preparar cuadrilla sin señal y firmas en revisión. */
-.cuadrilla-vales,
+/* Firmas en revisión. */
 .firmas-revision { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
-.cuadrilla-vales__fila,
 .firmas-revision__item {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   padding: var(--space-3); border: 1px solid var(--surface-border); border-radius: var(--radius-md); background: var(--surface-card);
 }
 .firmas-revision__item { flex-direction: column; align-items: stretch; }
-.cuadrilla-vales__cargo { color: var(--text-secondary, inherit); }
-.cuadrilla-vales__estado { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; }
 .firmas-revision__cabecera { display: flex; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .firmas-revision__motivo { margin: 0; }
 .firmas-revision__fechas { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(--space-3); margin: 0; font-size: 13px; }

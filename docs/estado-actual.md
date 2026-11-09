@@ -14,13 +14,13 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
 |---|---|---|---|
 | **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `14fa693` |
 | **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net` redirige con 301 a `buildandserve.cl` desde D-34), bucket `buildandserve-frontend` | `14fa693` |
-| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `072d2ec` |
-| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `072d2ec` |
+| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `8d95d6b` |
+| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `8d95d6b` |
 | Ambos | Infra del frontend | Stack `BuildAndServe-frontend`: dos distribuciones, certificado, cabeceras, CSP y rol de publicación | `14fa693` |
 
 **Prod: `14fa693` desde el 7 de noviembre de 2026** (backend, frontend e infra del frontend, con los scripts). Incluye todo lo acumulado: D-26, D-27, H-16, H-17, Actividades 4 y 5 (D-29 a D-32), el resguardo del Expediente y D-34. Prueba de punta a punta en prod: 29 de 29. Verificado después: el stack tiene 470 recursos, el TTL de la auditoría está `ENABLED`, la alarma `evento-sospechoso-prod` en `OK`, `d30jksx91fodea.cloudfront.net` responde 301 a `https://buildandserve.cl/` y la API no acepta ese origen.
 
-**Dev desde el 8 de noviembre de 2026:** backend y frontend `072d2ec`: la firma sin conexión completa con D-35, el aviso de privacidad, la minimización de personas y bandeja, el límite de tasa de las rutas públicas, uploads y surveys en una función cada uno y los logs con la CMK. Verificado después de desplegar: los 74 grupos de logs con `ClaveDatos`, los 9 grupos de las funciones viejas borrados por CloudFormation, stack en 444 recursos. Prueba de punta a punta 56 de 56.
+**Dev desde el 8 de noviembre de 2026:** backend y frontend `8d95d6b` (prueba de punta a punta 60 de 60), con la minimización completa de la fila 7.5. Antes, `072d2ec`: la firma sin conexión completa con D-35, el aviso de privacidad, la minimización de personas y bandeja, el límite de tasa de las rutas públicas, uploads y surveys en una función cada uno y los logs con la CMK. Verificado después de desplegar: los 74 grupos de logs con `ClaveDatos`, los 9 grupos de las funciones viejas borrados por CloudFormation, stack en 444 recursos. Prueba de punta a punta 56 de 56.
 
 **Cómo se verificó lo anterior (30 de octubre y 6 de noviembre de 2026).** Los scripts no dejan el commit escrito en AWS. El backend se identificó comparando el código del paquete de `personasModule` (`aws lambda get-function`) con el árbol `Backend/` de cada commit: prod coincide con `d750646` (paquete del 1 de octubre); dev, con `b7c3e88` (paquete del 15 de octubre a las 17:07, `UpdateStack` de Benjamin; `93b9a00` tiene el mismo código). El frontend, por la fecha de `index.html` en el bucket y por textos que solo existen desde ciertos commits: prod no tiene los de D-27 ni del footer nuevo; dev tiene los de `6aa53d1` y no los de `b3cb99c` (publicado por Benjamin el 23 de octubre, invalidación a las 10:33, 97 segundos después del commit: a confirmar que fue con el script).
 
@@ -103,7 +103,7 @@ infra/desplegar-infra-frontend.sh <commit>
 
 | Qué | Detalle |
 |---|---|
-| **Firma sin conexión con vales (prioritario)** | Completa en dev (`4ad2b3c`, punta a punta 56 de 56), con D-35. Iteraciones de PBKDF2 fijadas en 600.000 con la medición del 8 de noviembre en un Android 10 de gama baja (182 ms con 300.000; ver D-35), por commitear. **Antes de prod:** la otra sesión ajusta el manual y los recorridos (textos abajo). |
+| **Firma sin conexión con vales (prioritario)** | Completa en dev (`4ad2b3c`, punta a punta 56 de 56), con D-35. Iteraciones de PBKDF2 fijadas en 600.000 con la medición del 8 de noviembre en un Android 10 de gama baja (182 ms con 300.000; ver D-35), por commitear. **Por commitear:** D-37 (el sobre con KMS, la renovación silenciosa, sin aviso de habilitar ni «Preparar cuadrilla», sincronización cada 20 segundos, sesión sin red, plurales); el stack pasa a 446 recursos. **Antes de prod:** repetir la prueba en terreno con D-37 en dev, y ajustar el manual y los recorridos (textos abajo). |
 | Ley 21.719 (vigente el 1 de diciembre de 2026) | **Hecho, por commitear (8 de noviembre).** Revisión del flujo: aviso de privacidad con transferencias internacionales, plazos de conservación y reclamo ante la Agencia, en Mis datos y en el enrolamiento (fila 7.6); minimización de la ficha de personas, la búsqueda por RUT y los destinatarios de la bandeja (7.5); `ValesInvalidos` en el plan de incidentes. Queda fuera del código: validación legal de los plazos internos del plan (7.4) y el contrato de encargo entre cada constructora y Build & Serve. |
 | Agrupar uploads y surveys en una función cada uno | **Hecho, por commitear (8 de noviembre).** Stack de 472 a 444 recursos (verificado con `serverless package`). Los grupos de logs de las 9 funciones viejas los borra CloudFormation al quitar sus recursos: comprobarlo después de desplegar. Plan aprobado el 7 de noviembre de 2026. Las 5 funciones de uploads y las 4 de surveys pasan a una por módulo, con un enrutador por `event.routeKey` y las mismas rutas declaradas en `serverless.yml`. Cada función con ruta HTTP genera 4 recursos (función, permiso, grupo de logs e integración); las rutas se quedan, así que se ahorran 28 recursos (la rama `tours` deja el stack en 477, a 13 del tope de 490 del script). Se borran los grupos de logs de las funciones viejas (aprobado). Pruebas: enrutador por módulo, `identidad-desde-sesion.test.js` con el `routeKey` declarado, y sabotaje quitando una entrada del enrutador. |
 | Límite de tasa en la API | **Hecho, por commitear (8 de noviembre).** Ya había límite por omisión y para el alta y la CSP (la fila 2.8 estaba desactualizada); se agregó límite propio a las rutas públicas de autenticación y a la verificación de firmas. Un 429 o un 5xx ya no descartan firmas sin conexión. |
@@ -125,7 +125,7 @@ PIN de 6 dígitos (antes 4), y la firma sin conexión ya existe. En este árbol 
 
 En la rama `tours` (`b4fc05f`), los mismos textos en su nueva estructura: `empezar/ingresar.md` (41, 48, 123), `terreno/firmar.md` (15), `fuf/firmas.md` (25), `obra/actividades.md` (316), y en `Frontend/src/ayuda/recorridos.ts` la línea 168 («escribe tu PIN de 4 dígitos»).
 
-Lo nuevo, sin texto todavía en el manual: **Preparar cuadrilla sin señal** (cada persona escribe su PIN con señal y queda habilitada para 5 firmas durante 12 horas en esa obra), el **aviso al entrar** para habilitar la firma sin conexión, **sin señal se firma con el PIN** (cinco PIN equivocados seguidos borran la habilitación en ese equipo), el aviso de **firmas por enviar** y el de **firmas que no se validaron** (con el nombre de quien tiene que volver a firmar), **Firmas en revisión** (confirmar o rechazar con motivo), el aviso al **cerrar sesión** con vales o firmas pendientes, y el **cambio obligatorio a PIN de 6 dígitos** al entrar con uno de 4.
+Lo nuevo (D-37, sin habilitar como paso; ya no existen «Preparar cuadrilla» ni el aviso al entrar): **sin señal siempre se firma con el PIN**; si esa persona ya escribió su PIN con señal en ese equipo, el error de tipeo se detecta al momento, y si no, se valida al volver la señal. El aviso de **firmas por enviar** (se envían solas; «Enviar ahora» es un respaldo) y el de **firmas que no se validaron** («la firma de X no se validó: tiene que firmar de nuevo»), **Firmas en revisión** (confirmar o rechazar con motivo), el aviso al **cerrar sesión** con firmas por enviar, y el **cambio obligatorio a PIN de 6 dígitos** al entrar con uno de 4.
 
 ### Paso 3 a prod: fines de noviembre de 2026
 
@@ -149,6 +149,7 @@ Lo nuevo, sin texto todavía en el manual: **Preparar cuadrilla sin señal** (ca
 
 | Cuándo | Qué |
 |---|---|
+| 8 de noviembre de 2026 | Regla de ciclo de vida en el bucket de despliegue de Serverless (`infra/ciclo-vida-bucket-despliegue.sh`, aplicada): bajo `serverless/BuildAndServe/`, las versiones reemplazadas se borran a los 30 días, junto con las marcas de borrado que ya no tapan nada. Al aplicarla había 389 versiones viejas (~5,6 GB). Lo de `hackatonbackend` queda fuera: lo borra `infra/limpiar-hackatonbackend.sh`, con su confirmación. |
 | 7 de noviembre de 2026 | D-34: la URL de CloudFront fuera del CORS de prod y redirigida con 301. **Service worker:** quien instaló la app desde `d30jksx91fodea.cloudfront.net` la sigue abriendo desde caché en ese origen, sin poder hablar con la API; se resuelve borrando los datos del sitio de ese origen y reinstalando desde `https://buildandserve.cl`. |
 | 6 de noviembre de 2026 | CSP en modo activo, desplegada y probada en dev y prod. |
 
@@ -197,6 +198,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-34 | Producción solo en `buildandserve.cl`: la URL de CloudFront sale del CORS y se redirige con 301 |
 | D-35 | Firma sin conexión con el PIN: vales cifrados en el equipo sin oráculo, corte del servidor al quinto vale inválido, PIN de 6 dígitos |
 | D-36 | Oposición persistente al directorio de compañeros, y valor anterior y nuevo de una rectificación (cifrados) |
+| D-37 | Sin señal siempre se puede firmar: sobre con el PIN cifrado para el servidor, renovación silenciosa de vales, un intento por sincronización |
 
 ### Hallazgos (sección 4)
 

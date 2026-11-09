@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { plural } from '../utils/plural';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
 import { activitiesApi, workersApi, type PlanItem, type Worker } from '../api/client';
@@ -110,7 +111,7 @@ export default function ActivityPlanificar() {
             });
             if (res.success && res.data) {
                 const { count, omitidas } = res.data;
-                toast.success(`${count} actividad(es) planificada(s)${omitidas > 0 ? ` · ${omitidas} ya existían` : ''}`);
+                toast.success(`${plural(count, 'actividad planificada', 'actividades planificadas')}${omitidas > 0 ? ` · ${omitidas} ya existían` : ''}`);
                 navigate('/activities');
             } else {
                 setError(res.error || 'No se pudo generar la planificación.');

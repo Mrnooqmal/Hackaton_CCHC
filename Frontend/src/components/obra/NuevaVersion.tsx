@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../../api/client';
+import { plural } from '../../utils/plural';
 import { LuPaperclip, LuSearch, LuUpload } from 'react-icons/lu';
 import { Drawer } from '../ui';
 import { documentsApi, type Document, type DocumentAssignment, type EntidadRevision } from '../../api/documents.api';
@@ -167,7 +169,7 @@ export default function NuevaVersion({ tenantId, obraId = null, documento, onCer
             await onListo();
             onCerrar();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'No se pudo publicar la nueva versión.');
+            setError(mensajeDeError(e, 'No se pudo publicar la nueva versión.'));
         } finally {
             setGuardando(false);
         }
@@ -267,7 +269,7 @@ export default function NuevaVersion({ tenantId, obraId = null, documento, onCer
                         <span className="ob-rotulo">Firmantes</span>
                         <span className="dp-nota">
                             {firmantes.size} firmarán la v{version + 1}
-                            {(agregados > 0 || quitados > 0) && ` (${[agregados && `${agregados} agregada(s)`, quitados && `${quitados} quitada(s)`].filter(Boolean).join(', ')})`}
+                            {(agregados > 0 || quitados > 0) && ` (${[agregados && plural(agregados, 'agregada', 'agregadas'), quitados && plural(quitados, 'quitada', 'quitadas')].filter(Boolean).join(', ')})`}
                         </span>
                     </span>
 

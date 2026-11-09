@@ -13,6 +13,7 @@
  * por investidura: ser miembro del comité no es un rol del sistema.
  */
 
+const { plural } = require('../../lib/utils/plural');
 const { GetCommand, QueryCommand, ScanCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
@@ -184,7 +185,7 @@ async function revisarEstructuraPreventiva(ahora = new Date()) {
                     await enviar(clave,
                         hito === 'vencido'
                             ? 'Venció el plazo del curso de orientación en prevención'
-                            : `${pendientes.length} integrante(s) sin el curso de orientación en prevención`,
+                            : `${plural(pendientes.length, 'integrante', 'integrantes')} sin el curso de orientación en prevención`,
                         `Los integrantes electos deben realizarlo durante el primer semestre del mandato (Art. 32). `
                         + `Fecha límite: ${String(limite).slice(0, 10)}.`);
                 }
@@ -307,7 +308,7 @@ async function revisarEstructuraFaltante(ahora = new Date()) {
             const ok = await avisar({
                 tenantId, destinatarios, obraId: a.obraId,
                 subject: `Falta constituir ${faltantes.length === 1 ? 'un órgano' : 'órganos'} en ${a.nombre}`,
-                content: `Con ${dotacion} persona(s) trabajadora(s) corresponde constituir: ${lista}. `
+                content: `Con ${plural(dotacion, 'persona trabajadora', 'personas trabajadoras')} corresponde constituir: ${lista}. `
                     + 'Mientras no se constituya, el requisito aparece pendiente en el cumplimiento del FUF.',
             });
             if (ok) {

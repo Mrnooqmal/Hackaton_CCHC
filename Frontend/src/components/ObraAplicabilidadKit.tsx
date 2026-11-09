@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { plural } from '../utils/plural';
 import { obrasApi } from '../api/client';
 import { FiAlertTriangle } from 'react-icons/fi';
 import type { TenantCargo } from '../api/tenants.api';
@@ -82,7 +83,7 @@ export default function ObraAplicabilidadKit({ obraId, cargos, initial, canEdit,
               >
                 <span className="font-medium" style={{ fontSize: '0.9rem' }}>{cargo.label}</span>
                 <span className="text-muted" style={{ fontSize: '0.8rem' }}>
-                  {excluidos > 0 ? `${excluidos} excluido(s)` : 'todo aplica'} · {abierto ? '▲' : '▼'}
+                  {excluidos > 0 ? plural(excluidos, 'excluido', 'excluidos') : 'todo aplica'} · {abierto ? '▲' : '▼'}
                 </span>
               </button>
               {abierto && (

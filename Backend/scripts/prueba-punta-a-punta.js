@@ -61,6 +61,8 @@ if (!process.env.AWS_PROFILE && !process.env.AWS_ACCESS_KEY_ID) {
 }
 process.env.AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
+const crypto = require('crypto');
+const sobreFirma = require('../lib/sobreFirma');
 const desechable = require('./e2e/empresa-desechable');
 const { ambiente, crearCliente } = require('./e2e/cliente');
 
@@ -277,9 +279,36 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     comprobar('un vale de la obra A no firma en la obra B (400, "otra obra")',
         otraObra.status === 400 && /otra obra/.test(otraObra.cuerpo?.error || ''), resumen(otraObra));
 
+    // Un PIN equivocado no es una sesión vencida: responde 400, nunca 401, porque el
+    // cliente lee todo 401 como sesión caída y cerraba la sesión de quien firmaba.
+    const pinMalo = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: '000000' } });
+    comprobar('un PIN equivocado al pedir vales responde 400, no 401', pinMalo.status === 400, resumen(pinMalo));
+    const sesionViva = await c.pedir('GET', '/auth/me', { token });
+    comprobar('...y la sesión sigue viva', sesionViva.status === 200, resumen(sesionViva));
+
+    // El sobre (D-36): sin vales, el PIN va cifrado con la llave pública de KMS.
+    const llave = sesionViva.cuerpo?.data?.user?.llaveSobreFirma;
+    comprobar('la sesión entrega la llave pública de los sobres', typeof llave === 'string' && llave.length > 100, 'sin llave', { detener: true });
+    const a4 = await crearActividad(obraA, 'Charla A4');
+    const sobreDe = (pin, idFirmaLocal, timestampLocal) => {
+        const h = sobreFirma.hashDeFirma({ personaId: trabajadora, tenantId: empresa.tenantId, obraId: obraA, referenciaTipo: 'activity', referenciaId: a4, idFirmaLocal, timestampLocal });
+        return crypto.publicEncrypt({ key: crypto.createPublicKey({ key: Buffer.from(llave, 'base64'), format: 'der', type: 'spki' }), padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+            Buffer.from(JSON.stringify({ p: pin, h }))).toString('base64');
+    };
+    const hora = new Date().toISOString();
+    const conSobre = (pin, id, cuerpoExtra = {}) => c.pedir('POST', `/activities/${a4}/attendance`, { token, cuerpo: {
+        personaId: trabajadora, deviceId: 'e2e', timestampLocal: hora, idFirmaLocal: id, idSincronizacion: 'sinc_e2e_0001', sobre: sobreDe(pin, id, hora), ...cuerpoExtra,
+    } });
+    const sobreMalo = await conSobre('000000', 'e2e-sobre-malo');
+    comprobar('un sobre con el PIN equivocado se rechaza (400)', sobreMalo.status === 400 && /PIN/.test(sobreMalo.cuerpo?.error || ''), resumen(sobreMalo));
+    const sobreAjeno = await conSobre(PIN, 'e2e-sobre-otro', { idFirmaLocal: 'e2e-otra-firma' });
+    comprobar('un sobre no sirve para otra firma (400)', sobreAjeno.status === 400, resumen(sobreAjeno));
+    const sobreBueno = await conSobre(PIN, 'e2e-sobre-bueno');
+    comprobar('un sobre con el PIN correcto se abre en KMS y firma', sobreBueno.status === 200 && sobreBueno.cuerpo.data.totalAsistentes === 1, resumen(sobreBueno));
+
     // Cinco vales inexistentes a su nombre (lo que produce un PIN equivocado al
     // descifrar en el equipo): al quinto se anulan sus vales vigentes.
-    const basura = () => require('crypto').randomBytes(32).toString('hex');
+    const basura = () => crypto.randomBytes(32).toString('hex');
     let ultimo;
     for (let i = 0; i < 5; i += 1) ultimo = await asistir(a3, { vale: basura(), idFirmaLocal: `e2e-basura-${i}` });
     comprobar('cinco vales inválidos: el quinto anula los vales de la persona',

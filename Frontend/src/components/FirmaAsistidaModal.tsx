@@ -144,12 +144,12 @@ export default function FirmaAsistidaModal({
         }
         setSubmitting(true);
         setError(null);
-        // Sin red: el trabajador firma con un vale suyo de esta obra (habilitado
-        // con "Preparar cuadrilla sin señal"); queda en el equipo y se envía
-        // solo. Con red, la firma asistida con su PIN, que registra quién asistió.
+        // Sin red: el PIN del trabajador abre un vale suyo o va en un sobre para el
+        // servidor (él no ve la diferencia); queda en el equipo y se envía solo.
+        // Con red, la firma asistida con su PIN, que registra quién asistió.
         if (!navigator.onLine) {
             const nombre = [selectedWorker.nombre, selectedWorker.apellido].filter(Boolean).join(' ') || 'Trabajador';
-            const r = await signDocument(selectedDocId, selectedDoc?.titulo || 'Documento', selectedWorker.personaId, nombre, pin, obraId);
+            const r = await signDocument(selectedDocId, selectedDoc?.titulo || 'Documento', selectedWorker.personaId, nombre, pin, selectedDoc?.obraId || null);
             setSubmitting(false);
             if (!r.success) { setError(r.error || 'No se pudo guardar la firma en este equipo.'); return; }
             setOkMsg('Firma guardada en este equipo: se envía sola cuando vuelva la señal.');
@@ -345,7 +345,7 @@ export default function FirmaAsistidaModal({
                             title={`${selectedWorker.nombre} ingresa su PIN`}
                             subtitle={navigator.onLine
                                 ? 'El trabajador introduce su clave personal de firma'
-                                : 'Sin señal: su PIN abre la firma sin conexión que habilitó al preparar la cuadrilla. La firma queda en el equipo hasta que vuelva la señal.'}
+                                : 'El trabajador introduce su clave personal de firma. Sin señal, la firma queda en el equipo y se envía sola al volver.'}
                             error={error ?? undefined}
                             disabled={submitting}
                         />

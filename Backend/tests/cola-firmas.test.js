@@ -189,13 +189,12 @@ test('la Ficha Básica de Salud no se guarda para responder sin red, y borra una
 test('las pantallas pasan la obra de lo que se firma, y la ficha de salud no se firma sin red', () => {
     const act = leerFront('pages', 'Activities.tsx');
     assert.equal((act.match(/signActivity\([\s\S]*?\.obraId \|\| null,?\s*\)/g) || []).length, 3, 'las tres firmas de asistencia pasan la obra de la actividad');
-    const red = act.slice(act.indexOf("if (errMsg.includes('fetch') || errMsg.includes('network')) {"));
+    const red = act.slice(act.indexOf('if (response.sinRed) {'));
     assert.match(red.slice(0, red.indexOf('advanceSigning(1, 0);')), /if \(!resultado\.success\) \{[\s\S]*?return;/,
         'la caída a sin red por error de red tampoco avanza sin guardar');
     const enc = leerFront('pages', 'SurveyResponder.tsx');
     assert.match(enc, /if \(encuesta\.esFichaSalud && !navigator\.onLine\) \{[\s\S]*?return;/);
     assert.ok(enc.includes('encuesta.obraId ?? null'));
-    const hook = leerFront('hooks', 'useOfflineSignature.ts');
-    assert.ok(hook.includes('signaturesApi.emitirVales({ personaId, obraId, pin, cantidad'), 'los vales se piden para la obra del turno');
-    assert.match(hook, /obraId: string,\s*cantidad = 5,/, '5 vales por turno');
+    const turno = leerFront('utils', 'valesTurno.ts');
+    assert.ok(turno.includes('signaturesApi.emitirVales({ personaId, obraId, pin, cantidad: 5,'), '5 vales, para la obra activa');
 });

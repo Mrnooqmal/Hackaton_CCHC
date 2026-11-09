@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { mensajeDeError } from '../../api/client';
 import { useNavigate } from 'react-router-dom';
 import {
     LuArrowRight, LuDownload, LuEye, LuFilePen, LuFileText, LuInfo, LuSearch, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers, LuX,
@@ -251,7 +252,7 @@ export default function RepositorioDs44({
             if (!res.success) throw new Error(res.error || 'No se pudo solicitar la firma.');
             await cargar(true);
         } catch (e) {
-            alert(e instanceof Error ? e.message : 'No se pudo solicitar la firma.');
+            alert(mensajeDeError(e, 'No se pudo solicitar la firma.'));
         } finally {
             setSubiendo(null);
         }
@@ -501,7 +502,7 @@ export default function RepositorioDs44({
                                 <span style={{ width: `${pct}%`, background: pct === 100 ? undefined : 'var(--ob-par-fill)' }} />
                             </span>
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                {f.firmadas === f.total ? 'Todas las personas asignadas firmaron.' : `${f.total - f.firmadas} persona(s) todavía no firman.`}
+                                {f.firmadas === f.total ? 'Todas las personas asignadas firmaron.' : `${f.total - f.firmadas === 1 ? '1 persona todavía no firma' : `${f.total - f.firmadas} personas todavía no firman`}.`}
                             </span>
                             <button type="button" className="ob-btn" aria-expanded={verFirmantes} onClick={() => setVerFirmantes((v) => !v)}>
                                 <LuUsers size={15} /> {verFirmantes ? 'Ocultar firmantes' : 'Ver quién firmó'}

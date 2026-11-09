@@ -1,3 +1,4 @@
+const { plural } = require('../../lib/utils/plural');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -805,7 +806,8 @@ module.exports.registerAttendance = async (event) => {
         // Sin red la asistencia se firma con un vale de un solo uso (ver
         // ValeFirmaService); con red, con el PIN del trabajador.
         const vale = body.vale || null;
-        if (!pin && !vale) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
+        const sobre = body.sobre || null;
+        if (!pin && !vale && !sobre) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
         if (personas.length > 1) {
             return error('La firma con PIN es individual: registra un trabajador a la vez con su propio PIN', 400);
         }
@@ -816,7 +818,7 @@ module.exports.registerAttendance = async (event) => {
         // Con un vale y sin PIN, es una firma tomada sin red que se sincroniza: la
         // puede subir cualquier sesión de la empresa (el vale prueba el
         // consentimiento; FirmaService lo rechaza si es de otra persona o empresa).
-        const firmaConVale = !pin && Boolean(vale);
+        const firmaConVale = !pin && Boolean(vale || sobre);
         if (personas[0] !== sesion.personaId && !firmaConVale && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para registrar la asistencia de otra persona', 403);
         }
@@ -855,7 +857,7 @@ module.exports.registerAttendance = async (event) => {
             if (!persona) return error('Persona no encontrada', 404);
 
             // Crear firma en SignaturesTable (PIN del trabajador, o su vale).
-            const metodo = vale ? 'VALE' : 'PIN';
+            const metodo = ValeFirmaService.metodoDelCuerpo(body);
             let firma;
             try {
                 firma = await FirmaService.crear({
@@ -863,7 +865,7 @@ module.exports.registerAttendance = async (event) => {
                     tenantId: activity.tenantId,
                     obraId: activity.obraId || null,
                     metodo,
-                    credencial: vale ? ValeFirmaService.credencialDelCuerpo(body) : pin,
+                    credencial: metodo === 'PIN' ? pin : ValeFirmaService.credencialDelCuerpo(body),
                     tipoFirma: 'actividad',
                     referenciaId: id,
                     referenciaTipo: 'activity',
@@ -877,7 +879,8 @@ module.exports.registerAttendance = async (event) => {
                 // Un vale rechazado (de otra obra, ya usado, anulado) o una persona
                 // desvinculada son errores de la firma, no del servidor: 400 con
                 // su motivo. Antes caían al 500 genérico.
-                if (['VALE_RECHAZADO', 'PERSONA_DESVINCULADA'].includes(firmaErr.codigo)) return error(firmaErr.message, 400);
+                if (['VALE_RECHAZADO', 'SOBRE_RECHAZADO', 'PERSONA_DESVINCULADA'].includes(firmaErr.codigo)) return error(firmaErr.message, 400);
+                if (firmaErr.codigo === 'SOBRE_NO_DISPONIBLE') return error('No se pudo registrar la firma en este momento.', 503);
                 throw firmaErr;
             }
 
@@ -945,7 +948,7 @@ module.exports.registerAttendance = async (event) => {
         // lista de asistentes que dibuja el listado.
         const visible = descifrarActividad({ asistentes: nuevosAsistentes, firmaRelator }, llaveArreglos);
         return success({
-            message: `${nuevosAsistentes.length} asistente(s) registrado(s)`,
+            message: `${plural(nuevosAsistentes.length, 'asistente registrado', 'asistentes registrados')}`,
             totalAsistentes: asistentes.length,
             nuevosAsistentes: visible.asistentes,
             firmaRelator: incluirFirmaRelator ? visible.firmaRelator : undefined

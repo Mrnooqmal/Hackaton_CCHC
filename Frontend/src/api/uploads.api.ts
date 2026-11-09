@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { mensajeDeError } from './client';
 import type { DocumentoAdjunto } from './signatureRequests.api';
 import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
 
@@ -120,7 +121,7 @@ export const uploadsApi = {
 
             return { success: true, data: confirmResponse.data.documento };
         } catch (error: any) {
-            return { success: false, error: error?.message || 'Error generico' };
+            return { success: false, error: mensajeDeError(error, 'No se pudo subir el archivo.') };
         }
     },
 };

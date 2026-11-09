@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { plural } from '../utils/plural';
 import { LARGO_PIN } from '../utils/pin';
 import {
     FiPlus,
@@ -84,13 +85,14 @@ export default function SignatureRequests() {
         loadOfflinePending();
     }, []);
 
-    // Auto-sync when coming back online
+    // Lo envía SincronizadorFirmas. Cuando cambia la cola, se refresca la lista.
+    const pendientesAntes = useRef(pendingCount);
     useEffect(() => {
-        if (isOnline && pendingCount > 0) {
-            handleSyncOffline();
-        }
+        if (pendingCount < pendientesAntes.current) loadData();
+        pendientesAntes.current = pendingCount;
         loadOfflinePending();
-    }, [isOnline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOnline, pendingCount]);
 
     // La cola de la empresa de esta sesión (utils/colaFirmas).
     const loadOfflinePending = () => {
@@ -510,24 +512,22 @@ export default function SignatureRequests() {
                                 </div>
                                 <div>
                                     <h3 style={{ margin: 0, fontWeight: 600, fontSize: '15px' }}>
-                                        {!isOnline ? 'Sin conexión' : `${offlinePending.length} firma(s) pendiente(s) de sincronizar`}
+                                        {!isOnline ? 'Sin conexión' : plural(offlinePending.length, 'firma por enviar', 'firmas por enviar')}
                                     </h3>
                                     <p className="text-xs text-muted" style={{ margin: 0 }}>
-                                        {!isOnline
-                                            ? 'Las firmas se guardan localmente hasta tener conexión'
-                                            : 'Firmas capturadas offline listas para sincronizar'}
+                                        Se envían solas cuando hay señal.
                                     </p>
                                 </div>
                             </div>
-                            {isOnline && offlinePending.length > 0 && (
+                            {offlinePending.length > 0 && (
                                 <button
-                                    className="btn btn-primary btn-sm"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={handleSyncOffline}
                                     disabled={syncingOffline}
                                     style={{ padding: '8px 16px' }}
                                 >
                                     <FiRefreshCw className={syncingOffline ? 'spin' : ''} size={14} />
-                                    {syncingOffline ? 'Sincronizando...' : 'Sincronizar ahora'}
+                                    {syncingOffline ? 'Enviando…' : 'Enviar ahora'}
                                 </button>
                             )}
                         </div>

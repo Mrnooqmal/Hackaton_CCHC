@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { plural } from '../utils/plural';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     FiUpload, FiCamera, FiX, FiMic, FiRefreshCw, FiCheck,
@@ -429,7 +430,7 @@ export default function IncidentReportar() {
                 )}
 
                 {esHallazgoForm && formData.tipoHallazgo === 'accion' && (
-                    <FieldSection title="Trabajador(es) afectado(s)" inline description="Opcional">
+                    <FieldSection title="Trabajadores afectados" inline description="Opcional">
                         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                             {afectados.map((afectado, idx) => (
                                 <div key={idx}>
@@ -583,7 +584,7 @@ export default function IncidentReportar() {
 
                         {uploadedFiles.length > 0 && (
                             <div>
-                                <p className="text-sm font-semibold mb-2">{uploadedFiles.length} archivo(s) seleccionado(s)</p>
+                                <p className="text-sm font-semibold mb-2">{plural(uploadedFiles.length, 'archivo seleccionado', 'archivos seleccionados')}</p>
                                 <div className="inc-evidence-grid">
                                     {uploadedFiles.map((file, index) => (
                                         <div key={index} className="inc-evidence-thumb">

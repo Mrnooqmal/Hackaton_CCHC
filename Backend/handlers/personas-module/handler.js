@@ -37,7 +37,8 @@ const ESTADO_POR_ERROR_DE_PIN = {
     PIN_INVALIDO: 400,
     PIN_ACTUAL_REQUERIDO: 400,
     PIN_IGUAL: 400,
-    PIN_ACTUAL_INCORRECTO: 401,
+    // No 401: el cliente lo leería como sesión vencida y cerraría la sesión.
+    PIN_ACTUAL_INCORRECTO: 400,
     MOTIVO_REQUERIDO: 400,
     PIN_AJENO: 403,
     PIN_MISMA_PERSONA: 403,

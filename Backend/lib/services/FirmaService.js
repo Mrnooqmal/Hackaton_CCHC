@@ -41,6 +41,12 @@ const ESTRATEGIAS_VALIDACION = {
         nombre: 'Vale offline',
         validar: async (persona, credencial) => Boolean(credencial && credencial.vale)
     },
+    // Firma sin conexión con el PIN cifrado para el servidor (D-36). Como el vale,
+    // se resuelve en `crear()`: abrir el sobre exige saber qué se está firmando.
+    SOBRE: {
+        nombre: 'PIN en sobre cifrado',
+        validar: async (persona, credencial) => Boolean(credencial && credencial.sobre)
+    },
     BIOMETRICO: {
         nombre: 'Biométrico',
         validar: async () => {
@@ -66,6 +72,7 @@ const ESTADOS_SIN_FIRMA = ['desvinculado', 'suspendido', 'inactivo'];
 const motivosDeRevision = (traza) => {
     if (!traza) return [];
     const motivos = [];
+    if (traza.horaDudosa) motivos.push('La hora declarada por el equipo no es creíble (futura, o de hace más de 30 días): confirmar cuándo se tomó la firma.');
     if (traza.valeVencido) motivos.push('El vale de firma había vencido al sincronizar: la firma se registró pero requiere confirmación.');
     if (traza.valeAnuladoPorDesvinculacion || traza.personaDesvinculada) {
         motivos.push('La persona fue desvinculada antes de que la firma llegara al sistema: confirmar que la firma se tomó antes de la desvinculación.');
@@ -73,7 +80,58 @@ const motivosDeRevision = (traza) => {
     return motivos;
 };
 
+const SOBRE_RECHAZADO = (mensaje) => Object.assign(new Error(mensaje), { codigo: 'SOBRE_RECHAZADO' });
+const MINUTO = 60000;
+const DIA_MS = 24 * 60 * MINUTO;
+
 class FirmaService {
+    /**
+     * Abre el sobre de una firma sin conexión, comprueba que sea de ESTA firma y
+     * valida su PIN (D-36). Devuelve la traza; rechaza lanzando:
+     *   SOBRE_RECHAZADO      no va a entrar nunca (hash, PIN equivocado): 400
+     *   PIN_BLOQUEADO        la cuenta está bloqueada: espera en la cola, 423
+     *   SOBRE_NO_DISPONIBLE  KMS no respondió: espera en la cola, 503
+     */
+    static async _validarSobre({ persona, credencial, personaFuera, tenantId, obraId, referenciaTipo, referenciaId }) {
+        const sobreFirma = require('../sobreFirma');
+        const { verificarSobre, PinBloqueadoError, PinDebeCambiarError } = require('../limitePin');
+        const { idFirmaLocal, timestampLocal } = credencial || {};
+        if (!idFirmaLocal || !timestampLocal) throw SOBRE_RECHAZADO('La firma sin conexión no trae sus datos completos.');
+        const abierto = await sobreFirma.abrir(credencial.sobre);
+        if (!abierto) throw SOBRE_RECHAZADO('La firma sin conexión no se pudo leer.');
+        const esperado = sobreFirma.hashDeFirma({ personaId: persona.personaId, tenantId, obraId, referenciaTipo, referenciaId, idFirmaLocal, timestampLocal });
+        if (!sobreFirma.mismoHash(abierto.hash, esperado)) throw SOBRE_RECHAZADO('La firma sin conexión no corresponde a lo que se está firmando.');
+        if (!persona._pinHash) throw SOBRE_RECHAZADO('La persona no tiene un PIN vigente: su PIN se restableció.');
+
+        // Una persona fuera no firma nada nuevo; lo tomado antes entra en revisión,
+        // como con los vales. La hora es declarada: por eso va a revisión y no
+        // entra directo.
+        const declarada = new Date(timestampLocal).getTime();
+        if (personaFuera) {
+            const salida = new Date(persona.desvinculacion?.fechaDesvinculacion || persona.fechaTerminoVinculo || 0).getTime();
+            if (!salida || !(declarada < salida)) {
+                throw Object.assign(new Error('La persona está desvinculada de la empresa y no puede firmar.'), { codigo: 'PERSONA_DESVINCULADA' });
+            }
+        }
+
+        const r = await verificarSobre(persona, abierto.pin, verifyPin, credencial.idSincronizacion);
+        if (r.bloqueada && !r.comprobado) throw new PinBloqueadoError(r.hasta);
+        if (r.debeCambiar) throw new PinDebeCambiarError();
+        if (!r.ok) throw SOBRE_RECHAZADO('El PIN de la firma no es correcto.');
+
+        const ahora = Date.now();
+        return {
+            metodo: 'sobre',
+            dispositivoUso: credencial.deviceId || null,
+            // Según el reloj del equipo: dato declarado (ver la traza del vale).
+            firmadaSinConexionEn: timestampLocal,
+            idFirmaLocal,
+            sincronizadaEn: new Date(ahora).toISOString(),
+            horaDudosa: !Number.isFinite(declarada) || declarada > ahora + 5 * MINUTO || declarada < ahora - 30 * DIA_MS,
+            personaDesvinculada: personaFuera,
+        };
+    }
+
     /**
      * Crea una firma validando credenciales
      * 
@@ -139,7 +197,7 @@ class FirmaService {
         // antes de la desvinculación y sincronizarse después; entra, pero en
         // revisión (más abajo).
         const personaFuera = ESTADOS_SIN_FIRMA.includes(persona.estado);
-        if (personaFuera && metodo !== 'VALE') {
+        if (personaFuera && !['VALE', 'SOBRE'].includes(metodo)) {
             throw Object.assign(new Error('La persona está desvinculada de la empresa y no puede firmar.'), { codigo: 'PERSONA_DESVINCULADA' });
         }
 
@@ -152,7 +210,13 @@ class FirmaService {
         // Art. 71. Parcharlos uno por uno habría dejado abierto el que se
         // olvidara; parchar el punto de encuentro los cierra todos a la vez.
         let valido;
-        if (metodo === 'PIN') {
+        let trazaSobre = null;
+        if (metodo === 'SOBRE') {
+            trazaSobre = await FirmaService._validarSobre({
+                persona, credencial, personaFuera, tenantId: tenantId || persona.tenantId, obraId, referenciaTipo, referenciaId,
+            });
+            valido = true;
+        } else if (metodo === 'PIN') {
             const { verificarConLimiteOLanzar } = require('../limitePin');
             valido = await verificarConLimiteOLanzar(persona, credencial, verifyPin);
         } else {
@@ -194,7 +258,7 @@ class FirmaService {
         // REGISTRA marcada para revisión: el acto ocurrió y descartarlo destruiría
         // evidencia real, pero no puede contar como cumplimiento hasta que alguien
         // con permiso lo confirme.
-        let trazaOffline = null;
+        let trazaOffline = trazaSobre;
         if (metodo === 'VALE') {
             const { ValeFirmaService, MOTIVOS, MOTIVO_VALES_INVALIDOS } = require('./ValeFirmaService');
             const consumo = await ValeFirmaService.consumir({

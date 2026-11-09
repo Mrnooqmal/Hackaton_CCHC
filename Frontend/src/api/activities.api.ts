@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { renovarValesEnSilencio } from '../utils/valesTurno';
 import type { Signature } from './signatures.api';
 
 /** Archivo con las evaluaciones ya corregidas de una capacitación. */
@@ -311,11 +312,15 @@ export const activitiesApi = {
             method: 'DELETE',
         }),
 
-    registerAttendance: (id: string, data: AttendanceData) =>
-        apiRequest<AttendanceResult>(`/activities/${id}/attendance`, {
+    registerAttendance: async (id: string, data: AttendanceData) => {
+        const r = await apiRequest<AttendanceResult>(`/activities/${id}/attendance`, {
             method: 'POST',
             body: JSON.stringify(data),
-        }),
+        });
+        // Escribió su PIN con red: el equipo le renueva los vales, sin decir nada.
+        if (r.success) void renovarValesEnSilencio((data as { workerIds?: string[] }).workerIds?.[0], (data as { pin?: string }).pin);
+        return r;
+    },
 
     getStats: (params?: StatsParams) => {
         const query = new URLSearchParams(params as Record<string, string>).toString();

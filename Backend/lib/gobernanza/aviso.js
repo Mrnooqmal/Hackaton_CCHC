@@ -79,8 +79,9 @@ const ENCARGADOS = [
  * Frontend/src/utils/colaFirmas.ts y copiaLocal.ts.
  */
 const EN_EL_EQUIPO = 'Para firmar sin señal, el equipo donde se habilita la firma guarda tu nombre y cargo, los documentos y actividades '
-    + 'que tienes pendientes, las firmas que aún no se envían y vales de firma cifrados con tu PIN (nunca el PIN). Los vales vencen a '
-    + 'las 12 horas; todo se borra al cerrar sesión a propósito en ese equipo, salvo las firmas por enviar, que se envían al volver la señal.';
+    + 'que tienes pendientes, vales de firma cifrados con tu PIN y las firmas que aún no se envían. Tu PIN nunca queda legible: si va con una '
+    + 'firma por enviar, va cifrado de forma que solo el servidor puede abrirlo. Los vales vencen a las 12 horas; todo se borra al cerrar sesión '
+    + 'a propósito en ese equipo, salvo las firmas por enviar, que se envían al volver la señal.';
 
 const DERECHOS_INFORMADOS = [
     { derecho: 'Acceso y portabilidad', que: 'Saber qué datos tuyos se tratan y recibir una copia en un formato que puedas llevar a otro lugar.' },

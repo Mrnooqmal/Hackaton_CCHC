@@ -69,7 +69,7 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 2.7b | Restablecimiento de un PIN olvidado, con control dual | **Implementado** | Permiso propio y motivo obligatorio; quien restablece no puede asistir en el PIN nuevo; aviso en bandeja en la misma transacción y por correo; vales anulados; historial. `PersonaService.restablecerPin`, `Backend/tests/cambio-pin.test.js`. Ver D-9, "Restablecimiento". |
 | 2.8 | **Throttling a nivel de API** | **Implementado** | Límite por omisión del stage (100 por segundo, ráfaga de 200) y límite propio y estricto en cada ruta pública: el alta de empresas y los reportes de CSP desde septiembre (`558923e`, en prod), y desde el 8 de noviembre de 2026 las de autenticación (ingreso 20/s, recuperar contraseña 2/s, restablecer y validar token 5/s, verificación pública de firmas 10/s). *Corrección:* esta fila decía "sin límite de tasa configurado". El límite es por ruta y por ambiente, no por IP (HTTP API no lo distingue y WAF no se asocia a HTTP API): frena una avalancha; al atacante paciente lo frenan el límite de intentos por cuenta y la detección (D-9, D-31). Un 429 o un 5xx no descartan las firmas sin conexión: quedan en la cola para reintentar. `Backend/tests/limite-tasa-api.test.js`. |
 | 2.9 | El token de sesión se almacena hasheado | **Implementado** | Se guarda `sha256(token)` y se resuelve por índice. Antes se guardaba el token en claro: un volcado de la tabla de sesiones era suplantación inmediata de cualquier usuario. `Backend/lib/auth/sesion.js` |
-| 2.10 | El PIN ya no se guarda en el dispositivo (modo sin conexión) | **Implementado** | Las firmas sin red se acreditan con un **vale de un solo uso** que la persona desbloquea con su PIN al inicio del turno, con red; el dispositivo guarda vales, no el PIN, y el servidor solo guarda el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/tests/vale-firma.test.js`. Ver D-3 para las dos decisiones de diseño (vale vencido y equipo que pierde su identificador). |
+| 2.10 | El PIN ya no se guarda legible en el dispositivo (modo sin conexión) | **Implementado** | Sin red se firma con un **vale de un solo uso**, guardado cifrado con el PIN (D-35), o, si no hay vales, con un **sobre**: el PIN cifrado con la llave pública de KMS y amarrado a esa firma, que solo el servidor puede abrir (D-37). El servidor guarda solo el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/lib/sobreFirma.js`, `Backend/tests/vale-firma.test.js`, `sobre-firma.test.js`. |
 
 ### 2.3 Sesiones y recuperación de acceso
 
@@ -1800,6 +1800,35 @@ tratamiento, de punta a punta con el directorio y la bandeja, rechazada, retirad
 por el titular y no por otro, en la copia de los datos, y rectificación con valores
 cifrados, detalle auditado y sin el sobre en el listado. Además,
 `derechos-titular.test.js` (reglas puras). Los 13 sabotajes se detectaron.
+
+### D-37. Sin señal siempre se puede firmar: el sobre con el PIN cifrado para el servidor
+**Estado: decidido el 8 de noviembre de 2026 tras la prueba en terreno de Adrean (Android en modo avión). Implementado, por desplegar. Suma 2 recursos al stack (la llave y su alias): 446.**
+
+**Qué se decidió.** Con vales (D-35) quien nunca escribió su PIN con red en ese equipo no podía firmar sin señal. Ahora siempre puede, y no elige ni ve la diferencia:
+
+- **Si hay vales** de esa persona para esa obra, se usan: detectan el error de tipeo al momento.
+- **Si no**, el equipo cifra el PIN con la llave pública de un par RSA de KMS (`ClaveSobreFirma`, `RSAES_OAEP_SHA_256`), junto con el hash de la firma: persona, empresa, obra, qué se firma, `idFirmaLocal` y hora declarada. Al sincronizar, el servidor descifra, recalcula el hash con lo que él sabe de la firma y valida el PIN (`lib/sobreFirma.js`, `FirmaService._validarSobre`). El cifrado asimétrico de KMS no tiene contexto de cifrado, por eso el amarre va dentro de lo cifrado.
+- **Si el PIN está mal**, la firma se rechaza y se avisa con nombre: «la firma de X no se validó: tiene que firmar de nuevo». Si la cuenta ya está bloqueada o KMS no responde, la firma no se rechaza: espera en la cola.
+- **Habilitar dejó de ser un paso.** Cada vez que alguien escribe su PIN con red, propio o asistido, el equipo le renueva los vales de la obra activa en silencio si le quedan menos de 3 o vencen en menos de 2 horas (`utils/valesTurno.ts`). Se retiraron el aviso al entrar y la pantalla «Preparar cuadrilla».
+
+**Un intento por sincronización y por persona.** Diez firmas con el PIN mal escrito no bloquean a nadie de golpe, y una cola no sirve para bloquear a un compañero. Pero la sincronización la nombra el cliente: si todo lo que llega con el mismo nombre fuera gratis, sería una forma de probar PIN sin límite. Por eso (`limitePin.verificarSobre`): el mismo PIN malo repetido nunca vuelve a contar; hasta 3 PIN distintos cuentan como un intento; del cuarto en adelante, cada uno cuenta; y si dos peticiones chocan al anotar, la que pierde cuenta. Se guardan huellas (HMAC con llave del servidor, truncado), nunca el PIN. **Consecuencia:** con una sesión de la empresa se pueden probar hasta 3 PIN por intento contado, no 1. Con 6 dígitos y el bloqueo progresivo (60 minutos en el tope) son 15 por hora: unos 7,6 años para recorrer el millón.
+
+**Por qué no contradice D-35.** Desde una copia del almacenamiento no se puede abrir un sobre ni probar PIN contra él: la privada no sale de KMS, y cada intento pasa por el servidor. El PIN descifrado vive solo en memoria y no se registra; cada descifrado queda en CloudTrail.
+
+**Costos aceptados.**
+- Sin vales, el error de tipeo se conoce recién al volver la señal, y esa firma hay que tomarla de nuevo.
+- Quien tiene el teléfono puede dejar firmas a nombre de otra persona. Se rechazan al sincronizar, pero gastan intentos de esa persona (uno por sincronización).
+- Una firma tomada con el PIN de antes de un cambio de PIN se rechaza: se valida contra el PIN vigente.
+- La hora es declarada. Una futura, o de hace más de 30 días, entra en revisión. De una persona desvinculada: lo declarado antes de su salida entra en revisión, y lo declarado después se rechaza.
+- Las llaves asimétricas de KMS no rotan solas, y `Retain` evita que un borrado deje sin abrir lo que siga en la cola de algún equipo.
+
+**Lo demás que salió de la prueba en terreno.**
+- **Sesión:** sin red nunca se cierra. Una recarga sin señal borraba el token (`checkAuth` trataba cualquier fallo de `/auth/me` como sesión inválida), y el reloj la cerraba a la hora aunque no hubiera red. Ahora solo el servidor puede decir que terminó, y sin señal se sigue con una copia mínima (`utils/sesionLocal.ts`, sin RUT, correo ni salud). Además, un PIN equivocado respondía 401 en `/firmas/vales`, `/signatures` y el cambio de PIN, y el cliente lee todo 401 como sesión caída: escribirlo mal cerraba la sesión. Ahora responde 400.
+- **Sincronización:** al volver la red, al volver a la app y cada 20 segundos mientras haya pendientes, sin depender de `navigator.onLine` ni del evento `online`, que en Android no siempre llega.
+- **Firmas que se perdían:** un 401, un 423 o un error pasajero durante el envío ya no descartan la firma: sigue en la cola.
+- **Errores:** sin red ninguna pantalla muestra «Failed to fetch» (`mensajeDeError`, `SIN_SENAL` en `api/client.ts`). El selector de obra usa una copia local.
+
+**Verificación.** `Backend/tests/sobre-firma.test.js` cifra con el código real del frontend y abre con el real del servidor; `firma-sin-red-pantallas.test.js`; y la prueba de punta a punta abre un sobre de verdad en KMS. **No hay prueba automática en un teléfono:** falta repetir la prueba en terreno.
 
 ## 4. Hallazgos priorizados
 

@@ -95,7 +95,9 @@ module.exports.create = async (event) => {
 
         const chequeo = await verificarConLimite(persona, pin, verifyPin);
         if (!chequeo.ok) {
-            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : (chequeo.debeCambiar ? 409 : 401));
+            // 400 y no 401: el cliente lee todo 401 como sesión vencida, y un PIN mal
+            // escrito cerraba la sesión de quien estaba firmando.
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : (chequeo.debeCambiar ? 409 : 400));
         }
 
         // Verificar que la solicitud existe y el trabajador está incluido

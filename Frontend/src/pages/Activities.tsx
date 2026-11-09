@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { mensajeDeError } from '../api/client';
+import { plural } from '../utils/plural';
 import {
     FiPlus,
     FiUsers,
@@ -65,7 +67,7 @@ export default function Activities() {
     const { user, hasPermission } = useAuth();
     const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
     const canPlanificar = hasPermission(PERMISSIONS.ACTIVIDADES_PLANIFICAR);
-    const { isOnline, pendingCount, signActivity, syncPendingSignatures } = useOfflineSignature();
+    const { isOnline, pendingCount, signActivity } = useOfflineSignature();
     const { toast } = useToast();
     const { selectedObraId } = useObraContext();
     const [activities, setActivities] = useState<Activity[]>([]);
@@ -163,17 +165,13 @@ export default function Activities() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.tenantId]);
 
-    // Sync pending offline signatures when online
+    // Las firmas las envía SincronizadorFirmas. Cuando baja la cola, se recarga.
+    const pendientesAntes = useRef(pendingCount);
     useEffect(() => {
-        if (isOnline && pendingCount > 0) {
-            syncPendingSignatures().then(result => {
-                if (result.synced > 0) {
-                    toast.success(`${result.synced} firma(s) sincronizada(s)`);
-                    loadData();
-                }
-            });
-        }
-    }, [isOnline]);
+        if (pendingCount < pendientesAntes.current) loadData();
+        pendientesAntes.current = pendingCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingCount]);
 
     const loadData = async () => {
         // Sin obra seleccionada no se carga nada: la vista muestra el estado vacío.
@@ -389,8 +387,8 @@ export default function Activities() {
         setSelectedWorkers([]);
         setSigningIndex(0);
         loadData();
-        if (signed > 0 && skipped === 0) toast.success(`Asistencia registrada para ${signed} trabajador(es)`);
-        else if (signed > 0 && skipped > 0) toast.success(`${signed} firmada(s), ${skipped} omitida(s)`);
+        if (signed > 0 && skipped === 0) toast.success(`Asistencia registrada para ${plural(signed, 'trabajador', 'trabajadores')}`);
+        else if (signed > 0 && skipped > 0) toast.success(`${plural(signed, 'firmada', 'firmadas')}, ${plural(skipped, 'omitida', 'omitidas')}`);
         else toast.info('No se registró ninguna asistencia');
     };
 
@@ -417,8 +415,8 @@ export default function Activities() {
         const nombre = worker ? `${worker.nombre} ${worker.apellido || ''}`.trim() : 'Trabajador';
         setSignatureError('');
 
-        // Sin red: la firma se guarda en el equipo con un vale de este
-        // trabajador (el PIN no se guarda). Solo se avanza si de verdad quedó
+        // Sin red: la firma se guarda en el equipo (con un vale de este trabajador
+        // o con su PIN cifrado para el servidor). Solo se avanza si de verdad quedó
         // guardada: antes se avanzaba igual y, sin vales, la pantalla daba la
         // firma por tomada sin haberla guardado.
         if (!navigator.onLine) {
@@ -444,8 +442,7 @@ export default function Activities() {
         }
 
         // Error de red → cae a offline para este trabajador.
-        const errMsg = (response.error || '').toLowerCase();
-        if (errMsg.includes('fetch') || errMsg.includes('network')) {
+        if (response.sinRed) {
             // Igual que sin red: solo se avanza si la firma quedó guardada.
             const resultado = await signActivity(selectedActivity.activityId, selectedActivity.titulo, workerId, nombre, pin, selectedActivity.obraId || null);
             if (!resultado.success) {
@@ -648,7 +645,7 @@ export default function Activities() {
             }
         } catch (error: any) {
             console.error('Error self-signing:', error);
-            setSignatureError(error.message || 'Error al registrar tu asistencia');
+            setSignatureError(mensajeDeError(error, 'Error al registrar tu asistencia'));
         }
     };
 
@@ -921,43 +918,13 @@ export default function Activities() {
                 {selectedObraId && <>
 
                 {/* Offline Banner */}
-                {(!isOnline || pendingCount > 0) && (
+                {!isOnline && (
                     <div
-                        className="mb-4 p-3 rounded-lg flex items-center justify-between"
-                        style={{
-                            background: !isOnline ? 'rgba(245, 158, 11, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                            border: `1px solid ${!isOnline ? '#f59e0b' : '#3b82f6'}`,
-                            color: !isOnline ? '#b45309' : '#1d4ed8'
-                        }}
+                        className="mb-4 p-3 rounded-lg flex items-center gap-2"
+                        style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', color: '#b45309' }}
                     >
-                        <div className="flex items-center gap-2">
-                            {!isOnline ? (
-                                <>
-                                    <FiAlertTriangle size={18} />
-                                    <span className="font-medium">Sin conexión - Tu asistencia se guardará localmente</span>
-                                </>
-                            ) : (
-                                <>
-                                    <FiCheck size={18} />
-                                    <span className="font-medium">{pendingCount} registro(s) pendiente(s) de sincronizar</span>
-                                </>
-                            )}
-                        </div>
-                        {isOnline && pendingCount > 0 && (
-                            <button
-                                className="btn btn-sm"
-                                style={{
-                                    background: '#3b82f6',
-                                    color: 'white',
-                                    border: 'none',
-                                    padding: 'var(--space-1) var(--space-3)',
-                                    borderRadius: 'var(--radius-md)'
-                                }}
-                                onClick={() => syncPendingSignatures()}
-                            >
-                                Sincronizar ahora
-                            </button>
-                        )}
+                        <FiAlertTriangle size={18} />
+                        <span className="font-medium">Sin señal: las firmas quedan en este equipo y se envían solas.</span>
                     </div>
                 )}
 
@@ -1509,7 +1476,7 @@ export default function Activities() {
                                 onClick={startSequentialSigning}
                             >
                                 <FiCheck />
-                                Firmar {selectedWorkers.length} Asistencia(s) con PIN
+                                Firmar {plural(selectedWorkers.length, 'asistencia', 'asistencias')} con PIN
                             </button>
                         </>
                     }
@@ -1994,7 +1961,7 @@ export default function Activities() {
                             <div className="flex flex-col gap-3">
                                 {pendientes.length > 0 && (
                                     <div className="alert alert-warning">
-                                        <strong>{pendientes.length}</strong> actividad(es) de este día aún está(n) <strong>por completar</strong>.
+                                        <strong>{pendientes.length}</strong> {pendientes.length === 1 ? 'actividad de este día aún está' : 'actividades de este día aún están'} <strong>por completar</strong>.
                                     </div>
                                 )}
                                 <DayTimeline

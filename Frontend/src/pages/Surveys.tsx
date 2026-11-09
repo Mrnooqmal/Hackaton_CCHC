@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { surveysApi, workersApi, type SurveyListItem } from '../api/client';
 import {
@@ -11,7 +11,6 @@ import {
     FiWifiOff,
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import { PageHeader, SegmentedControl } from '../components/ui';
@@ -41,8 +40,7 @@ export default function Surveys() {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, hasPermission } = useAuth();
-    const { toast } = useToast();
-    const { isOnline, pendingCount, syncPendingSignatures } = useOfflineSignature();
+    const { isOnline, pendingCount } = useOfflineSignature();
     const canManageSurveys = hasPermission(PERMISSIONS.ENCUESTAS_CREAR);
     const [surveys, setSurveys] = useState<SurveyListItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -101,17 +99,13 @@ export default function Surveys() {
         }).catch(() => {});
     }, [canManageSurveys]);
 
-    // Al volver la conexión, sube lo respondido sin red.
+    // Lo respondido sin red lo envía SincronizadorFirmas. Cuando baja la cola, se recarga.
+    const pendientesAntes = useRef(pendingCount);
     useEffect(() => {
-        if (isOnline && pendingCount > 0) {
-            syncPendingSignatures().then((result) => {
-                if (result.synced > 0) {
-                    toast.success(`${result.synced} firma(s) sincronizada(s)`);
-                    loadData();
-                }
-            });
-        }
-    }, [isOnline]);
+        if (pendingCount < pendientesAntes.current) loadData();
+        pendientesAntes.current = pendingCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingCount]);
 
     const coincide = (survey: SurveyListItem) => coincideBusqueda(survey, searchQuery);
 
@@ -356,20 +350,12 @@ export default function Surveys() {
                 ) : undefined}
             />
 
-            {(!isOnline || pendingCount > 0) && (
+            {!isOnline && (
                 <div className="survey-offline-banner">
                     <span className="survey-offline-banner-icon" aria-hidden="true">
                         <FiWifiOff size={17} />
                     </span>
-                    <span className="survey-offline-banner-text">
-                        {!isOnline && 'Sin conexión — las respuestas quedan guardadas en este dispositivo. '}
-                        {pendingCount > 0 && <><strong>{pendingCount} encuesta{pendingCount === 1 ? '' : 's'}</strong> por sincronizar.</>}
-                    </span>
-                    {isOnline && pendingCount > 0 && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => syncPendingSignatures()}>
-                            Sincronizar ahora
-                        </button>
-                    )}
+                    <span className="survey-offline-banner-text">Sin señal: las respuestas quedan en este equipo y se envían solas.</span>
                 </div>
             )}
 

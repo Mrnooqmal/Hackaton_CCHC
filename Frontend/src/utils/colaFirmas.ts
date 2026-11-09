@@ -43,8 +43,10 @@ export interface FirmaPendiente {
     targetTitle: string;
     workerId: string;
     workerName: string;
-    /** Vale de un solo uso. Reemplaza al PIN, que no se guarda nunca. */
-    vale: string;
+    /** Vale de un solo uso, si el equipo tenía. */
+    vale?: string;
+    /** Si no: el PIN y el hash de la firma cifrados para el servidor (utils/sobreFirma). */
+    sobre?: string;
     /** Cuándo se firmó en terreno, según el reloj del equipo (dato declarado). */
     timestamp: string;
     surveyAnswers?: unknown[];

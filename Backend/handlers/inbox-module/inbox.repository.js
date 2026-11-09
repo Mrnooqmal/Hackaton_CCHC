@@ -1,3 +1,4 @@
+const { plural } = require('../../lib/utils/plural');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
@@ -59,7 +60,7 @@ class InboxRepository {
         }
 
         return {
-            message: `Mensaje enviado a ${recipientIds.length} destinatario(s)`,
+            message: `Mensaje enviado a ${plural(recipientIds.length, 'destinatario', 'destinatarios')}`,
             messageId: baseMessageId,
             count: messages.length
         };
@@ -222,7 +223,7 @@ class InboxRepository {
             count++;
         }
 
-        return { message: `${count} mensaje(s) marcado(s) como leído(s)`, count };
+        return { message: plural(count, 'mensaje marcado como leído', 'mensajes marcados como leídos'), count };
     }
 
     async archiveMessage(messageId, userId) {

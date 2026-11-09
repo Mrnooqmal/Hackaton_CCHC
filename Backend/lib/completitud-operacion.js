@@ -15,6 +15,7 @@
  * y por eso esos ítems se declaran no cubiertos en vez de fingir un estado.
  */
 
+const { plural } = require('./utils/plural');
 const C = require('./completitud');
 const A = require('./aplicabilidad');
 const ACT = require('./actividades-evidencia');
@@ -66,7 +67,7 @@ const porPeriodicidad = (tipos, meses, { falta, articulo }) => (ctx) => {
     }
     return transcurridos > meses
         ? { estado: E.VENCIDO, detalle: `El último registro tiene ${Math.floor(transcurridos)} meses; ${articulo} admite hasta ${meses}.` }
-        : { estado: E.CUMPLIDO, detalle: `Último registro hace ${Math.floor(transcurridos)} mes(es).` };
+        : { estado: E.CUMPLIDO, detalle: `Último registro hace ${plural(Math.floor(transcurridos), 'mes', 'meses')}.` };
 };
 
 /**
@@ -81,7 +82,7 @@ const porEvento = (tipos, { sinEventos, conEventos }) => (ctx) => {
     const docs = tipos.flatMap((t) => docsDeTipo(ctx, t)).filter(conArchivo);
     return docs.length === 0
         ? { estado: E.CUMPLIDO, detalle: sinEventos }
-        : { estado: E.CUMPLIDO, detalle: `${docs.length} ${conEventos}` };
+        : { estado: E.CUMPLIDO, detalle: `${docs.length} ${docs.length === 1 ? conEventos[0] : conEventos[1]}` };
 };
 
 // ─── Ítem 6: fecha y revisión periódica de la MIPER ──────────────────────────
@@ -102,7 +103,7 @@ function evaluarItem6(ctx) {
     }
     return meses > MESES_REVISION_MIPER
         ? { estado: E.VENCIDO, detalle: `La última revisión de la MIPER tiene ${Math.floor(meses)} meses; el Art. 7 exige al menos una al año. Se renueva publicando una versión nueva de la MIPER.`, cargar: null }
-        : { estado: E.CUMPLIDO, detalle: `MIPER fechada, revisada hace ${Math.floor(meses)} mes(es).` };
+        : { estado: E.CUMPLIDO, detalle: `MIPER fechada, revisada hace ${plural(Math.floor(meses), 'mes', 'meses')}.` };
 }
 
 // ─── Ítems 18 y 19: capacitación en EPP y su registro ────────────────────────
@@ -204,8 +205,8 @@ function evaluarItem19(ctx) {
             return { estado: E.PARCIAL, acreditacion, detalle: 'Capacitación sin asistentes: no consta quién se capacitó.' };
         }
         return firmados === total
-            ? { estado: E.CUMPLIDO, acreditacion, detalle: `${total} asistente(s) con constancia firmada.` }
-            : { estado: E.PARCIAL, acreditacion, detalle: `${firmados} de ${total} asistente(s) con constancia firmada.` };
+            ? { estado: E.CUMPLIDO, acreditacion, detalle: `${plural(total, 'asistente', 'asistentes')} con constancia firmada.` }
+            : { estado: E.PARCIAL, acreditacion, detalle: `${firmados} de ${plural(total, 'asistente', 'asistentes')} con constancia firmada.` };
     }
 
     if (r.via === 'documento') {
@@ -226,10 +227,10 @@ function evaluarItem19(ctx) {
         }
         const firmadas = asignaciones.filter((a) => a.estado === 'firmado' || a.fechaFirma).length;
         return firmadas === asignaciones.length
-            ? { estado: E.CUMPLIDO, acreditacion, detalle: `${firmadas} asistente(s) con constancia firmada.` }
+            ? { estado: E.CUMPLIDO, acreditacion, detalle: `${plural(firmadas, 'asistente', 'asistentes')} con constancia firmada.` }
             : {
                 estado: E.PARCIAL, acreditacion, cargar: null, pendienteFirma: true,
-                detalle: `${firmadas} de ${asignaciones.length} asistente(s) con constancia firmada.`,
+                detalle: `${firmadas} de ${plural(asignaciones.length, 'asistente', 'asistentes')} con constancia firmada.`,
             };
     }
 
@@ -280,7 +281,7 @@ function evaluarItem23(ctx) {
     const limite = ANIOS_CAPACITACION * 12;
     return meses > limite
         ? { estado: E.VENCIDO, acreditacion, detalle: `La última capacitación tiene ${Math.floor(meses)} meses; el Art. 16 admite hasta ${limite}.` }
-        : { estado: E.CUMPLIDO, acreditacion, detalle: `Última capacitación hace ${Math.floor(meses)} mes(es).` };
+        : { estado: E.CUMPLIDO, acreditacion, detalle: `Última capacitación hace ${plural(Math.floor(meses), 'mes', 'meses')}.` };
 }
 
 // ─── Ítem 29: coordinación en faena compartida ───────────────────────────────
@@ -414,7 +415,7 @@ const DEFINICIONES_OPERACION = [
         tipos: ['REGISTRO_RIESGO_GRAVE', 'PROCEDIMIENTO_RIESGO_GRAVE'],
         evaluar: porEvento(['REGISTRO_RIESGO_GRAVE'], {
             sinEventos: 'Sin eventos de riesgo grave e inminente registrados en el período.',
-            conEventos: 'evento(s) de riesgo grave registrado(s) con su evidencia.',
+            conEventos: ['evento de riesgo grave registrado con su evidencia.', 'eventos de riesgo grave registrados con su evidencia.'],
         }),
     },
     {
@@ -474,7 +475,7 @@ const DEFINICIONES_OPERACION = [
         tipos: ['EXAMEN_OCUPACIONAL'],
         evaluar: porEvento(['EXAMEN_OCUPACIONAL'], {
             sinEventos: 'Sin exámenes de control registrados en el período.',
-            conEventos: 'examen(es) de control con su autorización registrada.',
+            conEventos: ['examen de control con su autorización registrada.', 'exámenes de control con su autorización registrada.'],
         }),
     },
 
@@ -521,7 +522,7 @@ const DEFINICIONES_OPERACION = [
         tipos: ['REGISTRO_DESVIACIONES'],
         evaluar: porEvento(['REGISTRO_DESVIACIONES'], {
             sinEventos: 'Sin desviaciones registradas en el período.',
-            conEventos: 'desviación(es) registrada(s).',
+            conEventos: ['desviación registrada.', 'desviaciones registradas.'],
         }),
     },
     {
@@ -549,7 +550,7 @@ const DEFINICIONES_OPERACION = [
                 estado: E.CUMPLIDO,
                 detalle: casos.length === 0
                     ? 'Procedimiento cargado. Sin accidentes investigados en el período.'
-                    : `Procedimiento cargado y ${casos.length} investigación(es) registrada(s).`,
+                    : `Procedimiento cargado y ${plural(casos.length, 'investigación registrada', 'investigaciones registradas')}.`,
             };
         },
     },

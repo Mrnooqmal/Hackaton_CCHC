@@ -398,7 +398,7 @@ export default function ObraNueva() {
       <FieldSection title="Características DS44" description="Define qué artículos del DS44 aplican a esta obra.">
         <div className="full-width" style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)' }}>
           {[
-            { name: 'faenaCompartida', label: 'Comparte sitio con otra(s) entidad(es) — faena compartida (Art. 20)', checked: formData.faenaCompartida },
+            { name: 'faenaCompartida', label: 'Comparte sitio con otras entidades — faena compartida (Art. 20)', checked: formData.faenaCompartida },
             { name: 'tieneMaquinaria', label: 'Hay máquinas/herramientas motrices (Art. 10)', checked: formData.tieneMaquinaria },
             { name: 'agentesFQB', label: 'Existen agentes físicos/químicos/biológicos (Art. 2 N°14 c)', checked: formData.agentesFQB },
           ].map((item, idx, arr) => (

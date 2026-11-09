@@ -21,6 +21,7 @@
  *   AWS_PROFILE=<perfil> node scripts/informe-brecha.js --stage prod --actor p-123 --desde 2026-09-01T00:00:00Z --hasta 2026-09-29T00:00:00Z [--json]
  */
 
+const { plural } = require('../lib/utils/plural');
 const { execFileSync } = require('child_process');
 
 const args = process.argv.slice(2);
@@ -122,7 +123,7 @@ async function empresaDePersona(personaId) {
     }
     l.push('## Qué datos', '', '| Categoría | Datos | Salud | Registros | Personas | Empresas |', '|---|---|---|---|---|---|');
     for (const c of informe.categorias) l.push(`| ${c.nombre} | ${c.datos.replace(/\|/g, '/')} | ${c.salud ? 'sí' : 'no'} | ${c.registros} | ${c.personas} | ${c.empresas} |`);
-    if (informe.archivos.length) l.push('', `## Archivos (${informe.archivos.length})`, '', ...informe.archivos.slice(0, 200).map((a) => `- ${a.key} — empresa ${a.empresa || '?'} — ${a.sinRegistro ? 'sin registro que lo mencione' : `${a.personas.length} persona(s)`}`));
+    if (informe.archivos.length) l.push('', `## Archivos (${informe.archivos.length})`, '', ...informe.archivos.slice(0, 200).map((a) => `- ${a.key} — empresa ${a.empresa || '?'} — ${a.sinRegistro ? 'sin registro que lo mencione' : `${plural(a.personas.length, 'persona', 'personas')}`}`));
     l.push('', '## Personas por empresa (identificadores)', '');
     for (const [emp, ps] of Object.entries(informe.personasPorEmpresa)) l.push(`- ${emp}: ${ps.length} — ${ps.join(', ')}`);
     console.log(l.join('\n'));

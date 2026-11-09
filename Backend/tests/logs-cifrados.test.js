@@ -45,7 +45,8 @@ test('corre después de unir los recursos propios (antes no está la llave)', ()
 
 test('el plugin está declarado, y la llave autoriza a CloudWatch Logs solo de esta cuenta y región', () => {
     assert.match(yml, /\nplugins:\n(?:  (?:- |# ).+\n)*  - \.\/plugins\/logs-cifrados\.js\n/);
-    const politica = yml.slice(yml.indexOf("- Sid: Uso desde CloudWatch Logs"), yml.indexOf('ClaveDatosAlias:'));
+    const inicio = yml.indexOf('- Sid: Uso desde CloudWatch Logs');
+    const politica = yml.slice(inicio, yml.indexOf('# Sobres de firma sin conexión', inicio));
     assert.match(politica, /Service: !Sub 'logs\.\$\{AWS::Region\}\.amazonaws\.com'/);
     assert.match(politica, /'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:aws:logs:\$\{AWS::Region\}:\$\{AWS::AccountId\}:log-group:\*'/);
     assert.ok(!/kms:\*/.test(politica), 'no todas las acciones');

@@ -3,6 +3,7 @@
  *
  * Router para endpoints de gestión de tenants (empresas).
  */
+const { plural } = require('../../lib/utils/plural');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { success, error, created, cors } = require('../../lib/utils/response');
@@ -350,8 +351,8 @@ module.exports.tenantsHandler = async (event) => {
             }
 
             const partes = [];
-            if (sincronizados > 0) partes.push(`${sincronizados} documento(s) sincronizado(s)`);
-            if (removidos > 0) partes.push(`${removidos} documento(s) despegado(s) por plantilla eliminada`);
+            if (sincronizados > 0) partes.push(`${plural(sincronizados, 'documento sincronizado', 'documentos sincronizados')}`);
+            if (removidos > 0) partes.push(`${plural(removidos, 'documento despegado', 'documentos despegados')} por plantilla eliminada`);
             return success({
                 message: partes.length ? `Catálogo actualizado. ${partes.join(' y ')}.` : 'Catálogo de cargos actualizado',
                 cargos: updated.reglas?.cargos || cargos,

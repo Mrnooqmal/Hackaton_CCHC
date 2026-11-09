@@ -1,3 +1,4 @@
+const { plural } = require('../../lib/utils/plural');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
@@ -817,7 +818,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
         }
 
         return success({
-            message: `Nueva versión publicada en ${actualizados} copia(s). El personal debe re-firmar.`,
+            message: `Nueva versión publicada en ${plural(actualizados, 'copia', 'copias')}. El personal debe re-firmar.`,
             tipo,
             copiasActualizadas: actualizados,
             firmantesConvocados: firmantes.size,
@@ -1096,7 +1097,7 @@ module.exports.assign = async (event) => {
         }
 
         return success({
-            message: `Documento asignado a ${nuevasAsignaciones.length} persona(s)`,
+            message: `Documento asignado a ${plural(nuevasAsignaciones.length, 'persona', 'personas')}`,
             // Lo que va al cliente es el RUT, no el sobre: esta respuesta la
             // dibuja la pantalla igual que un listado.
             asignaciones: descifrarDocumento({ asignaciones: nuevasAsignaciones }, llaveArreglos).asignaciones
@@ -1130,7 +1131,7 @@ module.exports.sign = async (event) => {
         // siempre (ver FirmaService), así que omitir el PIN permitía firmar por
         // otro. Toda firma exige el PIN de quien firma o —cuando se tomó sin red—
         // un vale de un solo uso que esa persona desbloqueó con su PIN.
-        if (!body.pin && !body.vale) {
+        if (!body.pin && !body.vale && !body.sobre) {
             return error('Debes ingresar tu PIN para firmar', 400);
         }
 
@@ -1141,8 +1142,9 @@ module.exports.sign = async (event) => {
         // Con un vale y sin PIN es distinto: es una firma tomada sin red que se
         // sincroniza, y la puede subir cualquier sesión de la empresa. El vale ya
         // prueba el consentimiento (esa persona lo desbloqueó con su PIN), y
-        // FirmaService lo rechaza si es de otra persona o de otra empresa.
-        const firmaConVale = !body.pin && Boolean(body.vale);
+        // FirmaService lo rechaza si es de otra persona o de otra empresa. Lo mismo
+        // con el sobre (D-36): trae el PIN de la persona, amarrado a esta firma.
+        const firmaConVale = !body.pin && Boolean(body.vale || body.sobre);
         if (signerPersonaId !== sesion.personaId && !firmaConVale
             && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para registrar la firma de otra persona', 403);
@@ -1185,8 +1187,8 @@ module.exports.sign = async (event) => {
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
 
-        const metodo = body.vale ? 'VALE' : 'PIN';
-        const credencial = body.vale ? ValeFirmaService.credencialDelCuerpo(body) : body.pin;
+        const metodo = ValeFirmaService.metodoDelCuerpo(body);
+        const credencial = metodo === 'PIN' ? body.pin : ValeFirmaService.credencialDelCuerpo(body);
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({
@@ -1205,6 +1207,9 @@ module.exports.sign = async (event) => {
         } catch (firmaErr) {
             if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
             if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
+            // Pasajero: la firma sin conexión tiene que seguir en la cola, y el
+            // cliente solo descarta lo que se rechaza por su contenido.
+            if (firmaErr.codigo === 'SOBRE_NO_DISPONIBLE' || firmaErr.$metadata) return error('No se pudo registrar la firma en este momento.', 503);
             return error(firmaErr.message, 400);
         }
 

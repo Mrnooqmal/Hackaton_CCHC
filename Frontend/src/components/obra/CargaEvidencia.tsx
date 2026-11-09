@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../../api/client';
+import { plural } from '../../utils/plural';
 import { LuPaperclip, LuSearch, LuUpload } from 'react-icons/lu';
 import { Drawer } from '../ui';
 import { documentsApi } from '../../api/documents.api';
@@ -104,7 +106,7 @@ export default function CargaEvidencia({
             await onListo();
             onCerrar();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'No se pudo guardar.');
+            setError(mensajeDeError(e, 'No se pudo guardar.'));
         } finally {
             setGuardando(false);
         }
@@ -200,7 +202,7 @@ export default function CargaEvidencia({
                 <section className="dp-bloque" aria-label={rotuloFirmantes}>
                     <span className="ce-firmantes__cabeza">
                         <span className="ob-rotulo">{rotuloFirmantes}</span>
-                        <span className="dp-nota">{firmantes.size > 0 ? `${firmantes.size} seleccionada(s)` : modo === 'cargar' ? 'Opcional' : ''}</span>
+                        <span className="dp-nota">{firmantes.size > 0 ? plural(firmantes.size, 'seleccionada', 'seleccionadas') : modo === 'cargar' ? 'Opcional' : ''}</span>
                     </span>
                     {personas.length === 0 ? (
                         <p className="dp-nota">No hay personas asignadas a esta obra.</p>

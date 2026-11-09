@@ -33,6 +33,7 @@
  * ser de la empresa de la sesión.
  */
 
+const { plural } = require('../../lib/utils/plural');
 const { v4: uuidv4 } = require('uuid');
 const { GetCommand, QueryCommand, TransactWriteCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -559,9 +560,9 @@ module.exports.handler = async (event) => module.exports.atender(event);
 // ─── Aviso diario de plazos ─────────────────────────────────────────────────
 
 const TEXTO_ALERTA = {
-    por_vencer: (d) => `Quedan ${d} día(s) para responder una solicitud de un titular.`,
+    por_vencer: (d) => `Quedan ${plural(d, 'día', 'días')} para responder una solicitud de un titular.`,
     vencida: () => 'Venció el plazo para responder una solicitud de un titular.',
-    prorroga_posible: (d) => `Si hace falta prorrogar una solicitud, hay que comunicarlo al titular en los próximos ${d} día(s): después no vale.`,
+    prorroga_posible: (d) => `Si hace falta prorrogar una solicitud, hay que comunicarlo al titular en los próximos ${plural(d, 'día', 'días')}: después no vale.`,
     bloqueo_pendiente: () => 'Una solicitud exige bloquear los datos del titular y el bloqueo no está aplicado.',
 };
 

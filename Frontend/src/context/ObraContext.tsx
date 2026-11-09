@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { obrasApi } from '../api/client';
 import { useAuth } from './AuthContext';
 import { PERMISSIONS } from '../permissions';
+import { guardarCopia, leerCopia } from '../utils/copiaLocal';
 
 export interface Obra {
   obraId: string;
@@ -160,8 +161,14 @@ export const ObraProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // response.data could be { total, obras: [...] } or [...] depending on backend.
         const obrasArray: Obra[] = Array.isArray(response.data) ? response.data : ((response.data as any).obras || []);
         setObras(obrasArray);
+        // Sin señal, el nombre de la obra y el selector salen de esta copia.
+        guardarCopia('obras', obrasArray.map((o) => ({ obraId: o.obraId, tenantId: o.tenantId, nombre: o.nombre, codigo: o.codigo, estado: o.estado, etapaActual: o.etapaActual })));
         const resuelto = resolverScope(obrasArray);
         aplicar(resuelto.scope, resuelto.obraId);
+      } else if (response.sinRed) {
+        // El ámbito guardado se respeta tal cual: sin señal no se revalida.
+        const copia = leerCopia<Obra[]>('obras');
+        if (copia) setObras(copia.datos);
       }
     } catch (error) {
       console.error('Error fetching obras context:', error);

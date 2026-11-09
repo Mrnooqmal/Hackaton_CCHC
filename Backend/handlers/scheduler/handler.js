@@ -1,3 +1,4 @@
+const { plural } = require('../../lib/utils/plural');
 const { ScanCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
@@ -127,7 +128,7 @@ module.exports.checkActivityAlerts = async () => {
                             senderId: 'system', senderName: 'Sistema', senderRol: 'system',
                             recipientIds, type: 'alert', priority: 'normal',
                             subject: `Pendientes de firmar: ${a.titulo}`,
-                            content: `${pendientes.length} trabajador(es) convocados aún no firman la charla "${a.titulo}" de hoy. Gestiona su firma o márcalos como ausentes.`,
+                            content: `${plural(pendientes.length, 'trabajador', 'trabajadores')} convocados aún no firman la charla "${a.titulo}" de hoy. Gestiona su firma o márcalos como ausentes.`,
                             linkedEntity: { type: 'activity', id: a.activityId },
                         });
                         avisosMediodia++;

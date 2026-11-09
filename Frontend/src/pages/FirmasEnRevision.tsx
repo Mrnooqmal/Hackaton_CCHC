@@ -7,8 +7,9 @@ import { useToast } from '../context/ToastContext';
 /**
  * Firmas sin conexión que esperan confirmación.
  *
- * Una firma tomada con vale entra en revisión si el vale venció antes de
- * sincronizar, o si la persona fue desvinculada antes de que llegara. No cuenta
+ * Una firma sin conexión entra en revisión si su vale venció antes de sincronizar,
+ * si la hora declarada no es creíble, o si la persona fue desvinculada antes de
+ * que llegara. No cuenta
  * como cumplimiento hasta que alguien con `firmas.crear` la confirma. Rechazarla
  * no la borra: queda revocada, con el motivo.
  *
@@ -57,7 +58,7 @@ export default function FirmasEnRevision() {
         <div className="page-content">
             <PageHeader
                 title="Firmas en revisión"
-                description="Firmas tomadas sin conexión que llegaron con el vale vencido, o después de desvincular a la persona. No cuentan como cumplimiento hasta que alguien las confirme."
+                description="Firmas tomadas sin conexión que llegaron con el vale vencido, con una hora que no es creíble, o después de desvincular a la persona. No cuentan como cumplimiento hasta que alguien las confirme."
             />
             {cargando ? <LoadingSpinner /> : error ? (
                 <p className="form-error" role="alert">{error}</p>
@@ -74,7 +75,7 @@ export default function FirmasEnRevision() {
                             <p className="firmas-revision__motivo">{f.motivoRevision}</p>
                             <dl className="firmas-revision__fechas">
                                 <dt>Firmada en terreno (según el equipo)</dt><dd>{fecha(f.offline?.firmadaSinConexionEn)}</dd>
-                                <dt>Vale emitido / vence</dt><dd>{fecha(f.offline?.valeEmitidoEn)} / {fecha(f.offline?.valeExpiraEn)}</dd>
+                                {f.offline?.valeEmitidoEn && <><dt>Vale emitido / vence</dt><dd>{fecha(f.offline.valeEmitidoEn)} / {fecha(f.offline.valeExpiraEn)}</dd></>}
                                 {f.offline?.valeAnuladoEn && <><dt>Vale anulado (desvinculación)</dt><dd>{fecha(f.offline.valeAnuladoEn)}</dd></>}
                                 <dt>Llegó al sistema</dt><dd>{fecha(f.offline?.sincronizadaEn || f.timestamp)}</dd>
                             </dl>

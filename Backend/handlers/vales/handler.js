@@ -75,7 +75,9 @@ module.exports.emitir = async (event) => {
 
         const chequeo = await verificarConLimite(persona, body.pin, verifyPin);
         if (!chequeo.ok) {
-            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : (chequeo.debeCambiar ? 409 : 401));
+            // 400 y no 401: el cliente lee todo 401 como sesión vencida, y un PIN mal
+            // escrito cerraba la sesión de quien estaba firmando.
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : (chequeo.debeCambiar ? 409 : 400));
         }
 
         const { vales, expiraEn, vigenciaHoras } = await ValeFirmaService.emitir({

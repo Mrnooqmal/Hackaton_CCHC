@@ -10,6 +10,7 @@
  * (prescripciones). Los demás se agregan acá con la misma forma.
  */
 
+const { plural } = require('./utils/plural');
 const C = require('./completitud');
 const D = require('./distribucion');
 const EP = require('./estructura-preventiva');
@@ -118,13 +119,13 @@ function evaluarDifusion({ tipos, destinatarios, articulo, faltaDocumento }) {
         if (r.completa) {
             return {
                 estado: E.CUMPLIDO,
-                detalle: `Informado a ${r.enviados} destinatario(s).`,
+                detalle: `Informado a ${plural(r.enviados, 'destinatario', 'destinatarios')}.`,
                 distribucion: dist,
             };
         }
         return {
             estado: r.enviados > 0 ? E.PARCIAL : E.PENDIENTE,
-            detalle: `${r.enviados} de ${r.exigibles} destinatario(s) con constancia de envío.`,
+            detalle: `${r.enviados} de ${plural(r.exigibles, 'destinatario', 'destinatarios')} con constancia de envío.`,
             distribucion: dist,
         };
     };
@@ -166,7 +167,7 @@ function evaluarItem50(ctx) {
     if (r.completa) {
         return {
             estado: E.CUMPLIDO,
-            detalle: `Remitido con la anticipación exigida a ${r.enviados} destinatario(s).`,
+            detalle: `Remitido con la anticipación exigida a ${plural(r.enviados, 'destinatario', 'destinatarios')}.`,
             distribucion: dist,
         };
     }
@@ -181,7 +182,7 @@ function evaluarItem50(ctx) {
     }
     return {
         estado: r.enviados > 0 ? E.PARCIAL : E.PENDIENTE,
-        detalle: `${r.enviados} de ${r.exigibles} destinatario(s) con constancia de envío.`,
+        detalle: `${r.enviados} de ${plural(r.exigibles, 'destinatario', 'destinatarios')} con constancia de envío.`,
         distribucion: dist,
     };
 }
@@ -233,7 +234,7 @@ function componentesSgsst(ctx) {
             propio: false,
             detalle: obligatorias.length === 0
                 ? 'Sin órganos obligatorios según la dotación.'
-                : `${constituidas.length} de ${obligatorias.length} órgano(s) obligatorio(s) constituido(s).`,
+                : `${constituidas.length} de ${plural(obligatorias.length, 'órgano obligatorio constituido', 'órganos obligatorios constituidos')}.`,
             enlace: 'estructura-preventiva',
         },
         {
@@ -305,15 +306,15 @@ function evaluarItem58(ctx) {
     const implementadas = pres.filter((p) => p.estado === 'Implementada').length;
 
     if (vencidas > 0) {
-        return { estado: E.VENCIDO, detalle: `${vencidas} prescripción(es) con el plazo vencido sin implementar.` };
+        return { estado: E.VENCIDO, detalle: `${plural(vencidas, 'prescripción', 'prescripciones')} con el plazo vencido sin implementar.` };
     }
     if (pendientes > 0) {
         return {
             estado: implementadas > 0 ? E.PARCIAL : E.PENDIENTE,
-            detalle: `${implementadas} de ${pres.length} prescripción(es) implementada(s).`,
+            detalle: `${implementadas} de ${plural(pres.length, 'prescripción implementada', 'prescripciones implementadas')}.`,
         };
     }
-    return { estado: E.CUMPLIDO, detalle: `${implementadas} prescripción(es) implementada(s) con evidencia.` };
+    return { estado: E.CUMPLIDO, detalle: `${plural(implementadas, 'prescripción implementada', 'prescripciones implementadas')} con evidencia.` };
 }
 
 // ─── Ítems 8 y 9: Programa de Trabajo Preventivo ─────────────────────────────
@@ -340,7 +341,7 @@ function evaluarItem8(ctx) {
     }
     return {
         estado: r.estado === 'desactualizado' ? E.PARCIAL : E.PENDIENTE,
-        detalle: `${r.detalle} Quedan ${r.diasRestantes} día(s) del plazo.`,
+        detalle: `${r.detalle} Quedan ${plural(r.diasRestantes, 'día', 'días')} del plazo.`,
     };
 }
 
@@ -464,7 +465,7 @@ function evaluarItem37(ctx) {
         .sort((a, b) => String(b).localeCompare(String(a)))[0];
     return {
         estado: E.CUMPLIDO,
-        detalle: `${entregas.length} constancia(s) de entrega registrada(s)${ultima ? `, la última el ${String(ultima).slice(0, 10)}` : ''}.`,
+        detalle: `${plural(entregas.length, 'constancia', 'constancias')} de entrega registrada(s)${ultima ? `, la última el ${String(ultima).slice(0, 10)}` : ''}.`,
     };
 }
 
@@ -497,7 +498,7 @@ function evaluarItem51(ctx) {
     if (entidades.length === 0) {
         return { estado: E.PARCIAL, detalle: 'Revisión dentro del año, sin registro de los órganos que participaron.' };
     }
-    return { estado: E.CUMPLIDO, detalle: `Revisada hace ${Math.floor(meses)} mes(es), con ${entidades.length} órgano(s) participante(s).` };
+    return { estado: E.CUMPLIDO, detalle: `Revisada hace ${plural(Math.floor(meses), 'mes', 'meses')}, con ${plural(entidades.length, 'órgano participante', 'órganos participantes')}.` };
 }
 
 // ─── Ítem 60: registro documental fidedigno ──────────────────────────────────

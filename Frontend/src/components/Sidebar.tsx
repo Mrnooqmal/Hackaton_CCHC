@@ -17,8 +17,7 @@ import {
     FiShield,
     FiMapPin,
     FiRepeat,
-    FiMoreHorizontal,
-    FiWifiOff
+    FiMoreHorizontal
 } from 'react-icons/fi';
 import { surveysApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -114,7 +113,6 @@ const navObra = (obraId: string | null): NavSection[] => [
         section: 'Cumplimiento',
         items: [
             { path: '/my-signatures', icon: FiEdit3, label: 'Mis firmas' },
-            { path: '/firmas/preparar-cuadrilla', icon: FiWifiOff, label: 'Preparar cuadrilla sin señal', permission: PERMISSIONS.OBRA_FIRMA_ASISTIDA },
             { path: '/firmas/revision', icon: FiCheckSquare, label: 'Firmas en revisión', permission: PERMISSIONS.FIRMAS_CREAR },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
             { path: '/prescripciones', icon: FiShield, label: 'Prescripciones', permission: PERMISSIONS.REPOSITORIO_VER },
@@ -135,16 +133,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
      * son, para que el supervisor no deje a su cuadrilla sin poder firmar por un
      * toque equivocado.
      */
+    // Los vales se renuevan solos y sin ellos se firma igual: no hay nada que avisar
+    // de ellos. Las firmas por enviar no se pierden, pero conviene saberlo.
     const mensajeCierre = () => {
-        const { vales, firmas } = resumenDelEquipo();
-        const partes: string[] = [];
-        if (vales > 0) {
-            partes.push(`En este equipo hay ${vales} firma(s) sin conexión habilitada(s). Al cerrar sesión se borran, y quienes las habilitaron tendrán que volver a ingresar su PIN con señal.`);
-        }
-        if (firmas > 0) {
-            partes.push(`Además hay ${firmas} firma(s) por enviar: esas no se pierden, se envían la próxima vez que alguien de la empresa entre con señal en este equipo.`);
-        }
-        return partes.length ? `${partes.join(' ')} ¿Cerrar sesión igual?` : '¿Estás seguro de que quieres cerrar sesión?';
+        const { firmas } = resumenDelEquipo();
+        if (firmas === 0) return '¿Estás seguro de que quieres cerrar sesión?';
+        return `En este equipo ${firmas === 1 ? 'hay 1 firma por enviar' : `hay ${firmas} firmas por enviar`}: no se pierden, y se envían la próxima vez que alguien de la empresa entre con señal en este equipo. ¿Cerrar sesión igual?`;
     };
     const [showObraConfirm, setShowObraConfirm] = useState(false);
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);

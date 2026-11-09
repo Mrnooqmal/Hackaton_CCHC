@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { createPortal } from 'react-dom';
 import PinInput from './PinInput';
 import { FiShield, FiX, FiFileText, FiCheckSquare, FiClipboard, FiCalendar } from 'react-icons/fi';
@@ -53,7 +54,7 @@ export default function SignatureModal({
         try {
             await onConfirm(pin);
         } catch (err) {
-            setPinError(err instanceof Error ? err.message : 'Error al validar PIN');
+            setPinError(mensajeDeError(err, 'Error al validar PIN'));
         } finally {
             setIsProcessing(false);
         }

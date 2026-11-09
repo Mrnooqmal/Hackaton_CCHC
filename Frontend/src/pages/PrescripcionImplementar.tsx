@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { FiAlertCircle, FiArrowLeft, FiCheck, FiInfo, FiPaperclip } from 'react-icons/fi';
 import { EmptyState, FieldSection, FormPage, PageHeader } from '../components/ui';
@@ -142,7 +143,7 @@ export default function PrescripcionImplementar() {
                     setSubida('subido');
                 } catch (err) {
                     setSubida('error');
-                    setErrorSubida(err instanceof Error ? err.message : 'error de conexión');
+                    setErrorSubida(mensajeDeError(err, 'error de conexión'));
                     enfocarResumen();
                     return;
                 }

@@ -127,6 +127,16 @@ const hmacRut = async (rut) => {
 };
 
 /**
+ * Huella de un PIN equivocado dentro de una sincronización (D-36): sirve para
+ * saber si ya se probó ese mismo PIN en esa sincronización, sin guardarlo. Corta,
+ * con llave del servidor y atada a la persona y a la sincronización.
+ */
+const huellaIntentoPin = async (personaId, sincronizacion, pin) => {
+    const { valor } = await obtenerLlaveHmac();
+    return crypto.createHmac('sha256', valor).update(`intento-pin:${personaId}:${sincronizacion}:${pin}`).digest('hex').slice(0, 16);
+};
+
+/**
  * HMAC de un correo, para la lista de direcciones suprimidas (rebotes y
  * quejas, `lib/correo.js`): permite saber si una dirección está suprimida sin
  * guardarla en claro. Minúsculas y sin espacios; con prefijo de dominio para
@@ -289,6 +299,7 @@ const cifrarConLlaveDatosSiempre = (valor, llavePlaintext) => cifrarConLlave(JSO
 const descifrarConLlaveDatosSiempre = (sobre, llavePlaintext) => JSON.parse(descifrarConLlave(sobre, llavePlaintext)).v;
 
 module.exports = {
+    huellaIntentoPin,
     normalizarRut,
     hmacRut,
     hmacCorreo,

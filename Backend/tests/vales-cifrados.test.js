@@ -215,27 +215,14 @@ test('firmas rechazadas al sincronizar: por empresa, con nombre, hasta que algui
 
 const leerFront = (...p) => fs.readFileSync(path.join(FRONTEND, 'src', ...p), 'utf8');
 
-test('el hook: comprueba WebCrypto antes de pedir vales, cifra con el PIN aceptado y exige el PIN para firmar', () => {
-    const s = leerFront('hooks', 'useOfflineSignature.ts');
-    const hab = s.slice(s.indexOf('const habilitarSinConexion'), s.indexOf('const valesDe = '));
-    assert.ok(hab.indexOf('if (!cifradoDisponible()) return') < hab.indexOf('signaturesApi.emitirVales('), 'sin WebCrypto ni siquiera se piden');
-    assert.ok(hab.includes('await cifrarVales(pin, res.data.vales)'));
-    assert.ok(!/vales: res\.data\.vales/.test(hab), 'nunca se guardan en claro');
-    assert.ok(s.includes('await tomarVale(tenantId, workerId, obraId, pin)'));
-    assert.equal((s.match(/guardarParaDespues\('(documento|actividad|encuesta)',[^)]*\bpin\b/g) || []).length, 9, 'las nueve rutas sin red pasan el PIN');
-    assert.ok(!s.includes('valeParaFirma'), 'no queda el camino sin PIN');
-});
-
-test('al sincronizar, una firma rechazada se anota con nombre y el sincronizador la muestra', () => {
-    const s = leerFront('hooks', 'useOfflineSignature.ts');
-    const i = s.indexOf('} else if (response && !(response as { reintentable?: boolean }).reintentable && !isNetworkErrorResponse(response.error || \'\')) {');
-    assert.ok(i > 0, 'la rama del rechazo definitivo');
-    const rama = s.slice(i);
-    assert.ok(rama.slice(0, 900).includes('anotarRechazada(tenantId, {'));
-    assert.ok(rama.slice(0, 900).includes('workerName: sig.workerName'));
-    const sinc = leerFront('components', 'firmas', 'SincronizadorFirmas.tsx');
-    assert.ok(sinc.includes('{r.workerName}: {r.targetTitle}'));
-    assert.ok(sinc.includes('onClick={olvidarRechazadas}'));
+test('la renovación comprueba WebCrypto antes de pedir vales, y cifra con el PIN aceptado', () => {
+    const s = leerFront('utils', 'valesTurno.ts');
+    assert.ok(s.indexOf('!cifradoDisponible()') < s.indexOf('signaturesApi.emitirVales('), 'sin WebCrypto ni siquiera se piden');
+    assert.ok(s.includes('await cifrarVales(pin, res.data.vales)'));
+    assert.ok(!/vales: res\.data\.vales/.test(s), 'nunca se guardan en claro');
+    const h = leerFront('hooks', 'useOfflineSignature.ts');
+    assert.ok(h.includes('await tomarVale(tenantId, workerId, obraId, pin)'));
+    assert.equal((h.match(/guardarParaDespues\('(documento|actividad|encuesta)',[^)]*\bpin\b/g) || []).length, 9, 'las nueve rutas sin red pasan el PIN');
 });
 
 test('sin WebCrypto no hay cifrado disponible', () => {

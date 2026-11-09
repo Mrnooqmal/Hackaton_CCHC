@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { mensajeDeError } from '../api/client';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
@@ -179,7 +180,7 @@ export default function EnrollMe() {
             irA('profile');
         } catch (err) {
             console.error('Error en enrolamiento:', err);
-            const mensaje = err instanceof Error ? err.message : 'Error desconocido';
+            const mensaje = mensajeDeError(err, 'Error desconocido');
             // En cambio de PIN se vuelve a empezar: el PIN actual ya se usó (y pudo
             // ser el incorrecto), así que se pide de nuevo si corresponde.
             setPinActual('');

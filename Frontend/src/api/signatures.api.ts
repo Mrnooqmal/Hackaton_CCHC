@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { renovarValesEnSilencio } from '../utils/valesTurno';
 
 export interface SignData {
     tipo?: string;
@@ -145,11 +146,15 @@ export const signaturesApi = {
             body: JSON.stringify(data),
         }),
 
-    create: (data: CreateSignatureData) =>
-        apiRequest<SignatureCreateResult>('/signatures', {
+    create: async (data: CreateSignatureData) => {
+        const r = await apiRequest<SignatureCreateResult>('/signatures', {
             method: 'POST',
             body: JSON.stringify(data),
-        }),
+        });
+        // Escribió su PIN con red: el equipo le renueva los vales, sin decir nada.
+        if (r.success) void renovarValesEnSilencio(data.personaId, data.pin);
+        return r;
+    },
 
     get: (id: string) =>
         apiRequest<DigitalSignature>(`/signatures/${id}`),

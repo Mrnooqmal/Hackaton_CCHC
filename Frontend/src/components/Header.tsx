@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { plural } from '../utils/plural';
 import { Link, useLocation } from 'react-router-dom';
 import { FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
@@ -264,7 +265,7 @@ export default function Header() {
                         to="/inbox"
                         className={`header-action ${location.pathname === '/inbox' ? 'active' : ''}`}
                         aria-label={unreadCount > 0 ? `Notificaciones (${unreadCount} sin leer)` : 'Notificaciones'}
-                        title={unreadCount > 0 ? `${unreadCount} notificacion(es) sin leer` : 'Notificaciones'}
+                        title={unreadCount > 0 ? `${plural(unreadCount, 'notificación', 'notificaciones')} sin leer` : 'Notificaciones'}
                         style={{ position: 'relative' }}
                     >
                         <FiBell />

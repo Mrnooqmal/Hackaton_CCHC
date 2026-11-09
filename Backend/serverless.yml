@@ -149,6 +149,8 @@ provider:
     # La CMK del sistema (`ClaveDatos`), para el cifrado de sobre. Es un id, no
     # un secreto: puede ir resuelto en la plantilla sin problema.
     CAMPO_CIFRADO_KMS_KEY_ID: !Ref ClaveDatos
+    # La llave asimétrica de los sobres de firma sin conexión (D-36).
+    SOBRE_FIRMA_KMS_KEY_ID: !Ref ClaveSobreFirma
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     # --- Gating de alta de empresas (Fase 1: PIN estático) ---
@@ -321,6 +323,13 @@ provider:
             - kms:DescribeKey
           Resource:
             - !GetAtt ClaveDatos.Arn
+        # Sobres de firma sin conexión (D-36): leer la pública y abrir sobres.
+        - Effect: Allow
+          Action:
+            - kms:GetPublicKey
+            - kms:Decrypt
+          Resource:
+            - !GetAtt ClaveSobreFirma.Arn
         # Solo la pimienta, solo lectura. El descifrado lo cubre el permiso de
         # KMS de más arriba, porque el parámetro está cifrado con la misma CMK.
         - Effect: Allow
@@ -1385,6 +1394,34 @@ resources:
               Condition:
                 ArnLike:
                   'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+
+    # Sobres de firma sin conexión (D-36). Par RSA: el equipo cifra el PIN con la
+    # pública, que no es secreta; la privada no sale de KMS. Las llaves asimétricas
+    # no admiten rotación automática. Retain: una llave borrada dejaría sin abrir
+    # las firmas que todavía estén en la cola de algún equipo.
+    ClaveSobreFirma:
+      Type: AWS::KMS::Key
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        Description: Sobres de firma sin conexion de Build & Serve (${self:provider.stage})
+        KeySpec: RSA_2048
+        KeyUsage: ENCRYPT_DECRYPT
+        KeyPolicy:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: Administracion desde la cuenta
+              Effect: Allow
+              Principal:
+                AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+              Action: 'kms:*'
+              Resource: '*'
+
+    ClaveSobreFirmaAlias:
+      Type: AWS::KMS::Alias
+      Properties:
+        AliasName: alias/${self:service}-sobre-firma-${self:provider.stage}
+        TargetKeyId: !Ref ClaveSobreFirma
 
     ClaveDatosAlias:
       Type: AWS::KMS::Alias

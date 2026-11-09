@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { mensajeDeError } from '../../api/client';
 import {
     LuArrowRight, LuCalendar, LuChevronRight, LuEye, LuFilePen, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers,
 } from 'react-icons/lu';
@@ -219,7 +220,7 @@ export default function Ds44Fases({
             if (!res.success) throw new Error(res.error || 'No se pudo solicitar la firma.');
             await onRecargar();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'No se pudo solicitar la firma.');
+            setError(mensajeDeError(e, 'No se pudo solicitar la firma.'));
         } finally {
             setSolicitando(null);
         }

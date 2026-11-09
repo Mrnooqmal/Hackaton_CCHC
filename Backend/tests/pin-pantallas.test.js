@@ -68,11 +68,6 @@ test('el cambio obligatorio: PIN actual de 4, nuevo de 6, sin "Cancelar", y al t
     assert.match(s, /pinDebeCambiar\s*\?\s*<Volver texto="Cerrar sesión"/, 'no hay a dónde volver: solo cerrar sesión');
 });
 
-test('el aviso de vales no aparece a quien debe cambiar el PIN (el servidor no se los daría)', () => {
-    const s = leer('components', 'firmas', 'AvisoValesTurno.tsx');
-    assert.ok(s.includes('|| u.pinDebeCambiar) return null;'));
-});
-
 test('la ficha de la persona dice si su PIN es de 4', () => {
     const s = leer('components', 'PinDeFirma.tsx');
     assert.ok(s.includes('persona.pinConfigurado && persona.pinDebeCambiar ?'));

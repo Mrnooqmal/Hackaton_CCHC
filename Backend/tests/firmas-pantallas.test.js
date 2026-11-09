@@ -107,51 +107,43 @@ test('vales disponibles: con obra, solo cuentan los de esa obra', async () => {
 
 // ─── Pantallas ───────────────────────────────────────────────────────────────
 
-test('rutas y menú: preparar cuadrilla con firma asistida, revisión con firmas.crear', () => {
+test('rutas y menú: firmas en revisión con firmas.crear; el sincronizador, en toda sesión', () => {
     const app = leerFront('App.tsx');
-    assert.match(app, /path="\/firmas\/preparar-cuadrilla"[\s\S]{0,200}PERMISSIONS\.OBRA_FIRMA_ASISTIDA/);
     assert.match(app, /path="\/firmas\/revision"[\s\S]{0,200}PERMISSIONS\.FIRMAS_CREAR/);
     assert.ok(app.includes('{user && <SincronizadorFirmas />}'), 'se sincroniza en cualquier pantalla con sesión');
-    assert.ok(app.includes('{user && <AvisoValesTurno />}'));
     const menu = leerFront('components', 'Sidebar.tsx');
-    assert.match(menu, /'\/firmas\/preparar-cuadrilla'[^}]*permission: PERMISSIONS\.OBRA_FIRMA_ASISTIDA/);
     assert.match(menu, /'\/firmas\/revision'[^}]*permission: PERMISSIONS\.FIRMAS_CREAR/);
 });
 
-test('cerrar sesión avisa cuántos vales se pierden y cuántas firmas quedan por enviar', () => {
+test('habilitar no es un paso: no hay aviso al entrar ni pantalla de cuadrilla', () => {
+    const app = leerFront('App.tsx');
+    const menu = leerFront('components', 'Sidebar.tsx');
+    for (const s of [app, menu]) {
+        assert.ok(!/AvisoValesTurno|PrepararCuadrilla|preparar-cuadrilla/.test(s));
+    }
+    for (const archivo of [['components', 'firmas', 'AvisoValesTurno.tsx'], ['components', 'firmas', 'HabilitarValesModal.tsx'], ['pages', 'PrepararCuadrilla.tsx']]) {
+        assert.ok(!fs.existsSync(path.join(FRONTEND, 'src', ...archivo)), archivo.join('/'));
+    }
+});
+
+test('cerrar sesión avisa cuántas firmas quedan por enviar, con el plural correcto', () => {
     const s = leerFront('components', 'Sidebar.tsx');
-    assert.ok(s.includes('const { vales, firmas } = resumenDelEquipo();'));
+    assert.ok(s.includes('const { firmas } = resumenDelEquipo();'));
     assert.ok(s.includes('message={mensajeCierre()}'));
+    assert.ok(s.includes("'hay 1 firma por enviar'"));
 });
 
-test('el aviso de vales sale solo con señal, en una obra asignada y con menos de 3', () => {
-    const s = leerFront('components', 'firmas', 'AvisoValesTurno.tsx');
-    assert.ok(s.includes('const MINIMO = 3;'));
-    assert.match(s, /!isOnline \|\| scope !== 'obra'/);
-    assert.ok(s.includes("(u.obraIds || []).includes(selectedObraId)"), 'solo en obras de la persona');
-    assert.ok(s.includes('valesDe(personaId, selectedObraId)'), 'cuenta los vales de esa obra');
-});
-
-test('el sincronizador no corre dos envíos a la vez', () => {
-    const hook = leerFront('hooks', 'useOfflineSignature.ts');
-    assert.match(hook, /let sincronizacionEnCurso[^;]*;/, 'candado a nivel de módulo, compartido entre pantallas');
-    const s = leerFront('components', 'firmas', 'SincronizadorFirmas.tsx');
-    assert.ok(s.includes('if (!navigator.onLine || avisando.current) return;'));
-});
-
-test('firma asistida sin red: el PIN del trabajador abre su vale, para la obra', () => {
+test('firma asistida sin red: el PIN del trabajador firma, para la obra del documento', () => {
     const s = leerFront('components', 'FirmaAsistidaModal.tsx');
     const rama = s.slice(s.indexOf('if (!navigator.onLine) {\n            const nombre'));
     assert.ok(rama.length > 0, 'falta la rama sin red');
     const cuerpo = rama.slice(0, rama.indexOf('return;\n        }') + 1);
-    assert.ok(cuerpo.includes('signDocument(selectedDocId,'), 'firma con el vale, vía la cola');
-    assert.ok(cuerpo.includes('selectedWorker.personaId, nombre, pin, obraId)'), 'a nombre del trabajador y para la obra');
+    assert.ok(cuerpo.includes('signDocument(selectedDocId,'));
+    assert.ok(cuerpo.includes('selectedWorker.personaId, nombre, pin, selectedDoc?.obraId || null)'));
     assert.match(cuerpo, /if \(!r\.success\) \{[^}]*return; \}/, 'si no quedó guardada, no se da por firmada');
-    assert.ok(s.includes('Sin señal: su PIN abre la firma sin conexión'), 'dice qué hace el PIN sin red');
-    assert.ok(!s.includes('el PIN no se puede comprobar'), 'ya no dice que el PIN no se comprueba');
 });
 
-test('mis firmas: las solicitudes de firma piden red; los documentos van por la cola', () => {
+test('mis firmas: los documentos van por el hook, que firma con o sin red', () => {
     const s = leerFront('pages', 'MySignatures.tsx');
-    assert.ok(s.includes('signDocument('), 'los documentos usan el hook (con vale sin red)');
+    assert.ok(s.includes('signDocument('));
 });

@@ -347,9 +347,18 @@ class ValeFirmaService {
      * definición para los tres caminos que aceptan vales (documento, asistencia
      * y encuesta).
      */
+    static metodoDelCuerpo(body = {}) {
+        if (body.pin) return 'PIN';
+        if (body.vale) return 'VALE';
+        return body.sobre ? 'SOBRE' : 'PIN';
+    }
+
     static credencialDelCuerpo(body = {}) {
         return {
             vale: body.vale,
+            sobre: body.sobre,
+            // Con cuál sincronización llegó: un intento de PIN por sincronización (D-36).
+            idSincronizacion: typeof body.idSincronizacion === 'string' ? body.idSincronizacion.slice(0, 64) : null,
             deviceId: body.deviceId || null,
             timestampLocal: body.timestampLocal || null,
             idFirmaLocal: typeof body.idFirmaLocal === 'string' && body.idFirmaLocal ? body.idFirmaLocal.slice(0, 100) : null,

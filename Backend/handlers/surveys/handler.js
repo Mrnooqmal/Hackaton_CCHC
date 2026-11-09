@@ -460,7 +460,8 @@ module.exports.updateResponseStatus = async (event) => {
         // cuando la encuesta se respondió sin red (ver ValeFirmaService).
         const pin = body.pin;
         const vale = body.vale || null;
-        if (status === 'respondida' && !pin && !vale) {
+        const sobre = body.sobre || null;
+        if (status === 'respondida' && !pin && !vale && !sobre) {
             return error('Se requiere PIN para firmar la respuesta de la encuesta');
         }
 
@@ -470,7 +471,7 @@ module.exports.updateResponseStatus = async (event) => {
         // Con un vale y sin PIN, es una respuesta tomada sin red que se sincroniza:
         // la puede subir cualquier sesión de la empresa (el vale prueba el
         // consentimiento; FirmaService lo rechaza si es de otra persona o empresa).
-        const firmaConVale = !pin && Boolean(vale);
+        const firmaConVale = !pin && Boolean(vale || sobre);
         if (workerId !== sesion.personaId && !firmaConVale && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para responder por otra persona', 403);
         }
@@ -522,8 +523,8 @@ module.exports.updateResponseStatus = async (event) => {
                     personaId: workerId,
                     tenantId: survey.tenantId,
                     obraId: survey.obraId || null,
-                    metodo: vale ? 'VALE' : 'PIN',
-                    credencial: vale ? ValeFirmaService.credencialDelCuerpo(body) : pin,
+                    metodo: ValeFirmaService.metodoDelCuerpo(body),
+                    credencial: ValeFirmaService.metodoDelCuerpo(body) === 'PIN' ? pin : ValeFirmaService.credencialDelCuerpo(body),
                     tipoFirma: 'encuesta',
                     referenciaId: id,
                     referenciaTipo: 'survey',
@@ -539,6 +540,7 @@ module.exports.updateResponseStatus = async (event) => {
             } catch (firmaError) {
                 if (firmaError.codigo === 'PIN_BLOQUEADO') return error(firmaError.message, 423);
                 if (firmaError.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaError.message, 409);
+                if (firmaError.codigo === 'SOBRE_NO_DISPONIBLE' || firmaError.$metadata) return error('No se pudo registrar la firma en este momento.', 503);
                 console.error('Error validando firma:', firmaError.message);
                 // 400, como documentos y actividades. Era 401, y el cliente lee un
                 // 401 como sesión vencida: un PIN mal tecleado al responder una

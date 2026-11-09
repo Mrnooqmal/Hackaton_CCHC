@@ -28,7 +28,7 @@ test('cada categoría del inventario aparece, con su finalidad y su plazo de con
         assert.ok(t.conservacion && !/undefined/.test(t.conservacion), `${f.nombre}: plazo`);
     }
     assert.ok(a.tratamientos.some((t) => t.contieneSalud), 'dice qué categorías traen salud');
-    assert.match(a.enElEquipo, /cifrados con tu PIN \(nunca el PIN\)/, 'lo que queda en el equipo para firmar sin señal');
+    assert.match(a.enElEquipo, /solo el servidor puede abrirlo/, 'lo que queda en el equipo para firmar sin señal');
     assert.match(a.enElEquipo, /12 horas/);
 });
 

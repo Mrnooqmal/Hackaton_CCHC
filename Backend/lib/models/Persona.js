@@ -123,6 +123,10 @@ class Persona {
         // aparte sería una lectura más en cada intento de firma.
         this.pinIntentosFallidos = data.pinIntentosFallidos || 0;
         this.pinBloqueadaHasta = data.pinBloqueadaHasta || null;
+        // PIN equivocados de sobres en la última sincronización (D-36): huellas,
+        // nunca el PIN. Estado de `verificarSobre`, como el contador de arriba.
+        this.intentoSobre = data.intentoSobre || null;
+        this.intentoSobreV = data.intentoSobreV || 0;
         // Restablecimiento de PIN pendiente: `{por, nombre, en, motivo}` desde
         // que alguien lo restablece hasta que se configura el nuevo. Mientras
         // exista, quien restableció NO puede asistir en la configuración del
@@ -366,6 +370,7 @@ class Persona {
             pinLargo: this.pinLargo,
             pinIntentosFallidos: this.pinIntentosFallidos,
             pinBloqueadaHasta: this.pinBloqueadaHasta,
+            ...(this.intentoSobre ? { intentoSobre: this.intentoSobre, intentoSobreV: this.intentoSobreV } : {}),
             pinRestablecido: this.pinRestablecido,
             pinHistorial: this.pinHistorial,
             passwordTemporal: this.passwordTemporal,
