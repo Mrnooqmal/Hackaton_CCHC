@@ -22,7 +22,7 @@ pero **por ahora no debe usarse como única prueba legal** hasta tener la respue
 
 | Forma | ¿Cuándo se usa? |
 | --- | --- |
-| **PIN propio** | La persona firma desde su sesión, con su PIN de 6 dígitos. |
+| **PIN propio** | La persona firma desde su sesión, con su PIN de 4 dígitos. |
 | **Firma asistida** | La persona firma en el equipo de un supervisor, escribiendo **su** PIN. |
 | **Firma del relator** | El relator certifica que la capacitación se realizó, además de los asistentes. |
 

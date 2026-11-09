@@ -11,6 +11,7 @@
     "build": "node scripts/verificar-recorridos.mjs && tsc -b && vite build",
     "test": "node --test 'tests/*.test.mjs'",
     "test:e2e": "playwright test",
+    "capturas": "playwright test --config playwright.capturas.config.mjs",
     "recorridos:verificar": "node scripts/verificar-recorridos.mjs",
     "recorridos:huellas": "node scripts/verificar-recorridos.mjs --actualizar-huellas",
     "recorridos:listar": "node scripts/listar-recorridos.mjs",

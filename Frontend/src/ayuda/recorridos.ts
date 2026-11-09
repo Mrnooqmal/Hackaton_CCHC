@@ -152,7 +152,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
         pantalla: 'mis-firmas',
         visibleSi: {},
         ambito: 'cualquiera',
-        version: 1,
+        version: 2,
         reiniciarAlPublicar: false,
         estado: 'publicado',
         titulo: t('Firmar lo que te asignan'),
@@ -166,7 +166,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = [
             {
                 ancla: 'mis-firmas.lista',
                 titulo: t('Cómo se firma'),
-                descripcion: t('Toca Firmar, lee el documento con Ver documento, escribe tu PIN de 6 dígitos y marca que lo leíste. La firma queda registrada con fecha y hora.'),
+                descripcion: t('Toca Firmar, lee el documento con Ver documento, escribe tu PIN de 4 dígitos y marca que lo leíste. La firma queda registrada con fecha y hora.'),
                 manual: 'terreno/firmar',
             },
             {

@@ -3,6 +3,8 @@
 // En el build de prod, una página pendiente de revisión normativa llega como
 // null (vite-manual-pendiente.ts) y no se publica: ver publicacion.ts.
 
+import { sinFilasNoPublicadas } from './publicacion';
+
 const modulos = import.meta.glob('./content/**/*.md', {
     query: '?raw',
     import: 'default',
@@ -42,6 +44,12 @@ for (const [filePath, raw] of Object.entries(modulos)) {
     const slug = pathToSlug(filePath);
     const body = stripFrontmatter(raw);
     DOCS[slug] = { slug, title: extractTitle(body, slug), body };
+}
+
+// Ya con todas las páginas: una fila de tabla que presenta una página no
+// publicada en este build no se muestra ni se busca.
+for (const doc of Object.values(DOCS)) {
+    doc.body = sinFilasNoPublicadas(doc.body, (pagina) => pagina === '' || pagina in DOCS);
 }
 
 /** Normaliza una ruta relativa a /manual a su slug canónico. */

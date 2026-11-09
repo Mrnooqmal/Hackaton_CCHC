@@ -30,7 +30,7 @@ export const RECORRIDOS: readonly DefinicionRecorrido[] = ${JSON.stringify([
 `;
 
 /** Construye la app con VITE_AMBIENTE = `ambiente` y devuelve todo el JS generado. */
-async function construir(ambiente) {
+async function construir(ambiente, fuente = FUENTE) {
     const salida = mkdtempSync(join(tmpdir(), 'recorridos-build-'));
     const previo = process.env.VITE_AMBIENTE;
     if (ambiente === undefined) delete process.env.VITE_AMBIENTE; else process.env.VITE_AMBIENTE = ambiente;
@@ -43,7 +43,7 @@ async function construir(ambiente) {
             plugins: [{
                 name: 'prueba-recorridos-con-borrador',
                 enforce: 'pre',
-                load: (id) => (/\/src\/ayuda\/recorridos\.ts$/.test(id.split('?')[0]) ? FUENTE : null),
+                load: (id) => (/\/src\/ayuda\/recorridos\.ts$/.test(id.split('?')[0]) ? fuente : null),
             }],
         });
         const js = [];
@@ -94,7 +94,7 @@ test('si el texto de un borrador aparece en otro archivo del bundle, el build fa
     p.configResolved({ command: 'build' });
     await p.transform.call({}, `export const RECORRIDOS = ${JSON.stringify([definicion('prueba-borrador', 'borrador', MARCA_BORRADOR)])};`, '/x/src/ayuda/recorridos.ts');
     const contexto = { error: (m) => { throw new Error(m); } };
-    const bundle = { 'otro.js': { type: 'chunk', fileName: 'otro.js', code: `const t = "Título ${MARCA_BORRADOR}";` } };
+    const bundle = { 'otro.js': { type: 'chunk', fileName: 'otro.js', code: `const t = "Descripción ${MARCA_BORRADOR}";` } };
     assert.throws(() => p.generateBundle.call(contexto, {}, bundle), /llegó al build de prod/);
     assert.doesNotThrow(() => p.generateBundle.call(contexto, {}, { 'a.js': { type: 'chunk', fileName: 'a.js', code: 'nada' } }));
 });
@@ -105,7 +105,28 @@ test('si el módulo de recorridos no pasa por el plugin, el build de prod falla'
     assert.throws(() => p.buildEnd.call({ error: (m) => { throw new Error(m); } }), /no se pudieron quitar/);
 });
 
-test('huellasDeBorrador: id y textos largos, no textos cortos que darían falsos positivos', () => {
-    const h = huellasDeBorrador({ id: 'x', estado: 'borrador', titulo: { es: 'Corto' }, pasos: [{ descripcion: { es: 'Un texto bastante largo' } }] });
-    assert.deepEqual(h, ['id:"x"', '"id":"x"', 'Un texto bastante largo']);
+test('huellasDeBorrador: la definición y las descripciones, no títulos, que también pueden ser textos de la app', () => {
+    const largo = 'Un texto bastante largo, que solo puede venir de este recorrido.';
+    const h = huellasDeBorrador({ id: 'x', estado: 'borrador', titulo: { es: 'Hallazgo, incidente o accidente' }, pasos: [{ titulo: { es: 'Cambiar de obra' }, descripcion: { es: largo } }, { descripcion: { es: 'Corta.' } }] });
+    assert.deepEqual(h, ['id:"x",tipo:', '"id":"x","tipo":', largo]);
+});
+
+test('un título de botón o un id de pestaña igual a los de un borrador no hacen fallar el build; su definición o una descripción, sí', async () => {
+    const p = borradoresRecorridos({ ambiente: 'prod' });
+    p.configResolved({ command: 'build' });
+    const largo = 'Una descripción larga que solo puede venir de este recorrido.';
+    const borrador = { ...definicion('reportar', 'borrador', 'x'), titulo: { es: 'Cambiar de obra' }, pasos: [{ titulo: { es: 'Cambiar de obra' }, descripcion: { es: largo } }] };
+    await p.transform.call({}, `export const RECORRIDOS = ${JSON.stringify([borrador])};`, '/x/src/ayuda/recorridos.ts');
+    const contexto = { error: (m) => { throw new Error(m); } };
+    const conCodigo = (code) => ({ 'a.js': { type: 'chunk', fileName: 'a.js', code } });
+    assert.doesNotThrow(() => p.generateBundle.call(contexto, {}, conCodigo('h("button",{id:"reportar",children:"Cambiar de obra"})')));
+    assert.throws(() => p.generateBundle.call(contexto, {}, conCodigo('const r={id:"reportar",tipo:"opcional"}')), /llegó al build de prod/);
+    assert.throws(() => p.generateBundle.call(contexto, {}, conCodigo(`const t=${JSON.stringify(largo)}`)), /llegó al build de prod/);
+});
+
+test('los recorridos reales, todos como borrador, no chocan con ningún texto de la app en el build de prod', { timeout: 120000 }, async () => {
+    const { RECORRIDOS } = await import('../src/ayuda/recorridos.ts');
+    const fuente = `export const RECORRIDOS = ${JSON.stringify(RECORRIDOS.map((d) => ({ ...d, estado: 'borrador' })))};\n`;
+    const js = await construir('prod', fuente);
+    for (const d of RECORRIDOS) for (const h of huellasDeBorrador(d)) assert.ok(!js.includes(h), `${d.id}: ${h}`);
 });

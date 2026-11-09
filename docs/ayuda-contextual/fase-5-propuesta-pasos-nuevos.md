@@ -74,7 +74,7 @@ El recorrido actual (`programar-actividades`) cubre solo la planificación. No c
 | 2 | ⚓ `actividades.hoy` | Quién falta | Ver pendientes muestra quién no ha firmado. Ahí también anotas una ausencia justificada. Se puede firmar todo el día; después de la hora de inicio queda como atraso. |
 | 3 | ⚓ `actividades.historial` | Historial | Lo ya realizado, por 7 días, 30 días o entre dos fechas. Desde cada fila ves el reporte o lo descargas en PDF. |
 
-> ⚠️ **Esperar a la otra sesión.** El registro de asistencia cambia con la firma sin conexión: vales, revisión de firmas tardías y "Preparar cuadrilla sin señal". Ya están en el árbol principal, sin commitear, en `Activities.tsx`. Propongo escribir 2b cuando eso llegue a `pruebas`, para no explicar un flujo que cambia. El texto de arriba es el del flujo actual.
+> ⚠️ **Esperar a la otra sesión.** El registro de asistencia cambia con la firma sin conexión: vales, revisión de firmas tardías y "Preparar cuadrilla sin señal" (esta última se va a quitar de la app; decisión del 8 de noviembre de 2026). Ya están en el árbol principal, sin commitear, en `Activities.tsx`. Propongo escribir 2b cuando eso llegue a `pruebas`, para no explicar un flujo que cambia. El texto de arriba es el del flujo actual.
 
 ### 2c. 🆕 `mis-actividades` · `actividades.ver` sin `actividades.crear` · ámbito obra
 

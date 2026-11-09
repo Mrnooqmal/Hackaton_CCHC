@@ -52,6 +52,19 @@ export function resolverEnlace(
 }
 
 /**
+ * Quita las filas de tabla que llevan a una página no publicada en este build:
+ * una fila que presenta una sección que no existe no se arregla sacándole el
+ * enlace. El resto del markdown queda igual.
+ */
+export function sinFilasNoPublicadas(markdown: string, existe: (pagina: string) => boolean): string {
+    return markdown.split('\n').filter((linea) => {
+        if (!linea.trimStart().startsWith('|')) return true;
+        return ![...linea.matchAll(/\]\(\/([^)#\s]*)(?:#[^)\s]*)?\)/g)]
+            .some((m) => !m[1].startsWith('img/') && !existe(m[1].replace(/\/+$/, '')));
+    }).join('\n');
+}
+
+/**
  * A dónde lleva una dirección vieja del manual en este build: su página nueva
  * si está publicada; si no (por ejemplo, una de DS 44 en prod mientras FUF
  * espera la revisión), la portada del manual. null si la dirección no es vieja.

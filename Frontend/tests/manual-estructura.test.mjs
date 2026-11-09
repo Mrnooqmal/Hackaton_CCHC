@@ -130,3 +130,15 @@ test('las capturas pendientes quedan como comentario: no se muestran ni se busca
         }
     }
 });
+
+test('redacción: la pantalla Preparar cuadrilla se quita de la app y no aparece en el manual ni en los recorridos', async () => {
+    const { RECORRIDOS } = await import('../src/ayuda/recorridos.ts');
+    const textos = [...Object.entries(PAGINAS), ['recorridos', JSON.stringify(RECORRIDOS)]];
+    assert.deepEqual(textos.filter(([, t]) => /preparar[\s-]+(la\s+)?cuadrilla/i.test(t)).map(([s]) => s), []);
+});
+
+test('redacción: el PIN es de 4 dígitos en el manual y en los recorridos', async () => {
+    const { RECORRIDOS } = await import('../src/ayuda/recorridos.ts');
+    const textos = [...Object.entries(PAGINAS), ['recorridos', JSON.stringify(RECORRIDOS)]];
+    assert.deepEqual(textos.filter(([, t]) => /\b6 dígitos\b|seis dígitos|PIN era de 4/i.test(t)).map(([s]) => s), []);
+});

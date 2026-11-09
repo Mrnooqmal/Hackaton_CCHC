@@ -9,9 +9,13 @@
 // Cómo:
 //   1. `transform` reescribe el módulo `src/ayuda/recorridos.ts` ya compilado:
 //      lo evalúa, quita los borradores y lo emite como datos.
-//   2. `generateBundle` revisa el bundle final: si aparece el id o un texto de
+//   2. `generateBundle` revisa el bundle final: si aparece lo que identifica a
 //      un borrador, el build falla. Cubre lo que el paso 1 no ve (alguien que
-//      copia el texto en otro archivo).
+//      copia el texto en otro archivo). Identifica a un borrador su definición
+//      (`id` seguido de `tipo`) y sus descripciones, que son frases propias. Un
+//      título o un id suelto no: "Cambiar de obra" es también un botón de la app,
+//      "Hallazgo, incidente o accidente" está en el manual y `id:"x"` puede ser el
+//      de cualquier pestaña; buscarlos hacía fallar builds correctos.
 //   3. `buildEnd` falla si el módulo de recorridos nunca pasó por aquí: un
 //      cambio de nombre o de ruta no puede apagar esto en silencio.
 //
@@ -29,11 +33,14 @@ export const incluyeBorradores = (comando: 'serve' | 'build', ambiente: string |
 
 export const sinBorradores = (lista: readonly Definicion[]) => lista.filter((d) => d.estado !== 'borrador');
 
-/** Lo que delataría un borrador en el bundle: su id como valor y sus textos. */
+/** Una descripción más corta que esto puede coincidir por casualidad con un texto de la app. */
+export const LARGO_DESCRIPCION_IDENTIFICA = 30;
+
+/** Lo que delataría un borrador en el bundle: su definición y sus descripciones. */
 export function huellasDeBorrador(d: Definicion): string[] {
-    const textos = [d.titulo?.es, ...(d.pasos || []).flatMap((p) => [p.titulo?.es, p.descripcion?.es])]
-        .filter((t): t is string => typeof t === 'string' && t.trim().length >= 12);
-    return [`id:"${d.id}"`, `"id":"${d.id}"`, ...textos.map((t) => JSON.stringify(t).slice(1, -1))];
+    const textos = (d.pasos || []).map((p) => p.descripcion?.es)
+        .filter((t): t is string => typeof t === 'string' && t.trim().length >= LARGO_DESCRIPCION_IDENTIFICA);
+    return [`id:"${d.id}",tipo:`, `"id":"${d.id}","tipo":`, ...textos.map((t) => JSON.stringify(t).slice(1, -1))];
 }
 
 async function evaluar(codigo: string): Promise<Definicion[]> {

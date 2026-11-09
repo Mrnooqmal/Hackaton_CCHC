@@ -38,15 +38,15 @@ Al entrar con ella aparece **Crea tu contraseña**:
 
 ### 2. Crear tu PIN de firma
 
-Después viene **Crea tu firma digital**. Tu **PIN** son **6 dígitos que solo tú eliges** y
+Después viene **Crea tu firma digital**. Tu **PIN** son **4 dígitos que solo tú eliges** y
 con él firmarás documentos, actividades y encuestas. Es distinto de tu contraseña.
 
 1. Toca **Comenzar**.
 
    ![Bienvenida: Crea tu firma digital](/img/guia-inicio/enrolamiento-bienvenida.png)
 
-2. En **Elige tu PIN**, escribe los 6 dígitos y toca **Continuar**. Evita combinaciones fáciles
-   como *123456*, *000000* o tu fecha de nacimiento. Con **Mostrar PIN** puedes ver lo que escribes.
+2. En **Elige tu PIN**, escribe los 4 dígitos y toca **Continuar**. Evita combinaciones fáciles
+   como *1234*, *0000* o tu año de nacimiento. Con **Mostrar PIN** puedes ver lo que escribes.
 
    ![Elige tu PIN](/img/guia-inicio/enrolamiento-pin.png)
 
@@ -120,12 +120,8 @@ los cuatro primeros dígitos de tu RUT. Si ya la cambiaste y no la recuerdas, us
 **¿Olvidaste tu contraseña?**.
 
 **¿La contraseña y el PIN son lo mismo?**
-No. La **contraseña** sirve para entrar; el **PIN** (6 dígitos) sirve para **firmar**. Son
+No. La **contraseña** sirve para entrar; el **PIN** (4 dígitos) sirve para **firmar**. Son
 independientes: cambiar uno no cambia el otro.
-
-**Mi PIN era de 4 dígitos.**
-Ahora el PIN es de 6 dígitos. La próxima vez que entres, la plataforma te pedirá cambiarlo
-antes de seguir: escribes tu PIN de 4 dígitos y eliges uno nuevo de 6.
 
 **¿Cómo cambio mi contraseña o mi PIN más adelante?**
 Desde **Configuración**, en el menú de tres puntos abajo del menú lateral (o tocando tu

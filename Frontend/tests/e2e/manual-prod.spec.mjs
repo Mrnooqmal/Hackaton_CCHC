@@ -18,17 +18,21 @@ test('prod: la sección FUF no está en el menú y su página no existe', async 
     await expect(page.getByText('La página que buscas no existe en el manual.')).toBeVisible();
 });
 
-test('prod: los enlaces a FUF desde páginas publicadas quedan como texto', async ({ page }) => {
-    for (const [ruta, texto] of [
-        ['/manual/terreno/firmar', 'Firmas digitales y DS 44'],
-        ['/manual/roles/trabajador', 'Firmas: qué se registra y qué falta resolver'],
-        ['/manual/obra/pedir-firmas', 'Capacitaciones'],
+test('prod: las frases que enlazan a FUF se leen bien como texto, y la fila de la portada no está', async ({ page }) => {
+    for (const [ruta, frase, sobra] of [
+        ['/manual/terreno/firmar', 'hasta tener la respuesta oficial.', 'Firmas digitales y DS 44'],
+        ['/manual/roles/trabajador', 'La validez del PIN como firma electrónica está en consulta.', 'qué falta resolver'],
+        ['/manual/obra/pedir-firmas', 'certifica que la capacitación se realizó.', 'Ver Capacitaciones'],
     ]) {
         await page.goto(ruta);
         const contenido = page.locator('main.manual-content');
-        await expect(contenido.getByText(texto, { exact: false }).first()).toBeVisible();
+        await expect(contenido).toContainText(frase);
+        await expect(contenido).not.toContainText(sobra);
         await expect(page.locator('a[href^="/manual/fuf"]'), ruta).toHaveCount(0);
     }
+    await page.goto('/manual/empezar');
+    await expect(page.locator('main.manual-content table').filter({ hasText: 'Qué encontrarás' })).toContainText('En terreno');
+    await expect(page.locator('main.manual-content')).not.toContainText('FUF y DS 44');
     await page.goto('/manual');
     await expect(page.locator('a[href^="/manual/fuf"]')).toHaveCount(0);
 });

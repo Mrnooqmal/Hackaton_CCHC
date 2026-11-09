@@ -14,7 +14,7 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import manualPendiente, { huellasDePagina } from '../vite-manual-pendiente.ts';
-import { paginaDeArchivo, pendienteNormativa, redireccionPublicada, resolverEnlace } from '../src/manual/publicacion.ts';
+import { paginaDeArchivo, pendienteNormativa, redireccionPublicada, resolverEnlace, sinFilasNoPublicadas } from '../src/manual/publicacion.ts';
 import { destinoDe } from '../src/manual/redirecciones.ts';
 
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
@@ -123,4 +123,29 @@ test('una dirección vieja que lleva a una página no publicada va a la portada 
     assert.equal(redireccionPublicada('ds44/firmas-digitales', '', existeDev, destinoDe), '/manual/fuf/firmas');
     assert.equal(redireccionPublicada('ds44/epp', '', existeProd, destinoDe), '/manual/obra/epp');
     assert.equal(redireccionPublicada('terreno/firmar', '', existeProd, destinoDe), null, 'no es vieja');
+});
+
+test('una fila de tabla que presenta una página no publicada se quita; lo demás queda igual', () => {
+    const md = 'Antes [x](/fuf).\n\n| Sección | Qué |\n| --- | --- |\n| **Empezar** | Entrar. |\n| **Roles** | Ver [roles](/roles). |\n| **FUF** | Ver [FUF](/fuf). |\n| **Firmas** | Ver [firmas](/fuf/firmas#a). |\n| ![x](/img/a.png) | Foto. |';
+    const existe = (p) => p === 'roles';
+    assert.equal(sinFilasNoPublicadas(md, existe), 'Antes [x](/fuf).\n\n| Sección | Qué |\n| --- | --- |\n| **Empezar** | Entrar. |\n| **Roles** | Ver [roles](/roles). |\n| ![x](/img/a.png) | Foto. |');
+    assert.equal(sinFilasNoPublicadas(md, () => true), md, 'con todo publicado no cambia nada');
+});
+
+test('un enlace a una página pendiente se lee bien como texto: no nombra la página ni deja un "Ver" colgando', () => {
+    const titulos = Object.fromEntries(PENDIENTES.map((p) => [p.pagina, /^#\s+(.+)$/m.exec(p.texto)?.[1] ?? p.pagina]));
+    const nombres = (t) => [t, t.split(':')[0]].map((x) => x.toLowerCase());
+    const hallazgos = [];
+    for (const { pagina, texto } of PUBLICADAS) {
+        for (const linea of texto.split('\n')) {
+            if (linea.trimStart().startsWith('|')) continue; // las filas de tabla se quitan enteras
+            for (const m of linea.matchAll(/([^[\]]*)\[([^\]]+)\]\(\/([^)#\s]*)[^)]*\)/g)) {
+                const destino = m[3].replace(/\/+$/, '');
+                if (!(destino in titulos)) continue;
+                if (/\b(ver|detalle en|más en|consulta)\s*$/i.test(m[1])) hallazgos.push(`${pagina}: "${m[1].trim()}" antes del enlace a ${destino}`);
+                if (nombres(titulos[destino]).some((n) => m[2].toLowerCase().includes(n)) || /^[A-ZÁÉÍÓÚ]/.test(m[2])) hallazgos.push(`${pagina}: el texto "${m[2]}" nombra la página ${destino}`);
+            }
+        }
+    }
+    assert.deepEqual(hallazgos, []);
 });

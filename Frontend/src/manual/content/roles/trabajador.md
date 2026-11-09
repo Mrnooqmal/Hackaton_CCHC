@@ -23,6 +23,5 @@ Si no tienes teléfono propio, puedes firmar en el equipo de tu supervisor con *
 te abre el documento y tú escribes **tu propio PIN**.
 
 ::: warning Validez del PIN
-La validez del PIN como firma electrónica está en consulta. Ver
-[Firmas: qué se registra y qué falta resolver](/fuf/firmas).
+La validez del PIN como firma electrónica [está en consulta](/fuf/firmas).
 :::

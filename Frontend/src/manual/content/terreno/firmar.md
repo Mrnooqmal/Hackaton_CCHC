@@ -12,7 +12,7 @@ Se firma en cuatro lugares:
 - **Encuestas** — al enviar tus respuestas. Ver [Encuestas](/terreno/encuestas).
 - **Firma asistida** — cuando alguien firma en el equipo de su supervisor (ver más abajo).
 
-> **Tu PIN es tu firma.** Son **6 dígitos** que solo tú conoces. Al ingresarlo declaras que
+> **Tu PIN es tu firma.** Son **4 dígitos** que solo tú conoces. Al ingresarlo declaras que
 > leíste el documento. No lo compartas: equivale a tu firma de puño y letra.
 
 [Ver recorrido](recorrido:mis-firmas)
@@ -89,8 +89,8 @@ bloquea por un tiempo (ver las preguntas frecuentes).
 ::: warning Consulta legal en curso
 La validez jurídica del PIN como firma electrónica ante un fiscalizador del DS 44 está siendo
 evaluada con la Dirección del Trabajo. La firma funciona y deja trazabilidad completa, pero
-**por ahora no debe usarse como única prueba legal** hasta tener la respuesta oficial. Más
-detalle en [Firmas digitales y DS 44](/fuf/firmas).
+**por ahora no debe usarse como única prueba legal**
+[hasta tener la respuesta oficial](/fuf/firmas).
 :::
 
 ## Preguntas frecuentes

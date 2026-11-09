@@ -85,15 +85,66 @@ firma con el PIN; si la persona ya escribió su PIN con señal en ese equipo, el
 detecta al momento, y si no, se valida al volver la señal (si estaba mal, tiene que firmar de
 nuevo); las firmas se envían solas y se ve cuántas quedan. Páginas: `terreno/firmar` (Sin
 conexión), `obra/pedir-firmas` (Sin señal en terreno y Firmas en revisión) y la pregunta de
-`obra/actividades`. También el PIN de 6 dígitos en `empezar/ingresar`, `terreno/firmar`,
-`fuf/firmas` y el recorrido `mis-firmas`.
+`obra/actividades`. El PIN sigue siendo de 4 dígitos.
 
 Quedan para después:
 
 - Los recorridos `registrar-asistencia` y `mis-actividades`, y los pasos nuevos de `mis-firmas`
   (el comprobante y "Tu PIN es tu firma").
-- Las capturas de las pantallas nuevas (Preparar cuadrilla sin señal, Firmas en revisión, el aviso
-  de firmas por enviar).
+- Las capturas de las pantallas nuevas (Firmas en revisión y el aviso de firmas por enviar). Las
+  resuelves tú: ver "Capturas del manual: datos y cómo rehacerlas".
+
+## Capturas del manual: datos y cómo rehacerlas
+
+Las capturas las resuelves tú (decisión de Adrean, 8 de noviembre de 2026). Nadie las regeneró ni las
+reemplazó.
+
+### Posibles datos reales
+
+Algunas capturas publicadas muestran nombres y RUT que pueden ser de personas reales. No pude
+confirmar si lo son. El manual se abre sin sesión, así que conviene resolverlo antes de prod. Aquí
+van solo los archivos, para no repetir esos datos en el repositorio. Están en
+`Frontend/public/manual-img/`.
+
+| Imagen | Qué se ve |
+| --- | --- |
+| `firmas/firma-asistida.png` | Nombre completo y RUT de una persona |
+| `firmas/firma-asistida-pin.png` | Nombre de pila de esa misma persona, y el documento que firma |
+| `personas/menu-persona.png` | Tarjetas de varias personas, con nombre completo y RUT |
+| `guia-inicio/crear-pin-nuevo.png` | Nombre completo y RUT de quien está en sesión |
+| `firmas/firmar.png` | Nombre completo de quien solicita la firma |
+| `firmas/mis-firmas.png` | Nombre completo de quien solicita la firma y de quien está en sesión |
+
+**Hay que revisar las 88.** Solo abrí 8: las seis de arriba, `firmas/historial.png` y
+`guia-inicio/enrolamiento-pin.png`. En esas dos últimas no vi nombres ni RUT.
+
+### El script: `npm run capturas`
+
+Genera las capturas de firma y PIN con la app real y la API simulada: datos inventados y sin salir a
+internet, salvo las tipografías. Hace falta tener Chromium para Playwright, una vez por equipo:
+`./node_modules/.bin/playwright install chromium`.
+
+```bash
+cd Frontend
+npm run capturas                         # deja las imágenes en test-results/capturas
+npm run capturas -- -g firmas/firmar     # solo una
+CAPTURAS_PUBLICAR=1 npm run capturas     # reemplaza las de public/manual-img
+```
+
+- **Salida:** cada captura sale en escritorio (`<archivo>.png`, 1440x900) y a 360 px
+  (`<archivo>-360.png`). El manual muestra una sola imagen por captura, así que hay que decidir dónde
+  usar las de 360 px.
+- **Qué cubre:** solo lo que está en `Frontend/tests/capturas/catalogo.mjs`: cinco imágenes de
+  `firmas/` y tres de `guia-inicio/`, más tres nuevas. No cubre `personas/menu-persona.png` ni el
+  resto de las 88. Para sumar una, se agrega una entrada al catálogo; los datos están en
+  `api-simulada.mjs`.
+- **Las nuevas (`por-enviar`, `no-se-valido`, `en-revision`):** se omiten hasta que la firma sin
+  conexión llegue a `tours`, y desde ahí corren solas. Las imágenes nuevas no están enlazadas en el
+  manual todavía.
+- **Falla a propósito** si lo marcado en rojo está tapado o si la app da un error. Contra `pruebas`
+  (`8d95d6b`), `firmas/por-enviar` falla porque el encabezado de la página tapa el aviso de firmas por
+  enviar en Mis Firmas y Actividades; ese error ya está avisado a la otra sesión.
+- **Mira las imágenes** antes de publicar: que la corrida pase no garantiza que la captura sirva.
 
 ## Pendiente: "Firmar mi asistencia" según un permiso
 

@@ -41,10 +41,6 @@ de la pantalla ves cuántas quedan por enviar, por ejemplo *5 firmas por enviar*
 - Si no, su PIN se revisa **cuando vuelve la señal**. Si estaba mal, aparece un aviso con su
   nombre y lo que firmaba: *la firma no se validó, tiene que firmar de nuevo*. Pídele que vuelva
   a firmar; con **Entendido** cierras el aviso.
-
-Para que los errores de tipeo se detecten al momento en terreno, antes de salir puedes abrir
-**Preparar cuadrilla sin señal** (en el menú lateral, con la obra elegida) y pedirle a cada
-persona que escriba ahí su PIN con señal. Es opcional: sin ese paso se firma igual.
 ::::
 
 :::: solo firmas.crear
@@ -59,5 +55,4 @@ motivo. Si no hay ninguna, verás **No hay firmas en revisión**.
 ## Firma del relator
 
 En las capacitaciones, además de la firma de cada asistente, se pide la **firma del
-relator**, que certifica que la capacitación se realizó. Ver
-[Capacitaciones](/fuf/capacitaciones).
+relator**, que [certifica que la capacitación se realizó](/fuf/capacitaciones).
