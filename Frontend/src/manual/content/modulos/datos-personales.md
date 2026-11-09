@@ -30,6 +30,9 @@ Cuando una persona pide algo sobre sus datos (por correo, carta, en persona en o
    - **Titular** — la persona.
    - **Qué pide** — el derecho que ejerce: **acceso**, **rectificación**, **supresión**,
      **oposición**, **portabilidad** o **bloqueo**.
+   - **A qué tratamiento se opone** — solo en una oposición. Hoy se puede oponer al
+     **directorio de compañeros**: aparecer, ante compañeros que no pueden ver el personal, en el
+     listado de personas y entre los destinatarios de la bandeja.
    - **Por dónde llegó** — por ejemplo *correo a rrhh@empresa.cl* o *en persona en obra*.
    - **Cuándo llegó** — el plazo de respuesta parte **cuando llegó la solicitud**, no cuando se
      registra. **Esta fecha no se puede corregir después.**
@@ -66,6 +69,16 @@ recibió, por qué canal, su plazo de respuesta y si tiene datos bloqueados.
 
 Si la respuesta implica borrar datos, toca **Proponer lote de supresión**: los datos siguen
 bloqueados hasta que el borrado se ejecute en un lote aprobado por dos personas.
+
+Al **acoger una rectificación**, la corrección se aplica en la ficha en ese momento. La solicitud
+guarda, por cada dato corregido, **el valor anterior y el nuevo**, quién lo aplicó y cuándo. El
+valor anterior se guarda cifrado y no se usa para nada: es la prueba de la corrección. Lo ves en
+el detalle de la solicitud, en **Cambio aplicado**, y cada vez que lo abres queda registrado.
+
+Al **acoger una oposición**, la persona deja de aparecer en ese tratamiento: sus compañeros ya no
+la ven en el directorio ni entre los destinatarios de la bandeja. Quien tiene permiso para ver
+el personal (por defecto, jefaturas, prevención y administración) la sigue viendo. Dura hasta que
+la persona **retire su oposición** desde **Mis datos y privacidad**.
 
 El **Historial** de cada solicitud registra cada paso y **no se puede editar ni borrar**.
 ::::

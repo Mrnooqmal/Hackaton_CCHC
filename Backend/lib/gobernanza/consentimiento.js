@@ -111,6 +111,7 @@ const BASES_SIN_CONSENTIMIENTO = [
     { tratamiento: 'Vigilancia de salud ocupacional y restricciones laborales', base: 'Obligación legal (DS 44, arts. 67 a 69).' },
     { tratamiento: 'Registro de accidentes, incidentes y enfermedades profesionales', base: 'Obligación legal (Ley 16.744 y DS 44).' },
     { tratamiento: 'Registro de auditoría de accesos y operaciones', base: 'Deber de seguridad del responsable (Ley 21.719) y prevención de fraudes.' },
+    { tratamiento: 'Directorio de compañeros (tu nombre y cargo en las listas que ven tus compañeros)', base: 'Interés legítimo de coordinar el trabajo en la obra. Puedes oponerte desde Mis datos y privacidad.' },
 ];
 
 const error = (mensaje, codigo) => Object.assign(new Error(mensaje), { codigo });

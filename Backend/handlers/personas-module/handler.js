@@ -18,6 +18,7 @@ const { normalizeRol, validateRut } = require('../../lib/utils/validation');
 const { PERMISSIONS } = require('../../lib/permissions');
 const auditoria = require('../../lib/gobernanza/auditoria');
 const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
+const { seOpone } = require('../../lib/gobernanza/derechos');
 const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 const cargas = require('../../lib/cargas');
@@ -1631,7 +1632,11 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             // nacimiento (H-16). Se revisaron las pantallas que lo usan: ninguna
             // de las que alcanza un rol de terreno lee otro campo.
             if (!puede(PERMISSIONS.PERSONAS_VER)) {
-                return success({ total: personas.length, personas: personas.map(listadoMinimo) });
+                // Quien se opuso al directorio de compañeros (oposición acogida,
+                // lib/gobernanza/derechos.js) no aparece en esta lista. Cada uno
+                // se sigue viendo a sí mismo.
+                const directorio = personas.filter((p) => p.personaId === sesion.personaId || !seOpone(p, 'directorio_companeros'));
+                return success({ total: directorio.length, personas: directorio.map(listadoMinimo) });
             }
 
             // Resuelve nombre/tipo del rol desde la def. del tenant para que el

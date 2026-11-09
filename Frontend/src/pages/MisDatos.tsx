@@ -5,8 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, AlertBanner, Badge, Select } from '../components/ui';
 import type { BadgeVariant } from '../components/ui';
 import {
-    privacidadApi, descargarJson, DERECHO_LABEL, RESULTADO_LABEL, ETAPA_LABEL, CAMPO_LABEL,
+    privacidadApi, descargarJson, DERECHO_LABEL, RESULTADO_LABEL, ETAPA_LABEL, CAMPO_LABEL, TRATAMIENTO_LABEL,
     type FinalidadConsentimiento, type EventoConsentimiento, type MiSolicitud, type CampoRectificable, type Etapa,
+    type OposicionTitular, type TratamientoOponible,
 } from '../api/gobernanza.api';
 
 /**
@@ -213,7 +214,7 @@ type DerechoAutoservicio = 'rectificacion' | 'supresion' | 'oposicion' | 'bloque
 const EXPLICACION: Record<DerechoAutoservicio, string> = {
     rectificacion: 'Corrige tu nombre, apellidos, RUT o fecha de nacimiento si están mal. Tu teléfono y correo los corriges directamente en Configuración.',
     supresion: 'Pide eliminar tus datos. Lo voluntario se suprime; lo que la ley obliga a conservar (por ejemplo, tus firmas de documentos del DS 44) se guarda bloqueado hasta que venza su plazo, y se te informa hasta cuándo.',
-    oposicion: 'Pide que dejen de tratar tus datos para una finalidad determinada, en los casos que la ley lo permite.',
+    oposicion: 'Pide que dejen de usar tus datos para un tratamiento que no exige la ley, tu contrato ni tu consentimiento. Si se acoge, ese tratamiento deja de hacerse hasta que retires tu oposición.',
     bloqueo: 'Pide suspender temporalmente el uso de tus datos mientras se aclara algo.',
 };
 const CAMPOS: CampoRectificable[] = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'rut', 'fechaNacimiento'];
@@ -221,17 +222,23 @@ const CAMPOS: CampoRectificable[] = ['nombre', 'apellidoPaterno', 'apellidoMater
 function Solicitudes() {
     const { user } = useAuth();
     const [lista, setLista] = useState<MiSolicitud[]>([]);
+    const [oposiciones, setOposiciones] = useState<OposicionTitular[]>([]);
     const [derecho, setDerecho] = useState<DerechoAutoservicio | ''>('');
+    const [tratamiento, setTratamiento] = useState<TratamientoOponible | ''>('');
     const [cambios, setCambios] = useState<Partial<Record<CampoRectificable, string>>>({});
     const [detalle, setDetalle] = useState('');
     const [password, setPassword] = useState('');
     const [enviando, setEnviando] = useState(false);
+    const [retirando, setRetirando] = useState<TratamientoOponible | ''>('');
     const [error, setError] = useState('');
     const [listo, setListo] = useState('');
 
     const cargar = useCallback(async () => {
         const r = await privacidadApi.solicitudes().catch(() => null);
-        if (r?.success && r.data) setLista(r.data.solicitudes);
+        if (r?.success && r.data) {
+            setLista(r.data.solicitudes);
+            setOposiciones(r.data.oposiciones || []);
+        }
     }, []);
     useEffect(() => { cargar(); }, [cargar]);
 
@@ -239,22 +246,46 @@ function Solicitudes() {
         nombre: user?.nombre, apellidoPaterno: user?.apellidoPaterno, apellidoMaterno: user?.apellidoMaterno, rut: user?.rut,
     };
     const pedidos = Object.fromEntries(Object.entries(cambios).filter(([, v]) => v && v.trim())) as Partial<Record<CampoRectificable, string>>;
-    const valido = derecho && password && (derecho !== 'rectificacion' || Object.keys(pedidos).length > 0);
+    // Solo se ofrece oponerse a lo que todavía no tiene una oposición vigente.
+    const oponibles = oposiciones.filter((o) => !o.vigente);
+    const vigentes = oposiciones.filter((o) => o.vigente);
+    const elegido = oposiciones.find((o) => o.tratamiento === tratamiento) || null;
+    const valido = derecho && password
+        && (derecho !== 'rectificacion' || Object.keys(pedidos).length > 0)
+        && (derecho !== 'oposicion' || Boolean(tratamiento));
 
     const enviar = async () => {
         if (!derecho) return;
         setEnviando(true);
         setError('');
-        const r = await privacidadApi.solicitar({ derecho, detalle: detalle.trim() || undefined, cambios: derecho === 'rectificacion' ? pedidos : undefined, password }).catch(() => null);
+        const r = await privacidadApi.solicitar({
+            derecho,
+            detalle: detalle.trim() || undefined,
+            cambios: derecho === 'rectificacion' ? pedidos : undefined,
+            tratamiento: derecho === 'oposicion' && tratamiento ? tratamiento : undefined,
+            password,
+        }).catch(() => null);
         setEnviando(false);
         setPassword('');
         if (r?.success) {
             setListo('Tu solicitud quedó registrada. Tu empleador tiene 30 días para responderte; verás aquí cada paso.');
             setDerecho('');
+            setTratamiento('');
             setCambios({});
             setDetalle('');
             cargar();
         } else setError(r?.error || 'No se pudo registrar tu solicitud.');
+    };
+
+    const retirar = async (t: TratamientoOponible) => {
+        setRetirando(t);
+        setError('');
+        const r = await privacidadApi.retirarOposicion(t).catch(() => null);
+        setRetirando('');
+        if (r?.success && r.data) {
+            setOposiciones(r.data.oposiciones);
+            setListo(`Retiraste tu oposición: ${TRATAMIENTO_LABEL[t]} vuelve a aplicarse a tus datos.`);
+        } else setError(r?.error || 'No se pudo retirar tu oposición.');
     };
 
     return (
@@ -267,6 +298,20 @@ function Solicitudes() {
                 <Select id="md-derecho" value={derecho} onChange={(v) => { setDerecho(v as DerechoAutoservicio); setListo(''); }} placeholder="Elige una opción"
                     options={(Object.keys(EXPLICACION) as DerechoAutoservicio[]).map((d) => ({ value: d, label: DERECHO_LABEL[d] }))} />
                 {derecho && <p className="md-hint">{EXPLICACION[derecho]}</p>}
+                {derecho === 'oposicion' && (oponibles.length === 0 ? (
+                    <p className="md-hint">Ya tienes una oposición vigente a todos los tratamientos a los que puedes oponerte.</p>
+                ) : (
+                    <>
+                        <label className="form-label" htmlFor="md-tratamiento">A qué tratamiento te opones</label>
+                        <Select id="md-tratamiento" value={tratamiento} onChange={(v) => setTratamiento(v as TratamientoOponible)} placeholder="Elige un tratamiento"
+                            options={oponibles.map((o) => ({ value: o.tratamiento, label: o.nombre }))} />
+                        {elegido && (
+                            <p className="md-hint">
+                                <strong>Qué es:</strong> {elegido.que} <strong>Base:</strong> {elegido.base} <strong>Si se acoge:</strong> {elegido.efecto}
+                            </p>
+                        )}
+                    </>
+                ))}
                 {derecho && derecho !== 'rectificacion' && (
                     <p className="md-aviso"><FiClock aria-hidden /> Mientras se resuelve, tus datos quedan bloqueados: no se usan para nada nuevo, pero no se borran.</p>
                 )}
@@ -296,6 +341,29 @@ function Solicitudes() {
                 )}
             </section>
 
+            {vigentes.length > 0 && (
+                <section className="md-seccion">
+                    <h3 className="md-subtitulo">Tus oposiciones vigentes</h3>
+                    <p className="md-hint">Estos tratamientos no se hacen con tus datos. Puedes retirar tu oposición cuando quieras.</p>
+                    <ul className="md-lista">
+                        {vigentes.map((o) => (
+                            <li key={o.tratamiento} className="md-tarjeta">
+                                <div className="md-tarjeta-cabeza">
+                                    <strong>{o.nombre}</strong>
+                                    <Badge variant="info">Oposición vigente</Badge>
+                                </div>
+                                <span className="md-hint">{o.efecto}</span>
+                                <div className="md-acciones">
+                                    <button className="btn btn-secondary btn-sm" disabled={retirando === o.tratamiento} onClick={() => retirar(o.tratamiento)}>
+                                        {retirando === o.tratamiento ? 'Retirando…' : 'Retirar mi oposición'}
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+
             <section className="md-seccion">
                 <h3 className="md-subtitulo">Tus solicitudes</h3>
                 {lista.length === 0 ? <p className="md-hint">No has hecho solicitudes.</p> : (
@@ -303,7 +371,7 @@ function Solicitudes() {
                         {lista.map((s) => (
                             <li key={s.solicitudId} className="md-tarjeta">
                                 <div className="md-tarjeta-cabeza">
-                                    <strong>{DERECHO_LABEL[s.derecho]}</strong>
+                                    <strong>{DERECHO_LABEL[s.derecho]}{s.tratamiento ? `: ${TRATAMIENTO_LABEL[s.tratamiento]}` : ''}</strong>
                                     <Badge variant={ETAPA_VARIANTE[s.etapa]}>{ETAPA_LABEL[s.etapa]}</Badge>
                                 </div>
                                 <span className="md-hint">

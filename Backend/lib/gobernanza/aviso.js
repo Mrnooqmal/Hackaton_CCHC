@@ -22,7 +22,7 @@
 
 const { FUENTES, CLASE, AL_VENCER } = require('./inventario');
 const { FINALIDADES, BASES_SIN_CONSENTIMIENTO } = require('./consentimiento');
-const { CONFIG } = require('./derechos');
+const { CONFIG, TRATAMIENTOS_OPONIBLES } = require('./derechos');
 
 /** Cambia cuando cambia algo sustantivo que no sale de las fuentes (por ejemplo, un encargado). */
 const VERSION_AVISO = '2026-11-08';
@@ -86,7 +86,11 @@ const DERECHOS_INFORMADOS = [
     { derecho: 'Acceso y portabilidad', que: 'Saber qué datos tuyos se tratan y recibir una copia en un formato que puedas llevar a otro lugar.' },
     { derecho: 'Rectificación', que: 'Corregir datos inexactos o incompletos.' },
     { derecho: 'Supresión', que: 'Pedir que se borren. Lo que la ley obliga a conservar (por ejemplo, tus firmas del DS 44) se guarda bloqueado hasta que vence su plazo.' },
-    { derecho: 'Oposición', que: 'Oponerte a un tratamiento que no se base en una obligación legal o en tu contrato.' },
+    {
+        derecho: 'Oposición',
+        que: 'Oponerte a un tratamiento que no se base en una obligación legal, en tu contrato ni en tu consentimiento: '
+            + `${Object.values(TRATAMIENTOS_OPONIBLES).map((t) => t.nombre.toLowerCase()).join(', ')}. Si se acoge, ese tratamiento deja de hacerse hasta que retires tu oposición.`,
+    },
     { derecho: 'Bloqueo temporal', que: 'Mientras se resuelve una rectificación, supresión u oposición, tus datos quedan bloqueados para su uso.' },
     { derecho: 'Revocar tus consentimientos', que: 'Retirar en cualquier momento lo que autorizaste, tan fácil como lo otorgaste.' },
 ];

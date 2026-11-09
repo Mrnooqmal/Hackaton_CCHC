@@ -110,6 +110,7 @@ infra/desplegar-infra-frontend.sh <commit>
 | Cifrado de los grupos de logs con la CMK | **Hecho, por commitear (8 de noviembre).** Plugin `Backend/plugins/logs-cifrados.js` y permiso de CloudWatch Logs en la política de `ClaveDatos`. Verificado en el template: los 74 grupos con la llave. Después de desplegar, comprobar `kmsKeyId` en los grupos. |
 | Copias en claro de `RegistroService` (D-10) | **Ya estaba resuelto** desde el 26 de septiembre (`9128bca`, en prod); la documentación no lo decía. Verificado el 8 de noviembre: ningún registro con copia en claro en dev ni en prod. |
 | Filas parciales del checklist | **Revisadas el 8 de noviembre.** 7.5 terminada (documentos, actividades, incidentes y obras), por commitear. 5.6, 5.7, 6.11 (Object Lock activo en los dos ambientes), 7.1 y 7.2 estaban desactualizadas y pasan a implementado; 2.8 y 6.2, implementadas en este paso; 7.6 nueva. Quedan: 7.4 (validación legal), 6.15 (cookie, paso 3) y 6.8 (región, postergada por D-1). |
+| Actividad de derechos (D-36) | **Hecho, por commitear (8 de noviembre).** Oposición persistente al directorio de compañeros (marca `oposiciones` en la ficha, consultada por `GET /personas` y `/inbox/recipients` para quien no tiene `personas.ver`; el titular la retira desde Mis datos) y rectificación con el valor anterior y el nuevo, cifrados en la ejecución. Cambia respuestas que usa el frontend: backend y frontend juntos. Toda oposición nueva exige el tratamiento. |
 | Borrar la empresa TCC de prod | **Preparado, falta la confirmación de Adrean.** `Backend/scripts/borrar-empresa.js` (ensayo por omisión; borra solo con la huella del ensayo). Ensayo del 8 de noviembre: 40 elementos (37 planes diarios de retención, la licencia, una persona y la ficha de la empresa), ningún archivo, nada de otra empresa. La retención agrega un plan cada día a las 07:30 UTC: ensayo y borrado el mismo día. |
 | Borrar los restos de `hackatonbackend` | **Preparado, falta la confirmación de Adrean.** `infra/limpiar-hackatonbackend.sh` (ensayo por omisión). Ensayo del 8 de noviembre: en esta cuenta, 297 versiones (~2,7 GB) y 267 marcas de borrado bajo los dos prefijos (el bucket tiene versionado: los 30 objetos vigentes eran la punta); en `789925699187`, 3 versiones y 6 marcas, y el stack `HackatonBackend-dev` en `DELETE_FAILED` porque sus dos buckets no estaban vacíos (hoy no existen; sin funciones vivas). **Esa cuenta aloja otros proyectos** (gruposoy, soyfuncionario, soyhonorario, soytrabajador): el script solo toca esos prefijos y ese stack. |
 
@@ -195,6 +196,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-33 | (rama `tours`: recorridos guiados) |
 | D-34 | Producción solo en `buildandserve.cl`: la URL de CloudFront sale del CORS y se redirige con 301 |
 | D-35 | Firma sin conexión con el PIN: vales cifrados en el equipo sin oráculo, corte del servidor al quinto vale inválido, PIN de 6 dígitos |
+| D-36 | Oposición persistente al directorio de compañeros, y valor anterior y nuevo de una rectificación (cifrados) |
 
 ### Hallazgos (sección 4)
 

@@ -58,10 +58,34 @@ test('derecho, titular y actor son obligatorios', () => {
 
 test('rectificar, suprimir y oponerse exigen bloqueo dentro de 2 días hábiles desde la recepción', () => {
     for (const derecho of [D.DERECHOS.RECTIFICACION, D.DERECHOS.SUPRESION, D.DERECHOS.OPOSICION]) {
-        const s = nueva({ derecho, recibidaEl: '2026-10-09T12:00:00Z' }, { ahora: new Date('2026-10-09T13:00:00Z') });   // viernes
+        const s = nueva({ derecho, tratamiento: 'directorio_companeros', recibidaEl: '2026-10-09T12:00:00Z' }, { ahora: new Date('2026-10-09T13:00:00Z') });   // viernes
         assert.equal(s.bloqueo.exigido, true, derecho);
         assert.equal(s.bloqueo.plazoHasta.slice(0, 10), '2026-10-13', 'viernes + 2 hábiles = martes');
     }
+});
+
+test('una oposición exige el tratamiento al que se opone, y solo una oposición lo guarda', () => {
+    rechaza(() => nueva({ derecho: D.DERECHOS.OPOSICION }), 'TRATAMIENTO_INVALIDO');
+    rechaza(() => nueva({ derecho: D.DERECHOS.OPOSICION, tratamiento: 'marketing' }), 'TRATAMIENTO_INVALIDO');
+    assert.equal(nueva({ derecho: D.DERECHOS.OPOSICION, tratamiento: 'directorio_companeros' }).tratamiento, 'directorio_companeros');
+    assert.equal(nueva({ derecho: D.DERECHOS.SUPRESION, tratamiento: 'directorio_companeros' }).tratamiento, undefined);
+});
+
+test('el registro de una rectificación trae, por campo y en orden, el valor anterior y el nuevo', () => {
+    const actual = { nombre: 'Juan', apellidoPaterno: 'Pérez', rut: '12345678-5' };
+    assert.deepEqual(D.registroDeCambio({ rut: '12.345.679-3', apellidoPaterno: 'Peres', apellidoMaterno: 'Soto' }, actual), [
+        { campo: 'apellidoMaterno', anterior: '', nuevo: 'Soto' },
+        { campo: 'apellidoPaterno', anterior: 'Pérez', nuevo: 'Peres' },
+        { campo: 'rut', anterior: '12.345.678-5', nuevo: '12.345.679-3' },
+    ]);
+});
+
+test('seOpone lee la marca como la deja DynamoDB (Set) y como la deja el modelo (lista)', () => {
+    assert.equal(D.seOpone({ oposiciones: new Set(['directorio_companeros']) }, 'directorio_companeros'), true);
+    assert.equal(D.seOpone({ oposiciones: ['directorio_companeros'] }, 'directorio_companeros'), true);
+    assert.equal(D.seOpone({ oposiciones: [] }, 'directorio_companeros'), false);
+    assert.equal(D.seOpone({}, 'directorio_companeros'), false);
+    assert.equal(D.seOpone(null, 'directorio_companeros'), false);
 });
 
 test('acceso y portabilidad no exigen bloqueo', () => {

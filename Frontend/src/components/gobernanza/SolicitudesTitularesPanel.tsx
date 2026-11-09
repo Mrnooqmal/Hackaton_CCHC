@@ -5,8 +5,9 @@ import type { BadgeVariant } from '../ui/Badge';
 import { personasApi } from '../../api/personas.api';
 import type { PersonaResponse } from '../../api/types';
 import {
-    gobernanzaApi, lotesApi, DERECHO_LABEL, RESULTADO_LABEL, DERECHOS_QUE_BLOQUEAN, ETAPA_LABEL, METODO_LABEL, CAMPO_LABEL, descargarJson,
+    gobernanzaApi, lotesApi, DERECHO_LABEL, RESULTADO_LABEL, DERECHOS_QUE_BLOQUEAN, ETAPA_LABEL, METODO_LABEL, CAMPO_LABEL, TRATAMIENTO_LABEL, descargarJson,
     type Solicitud, type EventoHistorial, type Derecho, type Resultado, type MetodoVerificacion, type CampoRectificable, type Etapa,
+    type CambioAplicado, type TratamientoOponible,
 } from '../../api/gobernanza.api';
 
 /**
@@ -148,7 +149,7 @@ export default function SolicitudesTitularesPanel({ puedeSuprimir = false }: { p
                                     <button className="st-fila" onClick={() => setAbierta(s.solicitudId)}>
                                         <span className="st-titular">{nombreDe(s.personaId)}</span>
                                         <span className="st-meta">
-                                            <Badge variant="info">{DERECHO_LABEL[s.derecho]}</Badge>
+                                            <Badge variant="info">{DERECHO_LABEL[s.derecho]}{s.tratamiento ? `: ${TRATAMIENTO_LABEL[s.tratamiento]}` : ''}</Badge>
                                             {s.etapa && <Badge variant={ETAPA_VARIANTE[s.etapa]}>{ETAPA_LABEL[s.etapa]}</Badge>}
                                             {s.bloqueo?.exigido && s.estado === 'abierta' && (
                                                 <Badge variant="secondary"><FiLock size={11} /> Datos bloqueados</Badge>
@@ -201,6 +202,7 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
     const ahora = useMemo(() => new Date(), []);
     const [personaId, setPersonaId] = useState('');
     const [derecho, setDerecho] = useState<Derecho | ''>('');
+    const [tratamiento, setTratamiento] = useState<TratamientoOponible | ''>('');
     const [canal, setCanal] = useState('');
     const [recibida, setRecibida] = useState(aInputLocal(ahora));
     const [detalle, setDetalle] = useState('');
@@ -210,7 +212,8 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
     const [error, setError] = useState('');
 
     const bloquea = derecho !== '' && DERECHOS_QUE_BLOQUEAN.includes(derecho);
-    const valido = personaId && derecho && canal.trim().length >= 3 && recibida && new Date(recibida) <= new Date();
+    const valido = personaId && derecho && canal.trim().length >= 3 && recibida && new Date(recibida) <= new Date()
+        && (derecho !== 'oposicion' || Boolean(tratamiento));
 
     const registrar = async () => {
         setEnviando(true);
@@ -218,6 +221,7 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
         try {
             const r = await gobernanzaApi.registrar({
                 personaId, derecho: derecho as Derecho, canal: canal.trim(),
+                ...(derecho === 'oposicion' && tratamiento ? { tratamiento } : {}),
                 recibidaEl: new Date(recibida).toISOString(), detalle: detalle.trim() || undefined,
                 verificacion: metodo ? { metodo, observacion: observacion.trim() || undefined } : undefined,
             });
@@ -265,6 +269,16 @@ function RegistrarSolicitud({ personas, onCerrar, onRegistrada }: {
                     placeholder="Derecho que ejerce"
                     options={(Object.keys(DERECHO_LABEL) as Derecho[]).map((d) => ({ value: d, label: DERECHO_LABEL[d] }))}
                 />
+                {derecho === 'oposicion' && (
+                    <>
+                        <label className="form-label" htmlFor="st-tratamiento">A qué tratamiento se opone</label>
+                        <Select id="st-tratamiento" value={tratamiento} onChange={(v) => setTratamiento(v as TratamientoOponible)} placeholder="Tratamiento"
+                            options={(Object.keys(TRATAMIENTO_LABEL) as TratamientoOponible[]).map((t) => ({ value: t, label: TRATAMIENTO_LABEL[t] }))} />
+                        <p className="me-field-hint">
+                            Si se acoge, ese tratamiento deja de hacerse con sus datos hasta que la persona retire su oposición desde Mis datos.
+                        </p>
+                    </>
+                )}
                 <label className="form-label" htmlFor="st-canal">Por dónde llegó</label>
                 <input id="st-canal" className="form-input" value={canal} onChange={(e) => setCanal(e.target.value)}
                     maxLength={120} placeholder="Ej.: correo a rrhh@empresa.cl, carta en oficina central, en persona en obra" />
@@ -312,7 +326,11 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
     onCerrar: () => void;
     onCambio: () => void;
 }) {
-    const [s, setS] = useState<(Solicitud & { historial: EventoHistorial[]; cambiosPropuestos: Partial<Record<CampoRectificable, string>> | null }) | null>(null);
+    const [s, setS] = useState<(Solicitud & {
+        historial: EventoHistorial[];
+        cambiosPropuestos: Partial<Record<CampoRectificable, string>> | null;
+        cambiosAplicados: CambioAplicado[] | null;
+    }) | null>(null);
     const [error, setError] = useState('');
     const [accion, setAccion] = useState<'prorroga' | 'respuesta' | 'verificacion' | null>(null);
     const [exportando, setExportando] = useState(false);
@@ -377,7 +395,18 @@ function DetalleSolicitud({ solicitudId, titular, puedeSuprimir, onCerrar, onCam
                                 <span className="me-field-hint">Se aplica al acoger. Los valores propuestos se borran de la solicitud al responder.</span>
                             </dd></div>
                         )}
+                        {s.tratamiento && <div><dt>Se opone a</dt><dd>{TRATAMIENTO_LABEL[s.tratamiento]}</dd></div>}
                         {s.ejecucion && <div><dt>Ejecutada</dt><dd>{fechaHora(s.ejecucion.en)} por {s.ejecucion.por?.nombre || 'sin nombre'}</dd></div>}
+                        {s.cambiosAplicados && s.cambiosAplicados.length > 0 && (
+                            <div className="st-ancho"><dt>Cambio aplicado</dt><dd>
+                                <ul className="st-cambios">
+                                    {s.cambiosAplicados.map((c) => (
+                                        <li key={c.campo}><strong>{CAMPO_LABEL[c.campo]}:</strong> {c.anterior || '(vacío)'} → {c.nuevo || '(vacío)'}</li>
+                                    ))}
+                                </ul>
+                                <span className="me-field-hint">El valor anterior se guarda cifrado solo como prueba de la corrección. Abrir este detalle queda en la auditoría.</span>
+                            </dd></div>
+                        )}
                         {s.respuesta && (
                             <div className="st-ancho"><dt>Respuesta</dt><dd>
                                 <strong>{RESULTADO_LABEL[s.respuesta.resultado]}</strong>, {fechaHora(s.respuesta.respondidaEl)} por {s.respuesta.por.nombre || 'sin nombre'}.
@@ -567,6 +596,16 @@ function FormRespuesta({ s, cambios, onCancelar, onListo }: {
                 <div className="st-aviso">
                     <FiLock size={15} aria-hidden />
                     <span>Los datos siguen bloqueados hasta que se ejecute la supresión, en un lote aprobado por dos personas.</span>
+                </div>
+            )}
+            {s.derecho === 'oposicion' && resultado !== '' && resultado !== 'rechazada' && (
+                <div className="st-aviso">
+                    <FiLock size={15} aria-hidden />
+                    <span>
+                        {s.tratamiento
+                            ? `Al acogerla, ${TRATAMIENTO_LABEL[s.tratamiento].toLowerCase()} deja de aplicarse a esta persona hasta que retire su oposición. El bloqueo temporal se levanta.`
+                            : 'Esta oposición se registró sin indicar el tratamiento: acogerla no deja ninguna marca. Si corresponde, pídele que la presente de nuevo indicándolo.'}
+                    </span>
                 </div>
             )}
             <div className="st-acciones">

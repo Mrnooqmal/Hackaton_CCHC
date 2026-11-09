@@ -7,8 +7,9 @@
  *   GET  /gobernanza/mis-datos/consentimientos               finalidades, estado e historial
  *   POST /gobernanza/mis-datos/consentimientos/{finalidad}   { accion: otorgar|revocar, version }
  *   POST /gobernanza/mis-datos/exportacion                   { password } → copia en JSON
- *   GET  /gobernanza/mis-datos/solicitudes                   las propias, con su etapa
- *   POST /gobernanza/mis-datos/solicitudes                   { derecho, detalle, cambios?, password }
+ *   GET  /gobernanza/mis-datos/solicitudes                   las propias, con su etapa, y las oposiciones vigentes
+ *   POST /gobernanza/mis-datos/solicitudes                   { derecho, detalle, cambios?, tratamiento?, password }
+ *   POST /gobernanza/mis-datos/oposiciones/{tratamiento}     { accion: retirar } → vuelve a permitir ese tratamiento
  *
  * ── Verificación de identidad, proporcional al riesgo ──────────────────────
  *   - Consentimientos: basta la sesión. Revocar tiene que ser tan simple como
@@ -29,7 +30,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
-const { GetCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetCommand, TransactWriteCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { conSesion } = require('../../lib/auth/sesion');
@@ -57,6 +58,7 @@ const ESTADO_POR_CODIGO = {
     MENOR_DE_EDAD: 403, IDENTIDAD_REQUERIDA: 400, IDENTIDAD_NO_VERIFICADA: 403, DERECHO_INVALIDO: 400,
     SIN_CAMBIOS: 400, CAMPO_NO_RECTIFICABLE: 400, RUT_INVALIDO: 400, FECHA_INVALIDA: 400, NOMBRE_INVALIDO: 400,
     CAMBIO_CONCURRENTE: 409, LIMITE_EXPORTACIONES: 429, AUDITORIA_NO_DISPONIBLE: 503,
+    TRATAMIENTO_INVALIDO: 400, YA_OPUESTO: 409, NO_OPUESTO: 409,
 };
 const fallo = (mensaje, codigo) => Object.assign(new Error(mensaje), { codigo });
 
@@ -229,6 +231,7 @@ async function exportar(event, sesion, persona, body, { ahora }) {
 const vistaSolicitud = (s) => ({
     solicitudId: s.solicitudId,
     derecho: s.derecho,
+    tratamiento: s.tratamiento || null,
     canal: s.canal,
     recibidaEl: s.recibidaEl,
     plazoVigente: D.plazoVigente(s).toISOString(),
@@ -240,9 +243,46 @@ const vistaSolicitud = (s) => ({
     ejecutadaEl: s.ejecucion?.en || null,
 });
 
-async function misSolicitudes(sesion) {
+/** Los tratamientos oponibles, con si la persona ya se opuso a cada uno. */
+const vistaOposiciones = (persona) => Object.entries(D.TRATAMIENTOS_OPONIBLES).map(([id, t]) => ({
+    tratamiento: id, nombre: t.nombre, que: t.que, base: t.base, efecto: t.efecto, vigente: D.seOpone(persona, id),
+}));
+
+async function misSolicitudes(sesion, persona) {
     const lista = await solicitudesDe(sesion.tenantId, sesion.personaId);
-    return success({ solicitudes: lista.map(vistaSolicitud).sort((a, b) => b.recibidaEl.localeCompare(a.recibidaEl)) });
+    return success({
+        solicitudes: lista.map(vistaSolicitud).sort((a, b) => b.recibidaEl.localeCompare(a.recibidaEl)),
+        oposiciones: vistaOposiciones(persona),
+    });
+}
+
+/**
+ * Retirar una oposición: el titular vuelve a permitir ese tratamiento. Basta la
+ * sesión, como otorgar un consentimiento: amplía el tratamiento solo por
+ * decisión de la propia persona y no entrega datos. Queda en la auditoría.
+ */
+async function retirarOposicion(event, sesion, persona, tratamiento, body, { ahora }) {
+    if (!D.TRATAMIENTOS_OPONIBLES[tratamiento]) throw fallo('Tratamiento no reconocido', 'TRATAMIENTO_INVALIDO');
+    if (body.accion !== 'retirar') return error('Indica que quieres retirar la oposición', 400);
+    if (!D.seOpone(persona, tratamiento)) throw fallo('No tienes una oposición vigente a ese tratamiento.', 'NO_OPUESTO');
+    try {
+        await docClient.send(new UpdateCommand({
+            TableName: T('PERSONAS_TABLE'), Key: { PK: `TENANT#${sesion.tenantId}`, SK: `PERSONA#${persona.personaId}` },
+            UpdateExpression: 'DELETE oposiciones :t SET updatedAt = :ahora',
+            ConditionExpression: 'attribute_exists(PK) AND contains(oposiciones, :tv)',
+            ExpressionAttributeValues: { ':t': new Set([tratamiento]), ':tv': tratamiento, ':ahora': ahora.toISOString() },
+        }));
+    } catch (err) {
+        if (err.name === 'ConditionalCheckFailedException') throw fallo('No tienes una oposición vigente a ese tratamiento.', 'NO_OPUESTO');
+        throw err;
+    }
+    await auditoria.registrar({
+        tenantId: sesion.tenantId, operacion: 'derechos.oposicion_retirada', actor: actorAuditoria(sesion),
+        recurso: { tipo: 'oposicion', id: tratamiento }, titulares: [persona.personaId], origen: auditoria.origenDe(event),
+        detalle: { tratamiento },
+    }, { ahora });
+    const actual = { ...persona, oposiciones: (persona.oposiciones || []).filter((t) => t !== tratamiento) };
+    return success({ oposiciones: vistaOposiciones(actual) });
 }
 
 async function nuevaSolicitud(event, sesion, persona, body, { ahora, config }) {
@@ -252,11 +292,18 @@ async function nuevaSolicitud(event, sesion, persona, body, { ahora, config }) {
     // Las reglas se validan ANTES de pedir la contraseña: un error de forma no
     // debe contar como intento fallido de identidad.
     const cambios = body.derecho === D.DERECHOS.RECTIFICACION ? D.validarCambios(body.cambios, persona, { ahora }) : null;
+    if (body.derecho === D.DERECHOS.OPOSICION) {
+        if (!D.TRATAMIENTOS_OPONIBLES[body.tratamiento]) throw fallo('Indica a qué tratamiento te opones', 'TRATAMIENTO_INVALIDO');
+        if (D.seOpone(persona, body.tratamiento)) throw fallo('Ya tienes una oposición vigente a ese tratamiento.', 'YA_OPUESTO');
+    }
     await verificarIdentidad(event, sesion, persona, body.password, `solicitud_${body.derecho}`, { ahora });
 
     const solicitudId = uuidv4();
     const actor = { personaId: persona.personaId, nombre: nombreDe(persona) };
-    const s = D.nuevaSolicitud({ personaId: persona.personaId, derecho: body.derecho, canal: CANAL, recibidaEl: ahora.toISOString(), detalle: body.detalle }, actor, { ahora, config, solicitudId });
+    const s = D.nuevaSolicitud({
+        personaId: persona.personaId, derecho: body.derecho, canal: CANAL, recibidaEl: ahora.toISOString(), detalle: body.detalle,
+        ...(body.derecho === D.DERECHOS.OPOSICION ? { tratamiento: body.tratamiento } : {}),
+    }, actor, { ahora, config, solicitudId });
     s.verificacion = D.verificar(s, { metodo: 'sesion_y_contrasena' }, actor, { ahora });
     if (cambios) {
         // Los valores propuestos son datos personales: viajan cifrados y se
@@ -304,7 +351,8 @@ module.exports.atender = async (event, { ahora = new Date(), config = D.configDe
         if (recurso === 'consentimientos' && method === 'GET' && !id) return await verConsentimientos(sesion);
         if (recurso === 'consentimientos' && method === 'POST' && id) return await cambiarConsentimiento(event, sesion, persona, id, body, { ahora });
         if (recurso === 'exportacion' && method === 'POST' && !id) return await exportar(event, sesion, persona, body, { ahora });
-        if (recurso === 'solicitudes' && method === 'GET' && !id) return await misSolicitudes(sesion);
+        if (recurso === 'solicitudes' && method === 'GET' && !id) return await misSolicitudes(sesion, persona);
+        if (recurso === 'oposiciones' && method === 'POST' && id) return await retirarOposicion(event, sesion, persona, id, body, { ahora });
         if (recurso === 'solicitudes' && method === 'POST' && !id) return await nuevaSolicitud(event, sesion, persona, body, { ahora, config });
         return error('Ruta no encontrada', 404);
     } catch (err) {

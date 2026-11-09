@@ -1,7 +1,8 @@
 const { Router } = require('itty-router');
 const { sinCache } = require('../../lib/utils/response');
 const { InboxRepository } = require('./inbox.repository');
-const { conSesion } = require('../../lib/auth/sesion');
+const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { PersonaService } = require('../../lib/services/PersonaService');
 
 const inboxRepo = new InboxRepository();
@@ -235,7 +236,10 @@ async function getRecipients(request) {
         const result = await inboxRepo.getRecipients({
             currentUserId: ses.sesion.personaId,
             tenantId: ses.sesion.tenantId,
-            obraId
+            obraId,
+            // Mismo criterio que el directorio de personas: sin `personas.ver`
+            // no aparece quien se opuso al directorio de compañeros.
+            ocultarOpositores: !sesionPuede(ses.sesion, PERMISSIONS.PERSONAS_VER),
         });
         return jsonResponse(result);
     } catch (err) {

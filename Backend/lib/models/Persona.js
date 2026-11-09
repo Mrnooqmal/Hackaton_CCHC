@@ -141,6 +141,11 @@ class Persona {
         // escribe en la misma transacción que él; la escribe solo el módulo de
         // consentimiento (nunca `crear` ni `actualizar`, igual que el bloqueo).
         this.consentimientos = data.consentimientos ? [...data.consentimientos] : [];
+        // Tratamientos a los que la persona se opuso con una solicitud acogida
+        // (lib/gobernanza/derechos.js, TRATAMIENTOS_OPONIBLES). La escribe solo
+        // lib/gobernanza: la respuesta de la solicitud la pone y el titular la
+        // retira desde Mis datos (nunca `crear` ni `actualizar`).
+        this.oposiciones = data.oposiciones ? [...data.oposiciones] : [];
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento

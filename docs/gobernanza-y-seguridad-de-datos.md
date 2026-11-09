@@ -1597,7 +1597,7 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 - **Autoservicio** (`/gobernanza/mis-datos`, `handlers/gobernanza/titular.js`, pantalla "Mis datos y privacidad"): descargar una copia (portabilidad), pedir rectificación, supresión, oposición o bloqueo, y ver el estado. Lo sensible exige volver a escribir la contraseña; tres errores en 15 minutos cierran las sesiones de la cuenta.
 - **Exportación** en JSON con esquema declarado (`buildandserve.datos-titular` v1), armada por lista blanca: nada de terceros (de cada registro compartido sale solo lo del titular) ni interno (hashes, HMAC, sobres, IP, sesiones). Hasta 3 por día; la cuarta se rechaza y alerta. Sin registro en la auditoría no se entrega.
 - **Flujo y etapas:** recibida, verificada (en evaluación), respondida, cerrada. La etapa se calcula de lo registrado (`etapaDe`). Acoger exige identidad verificada; se registra el método (sesión y contraseña, cédula en persona, correo registrado u otro), nunca el número de documento.
-- **Rectificación:** campos de identidad (nombre, apellidos, RUT, fecha de nacimiento), validados (RUT, edad mínima, caracteres). Los valores propuestos viajan cifrados y se borran de la solicitud al responder; se aplican en la misma transacción que la respuesta. Un RUT nuevo actualiza el vínculo `afectadoRutHmac` de los incidentes. Lo firmado (actas, documentos) no se reescribe: es la prueba de lo que se firmó.
+- **Rectificación:** campos de identidad (nombre, apellidos, RUT, fecha de nacimiento), validados (RUT, edad mínima, caracteres). Los valores propuestos viajan cifrados y se borran de la solicitud al responder; se aplican en la misma transacción que la respuesta. Un RUT nuevo actualiza el vínculo `afectadoRutHmac` de los incidentes. Lo firmado (actas, documentos) no se reescribe: es la prueba de lo que se firmó. Desde el 8 de noviembre de 2026 la ejecución guarda además el valor anterior y el nuevo de cada campo, cifrados (D-36).
 - **Canal de la empresa:** la solicitud que llega por carta o correo se registra como antes y ahora puede verificarse y, si es de acceso, exportarse desde el panel.
 
 ### D-31. Auditoría general y detección de eventos sospechosos (Actividad 5)
@@ -1742,6 +1742,64 @@ alarma), `pin-seis-digitos.test.js` y `pin-pantallas.test.js` (formato, PIN de 4
 solo para cambiarlo, 409 en todas las rutas, cambio obligatorio), y la prueba de
 punta a punta (PIN de 4 rechazado al crearlo y al pedir vales; cinco vales
 inválidos anulan los de la persona).
+
+### D-36. Oposición persistente al directorio de compañeros, y registro del valor anterior y nuevo de una rectificación
+**Estado: decidido el 8 de noviembre de 2026 (actividad "Mecanismos técnicos
+para el ejercicio de derechos"); en el árbol, por commitear. El tratamiento
+oponible lo eligió Benjamin.**
+
+**Qué faltaba.** Contra la checklist de la actividad, dos puntos quedaban cortos:
+una oposición acogida levantaba el bloqueo temporal y no dejaba nada, así que el
+tratamiento seguía haciéndose; y la rectificación registraba qué campos cambiaron,
+quién y cuándo, pero no el valor anterior ni el nuevo.
+
+**Oposición.**
+- Los tratamientos oponibles están en `TRATAMIENTOS_OPONIBLES`
+  (`Backend/lib/gobernanza/derechos.js`, espejo del tipo en
+  `Frontend/src/api/gobernanza.api.ts`). Son los que no descansan en una
+  obligación legal, en el contrato ni en el consentimiento: lo que depende del
+  consentimiento se retira revocándolo.
+- Hoy hay uno: **`directorio_companeros`**, aparecer ante compañeros sin
+  `personas.ver` en `GET /personas` y en `/inbox/recipients`. Su base es el
+  interés legítimo de coordinar la obra. Quien tiene `personas.ver` lo sigue
+  viendo: gestionar al personal sí es contrato y obligación legal. Se eligió
+  porque es el único tratamiento del sistema con esa base. Los correos son todos
+  transaccionales o de seguridad (credenciales, recuperación, PIN restablecido).
+- Toda oposición nueva indica su tratamiento, por los dos canales. Sin él se
+  rechaza, antes de pedir la contraseña en el autoservicio.
+- Acogida, la respuesta escribe en la misma transacción `oposiciones` en la ficha
+  (conjunto) y la ejecución en la solicitud, con su evento en el historial. El
+  bloqueo temporal se levanta como antes: la marca toma su lugar.
+- Rechazada, no deja marca. Una oposición registrada antes de este cambio, sin
+  tratamiento, se puede responder, pero no marca nada (el panel lo advierte).
+- El titular la retira desde Mis datos (`POST /gobernanza/mis-datos/oposiciones/{tratamiento}`).
+  Basta la sesión, como al otorgar un consentimiento: amplía el tratamiento solo
+  por su decisión y no entrega datos. Queda en la auditoría
+  (`derechos.oposicion_retirada`).
+- Se informa en el aviso de privacidad (derechos y bases), en "Mis datos" y en
+  la copia de los datos (`solicitudes.oposicionesVigentes`).
+
+**Rectificación.**
+- La ejecución guarda `valoresCifrados`: un sobre con `{ campo, anterior, nuevo }`
+  por campo, calculado contra la ficha actual al aplicar. Quién y cuándo van en
+  claro en la misma ejecución.
+- El valor anterior no se trata: ningún listado ni pantalla lo lee. Solo el
+  detalle de la solicitud lo descifra, para quien tiene
+  `empresa.derechos_titulares`, y cada apertura queda en la auditoría
+  (`derechos.rectificacion_consultada`). El listado, la respuesta y la vista del
+  titular no llevan el sobre.
+- Antes no se guardaba el valor anterior, para que el dato inexacto dejara de
+  tratarse. La clase pide poder demostrar qué se corrigió. Guardarlo cifrado y
+  sin uso cumple las dos cosas.
+- Conservación: la misma de la solicitud, que es la prueba de cumplimiento. Las
+  tablas de gobernanza siguen sin clase de retención (`TABLAS_DE_GOBERNANZA` en
+  el inventario). Queda pendiente definirla.
+
+**Verificación.** `Backend/tests/oposicion-rectificacion.test.js`: oposición sin
+tratamiento, de punta a punta con el directorio y la bandeja, rechazada, retirada
+por el titular y no por otro, en la copia de los datos, y rectificación con valores
+cifrados, detalle auditado y sin el sobre en el listado. Además,
+`derechos-titular.test.js` (reglas puras). Los 13 sabotajes se detectaron.
 
 ## 4. Hallazgos priorizados
 

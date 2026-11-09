@@ -31,10 +31,22 @@ export const DERECHOS_QUE_BLOQUEAN: Derecho[] = ['rectificacion', 'supresion', '
 
 interface Actor { personaId: string; nombre: string | null }
 
+/**
+ * Tratamientos a los que el titular se puede oponer (espejo de
+ * `TRATAMIENTOS_OPONIBLES` en Backend/lib/gobernanza/derechos.js). Una oposición
+ * acogida deja una marca persistente que el sistema consulta antes de hacerlo.
+ */
+export type TratamientoOponible = 'directorio_companeros';
+export const TRATAMIENTO_LABEL: Record<TratamientoOponible, string> = {
+    directorio_companeros: 'Directorio de compañeros',
+};
+
 export interface Solicitud {
     solicitudId: string;
     personaId: string;
     derecho: Derecho;
+    /** Solo en una oposición: a qué tratamiento. Las registradas antes del 8-11-2026 no lo traen. */
+    tratamiento?: TratamientoOponible | null;
     canal: string;
     detalle: string;
     recibidaEl: string;
@@ -79,6 +91,12 @@ export const CAMPO_LABEL: Record<CampoRectificable, string> = {
     fechaNacimiento: 'Fecha de nacimiento',
 };
 
+export interface CambioAplicado {
+    campo: CampoRectificable;
+    anterior: string;
+    nuevo: string;
+}
+
 export interface EventoHistorial {
     sk: string;
     tipo: 'solicitud' | 'bloqueo' | 'prorroga' | 'respuesta' | 'desbloqueo' | 'supresion' | 'alerta' | 'verificacion' | 'ejecucion';
@@ -92,9 +110,14 @@ export const gobernanzaApi = {
         apiRequest<{ solicitudes: Solicitud[]; total: number }>(`/gobernanza/solicitudes${estado ? `?estado=${estado}` : ''}`),
 
     detalle: (solicitudId: string) =>
-        apiRequest<Solicitud & { historial: EventoHistorial[]; cambiosPropuestos: Partial<Record<CampoRectificable, string>> | null }>(`/gobernanza/solicitudes/${solicitudId}`),
+        apiRequest<Solicitud & {
+            historial: EventoHistorial[];
+            cambiosPropuestos: Partial<Record<CampoRectificable, string>> | null;
+            /** Rectificación ya aplicada: valor anterior y nuevo de cada campo (abrirlo queda en la auditoría). */
+            cambiosAplicados: CambioAplicado[] | null;
+        }>(`/gobernanza/solicitudes/${solicitudId}`),
 
-    registrar: (datos: { personaId: string; derecho: Derecho; canal: string; recibidaEl: string; detalle?: string; verificacion?: { metodo: MetodoVerificacion; observacion?: string } }) =>
+    registrar: (datos: { personaId: string; derecho: Derecho; tratamiento?: TratamientoOponible; canal: string; recibidaEl: string; detalle?: string; verificacion?: { metodo: MetodoVerificacion; observacion?: string } }) =>
         apiRequest<Solicitud>('/gobernanza/solicitudes', { method: 'POST', body: JSON.stringify(datos) }),
 
     verificar: (solicitudId: string, datos: { metodo: MetodoVerificacion; observacion?: string }) =>
@@ -184,6 +207,7 @@ export interface EventoConsentimiento {
 export interface MiSolicitud {
     solicitudId: string;
     derecho: Derecho;
+    tratamiento: TratamientoOponible | null;
     canal: string;
     recibidaEl: string;
     plazoVigente: string;
@@ -193,6 +217,16 @@ export interface MiSolicitud {
     verificadaEl: string | null;
     respuesta: null | { resultado: Resultado; fundamento: string; respondidaEl: string };
     ejecutadaEl: string | null;
+}
+
+/** Un tratamiento oponible, y si la persona tiene una oposición vigente a él. */
+export interface OposicionTitular {
+    tratamiento: TratamientoOponible;
+    nombre: string;
+    que: string;
+    base: string;
+    efecto: string;
+    vigente: boolean;
 }
 
 /** El documento que entrega la exportación (formato `buildandserve.datos-titular`). */
@@ -229,9 +263,12 @@ export const privacidadApi = {
         apiRequest<FinalidadConsentimiento>(`/gobernanza/mis-datos/consentimientos/${finalidad}`, { method: 'POST', body: JSON.stringify({ accion: 'revocar' }) }),
     exportar: (password: string) =>
         apiRequest<ExportacionTitular>('/gobernanza/mis-datos/exportacion', { method: 'POST', body: JSON.stringify({ password }) }),
-    solicitudes: () => apiRequest<{ solicitudes: MiSolicitud[] }>('/gobernanza/mis-datos/solicitudes'),
-    solicitar: (datos: { derecho: 'rectificacion' | 'supresion' | 'oposicion' | 'bloqueo'; detalle?: string; cambios?: Partial<Record<CampoRectificable, string>>; password: string }) =>
+    solicitudes: () => apiRequest<{ solicitudes: MiSolicitud[]; oposiciones: OposicionTitular[] }>('/gobernanza/mis-datos/solicitudes'),
+    solicitar: (datos: { derecho: 'rectificacion' | 'supresion' | 'oposicion' | 'bloqueo'; detalle?: string; cambios?: Partial<Record<CampoRectificable, string>>; tratamiento?: TratamientoOponible; password: string }) =>
         apiRequest<MiSolicitud>('/gobernanza/mis-datos/solicitudes', { method: 'POST', body: JSON.stringify(datos) }),
+    /** Retira una oposición vigente: el tratamiento vuelve a hacerse. */
+    retirarOposicion: (tratamiento: TratamientoOponible) =>
+        apiRequest<{ oposiciones: OposicionTitular[] }>(`/gobernanza/mis-datos/oposiciones/${tratamiento}`, { method: 'POST', body: JSON.stringify({ accion: 'retirar' }) }),
 };
 
 /** Descarga un objeto como archivo JSON (lo arma el navegador; no pasa por ningún servidor). */

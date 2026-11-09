@@ -66,6 +66,8 @@ const ACTUALIZACIONES = {
     respuestaRectificacion: 'SET respuesta = :r, estado = :resuelta, ejecucion = :e, actualizadaEl = :ahora REMOVE cambiosCifrados',
     // Rechazada: tampoco se conservan los valores propuestos.
     respuestaSinCambios: 'SET respuesta = :r, estado = :resuelta, actualizadaEl = :ahora REMOVE cambiosCifrados',
+    // Una oposición acogida deja su marca en la ficha en la misma escritura.
+    respuestaConEjecucion: 'SET respuesta = :r, estado = :resuelta, ejecucion = :e, actualizadaEl = :ahora',
     exportacion: 'SET ejecucion = :e, actualizadaEl = :ahora',
 };
 
@@ -75,7 +77,7 @@ const ESTADO_POR_CODIGO = {
     PRORROGA_SIN_FECHA: 400, PRORROGA_FUTURA: 400, PRORROGA_INVALIDA: 400, MOTIVO_REQUERIDO: 400,
     RESULTADO_INVALIDO: 400, FUNDAMENTO_REQUERIDO: 400,
     METODO_INVALIDO: 400, OBSERVACION_REQUERIDA: 400, OBSERVACION_CON_DOCUMENTO: 400, CAMPOS_ACEPTADOS: 400,
-    SIN_CAMBIOS: 400, CAMPO_NO_RECTIFICABLE: 400, RUT_INVALIDO: 400, FECHA_INVALIDA: 400, NOMBRE_INVALIDO: 400,
+    SIN_CAMBIOS: 400, CAMPO_NO_RECTIFICABLE: 400, RUT_INVALIDO: 400, FECHA_INVALIDA: 400, NOMBRE_INVALIDO: 400, TRATAMIENTO_INVALIDO: 400,
     PRORROGA_TARDIA: 409, PRORROGA_USADA: 409, SOLICITUD_CERRADA: 409, CAMBIO_CONCURRENTE: 409,
     YA_VERIFICADA: 409, SIN_VERIFICACION: 409, RUT_DUPLICADO: 409, NO_EXPORTABLE: 409,
     AUDITORIA_NO_DISPONIBLE: 503,
@@ -115,10 +117,23 @@ async function historialDe(tenantId, solicitudId) {
     return items;
 }
 
-/** Lo que ve quien gestiona: plazo, alertas y etapa; nunca el sobre cifrado. */
+/** La ejecución sin el sobre con los valores de una rectificación. */
+const sinValores = (ejecucion) => {
+    if (!ejecucion?.valoresCifrados) return ejecucion;
+    const { valoresCifrados, ...resto } = ejecucion;
+    return resto;
+};
+
+/** Lo que ve quien gestiona: plazo, alertas y etapa; nunca un sobre cifrado. */
 const conPlazo = (s, ahora, config) => {
     const { cambiosCifrados, ...resto } = s;
-    return { ...resto, plazoVigente: D.plazoVigente(s).toISOString(), alertas: D.alertasDe(s, { ahora, config }), etapa: D.etapaDe(s) };
+    return {
+        ...resto,
+        ...(resto.ejecucion ? { ejecucion: sinValores(resto.ejecucion) } : {}),
+        plazoVigente: D.plazoVigente(s).toISOString(),
+        alertas: D.alertasDe(s, { ahora, config }),
+        etapa: D.etapaDe(s),
+    };
 };
 
 async function transaccion(items) {
@@ -214,9 +229,14 @@ async function verificarSolicitud(event, sesion, solicitudId, body, actor, { aho
 /**
  * Qué escribir en la ficha para aplicar los cambios aceptados. Valida de nuevo
  * contra la ficha ACTUAL (pudo cambiar desde que se pidió) y, si cambia el RUT,
- * que no lo tenga otra persona de la empresa. No conserva los valores
- * anteriores: el sentido de rectificar es que el dato inexacto deje de
- * tratarse. Lo que queda es qué campos cambiaron, quién y cuándo.
+ * que no lo tenga otra persona de la empresa.
+ *
+ * El registro del cambio (por campo, valor anterior y nuevo) queda en la
+ * ejecución de la solicitud, CIFRADO en un sobre: el valor anterior deja de
+ * tratarse (ningún listado ni pantalla lo lee) y se custodia solo como prueba de
+ * la corrección; lo descifra el detalle de la solicitud, para quien tiene el
+ * permiso de derechos. Quién y cuándo van en claro en la misma ejecución.
+ * Hasta el 8 de noviembre de 2026 no se guardaban los valores, solo los campos.
  */
 async function preparaRectificacion(tenantId, s, camposAceptados, { ahora }) {
     const propuestos = s.cambiosCifrados ? await cifradoCampo.descifrarSobre(s.cambiosCifrados) : null;
@@ -257,6 +277,7 @@ async function preparaRectificacion(tenantId, s, camposAceptados, { ahora }) {
     sets.push('updatedAt = :ahora');
     return {
         campos: Object.keys(cambios).sort(),
+        valoresCifrados: await cifradoCampo.cifrarSobre(D.registroDeCambio(cambios, persona)),
         rut,
         op: {
             Update: {
@@ -331,11 +352,21 @@ async function responder(event, sesion, solicitudId, body, actor, { ahora, confi
     // respuesta: no puede quedar "acogida" sin aplicar, ni aplicada sin respuesta.
     const rectifica = s.derecho === D.DERECHOS.RECTIFICACION && r.resultado !== D.RESULTADOS.RECHAZADA;
     const rect = rectifica ? await preparaRectificacion(tenantId, s, body.camposAceptados, { ahora }) : null;
-    const ejecucion = rect ? { en: ahora.toISOString(), por: actor, detalle: { campos: rect.campos } } : null;
-    if (rect) eventos.push(D.evento(tenantId, solicitudId, D.EVENTOS.EJECUCION, { campos: rect.campos }, actor, { ahora, n: 2 }));
+    // Una oposición acogida deja la marca persistente del tratamiento en la
+    // ficha. Una oposición antigua, registrada sin tratamiento, no tiene qué marcar.
+    const opone = s.derecho === D.DERECHOS.OPOSICION && r.resultado !== D.RESULTADOS.RECHAZADA && Boolean(D.TRATAMIENTOS_OPONIBLES[s.tratamiento]);
+    let ejecucion = null;
+    if (rect) {
+        ejecucion = { en: ahora.toISOString(), por: actor, detalle: { campos: rect.campos }, valoresCifrados: rect.valoresCifrados };
+        eventos.push(D.evento(tenantId, solicitudId, D.EVENTOS.EJECUCION, { campos: rect.campos }, actor, { ahora, n: 2 }));
+    } else if (opone) {
+        ejecucion = { en: ahora.toISOString(), por: actor, detalle: { oposicion: s.tratamiento } };
+        eventos.push(D.evento(tenantId, solicitudId, D.EVENTOS.EJECUCION, { oposicion: s.tratamiento }, actor, { ahora, n: 2 }));
+    }
 
     const expresion = rect ? ACTUALIZACIONES.respuestaRectificacion
-        : (s.derecho === D.DERECHOS.RECTIFICACION ? ACTUALIZACIONES.respuestaSinCambios : ACTUALIZACIONES.respuesta);
+        : opone ? ACTUALIZACIONES.respuestaConEjecucion
+            : (s.derecho === D.DERECHOS.RECTIFICACION ? ACTUALIZACIONES.respuestaSinCambios : ACTUALIZACIONES.respuesta);
     const items = [{
         Update: {
             TableName: TABLA(), Key: { tenantId, sk: skSolicitud(solicitudId) },
@@ -343,11 +374,22 @@ async function responder(event, sesion, solicitudId, body, actor, { ahora, confi
             ConditionExpression: 'estado = :abierta',
             ExpressionAttributeValues: {
                 ':r': r, ':resuelta': D.ESTADOS.RESUELTA, ':abierta': D.ESTADOS.ABIERTA, ':ahora': ahora.toISOString(),
-                ...(rect ? { ':e': ejecucion } : {}),
+                ...(ejecucion ? { ':e': ejecucion } : {}),
             },
         },
     }];
     if (rect) items.push(rect.op);
+    if (opone) {
+        items.push({
+            Update: {
+                TableName: PERSONAS(),
+                Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${s.personaId}` },
+                UpdateExpression: 'ADD oposiciones :t SET updatedAt = :ahora',
+                ConditionExpression: 'attribute_exists(PK)',
+                ExpressionAttributeValues: { ':t': new Set([s.tratamiento]), ':ahora': ahora.toISOString() },
+            },
+        });
+    }
 
     // Una supresión acogida mantiene el bloqueo hasta que se ejecute (lote con
     // aprobación de dos personas). El resto lo levanta al responder.
@@ -386,6 +428,12 @@ async function responder(event, sesion, solicitudId, body, actor, { ahora, confi
         await auditoria.registrar({
             tenantId, operacion: 'derechos.rectificacion_aplicada', actor: actorAuditoria(sesion), recurso: { tipo: 'solicitud', id: solicitudId },
             titulares: [s.personaId], origen: auditoria.origenDe(event), detalle: { campos: rect.campos, ...(propagacion || {}) },
+        }, { ahora });
+    }
+    if (opone) {
+        await auditoria.registrar({
+            tenantId, operacion: 'derechos.oposicion_aplicada', actor: actorAuditoria(sesion), recurso: { tipo: 'solicitud', id: solicitudId },
+            titulares: [s.personaId], origen: auditoria.origenDe(event), detalle: { tratamiento: s.tratamiento },
         }, { ahora });
     }
     const { cambiosCifrados, ...sinSobre } = s;
@@ -477,7 +525,16 @@ module.exports.atender = async (event, { ahora = new Date(), config = D.configDe
             // Para decidir una rectificación hay que ver qué se pide: solo acá,
             // solo a quien tiene el permiso, y descifrado en el momento.
             const cambiosPropuestos = s.cambiosCifrados ? await cifradoCampo.descifrarSobre(s.cambiosCifrados) : null;
-            return success({ ...conPlazo(s, ahora, config), historial, cambiosPropuestos });
+            // Y para revisar una ya aplicada, el registro del cambio: valor
+            // anterior y nuevo de cada campo. Abrirlo queda en la auditoría.
+            const cambiosAplicados = s.ejecucion?.valoresCifrados ? await cifradoCampo.descifrarSobre(s.ejecucion.valoresCifrados) : null;
+            if (cambiosAplicados) {
+                await auditoria.registrar({
+                    tenantId, operacion: 'derechos.rectificacion_consultada', actor: actorAuditoria(sesion), recurso: { tipo: 'solicitud', id },
+                    titulares: [s.personaId], origen: auditoria.origenDe(event), detalle: { campos: cambiosAplicados.map((c) => c.campo) },
+                }, { ahora });
+            }
+            return success({ ...conPlazo(s, ahora, config), historial, cambiosPropuestos, cambiosAplicados });
         }
 
         // Quién actúa sale de la sesión; su nombre, de su ficha.

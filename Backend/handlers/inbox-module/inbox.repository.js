@@ -4,6 +4,7 @@ const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, Scan
 const { docClient } = require('../../lib/clients/dynamodb');
 const { normalizeRol } = require('../../lib/utils/validation');
 const { construirMensaje, INBOX_TABLE } = require('../../lib/bandeja');
+const { seOpone } = require('../../lib/gobernanza/derechos');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 
@@ -277,7 +278,7 @@ class InboxRepository {
     }
 
     async getRecipients(params) {
-        const { currentUserId, tenantId, obraId } = params;
+        const { currentUserId, tenantId, obraId, ocultarOpositores = false } = params;
         if (!tenantId) throw new Error('tenantId es requerido');
 
         // Obtener personas del tenant que puedan recibir mensajes. Se incluyen
@@ -332,6 +333,8 @@ class InboxRepository {
         // siempre llegaba vacío, porque en la tabla está cifrado.
         const users = allItems
             .filter(u => u.personaId !== currentUserId)
+            // Oposición acogida al directorio de compañeros (lib/gobernanza/derechos.js).
+            .filter(u => !ocultarOpositores || !seOpone(u, 'directorio_companeros'))
             .map(u => ({
                 userId: u.personaId,
                 personaId: u.personaId,
