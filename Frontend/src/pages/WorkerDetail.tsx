@@ -60,7 +60,6 @@ interface WorkerWithRole extends ApiWorker {
     rol?: 'admin' | 'prevencionista' | 'trabajador';
     obraIds?: string[];
     pinConfigurado?: boolean;
-    pinDebeCambiar?: boolean;
     pinRestablecido?: PinRestablecido | null;
 }
 

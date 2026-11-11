@@ -166,6 +166,10 @@
    firma sin conexión del turno (AvisoValesTurno). Van bajo la cabecera, en
    todas las pantallas. */
 .sincronizador-firmas {
+  /* Por encima de los encabezados tipo banner (abajo): si el navegador no
+     soporta :has, el aviso igual se pinta completo sobre el banner. */
+  position: relative;
+  z-index: 5;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -184,6 +188,18 @@
 .sincronizador-firmas--rechazadas ul { flex: 1 1 260px; margin: 0; padding-left: var(--space-4); }
 @media (max-width: 640px) {
   .sincronizador-firmas { margin: var(--space-2) var(--space-3) 0; }
+}
+
+/* Los encabezados tipo banner (.ui-page-header--banner, la cabecera de obra y
+   la credencial) se estiran hacia arriba con margen negativo para tocar el
+   header. Con el aviso de firmas presente, ese estirón lo tapaba (Mis firmas y
+   Actividades, en escritorio y a 360 px): aquí se anula, y el banner parte
+   justo debajo del aviso. */
+.main-content:has(> .sincronizador-firmas) .ui-page-header--banner,
+.main-content:has(> .sincronizador-firmas) .ob-cabecera,
+.main-content:has(> .sincronizador-firmas) .ob-skel-cabecera,
+.main-content:has(> .sincronizador-firmas) .idp {
+  margin-top: 0;
 }
 
 /* Firmas en revisión. */

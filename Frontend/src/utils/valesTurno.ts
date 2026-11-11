@@ -1,5 +1,5 @@
 /**
- * Renovación silenciosa de los vales (D-36).
+ * Renovación silenciosa de los vales (D-37).
  *
  * Habilitar no es un paso: cada vez que una persona escribe su PIN con red —al
  * firmar cualquier cosa, propia o asistida— el equipo le renueva los vales para la

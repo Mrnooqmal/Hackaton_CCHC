@@ -113,9 +113,6 @@ class Persona {
         this._passwordHash = data.passwordHash || null;
         this._pinHash = data.pinHash || null;
         this.pinCreatedAt = data.pinCreatedAt || null;
-        // Largo del PIN guardado: 6 desde el 8 de noviembre de 2026. Sin el dato
-        // es uno de 4, de antes, y la persona debe cambiarlo (`pinDebeCambiar`).
-        this.pinLargo = data.pinLargo || null;
         // Límite de intentos de PIN (H-2). No es un dato de negocio de la
         // persona: es el estado del contador de `lib/limitePin.js`. Se guarda
         // acá y no en tabla aparte porque el bloqueo tiene que leerse en el
@@ -123,7 +120,10 @@ class Persona {
         // aparte sería una lectura más en cada intento de firma.
         this.pinIntentosFallidos = data.pinIntentosFallidos || 0;
         this.pinBloqueadaHasta = data.pinBloqueadaHasta || null;
-        // PIN equivocados de sobres en la última sincronización (D-36): huellas,
+        // Bloqueos de PIN de las últimas 24 horas (D-35, ataque lento): fechas,
+        // nunca el PIN. Lo escribe lib/limitePin.registrarBloqueoLento.
+        this.pinBloqueos = data.pinBloqueos || [];
+        // PIN equivocados de sobres en la última sincronización (D-37): huellas,
         // nunca el PIN. Estado de `verificarSobre`, como el contador de arriba.
         this.intentoSobre = data.intentoSobre || null;
         this.intentoSobreV = data.intentoSobreV || 0;
@@ -367,9 +367,9 @@ class Persona {
             passwordHash: this._passwordHash,
             pinHash: this._pinHash,
             pinCreatedAt: this.pinCreatedAt,
-            pinLargo: this.pinLargo,
             pinIntentosFallidos: this.pinIntentosFallidos,
             pinBloqueadaHasta: this.pinBloqueadaHasta,
+            ...(this.pinBloqueos.length ? { pinBloqueos: this.pinBloqueos } : {}),
             ...(this.intentoSobre ? { intentoSobre: this.intentoSobre, intentoSobreV: this.intentoSobreV } : {}),
             pinRestablecido: this.pinRestablecido,
             pinHistorial: this.pinHistorial,
@@ -439,8 +439,6 @@ class Persona {
             tieneAccesoWeb: this.tieneAccesoWeb,
             habilitado: this.habilitado,
             pinConfigurado: this.tienePinConfigurado(),
-            // Un PIN de 4 (de antes) ya no sirve para firmar: hay que cambiarlo.
-            pinDebeCambiar: this.tienePinConfigurado() && this.pinLargo !== 6,
             // Sin el motivo, que es texto libre y puede traer detalles de la
             // persona: basta saber que hay uno pendiente y quién lo hizo, para
             // que la pantalla no le ofrezca asistir a esa misma persona.

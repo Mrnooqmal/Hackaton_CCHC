@@ -79,7 +79,7 @@ const buildUserPayload = async (persona) => {
     }
     // Es la ficha de quien inicia sesión: sobre sus propios datos de salud no hay
     // nada que ocultarle (ver Persona.toSafeFormat).
-    // La llave pública de los sobres de firma sin conexión (D-36): no es secreta,
+    // La llave pública de los sobres de firma sin conexión (D-37): no es secreta,
     // y el equipo la guarda para poder firmar cuando no haya señal.
     return { ...persona.toSafeFormat({ incluirSalud: true }), permisos, branding, empresaNombre, llaveSobreFirma: await sobreFirma.llavePublica() };
 };

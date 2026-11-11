@@ -539,7 +539,6 @@ module.exports.updateResponseStatus = async (event) => {
                 console.log(`✅ Firma digital creada para encuesta ${id}, trabajador ${workerId}`);
             } catch (firmaError) {
                 if (firmaError.codigo === 'PIN_BLOQUEADO') return error(firmaError.message, 423);
-                if (firmaError.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaError.message, 409);
                 if (firmaError.codigo === 'SOBRE_NO_DISPONIBLE' || firmaError.$metadata) return error('No se pudo registrar la firma en este momento.', 503);
                 console.error('Error validando firma:', firmaError.message);
                 // 400, como documentos y actividades. Era 401, y el cliente lee un

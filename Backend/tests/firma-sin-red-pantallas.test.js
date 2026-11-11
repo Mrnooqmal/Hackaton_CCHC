@@ -1,4 +1,4 @@
-// Lo que se corrigió tras la prueba en terreno en modo avión (D-36).
+// Lo que se corrigió tras la prueba en terreno en modo avión (D-37).
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');

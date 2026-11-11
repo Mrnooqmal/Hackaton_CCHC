@@ -16,9 +16,11 @@
  * otros 32 bytes igual de aleatorios: desde la copia no se distingue el bueno.
  * Para que quien se equivoca al teclear lo sepa en terreno, se guarda un solo
  * byte derivado de la misma llave: descarta 255 de cada 256 PIN equivocados.
- * A quien ataca la copia le quedan ~3.900 candidatos (con 6 dígitos), que solo
+ * A quien ataca la copia le quedan ~39 candidatos (PIN de 4 dígitos), que solo
  * puede confirmar presentando vales al servidor, y el servidor anula los vales
- * de la persona al quinto vale inválido (ValeFirmaService.registrarInvalido).
+ * de la persona al quinto vale inválido (ValeFirmaService.registrarInvalido):
+ * un 13% de acertar antes del corte, asumido en D-35 (decisión del 9 de
+ * noviembre de 2026, al volver el PIN a 4).
  *
  * El costo aceptado: 1 de cada 256 PIN equivocados pasa la comprobación. Esa
  * firma se guarda con un vale que no existe, el servidor la rechaza al

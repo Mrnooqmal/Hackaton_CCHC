@@ -21,7 +21,7 @@ const path = require('path');
 const { cargarTs, FRONTEND } = require('./cargar-ts');
 
 const ITER = 1000;
-const PIN = '482915';
+const PIN = '4829';
 const hex = (n) => n.toString(16).padStart(64, '0');
 const enUnaHora = () => new Date(Date.now() + 3600e3).toISOString();
 
@@ -48,7 +48,7 @@ async function habilitar(c, v, a, { tenantId = 't-1', personaId = 'p-1', obraId 
 /** Un PIN distinto cuyo byte de comprobación NO coincide (255 de cada 256). */
 async function pinQueNoPasa(v, cifrado) {
     for (let i = 0; i < 1000; i += 1) {
-        const p = String(100000 + i);
+        const p = String(1000 + i);
         if (p !== PIN && (await v.abrirLlave(p, cifrado)) === null) return p;
     }
     throw new Error('no se encontró');
@@ -56,8 +56,8 @@ async function pinQueNoPasa(v, cifrado) {
 
 /** Un PIN distinto que SÍ pasa la comprobación: el 1 de cada 256 aceptado. */
 async function pinQuePasa(v, cifrado) {
-    for (let i = 0; i < 20000; i += 1) {
-        const p = String(200000 + i);
+    for (let i = 0; i < 9000; i += 1) {
+        const p = String(1000 + i);
         if (p !== PIN && (await v.abrirLlave(p, cifrado)) !== null) return p;
     }
     throw new Error('no se encontró');
@@ -137,7 +137,7 @@ test('descifrar con una llave equivocada no falla: da otros 32 bytes', async () 
     const { v } = modulos();
     const cifrado = await v.cifrarVales(PIN, [hex(7)], ITER);
     const sal = Uint8Array.from(Buffer.from(cifrado.sal, 'base64'));
-    const otra = await v.derivarLlave('000000', sal, ITER);
+    const otra = await v.derivarLlave('0000', sal, ITER);
     const r = await v.descifrarVale(otra, cifrado.vales[0]);
     assert.match(r, /^[0-9a-f]{64}$/);
     assert.notEqual(r, hex(7));

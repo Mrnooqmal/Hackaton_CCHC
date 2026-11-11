@@ -127,7 +127,7 @@ const hmacRut = async (rut) => {
 };
 
 /**
- * Huella de un PIN equivocado dentro de una sincronización (D-36): sirve para
+ * Huella de un PIN equivocado dentro de una sincronización (D-37): sirve para
  * saber si ya se probó ese mismo PIN en esa sincronización, sin guardarlo. Corta,
  * con llave del servidor y atada a la persona y a la sincronización.
  */

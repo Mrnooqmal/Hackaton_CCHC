@@ -1,5 +1,5 @@
 /**
- * Sobre de firma sin conexión (D-36): el respaldo cuando el equipo no tiene vales
+ * Sobre de firma sin conexión (D-37): el respaldo cuando el equipo no tiene vales
  * de la persona, para que sin señal siempre se pueda firmar.
  *
  * El PIN se cifra con la llave PÚBLICA del servidor, junto con el hash de la

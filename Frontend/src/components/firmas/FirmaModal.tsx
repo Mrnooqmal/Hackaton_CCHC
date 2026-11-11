@@ -40,7 +40,7 @@ export function FichaFirma({ items }: { items: FichaFirmaItem[] }) {
 export interface FirmaModalProps {
     isOpen: boolean;
     onClose: () => void;
-    /** Recibe el PIN de 6 dígitos ya ingresado y la declaración marcada. */
+    /** Recibe el PIN de 4 dígitos ya ingresado y la declaración marcada. */
     onConfirm: (pin: string) => void | Promise<void>;
     firmando: boolean;
     error?: string;

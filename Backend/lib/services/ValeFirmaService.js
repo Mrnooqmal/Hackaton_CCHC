@@ -357,7 +357,7 @@ class ValeFirmaService {
         return {
             vale: body.vale,
             sobre: body.sobre,
-            // Con cuál sincronización llegó: un intento de PIN por sincronización (D-36).
+            // Con cuál sincronización llegó: un intento de PIN por sincronización (D-37).
             idSincronizacion: typeof body.idSincronizacion === 'string' ? body.idSincronizacion.slice(0, 64) : null,
             deviceId: body.deviceId || null,
             timestampLocal: body.timestampLocal || null,

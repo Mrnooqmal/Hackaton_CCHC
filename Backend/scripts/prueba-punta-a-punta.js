@@ -83,8 +83,8 @@ const resumen = (r) => `HTTP ${r.status} ${JSON.stringify(r.cuerpo)?.slice(0, 30
 
 // ─── Flujos ──────────────────────────────────────────────────────────────────
 
-// PIN de 6 dígitos desde el 8 de noviembre de 2026.
-const PIN = '482791';
+// PIN de 4 dígitos (volvió de 6 el 9 de noviembre de 2026, D-35).
+const PIN = '4827';
 
 /**
  * Primer ingreso completo de una persona: contraseña inicial, cambio, PIN y
@@ -111,9 +111,9 @@ async function primerIngreso(c, { quien, rut, personaId }) {
     comprobar(`${quien}: el cambio emite una sesión nueva`, tokenNuevo && tokenNuevo !== tokenInicial, resumen(cambio));
     const token = tokenNuevo || tokenInicial;
 
-    // Un PIN de 4 dígitos ya no se acepta.
-    const corto = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: '4827' } });
-    comprobar(`${quien}: un PIN de 4 dígitos ya no se acepta (400)`, corto.status === 400 && /6 dígitos/.test(corto.cuerpo?.error || ''), resumen(corto));
+    // Un PIN que no es de 4 dígitos no se acepta (y volvió a 4: D-35).
+    const largo = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: '482791' } });
+    comprobar(`${quien}: un PIN de 6 dígitos no se acepta (400)`, largo.status === 400 && /4 dígitos/.test(largo.cuerpo?.error || ''), resumen(largo));
 
     // Enseguida, sin esperar: dentro de los 60 s del caché del autorizador.
     const pin = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: PIN } });
@@ -130,7 +130,6 @@ async function primerIngreso(c, { quien, rut, personaId }) {
     const me = await c.pedir('GET', '/auth/me', { token });
     comprobar(`${quien}: la sesión nueva es válida y ya no es provisional`,
         me.status === 200 && me.cuerpo?.data?.user?.passwordTemporal === false && me.cuerpo?.data?.user?.habilitado === true, resumen(me));
-    comprobar(`${quien}: con un PIN de 6 no se le pide cambiarlo`, me.cuerpo?.data?.user?.pinDebeCambiar === false, resumen(me));
 
     return token;
 }
@@ -260,8 +259,6 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     // Habilitar: el supervisor pide los vales de la trabajadora para la obra del turno.
     const sinAsignar = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraB, pin: PIN } });
     comprobar('vales para una obra a la que no está asignada: 404', sinAsignar.status === 404, resumen(sinAsignar));
-    const pinCorto = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: '4827' } });
-    comprobar('un PIN de 4 dígitos no pide vales: hay que cambiarlo (409)', pinCorto.status === 409, resumen(pinCorto));
     const emision = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN, deviceId: 'e2e' } });
     const vales = emision.cuerpo?.data?.vales || [];
     comprobar('admin: habilita a la trabajadora en la obra A (5 vales)', emision.status === 200 && vales.length === 5 && emision.cuerpo.data.obraId === obraA, resumen(emision), { detener: true });
@@ -281,12 +278,12 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
 
     // Un PIN equivocado no es una sesión vencida: responde 400, nunca 401, porque el
     // cliente lee todo 401 como sesión caída y cerraba la sesión de quien firmaba.
-    const pinMalo = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: '000000' } });
+    const pinMalo = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: '0000' } });
     comprobar('un PIN equivocado al pedir vales responde 400, no 401', pinMalo.status === 400, resumen(pinMalo));
     const sesionViva = await c.pedir('GET', '/auth/me', { token });
     comprobar('...y la sesión sigue viva', sesionViva.status === 200, resumen(sesionViva));
 
-    // El sobre (D-36): sin vales, el PIN va cifrado con la llave pública de KMS.
+    // El sobre (D-37): sin vales, el PIN va cifrado con la llave pública de KMS.
     const llave = sesionViva.cuerpo?.data?.user?.llaveSobreFirma;
     comprobar('la sesión entrega la llave pública de los sobres', typeof llave === 'string' && llave.length > 100, 'sin llave', { detener: true });
     const a4 = await crearActividad(obraA, 'Charla A4');
@@ -299,7 +296,7 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     const conSobre = (pin, id, cuerpoExtra = {}) => c.pedir('POST', `/activities/${a4}/attendance`, { token, cuerpo: {
         personaId: trabajadora, deviceId: 'e2e', timestampLocal: hora, idFirmaLocal: id, idSincronizacion: 'sinc_e2e_0001', sobre: sobreDe(pin, id, hora), ...cuerpoExtra,
     } });
-    const sobreMalo = await conSobre('000000', 'e2e-sobre-malo');
+    const sobreMalo = await conSobre('0000', 'e2e-sobre-malo');
     comprobar('un sobre con el PIN equivocado se rechaza (400)', sobreMalo.status === 400 && /PIN/.test(sobreMalo.cuerpo?.error || ''), resumen(sobreMalo));
     const sobreAjeno = await conSobre(PIN, 'e2e-sobre-otro', { idFirmaLocal: 'e2e-otra-firma' });
     comprobar('un sobre no sirve para otra firma (400)', sobreAjeno.status === 400, resumen(sobreAjeno));

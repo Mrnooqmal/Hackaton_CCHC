@@ -1143,7 +1143,7 @@ module.exports.sign = async (event) => {
         // sincroniza, y la puede subir cualquier sesión de la empresa. El vale ya
         // prueba el consentimiento (esa persona lo desbloqueó con su PIN), y
         // FirmaService lo rechaza si es de otra persona o de otra empresa. Lo mismo
-        // con el sobre (D-36): trae el PIN de la persona, amarrado a esta firma.
+        // con el sobre (D-37): trae el PIN de la persona, amarrado a esta firma.
         const firmaConVale = !body.pin && Boolean(body.vale || body.sobre);
         if (signerPersonaId !== sesion.personaId && !firmaConVale
             && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
@@ -1206,7 +1206,6 @@ module.exports.sign = async (event) => {
             });
         } catch (firmaErr) {
             if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
-            if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
             // Pasajero: la firma sin conexión tiene que seguir en la cola, y el
             // cliente solo descarta lo que se rechaza por su contenido.
             if (firmaErr.codigo === 'SOBRE_NO_DISPONIBLE' || firmaErr.$metadata) return error('No se pudo registrar la firma en este momento.', 503);
@@ -1348,7 +1347,6 @@ module.exports.signAssisted = async (event) => {
             });
         } catch (firmaErr) {
             if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
-            if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
             return error(firmaErr.message, 400);
         }
 

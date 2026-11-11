@@ -1,5 +1,5 @@
 /**
- * Sobre de firma sin conexión (D-36): el respaldo para firmar sin señal cuando
+ * Sobre de firma sin conexión (D-37): el respaldo para firmar sin señal cuando
  * el equipo no tiene vales de esa persona.
  *
  * El equipo cifra el PIN recién escrito con la llave PÚBLICA de un par RSA que

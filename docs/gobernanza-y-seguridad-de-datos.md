@@ -1665,7 +1665,7 @@ en la URL de CloudFront: con la redirección habrían fallado en cada archivo, y
 ahora verifican en `buildandserve.cl`. El enlace de las licencias, cuando falta
 `FRONTEND_URL`, también pasó al dominio propio.
 
-### D-35. Firma sin conexión con el PIN: vales cifrados en el equipo, sin oráculo, y PIN de 6 dígitos
+### D-35. Firma sin conexión con el PIN: vales cifrados en el equipo, sin oráculo, y corte del servidor
 **Estado: decidido el 8 de noviembre de 2026; en dev, pendiente de prod.
 Iteraciones de PBKDF2 fijadas en 600.000 con la medición del mismo día (ver
 "Medición").**
@@ -1687,11 +1687,10 @@ también en la firma asistida:
   `VALES_INVALIDOS` y dispara la alarma `vales-invalidos` (umbral 1). El contador
   vuelve a cero solo al emitir vales nuevos, que exige el PIN con red
   (`ValeFirmaService.registrarInvalido`);
-- el PIN de firma pasa de 4 a 6 dígitos. Para firmar y pedir vales solo se
-  acepta uno de 6; uno de 4 solo sirve para cambiarlo y, fuera de eso, ni se
-  compara con el guardado ni cuenta como intento (409 `PIN_DEBE_CAMBIAR`). Quien
-  entra con uno de 4 pasa por el cambio de PIN antes de seguir (`pinLargo` en la
-  ficha; `pinDebeCambiar` en la sesión).
+- el PIN de firma pasó a 6 dígitos el 8 de noviembre de 2026 y **volvió a 4 el
+  9 de noviembre**, por decisión de Adrean (ver "PIN de 4 dígitos: el riesgo
+  asumido", abajo). Se quitaron la exigencia de 6 y el cambio obligatorio al
+  entrar; en prod todos tienen PIN de 4.
 
 **Por qué sin etiqueta.** Con AES-GCM, quien copie el almacenamiento del equipo
 prueba los PIN fuera de la app y la etiqueta le confirma el correcto: el PIN,
@@ -1701,9 +1700,7 @@ segundo) recorre los 10.000 PIN de 4 dígitos en menos de un segundo, y el mill�
 de 6 dígitos en ~70 s; un notebook de 8 núcleos, en ~5 minutos y ~8 horas. Sin
 etiqueta y con un byte, la copia solo reduce los candidatos: ~39 con 4 dígitos y
 ~3.900 con 6, que hay que confirmar contra el servidor, que corta al quinto.
-Probabilidad de acertar antes del corte: 13% con 4 dígitos, **0,13% con 6**. Por
-eso los 6 dígitos: sin el corte del servidor no cambiarían casi nada; con él,
-son los que llevan el 13% al 0,13%.
+Probabilidad de acertar antes del corte: **13% con 4 dígitos**, 0,13% con 6.
 
 **Medición (8 de noviembre de 2026).** Con `/medicion-pin` en dev, en un
 Android 10 de gama baja (8 núcleos, 4 GB, Chrome 156), cinco derivaciones de
@@ -1730,10 +1727,26 @@ así que subirlas no invalida vales ya guardados.
 - Sin WebCrypto (fuera de https) no se habilita la firma sin conexión: nunca se
   vuelve a guardar un vale en claro.
 
-**Riesgo que queda.** Quien copie el almacenamiento de un equipo y además tenga
-una sesión de la empresa tiene un 0,13% de confirmar el PIN de una persona antes
-de que se anulen sus vales, y la alarma avisa al primer corte. Quien conoce el
-PIN firma, con o sin esto.
+**PIN de 4 dígitos: el riesgo asumido (9 de noviembre de 2026).** Adrean
+decidió volver a 4: con el sobre (D-37) y el corte del servidor el riesgo es
+asumible, y en prod todos tienen PIN de 4. Lo que queda:
+
+- **Copia del almacenamiento de un equipo con vales:** la copia deja ~39
+  candidatos (10.000 / 256), y el servidor corta al quinto vale inválido:
+  **13% de confirmar el PIN** de esa persona antes de que se anulen sus vales.
+  Dispara la alarma `vales-invalidos` al primer corte. Un equipo sin vales de la
+  persona no da nada: el sobre no se puede abrir ni probar desde la copia.
+- **Ataque lento con una sesión de la empresa:** quien reparte sus intentos para
+  no pasar del bloqueo de una hora prueba ~5 PIN por hora y recorre los 10.000
+  en unos 83 días (la mitad, en promedio, para acertar). Los sobres no lo
+  aceleran: cada PIN distinto en una sincronización cuenta, como con red (el
+  mismo PIN repetido no recuenta). `PinBloqueado` no lo ve (5 bloqueos en 5
+  minutos); lo ve la alarma nueva `pin-ataque-lento`: el servidor guarda en la
+  ficha las fechas de los bloqueos de cada persona (`pinBloqueos`, nunca el PIN)
+  y, al cuarto bloqueo en 24 horas, emite `PinBloqueosPersona` con empresa y
+  persona en el registro (`PIN_BLOQUEOS_24H`). A ~5 PIN por hora el ataque cruza
+  ese umbral el primer día. Un PIN correcto no borra esa historia. Suma 1 recurso.
+- Quien conoce el PIN firma, con o sin todo esto.
 
 **Verificación.** `Backend/tests/vales-cifrados.test.js` (WebCrypto real de Node:
 PIN bueno y malo, quinto intento, sin oráculo, qué queda guardado, sal e IV,
@@ -1802,7 +1815,7 @@ cifrados, detalle auditado y sin el sobre en el listado. Además,
 `derechos-titular.test.js` (reglas puras). Los 13 sabotajes se detectaron.
 
 ### D-37. Sin señal siempre se puede firmar: el sobre con el PIN cifrado para el servidor
-**Estado: decidido el 8 de noviembre de 2026 tras la prueba en terreno de Adrean (Android en modo avión). Implementado, por desplegar. Suma 2 recursos al stack (la llave y su alias): 446.**
+**Estado: decidido el 8 de noviembre de 2026 tras la prueba en terreno de Adrean (Android en modo avión). Implementado, por desplegar. Suma 2 recursos al stack (la llave y su alias).**
 
 **Qué se decidió.** Con vales (D-35) quien nunca escribió su PIN con red en ese equipo no podía firmar sin señal. Ahora siempre puede, y no elige ni ve la diferencia:
 
@@ -1811,7 +1824,7 @@ cifrados, detalle auditado y sin el sobre en el listado. Además,
 - **Si el PIN está mal**, la firma se rechaza y se avisa con nombre: «la firma de X no se validó: tiene que firmar de nuevo». Si la cuenta ya está bloqueada o KMS no responde, la firma no se rechaza: espera en la cola.
 - **Habilitar dejó de ser un paso.** Cada vez que alguien escribe su PIN con red, propio o asistido, el equipo le renueva los vales de la obra activa en silencio si le quedan menos de 3 o vencen en menos de 2 horas (`utils/valesTurno.ts`). Se retiraron el aviso al entrar y la pantalla «Preparar cuadrilla».
 
-**Un intento por sincronización y por persona.** Diez firmas con el PIN mal escrito no bloquean a nadie de golpe, y una cola no sirve para bloquear a un compañero. Pero la sincronización la nombra el cliente: si todo lo que llega con el mismo nombre fuera gratis, sería una forma de probar PIN sin límite. Por eso (`limitePin.verificarSobre`): el mismo PIN malo repetido nunca vuelve a contar; hasta 3 PIN distintos cuentan como un intento; del cuarto en adelante, cada uno cuenta; y si dos peticiones chocan al anotar, la que pierde cuenta. Se guardan huellas (HMAC con llave del servidor, truncado), nunca el PIN. **Consecuencia:** con una sesión de la empresa se pueden probar hasta 3 PIN por intento contado, no 1. Con 6 dígitos y el bloqueo progresivo (60 minutos en el tope) son 15 por hora: unos 7,6 años para recorrer el millón.
+**Un intento por sincronización y por persona.** Diez firmas con el PIN mal escrito no bloquean a nadie de golpe, y una cola no sirve para bloquear a un compañero. Pero la sincronización la nombra el cliente: si todo lo que llega con el mismo nombre fuera gratis, sería una forma de probar PIN sin límite. Por eso (`limitePin.verificarSobre`): el mismo PIN malo repetido nunca vuelve a contar; cada PIN distinto cuenta, como con red (el 9 de noviembre de 2026 bajó de 3 PIN por intento a 1, al volver el PIN a 4: ver D-35); y si dos peticiones chocan al anotar, la que pierde cuenta. Se guardan huellas (HMAC con llave del servidor, truncado), nunca el PIN.
 
 **Por qué no contradice D-35.** Desde una copia del almacenamiento no se puede abrir un sobre ni probar PIN contra él: la privada no sale de KMS, y cada intento pasa por el servidor. El PIN descifrado vive solo en memoria y no se registra; cada descifrado queda en CloudTrail.
 

@@ -1467,7 +1467,7 @@ export default function SignatureRequests() {
                         }}>
                             <div className="flex items-center justify-center gap-2 mb-3">
                                 <FiShield size={18} style={{ color: 'var(--primary-500)' }} />
-                                <label className="font-medium">Ingresa tu PIN de 6 dígitos</label>
+                                <label className="font-medium">Ingresa tu PIN de 4 dígitos</label>
                             </div>
                             <PinInput
                                 onComplete={(completedPin) => setPin(completedPin)}

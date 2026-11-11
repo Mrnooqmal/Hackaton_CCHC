@@ -41,7 +41,7 @@ const ESTRATEGIAS_VALIDACION = {
         nombre: 'Vale offline',
         validar: async (persona, credencial) => Boolean(credencial && credencial.vale)
     },
-    // Firma sin conexión con el PIN cifrado para el servidor (D-36). Como el vale,
+    // Firma sin conexión con el PIN cifrado para el servidor (D-37). Como el vale,
     // se resuelve en `crear()`: abrir el sobre exige saber qué se está firmando.
     SOBRE: {
         nombre: 'PIN en sobre cifrado',
@@ -87,14 +87,14 @@ const DIA_MS = 24 * 60 * MINUTO;
 class FirmaService {
     /**
      * Abre el sobre de una firma sin conexión, comprueba que sea de ESTA firma y
-     * valida su PIN (D-36). Devuelve la traza; rechaza lanzando:
+     * valida su PIN (D-37). Devuelve la traza; rechaza lanzando:
      *   SOBRE_RECHAZADO      no va a entrar nunca (hash, PIN equivocado): 400
      *   PIN_BLOQUEADO        la cuenta está bloqueada: espera en la cola, 423
      *   SOBRE_NO_DISPONIBLE  KMS no respondió: espera en la cola, 503
      */
     static async _validarSobre({ persona, credencial, personaFuera, tenantId, obraId, referenciaTipo, referenciaId }) {
         const sobreFirma = require('../sobreFirma');
-        const { verificarSobre, PinBloqueadoError, PinDebeCambiarError } = require('../limitePin');
+        const { verificarSobre, PinBloqueadoError } = require('../limitePin');
         const { idFirmaLocal, timestampLocal } = credencial || {};
         if (!idFirmaLocal || !timestampLocal) throw SOBRE_RECHAZADO('La firma sin conexión no trae sus datos completos.');
         const abierto = await sobreFirma.abrir(credencial.sobre);
@@ -116,7 +116,6 @@ class FirmaService {
 
         const r = await verificarSobre(persona, abierto.pin, verifyPin, credencial.idSincronizacion);
         if (r.bloqueada && !r.comprobado) throw new PinBloqueadoError(r.hasta);
-        if (r.debeCambiar) throw new PinDebeCambiarError();
         if (!r.ok) throw SOBRE_RECHAZADO('El PIN de la firma no es correcto.');
 
         const ahora = Date.now();

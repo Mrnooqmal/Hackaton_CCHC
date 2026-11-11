@@ -875,7 +875,6 @@ module.exports.registerAttendance = async (event) => {
             } catch (firmaErr) {
                 // El límite de intentos (H-2) responde 423, no el 500 genérico.
                 if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
-                if (firmaErr.codigo === 'PIN_DEBE_CAMBIAR') return error(firmaErr.message, 409);
                 // Un vale rechazado (de otra obra, ya usado, anulado) o una persona
                 // desvinculada son errores de la firma, no del servidor: 400 con
                 // su motivo. Antes caían al 500 genérico.

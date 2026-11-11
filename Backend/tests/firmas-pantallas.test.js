@@ -96,7 +96,7 @@ test('vales disponibles: con obra, solo cuentan los de esa obra', async () => {
     const c = cargarTs('colaFirmas.ts');
     const { cifrarVales } = cargarTs('valesCifrados.ts');
     const a = almacen();
-    const cifrado = await cifrarVales('482915', ['a'.repeat(64), 'b'.repeat(64)], 1000);
+    const cifrado = await cifrarVales('4829', ['a'.repeat(64), 'b'.repeat(64)], 1000);
     c.guardarValesDe('t-1', { personaId: 'p-1', obraId: 'o-1', cifrado, expiraEn: enUnaHora() }, a);
     assert.equal(c.valesDisponibles('t-1', 'p-1', a, 'o-1'), 2);
     assert.equal(c.valesDisponibles('t-1', 'p-1', a, 'o-2'), 0, 'los de otra obra no sirven ahí');

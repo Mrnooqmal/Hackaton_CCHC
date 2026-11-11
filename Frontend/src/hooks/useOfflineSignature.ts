@@ -15,7 +15,7 @@
  *     error de tipeo se detecta al momento (utils/valesCifrados). Se renuevan solos
  *     cada vez que escribe su PIN con red (utils/valesTurno).
  *   - SOBRE: si no, el PIN se cifra con la llave pública del servidor, amarrado a
- *     esa firma, y se comprueba al volver la señal (utils/sobreFirma, D-36).
+ *     esa firma, y se comprueba al volver la señal (utils/sobreFirma, D-37).
  */
 
 import { useCallback, useState, useEffect } from 'react';
@@ -317,7 +317,7 @@ export function useOfflineSignature() {
         const pending = leerCola(tenantId);
         if (pending.length === 0) return { synced: 0, failed: 0, enRevision: 0, sinRed: false };
         setSyncing(true);
-        // Un intento de PIN por sincronización y por persona (D-36).
+        // Un intento de PIN por sincronización y por persona (D-37).
         const idSincronizacion = nuevoIdFirma().replace(/^firma_/, 'sinc_').slice(0, 64);
         let sinRed = false;
         let synced = 0;

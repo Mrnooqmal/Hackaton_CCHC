@@ -83,24 +83,25 @@ const generateSignatureToken = () => {
 };
 
 /**
- * Largo del PIN de firma. Era 4 hasta el 8 de noviembre de 2026: con 4 dígitos,
- * quien copia el almacenamiento de un equipo y prueba fuera de la app deja ~39
- * candidatos para confirmar contra el servidor (13% de acertar antes de que se
- * anulen los vales); con 6, ~3.900 (0,13%). Ver Frontend/src/utils/valesCifrados.ts.
+ * Largo del PIN de firma: 4 dígitos.
  *
- * Un PIN de 4 que ya existía solo sirve para cambiarlo (ver lib/limitePin.js).
+ * El 8 de noviembre de 2026 pasó a 6 y el 9 volvió a 4, por decisión de Adrean:
+ * con el sobre (D-37) y el corte del servidor al quinto vale inválido (D-35), el
+ * riesgo que queda es asumible y nadie tiene que aprenderse un PIN nuevo. El
+ * riesgo asumido está registrado en D-35: quien copie el almacenamiento de un
+ * equipo con vales deja ~39 candidatos y tiene un 13% de confirmar el PIN antes
+ * de que el servidor anule los vales de esa persona.
  */
-const LARGO_PIN = 6;
-const FORMATO_PIN = /^\d{6}$/;
-const FORMATO_PIN_ANTERIOR = /^\d{4}$/;
+const LARGO_PIN = 4;
+const FORMATO_PIN = /^\d{4}$/;
 
 /**
- * Hashea un PIN de 6 dígitos.
+ * Hashea un PIN de 4 dígitos.
  *
  * La función de costo y su formato viven en `lib/credenciales.js`; acá queda
  * solo la regla de negocio de qué es un PIN válido.
  *
- * @param {string} pin - PIN de 6 dígitos
+ * @param {string} pin - PIN de 4 dígitos
  * @param {string} personaId - ID de la persona, al que queda atada la credencial
  * @returns {Promise<string>} Hash del PIN, con su algoritmo y parámetros adentro
  */
@@ -217,7 +218,6 @@ const normalizeRol = (rol) => {
 module.exports = {
     LARGO_PIN,
     FORMATO_PIN,
-    FORMATO_PIN_ANTERIOR,
     validateRut,
     enmascararRut,
     validateRequired,

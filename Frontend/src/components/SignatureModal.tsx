@@ -111,7 +111,7 @@ export default function SignatureModal({
                 <div className="signature-modal-pin-wrapper">
                     <PinInput
                         mode="verify"
-                        title="Ingresa tu PIN de 6 dígitos"
+                        title="Ingresa tu PIN de 4 dígitos"
                         subtitle="Este PIN fue creado durante tu enrolamiento"
                         onComplete={handlePinComplete}
                         error={error || pinError}

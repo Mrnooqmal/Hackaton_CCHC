@@ -23,7 +23,7 @@ const { idEncuestaSalud } = require('../lib/health/healthSurvey');
 const vales = require('../handlers/vales/handler');
 const encuestas = require('../handlers/surveys/handler');
 
-const PIN = '482700';
+const PIN = '4827';
 let doble; let A; let B; let rosa;
 
 beforeEach(async () => {

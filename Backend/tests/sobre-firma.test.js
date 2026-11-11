@@ -1,4 +1,4 @@
-// Sobre de firma sin conexión (D-36): sin señal siempre se puede firmar.
+// Sobre de firma sin conexión (D-37): sin señal siempre se puede firmar.
 //
 // Sin vales, el equipo cifra el PIN con la llave pública del servidor, amarrado a
 // la firma. Se prueba de punta a punta: el código real del frontend cifra con
@@ -30,7 +30,7 @@ const limite = require('../lib/limitePin');
 
 const A = 't-A';
 const P = 'p-1';
-const PIN = '482915';
+const PIN = '4829';
 let doble;
 let llave;
 let n;
@@ -45,7 +45,7 @@ beforeEach(async () => {
     n = 0;
     await docClient.send(new PutCommand({ TableName: 'PERSONAS_TABLE', Item: {
         ...claveP, personaId: P, tenantId: A, nombre: 'Rosa', apellido: 'Díaz', habilitado: true, estado: 'activo', cargo: 'Jornal',
-        pinHash: await hashPin(PIN, P), pinLargo: 6, pinIntentosFallidos: 0, pinBloqueadaHasta: null,
+        pinHash: await hashPin(PIN, P), pinIntentosFallidos: 0, pinBloqueadaHasta: null,
     } }));
 });
 afterEach(() => doble.restaurar());
@@ -110,30 +110,33 @@ test('el reintento de la misma firma no la duplica', async () => {
 
 test('diez firmas con el mismo PIN malo en una sincronización: un solo intento, y ninguna entra', async () => {
     for (let i = 0; i < 10; i += 1) {
-        await rechaza(firmar(await sobre({ pin: '000000', referenciaId: `d-${i}` }), { referenciaId: `d-${i}` }), 'SOBRE_RECHAZADO');
+        await rechaza(firmar(await sobre({ pin: '0000', referenciaId: `d-${i}` }), { referenciaId: `d-${i}` }), 'SOBRE_RECHAZADO');
     }
     const p = await ficha();
     assert.equal(p.pinIntentosFallidos, 1);
     assert.equal(p.pinBloqueadaHasta, null);
-    assert.ok(!JSON.stringify(p.intentoSobre).includes('000000'), 'guarda huellas, no el PIN');
+    assert.ok(!JSON.stringify(p.intentoSobre).includes('"0000"'), 'guarda huellas, no el PIN');
 });
 
 test('una firma buena entre las malas entra igual', async () => {
-    await rechaza(firmar(await sobre({ pin: '000000', referenciaId: 'd-1' })), 'SOBRE_RECHAZADO');
+    await rechaza(firmar(await sobre({ pin: '0000', referenciaId: 'd-1' })), 'SOBRE_RECHAZADO');
     assert.ok((await firmar(await sobre({ referenciaId: 'd-2' }), { referenciaId: 'd-2' })).signatureId);
 });
 
-test('tres PIN distintos cuentan uno; del cuarto en adelante, cada uno cuenta', async () => {
-    const malos = ['000001', '000002', '000003', '000004', '000005'];
+test('cada PIN distinto cuenta, como con red: la misma sincronización no regala intentos (D-35)', async () => {
+    const malos = ['0001', '0002', '0003'];
     for (const [i, pin] of malos.entries()) {
         await rechaza(firmar(await sobre({ pin, referenciaId: `d-${i}` }), { referenciaId: `d-${i}` }), 'SOBRE_RECHAZADO');
     }
-    assert.equal((await ficha()).pinIntentosFallidos, 3, 'no se puede probar PIN sin límite con la misma sincronización');
+    assert.equal((await ficha()).pinIntentosFallidos, 3);
+    // Y el mismo PIN repetido sigue sin recontarse.
+    await rechaza(firmar(await sobre({ pin: '0003', referenciaId: 'd-9' }), { referenciaId: 'd-9' }), 'SOBRE_RECHAZADO');
+    assert.equal((await ficha()).pinIntentosFallidos, 3);
 });
 
 test('cada sincronización nueva cuenta otro: el límite sigue existiendo, y el PIN malo no vuelve a la cola', async () => {
     for (let i = 0; i < 5; i += 1) {
-        await rechaza(firmar(await sobre({ pin: '000000', referenciaId: `d-${i}` }), { referenciaId: `d-${i}`, idSincronizacion: `sinc_vez_${i}` }), 'SOBRE_RECHAZADO');
+        await rechaza(firmar(await sobre({ pin: '0000', referenciaId: `d-${i}` }), { referenciaId: `d-${i}`, idSincronizacion: `sinc_vez_${i}` }), 'SOBRE_RECHAZADO');
     }
     const p = await ficha();
     assert.equal(p.pinIntentosFallidos, 5);
@@ -145,26 +148,27 @@ test('con la cuenta ya bloqueada no se mira el PIN: la firma espera en la cola (
     await rechaza(firmar(await sobre()), 'PIN_BLOQUEADO');
 });
 
-test('si dos peticiones chocan al anotar, la que pierde cuenta: no hay intentos gratis por concurrencia', async () => {
+test('si dos peticiones chocan al anotar, la que pierde cuenta: el mismo PIN puede contar dos veces', async () => {
     const persona = await ficha();
     const verificar = async () => false;
-    await limite.verificarSobre(persona, '000001', verificar, 'sinc_uno_1');
-    const fresca = await ficha();
-    await limite.verificarSobre(fresca, '000002', verificar, 'sinc_uno_1');
-    // `fresca` quedó vieja: su versión ya no es la de la tabla.
-    await limite.verificarSobre(fresca, '000003', verificar, 'sinc_uno_1');
+    await limite.verificarSobre(persona, '0001', verificar, 'sinc_uno_1');
+    // `persona` quedó vieja (no vio la huella anotada): el mismo PIN vuelve a contar.
+    await limite.verificarSobre(persona, '0001', verificar, 'sinc_uno_1');
+    assert.equal((await ficha()).pinIntentosFallidos, 2);
+    // Con la ficha al día, ese PIN ya no recuenta.
+    await limite.verificarSobre(await ficha(), '0001', verificar, 'sinc_uno_1');
     assert.equal((await ficha()).pinIntentosFallidos, 2);
 });
 
 test('sin identificador de sincronización válido, cada fallo cuenta', async () => {
     for (let i = 0; i < 2; i += 1) {
-        await rechaza(firmar(await sobre({ pin: '000000', referenciaId: `d-${i}` }), { referenciaId: `d-${i}`, idSincronizacion: 'x' }), 'SOBRE_RECHAZADO');
+        await rechaza(firmar(await sobre({ pin: '0000', referenciaId: `d-${i}` }), { referenciaId: `d-${i}`, idSincronizacion: 'x' }), 'SOBRE_RECHAZADO');
     }
     assert.equal((await ficha()).pinIntentosFallidos, 2);
 });
 
 test('un PIN correcto limpia el contador', async () => {
-    await rechaza(firmar(await sobre({ pin: '000000', referenciaId: 'd-1' })), 'SOBRE_RECHAZADO');
+    await rechaza(firmar(await sobre({ pin: '0000', referenciaId: 'd-1' })), 'SOBRE_RECHAZADO');
     await firmar(await sobre({ referenciaId: 'd-2' }), { referenciaId: 'd-2' });
     assert.equal((await ficha()).pinIntentosFallidos, 0);
 });
@@ -188,8 +192,8 @@ test('persona desvinculada: lo declarado antes entra en revisión; lo declarado 
     await rechaza(firmar(await sobre({ referenciaId: 'd-2' }), { referenciaId: 'd-2' }), 'PERSONA_DESVINCULADA');
 });
 
-test('un PIN de 4 en un sobre pide cambiarlo, sin contar', async () => {
-    await rechaza(firmar(await sobre({ pin: '4821' })), 'PIN_DEBE_CAMBIAR');
+test('un PIN que no es de 4 dígitos en un sobre se rechaza sin contar', async () => {
+    await rechaza(firmar(await sobre({ pin: '482915' })), 'SOBRE_RECHAZADO');
     assert.equal((await ficha()).pinIntentosFallidos, 0);
 });
 

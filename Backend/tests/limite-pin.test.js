@@ -65,7 +65,7 @@ const fallarNVeces = async (n) => {
         // expiró: lo que se está probando es la progresión del CONTADOR, no
         // el rechazo durante un bloqueo (eso lo cubre otra prueba).
         almacen.pinBloqueadaHasta = null;
-        ultimo = await verificarConLimite(persona(), '000000', async () => false);
+        ultimo = await verificarConLimite(persona(), '0000', async () => false);
     }
     return ultimo;
 };
@@ -74,7 +74,7 @@ const fallarNVeces = async (n) => {
 
 test('1 a 4 fallos: no bloquea, solo cuenta', async () => {
     for (let i = 1; i <= 4; i++) {
-        const r = await verificarConLimite(persona(), '000000', async () => false);
+        const r = await verificarConLimite(persona(), '0000', async () => false);
         assert.equal(r.ok, false);
         assert.equal(r.bloqueada, false, `fallo ${i} no debería bloquear`);
         assert.equal(r.mensaje, 'PIN incorrecto');
@@ -122,7 +122,7 @@ test('un intento durante el bloqueo no corre scrypt ni toca el contador', async 
     const escriturasAntes = escrituras.length;
 
     let sePidioVerificar = false;
-    const r = await verificarConLimite(persona(), '000000', async () => { sePidioVerificar = true; return false; });
+    const r = await verificarConLimite(persona(), '0000', async () => { sePidioVerificar = true; return false; });
 
     assert.equal(r.bloqueada, true);
     assert.equal(sePidioVerificar, false, 'no debe correr scrypt estando bloqueada');
@@ -142,7 +142,7 @@ test('un PIN correcto resetea el contador', async () => {
     await fallarNVeces(4);
     assert.equal(almacen.pinIntentosFallidos, 4);
 
-    const r = await verificarConLimite(persona(), '123400', async () => true);
+    const r = await verificarConLimite(persona(), '1234', async () => true);
 
     assert.equal(r.ok, true);
     assert.equal(almacen.pinIntentosFallidos, 0);
@@ -153,7 +153,7 @@ test('un PIN correcto no se puede probar mientras está bloqueada', async () => 
     await fallarNVeces(5);
 
     let sePidioVerificar = false;
-    const r = await verificarConLimite(persona(), '123400', async () => { sePidioVerificar = true; return true; });
+    const r = await verificarConLimite(persona(), '1234', async () => { sePidioVerificar = true; return true; });
 
     assert.equal(r.ok, false, 'ni siquiera el PIN correcto entra durante el bloqueo');
     assert.equal(sePidioVerificar, false);
@@ -165,7 +165,7 @@ test('verificarConLimiteOLanzar lanza PinBloqueadoError con 423', async () => {
     await fallarNVeces(4);
 
     await assert.rejects(
-        () => verificarConLimiteOLanzar(persona(), '000000', async () => false),
+        () => verificarConLimiteOLanzar(persona(), '0000', async () => false),
         (err) => {
             assert.ok(err instanceof PinBloqueadoError);
             assert.equal(err.codigo, 'PIN_BLOQUEADO');
@@ -177,7 +177,7 @@ test('verificarConLimiteOLanzar lanza PinBloqueadoError con 423', async () => {
 });
 
 test('verificarConLimiteOLanzar no lanza si el PIN es solo incorrecto (no bloqueada)', async () => {
-    const ok = await verificarConLimiteOLanzar(persona(), '000000', async () => false);
+    const ok = await verificarConLimiteOLanzar(persona(), '0000', async () => false);
     assert.equal(ok, false);
 });
 
@@ -299,7 +299,7 @@ test('POST /firmas/vales: el 5º PIN incorrecto responde 423, no 401', async () 
     for (let i = 0; i < 5; i++) {
         ultimo = await vales.emitir({
             ...sesionInt(),
-            body: JSON.stringify({ pin: '000000', cantidad: 1, obraId: 'o-1' }),
+            body: JSON.stringify({ pin: '0000', cantidad: 1, obraId: 'o-1' }),
         });
     }
     restaurar();
@@ -314,7 +314,7 @@ test('POST /signatures: el 5º PIN incorrecto responde 423', async () => {
     for (let i = 0; i < 5; i++) {
         ultimo = await firmas.create({
             ...sesionInt(),
-            body: JSON.stringify({ personaId: PERSONA_INT, pin: '000000', requestId: 'r-1' }),
+            body: JSON.stringify({ personaId: PERSONA_INT, pin: '0000', requestId: 'r-1' }),
         });
     }
     restaurar();
@@ -336,7 +336,7 @@ test('POST /personas/{id}/set-pin: el 5º pinActual incorrecto responde 423, no 
                 } },
             },
             rawPath: `/personas/${PERSONA_INT}/set-pin`,
-            body: JSON.stringify({ pin: '999900', pinActual: '000000' }),
+            body: JSON.stringify({ pin: '9999', pinActual: '0000' }),
         });
     }
     restaurar();
@@ -373,7 +373,7 @@ test('FirmaService.crear también respeta el límite de intentos', async () => {
         try {
             await FirmaService.crear({
                 personaId: PERSONA_INT, tenantId: TENANT_INT, metodo: 'PIN',
-                credencial: '000000', tipoFirma: 'actividad',
+                credencial: '0000', tipoFirma: 'actividad',
                 persona: { ...personaFirma }, // simula la ficha recargada en cada intento
             });
         } catch (err) {

@@ -248,7 +248,7 @@ export default function PinInput({
                 }
 
                 .pin-digit {
-                    /* 6 dígitos: se reparten el ancho, sin pasar de 52px. */
+                    /* Las casillas se reparten el ancho, sin pasar de 52px. */
                     flex: 1 1 0;
                     min-width: 0;
                     max-width: 52px;
@@ -296,7 +296,7 @@ export default function PinInput({
                     75% { transform: translateX(4px); }
                 }
 
-                /* Móvil angosto (≤480px): los 6 dígitos + padding anidado (PinInput dentro de
+                /* Móvil angosto (≤480px): las casillas + padding anidado (PinInput dentro de
                    SignatureModal dentro de Modal) se desbordaban en teléfonos de 320–360px.
                    Se reducen dígitos, gap y padding para que el PIN entre sin scroll horizontal. */
                 @media (max-width: 480px) {

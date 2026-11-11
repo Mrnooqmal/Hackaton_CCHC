@@ -103,7 +103,7 @@ infra/desplegar-infra-frontend.sh <commit>
 
 | Qué | Detalle |
 |---|---|
-| **Firma sin conexión con vales (prioritario)** | Completa en dev (`4ad2b3c`, punta a punta 56 de 56), con D-35. Iteraciones de PBKDF2 fijadas en 600.000 con la medición del 8 de noviembre en un Android 10 de gama baja (182 ms con 300.000; ver D-35), por commitear. **Por commitear:** D-37 (el sobre con KMS, la renovación silenciosa, sin aviso de habilitar ni «Preparar cuadrilla», sincronización cada 20 segundos, sesión sin red, plurales); el stack pasa a 446 recursos. **Antes de prod:** repetir la prueba en terreno con D-37 en dev, y ajustar el manual y los recorridos (textos abajo). |
+| **Firma sin conexión con vales (prioritario)** | Completa en dev (`4ad2b3c`, punta a punta 56 de 56), con D-35. Iteraciones de PBKDF2 fijadas en 600.000 con la medición del 8 de noviembre en un Android 10 de gama baja (182 ms con 300.000; ver D-35), por commitear. **Por commitear:** D-37 (el sobre con KMS, la renovación silenciosa, sin aviso de habilitar ni «Preparar cuadrilla», sincronización cada 20 segundos, sesión sin red, plurales); el stack pasa a 446 recursos, y a 447 con la alarma del ataque lento. **Antes de prod:** repetir la prueba en terreno con D-37 en dev, y ajustar el manual y los recorridos (textos abajo). |
 | Ley 21.719 (vigente el 1 de diciembre de 2026) | **Hecho, por commitear (8 de noviembre).** Revisión del flujo: aviso de privacidad con transferencias internacionales, plazos de conservación y reclamo ante la Agencia, en Mis datos y en el enrolamiento (fila 7.6); minimización de la ficha de personas, la búsqueda por RUT y los destinatarios de la bandeja (7.5); `ValesInvalidos` en el plan de incidentes. Queda fuera del código: validación legal de los plazos internos del plan (7.4) y el contrato de encargo entre cada constructora y Build & Serve. |
 | Agrupar uploads y surveys en una función cada uno | **Hecho, por commitear (8 de noviembre).** Stack de 472 a 444 recursos (verificado con `serverless package`). Los grupos de logs de las 9 funciones viejas los borra CloudFormation al quitar sus recursos: comprobarlo después de desplegar. Plan aprobado el 7 de noviembre de 2026. Las 5 funciones de uploads y las 4 de surveys pasan a una por módulo, con un enrutador por `event.routeKey` y las mismas rutas declaradas en `serverless.yml`. Cada función con ruta HTTP genera 4 recursos (función, permiso, grupo de logs e integración); las rutas se quedan, así que se ahorran 28 recursos (la rama `tours` deja el stack en 477, a 13 del tope de 490 del script). Se borran los grupos de logs de las funciones viejas (aprobado). Pruebas: enrutador por módulo, `identidad-desde-sesion.test.js` con el `routeKey` declarado, y sabotaje quitando una entrada del enrutador. |
 | Límite de tasa en la API | **Hecho, por commitear (8 de noviembre).** Ya había límite por omisión y para el alta y la CSP (la fila 2.8 estaba desactualizada); se agregó límite propio a las rutas públicas de autenticación y a la verificación de firmas. Un 429 o un 5xx ya no descartan firmas sin conexión. |
@@ -116,14 +116,14 @@ infra/desplegar-infra-frontend.sh <commit>
 
 #### Textos del manual y de los recorridos que cambian con D-35 (para la sesión de `tours`)
 
-PIN de 6 dígitos (antes 4), y la firma sin conexión ya existe. En este árbol (`pruebas`):
+**El PIN vuelve a 4 dígitos (9 de noviembre de 2026, D-35).** La rama `tours` (`f6807b0`) aplicó los textos de 6; hay que devolverlos a 4:
 
-- `Frontend/src/manual/content/guia-inicio/instalacion.md`: líneas 41 («4 dígitos que solo tú eliges»), 48-49 («escribe los 4 dígitos», «Evita *1234*, *0000* o tu año de nacimiento» → *123456*, *000000* o tu fecha de nacimiento) y 123 («el PIN (4 dígitos)»).
-- `Frontend/src/manual/content/modulos/firmas.md`: línea 15 («Son 4 dígitos») y la sección `#sin-conexión`.
-- `Frontend/src/manual/content/ds44/firmas-digitales.md`: línea 17 («su PIN de 4 dígitos»).
-- `Frontend/src/manual/content/modulos/actividades.md`: líneas 420-421 («¿La asistencia se puede firmar sin señal? No por ahora»): ahora sí, con la firma sin conexión habilitada.
-
-En la rama `tours` (`b4fc05f`), los mismos textos en su nueva estructura: `empezar/ingresar.md` (41, 48, 123), `terreno/firmar.md` (15), `fuf/firmas.md` (25), `obra/actividades.md` (316), y en `Frontend/src/ayuda/recorridos.ts` la línea 168 («escribe tu PIN de 4 dígitos»).
+- `Frontend/src/manual/content/empezar/ingresar.md`: líneas 41 («6 dígitos que solo tú eliges» → 4), 48-49 («escribe los 6 dígitos» → 4; «Evita *123456*, *000000* o tu fecha de nacimiento» → *1234*, *0000* o tu año de nacimiento) y 123 («el PIN (6 dígitos)» → 4). **Quitar** la pregunta de las líneas 127-128 («Ahora el PIN es de 6 dígitos… elige uno nuevo de 6»): ya no hay cambio obligatorio.
+- `Frontend/src/manual/content/terreno/firmar.md`: línea 15 («Son **6 dígitos**» → 4).
+- `Frontend/src/manual/content/fuf/firmas.md`: línea 25 («su PIN de 6 dígitos» → 4).
+- `Frontend/src/ayuda/recorridos.ts`: línea 169 («escribe tu PIN de 6 dígitos» → 4), en el recorrido `mis-firmas`. Al estar publicado, sube su versión.
+- `docs/ayuda-contextual/fase-4-para-benja.md`: línea 88 (menciona el PIN de 6).
+- Las capturas con 6 casillas, si alguna se rehízo, vuelven a 4.
 
 Lo nuevo (D-37, sin habilitar como paso; ya no existen «Preparar cuadrilla» ni el aviso al entrar): **sin señal siempre se firma con el PIN**; si esa persona ya escribió su PIN con señal en ese equipo, el error de tipeo se detecta al momento, y si no, se valida al volver la señal. El aviso de **firmas por enviar** (se envían solas; «Enviar ahora» es un respaldo) y el de **firmas que no se validaron** («la firma de X no se validó: tiene que firmar de nuevo»), **Firmas en revisión** (confirmar o rechazar con motivo), el aviso al **cerrar sesión** con firmas por enviar, y el **cambio obligatorio a PIN de 6 dígitos** al entrar con uno de 4.
 
@@ -196,7 +196,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-32 | Plan de respuesta a incidentes y contención (`docs/plan-respuesta-incidentes.md`) |
 | D-33 | (rama `tours`: recorridos guiados) |
 | D-34 | Producción solo en `buildandserve.cl`: la URL de CloudFront sale del CORS y se redirige con 301 |
-| D-35 | Firma sin conexión con el PIN: vales cifrados en el equipo sin oráculo, corte del servidor al quinto vale inválido, PIN de 6 dígitos |
+| D-35 | Firma sin conexión con el PIN: vales cifrados en el equipo sin oráculo, corte del servidor al quinto vale inválido; PIN de 4 (volvió de 6, riesgo asumido) |
 | D-36 | Oposición persistente al directorio de compañeros, y valor anterior y nuevo de una rectificación (cifrados) |
 | D-37 | Sin señal siempre se puede firmar: sobre con el PIN cifrado para el servidor, renovación silenciosa de vales, un intento por sincronización |
 

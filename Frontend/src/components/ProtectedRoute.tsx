@@ -45,15 +45,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         return <>{children}</>;
     }
 
-    // 3. PIN de 4 dígitos (de antes del 8 de noviembre de 2026): ya no sirve para
-    //    firmar. Se cambia por uno de 6 antes de seguir.
-    if ((user as { pinDebeCambiar?: boolean }).pinDebeCambiar) {
-        if (location.pathname !== '/enroll-me') {
-            return <Navigate to="/enroll-me" state={{ changePin: true }} replace />;
-        }
-        return <>{children}</>;
-    }
-
     // Verificar rol si es necesario
     if (requiredRole && user.rol !== requiredRole && user.rol !== 'admin') {
         return <Navigate to="/unauthorized" replace />;

@@ -46,7 +46,6 @@ const ESTADO_POR_ERROR_DE_PIN = {
     PIN_CAMBIO_CONCURRENTE: 409,
     PIN_NO_CONFIGURADO: 409,
     PIN_BLOQUEADO: 423,
-    PIN_DEBE_CAMBIAR: 409,
 };
 
 const personaService = new PersonaService();
@@ -2157,7 +2156,6 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 return success(result);
             } catch (err) {
                 if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
-                if (err.codigo === 'PIN_DEBE_CAMBIAR') return error(err.message, 409);
                 throw err;
             }
         }

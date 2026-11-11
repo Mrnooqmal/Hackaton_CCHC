@@ -10,7 +10,7 @@
  */
 const CLAVE = 'sesionLocal';
 const CAMPOS = ['personaId', 'userId', 'tenantId', 'empresaId', 'nombre', 'apellido', 'apellidoPaterno', 'rol', 'permisos', 'cargo',
-    'obraIds', 'asignaciones', 'habilitado', 'pinConfigurado', 'pinDebeCambiar', 'passwordTemporal', 'empresaNombre'];
+    'obraIds', 'asignaciones', 'habilitado', 'pinConfigurado', 'passwordTemporal', 'empresaNombre'];
 
 export const guardarSesionLocal = (user: unknown): void => {
     try {

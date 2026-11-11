@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinCasillas from '../components/PinCasillas';
 import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
-import { LARGO_PIN, LARGO_PIN_ANTERIOR } from '../utils/pin';
+import { LARGO_PIN } from '../utils/pin';
 import {
     FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
     FiKey, FiLogOut, FiPhone, FiShield, FiX,
@@ -14,7 +14,7 @@ import '../css/AuthCard.css';
 import { monograma } from '../utils/identidadEmpresa';
 
 /**
- * Enrolamiento: la persona crea su firma digital (PIN de 6 dígitos) y,
+ * Enrolamiento: la persona crea su firma digital (PIN de 4 dígitos) y,
  * opcionalmente, completa su perfil. Es obligatorio en el primer ingreso, así
  * que va en la tarjeta del login, a pantalla completa.
  *
@@ -82,13 +82,7 @@ export default function EnrollMe() {
 
     // Modo "cambio de PIN": el usuario ya está enrolado y sólo quiere actualizar su PIN.
     // Llega desde Configuración → "Cambiar PIN". Omite la bienvenida y el paso de perfil.
-    // Cambio OBLIGATORIO: tiene un PIN de 4 dígitos (de antes del 8 de noviembre
-    // de 2026), que ya no sirve para firmar. ProtectedRoute lo trae aquí y no lo
-    // deja salir hasta cambiarlo por uno de 6.
-    const pinDebeCambiar = Boolean((user as any)?.pinDebeCambiar);
-    const isChangePin = Boolean((location.state as any)?.changePin) || pinDebeCambiar;
-    // El PIN actual de quien debe cambiarlo es de 4; el de los demás, de 6.
-    const largoActual = pinDebeCambiar ? LARGO_PIN_ANTERIOR : LARGO_PIN;
+    const isChangePin = Boolean((location.state as any)?.changePin);
     // Cambiar un PIN existente exige el actual (lo verifica el servidor, con
     // límite de intentos). Sin PIN —porque se lo restablecieron— se crea directo.
     const tienePin = Boolean((user as any)?.pinConfigurado);
@@ -166,9 +160,9 @@ export default function EnrollMe() {
             // perfil y completarEnrolamiento; vamos directo a la confirmación de éxito.
             if (isChangePin) {
                 setPin('');
-                updateUser({ pinConfigurado: true, pinRestablecido: null, pinDebeCambiar: false } as any);
+                updateUser({ pinConfigurado: true, pinRestablecido: null } as any);
                 irA('success');
-                setTimeout(() => navigate(pinDebeCambiar ? '/' : '/configuracion', { replace: true }), 3000);
+                setTimeout(() => navigate('/configuracion', { replace: true }), 3000);
                 return;
             }
 
@@ -305,7 +299,7 @@ export default function EnrollMe() {
                     <h1 className="lp-title">{isChangePin ? 'PIN actualizado' : 'Tu firma está lista'}</h1>
                     <p className="lp-hint">
                         {isChangePin
-                            ? (pinDebeCambiar ? 'Desde ahora firmas con tu nuevo PIN de 6 dígitos.' : 'Desde ahora firmas con tu nuevo PIN. Te llevamos a Configuración…')
+                            ? 'Desde ahora firmas con tu nuevo PIN. Te llevamos a Configuración…'
                             : 'Desde ahora puedes firmar charlas, entregas de EPP y documentos con tu PIN.'}
                     </p>
                     {firma && (
@@ -386,18 +380,14 @@ export default function EnrollMe() {
 
                 {/* ── PIN actual (solo al cambiar uno existente) ── */}
                 {currentStep === 'current-pin' && (
-                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pinActual.length === largoActual) irA('create-pin'); }}>
-                        <h1 className="lp-title">{pinDebeCambiar ? 'Tu PIN ahora es de 6 dígitos' : 'Ingresa tu PIN actual'}</h1>
-                        <p className="lp-hint">
-                            {pinDebeCambiar
-                                ? 'Para que tu firma sea más segura, los PIN de firma pasan de 4 a 6 dígitos. Ingresa tu PIN actual de 4 dígitos y elige uno nuevo de 6. Hasta entonces no puedes firmar.'
-                                : 'Para cambiarlo, primero confirma que eres tú.'}
-                        </p>
-                        <PinCasillas id="enr-pin-actual" value={pinActual} onChange={setPinActual} largo={largoActual}
-                            visible={verPin} autoFocus ariaLabel={`PIN actual de ${largoActual} dígitos`} />
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pinActual.length === LARGO_PIN) irA('create-pin'); }}>
+                        <h1 className="lp-title">Ingresa tu PIN actual</h1>
+                        <p className="lp-hint">Para cambiarlo, primero confirma que eres tú.</p>
+                        <PinCasillas id="enr-pin-actual" value={pinActual} onChange={setPinActual}
+                            visible={verPin} autoFocus ariaLabel="PIN actual" />
                         {MostrarPin}
                         {ErrorServidor}
-                        <button type="submit" className="lp-submit enr-accion" disabled={pinActual.length < largoActual}>
+                        <button type="submit" className="lp-submit enr-accion" disabled={pinActual.length < LARGO_PIN}>
                             <span>Continuar</span><FiArrowRight size={15} />
                         </button>
                     </form>
@@ -413,7 +403,7 @@ export default function EnrollMe() {
                         <PinCasillas id="enr-pin" value={pin} onChange={setPin} visible={verPin} autoFocus
                             ariaLabel={`Nuevo PIN de ${LARGO_PIN} dígitos`} />
                         {MostrarPin}
-                        <p className="enr-consejo"><FiShield size={14} /> Evita 123456, 000000 o tu fecha de nacimiento.</p>
+                        <p className="enr-consejo"><FiShield size={14} /> Evita 1234, 0000 o tu año de nacimiento.</p>
                         {ErrorServidor}
                         <button type="submit" className="lp-submit enr-accion" disabled={pin.length < LARGO_PIN}>
                             <span>Continuar</span><FiArrowRight size={15} />
@@ -510,10 +500,7 @@ export default function EnrollMe() {
                 } />
             )}
             {currentStep === 'current-pin' && (
-                // Obligatorio: no hay a dónde volver; solo cerrar sesión.
-                <Pie izquierda={pinDebeCambiar
-                    ? <Volver texto="Cerrar sesión" onClick={() => logout()} />
-                    : <Volver texto="Cancelar" onClick={() => navigate('/configuracion')} />} />
+                <Pie izquierda={<Volver texto="Cancelar" onClick={() => navigate('/configuracion')} />} />
             )}
             {currentStep === 'create-pin' && (
                 <Pie izquierda={<Volver

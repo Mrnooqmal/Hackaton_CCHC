@@ -135,7 +135,7 @@ export default function FirmaAsistidaModal({
     const handleSign = async () => {
         if (!selectedWorker || !selectedDocId) return;
         if (!pin || pin.length < LARGO_PIN) {
-            setError('El trabajador debe ingresar su PIN de 6 dígitos.');
+            setError(`El trabajador debe ingresar su PIN de ${LARGO_PIN} dígitos.`);
             return;
         }
         if (!declared) {

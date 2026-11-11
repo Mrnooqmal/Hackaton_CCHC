@@ -19,8 +19,8 @@ const OBJETIVO_MS = 500;
 const REPETICIONES = 5;
 /** hashcat, PBKDF2-HMAC-SHA256 (modo 10900), RTX 4090: ~8,8 millones de hashes de 999 iteraciones por segundo. */
 const ITERACIONES_POR_SEGUNDO_GPU = 8.8e9;
-/** Candidatos de 6 dígitos que deja el byte de comprobación: 10^6 / 256. */
-const CANDIDATOS = Math.round(1e6 / 256);
+/** Candidatos de 4 dígitos que deja el byte de comprobación: 10^4 / 256. */
+const CANDIDATOS = Math.round(1e4 / 256);
 
 const PRODUCCION = ['buildandserve.cl', 'www.buildandserve.cl'];
 
@@ -58,11 +58,11 @@ export default function MedicionPin() {
             const sal = new Uint8Array(16);
             crypto.getRandomValues(sal);
             // Calentamiento: la primera derivación paga la carga del motor.
-            await derivarLlave('000000', sal, 10_000);
+            await derivarLlave('0000', sal, 10_000);
             const hechos: number[] = [];
             for (let i = 0; i < REPETICIONES; i += 1) {
                 const t0 = performance.now();
-                await derivarLlave(String(100000 + i), sal, ITERACIONES);
+                await derivarLlave(String(1000 + i), sal, ITERACIONES);
                 hechos.push(performance.now() - t0);
                 setTiempos([...hechos]);
                 // Respiro para que la pantalla se actualice entre medidas.

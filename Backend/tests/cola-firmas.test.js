@@ -82,7 +82,7 @@ test('una firma escondida en la cola de otra empresa no se lee como propia', () 
 
 // Los vales se guardan cifrados con el PIN (ver vales-cifrados.test.js). Aquí,
 // con pocas iteraciones para que la suite sea rápida.
-const PIN = '482915';
+const PIN = '4829';
 const hex = (n) => n.toString(16).padStart(64, '0');
 const conVales = async (c, a, tenantId, personaId, obraId, vales, { expiraEn = enUnaHora(), pin = PIN } = {}) => {
     const { cifrarVales } = cargarTs('valesCifrados.ts');

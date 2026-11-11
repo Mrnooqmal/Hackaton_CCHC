@@ -27,8 +27,6 @@ interface Props {
         personaId: string;
         nombre?: string;
         pinConfigurado?: boolean;
-        /** PIN de 4 dígitos, de antes: ya no sirve para firmar. */
-        pinDebeCambiar?: boolean;
         pinRestablecido?: PinRestablecido | null;
     };
     /** personaId de quien está mirando la ficha (la sesión). */
@@ -132,15 +130,7 @@ export default function PinDeFirma({ tenantId, persona, actorPersonaId, puedeRes
             </div>
             <div className="pin-firma__caja">
 
-            {persona.pinConfigurado && persona.pinDebeCambiar ? (
-                <p className="pin-firma__estado pin-firma__estado--pendiente">
-                    <LuShieldAlert size={15} aria-hidden />
-                    <span>
-                        PIN de 4 dígitos: ya no sirve para firmar. {nombre} debe cambiarlo por uno de 6 desde su cuenta;
-                        {' '}si no entra a la aplicación, restablécelo para que configure uno nuevo con ayuda.
-                    </span>
-                </p>
-            ) : persona.pinConfigurado ? (
+            {persona.pinConfigurado ? (
                 <p className="pin-firma__estado pin-firma__estado--ok">
                     <LuShieldCheck size={15} aria-hidden /> Configurado.
                 </p>

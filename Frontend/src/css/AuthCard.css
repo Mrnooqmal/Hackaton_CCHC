@@ -822,7 +822,7 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
     justify-content: center;
     gap: 10px;
     margin-top: 26px;
-    /* 6 casillas desde el PIN de 6 dígitos: se reparten el ancho y no pasan de 56px. */
+    /* Las casillas se reparten el ancho y no pasan de 56px (el largo lo pone utils/pin). */
     width: 100%;
     max-width: 396px;
     margin-left: auto;
