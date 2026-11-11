@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { FiPlus, FiTrash2, FiCheck, FiCornerUpLeft, FiAlertTriangle } from 'react-icons/fi';
 import { tenantsApi, type CatalogosActividad as Catalogos, type CatalogoItem } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -86,7 +87,7 @@ export default function CatalogosActividad() {
                 envios.current++;
                 setCatalogos(confirmado.current);
                 setEstado('error');
-                toast.error(e instanceof Error ? e.message : 'No se pudo guardar el cambio');
+                toast.error(mensajeDeError(e, 'No se pudo guardar el cambio'));
             }
         });
     }, [tenantId, toast]);

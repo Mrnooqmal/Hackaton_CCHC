@@ -24,6 +24,7 @@ const { TenantService } = require('../../lib/services/TenantService');
 const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { eventBus } = require('../../lib/events/EventBus');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
 const {
@@ -459,14 +460,19 @@ module.exports.updateResponseStatus = async (event) => {
         // cuando la encuesta se respondió sin red (ver ValeFirmaService).
         const pin = body.pin;
         const vale = body.vale || null;
-        if (status === 'respondida' && !pin && !vale) {
+        const sobre = body.sobre || null;
+        if (status === 'respondida' && !pin && !vale && !sobre) {
             return error('Se requiere PIN para firmar la respuesta de la encuesta');
         }
 
         // Cada quien responde por sí mismo. Responder por otro es el equivalente a
         // la firma asistida (el trabajador teclea su PIN en el dispositivo de quien
         // asiste) y exige ese permiso.
-        if (workerId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+        // Con un vale y sin PIN, es una respuesta tomada sin red que se sincroniza:
+        // la puede subir cualquier sesión de la empresa (el vale prueba el
+        // consentimiento; FirmaService lo rechaza si es de otra persona o empresa).
+        const firmaConVale = !pin && Boolean(vale || sobre);
+        if (workerId !== sesion.personaId && !firmaConVale && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para responder por otra persona', 403);
         }
 
@@ -479,6 +485,13 @@ module.exports.updateResponseStatus = async (event) => {
 
         if (index === -1) {
             return error('Trabajador no está asignado a esta encuesta', 404);
+        }
+
+        // La Ficha Básica de Salud se responde solo con señal: una respuesta tomada
+        // sin red queda en el equipo, en claro, hasta sincronizar, y en un equipo
+        // compartido la lee quien lo tome.
+        if (esFichaSalud(survey) && vale && !pin) {
+            return error('La Ficha Básica de Salud se responde con señal: no admite firma sin conexión.', 400);
         }
 
         // Responder la Ficha Básica de Salud exige el consentimiento vigente de
@@ -510,10 +523,8 @@ module.exports.updateResponseStatus = async (event) => {
                     personaId: workerId,
                     tenantId: survey.tenantId,
                     obraId: survey.obraId || null,
-                    metodo: vale ? 'VALE' : 'PIN',
-                    credencial: vale
-                        ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-                        : pin,
+                    metodo: ValeFirmaService.metodoDelCuerpo(body),
+                    credencial: ValeFirmaService.metodoDelCuerpo(body) === 'PIN' ? pin : ValeFirmaService.credencialDelCuerpo(body),
                     tipoFirma: 'encuesta',
                     referenciaId: id,
                     referenciaTipo: 'survey',
@@ -528,6 +539,7 @@ module.exports.updateResponseStatus = async (event) => {
                 console.log(`✅ Firma digital creada para encuesta ${id}, trabajador ${workerId}`);
             } catch (firmaError) {
                 if (firmaError.codigo === 'PIN_BLOQUEADO') return error(firmaError.message, 423);
+                if (firmaError.codigo === 'SOBRE_NO_DISPONIBLE' || firmaError.$metadata) return error('No se pudo registrar la firma en este momento.', 503);
                 console.error('Error validando firma:', firmaError.message);
                 // 400, como documentos y actividades. Era 401, y el cliente lee un
                 // 401 como sesión vencida: un PIN mal tecleado al responder una
@@ -603,3 +615,23 @@ module.exports.updateResponseStatus = async (event) => {
         return error(err.message || 'Error interno al actualizar respuesta', 500);
     };
 }
+
+/**
+ * Una sola función para el módulo (8 de noviembre de 2026). Eran cuatro, y cada
+ * función con ruta HTTP suma 4 recursos al stack contra el tope de 500 (D-16).
+ * Las rutas siguen declaradas una por una en `serverless.yml`, con su
+ * autorizador; aquí solo se elige qué atiende cada una por `event.routeKey`,
+ * que pone API Gateway. Una ruta que no está en la tabla responde 404.
+ */
+const RUTAS_SURVEYS = {
+    'POST /surveys': module.exports.create,
+    'GET /surveys': module.exports.list,
+    'GET /surveys/{id}': module.exports.get,
+    'POST /surveys/{id}/responses/{workerId}': module.exports.updateResponseStatus,
+};
+module.exports.enrutar = async (event, contexto) => {
+    const atender = RUTAS_SURVEYS[event?.routeKey];
+    if (!atender) return error('Ruta no encontrada', 404);
+    return atender(event, contexto);
+};
+module.exports.RUTAS = RUTAS_SURVEYS;

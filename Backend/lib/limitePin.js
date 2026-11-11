@@ -50,6 +50,7 @@
 
 const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('./clients/dynamodb');
+const { huellaIntentoPin } = require('./cifradoCampo');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 
@@ -99,6 +100,24 @@ const registrarBloqueo = (personaId, fallos, segundos) => {
 
 const minutos = (segundos) => Math.ceil(segundos / 60);
 
+/**
+ * El PIN es de 4 dígitos (lib/utils/validation.js, D-35). Lo que no tiene ese
+ * formato ni se compara con el guardado ni cuenta como intento: no es un error
+ * de tecleo de un PIN real.
+ */
+const { FORMATO_PIN, LARGO_PIN } = require('./utils/validation');
+
+/**
+ * Ataque lento (D-35): quien reparte sus intentos para no pasar del bloqueo de
+ * una hora prueba ~5 PIN por hora y recorre los 10.000 de un PIN de 4 en unos
+ * 83 días. La alarma `PinBloqueado` no lo ve (dispara con 5 bloqueos en 5
+ * minutos; aquí hay uno por hora). Esto lo cubre: los últimos bloqueos de cada
+ * persona quedan en su ficha (`pinBloqueos`, solo fechas) y, al cuarto en 24
+ * horas, se emite `PinBloqueosPersona`, cuya alarma dispara con uno.
+ */
+const BLOQUEOS_VENTANA_MS = 24 * 3600000;
+const BLOQUEOS_TOLERADOS = 3;
+
 /** Error que devuelve el bloqueo cuando se lanza desde una capa sin HTTP
  *  (PersonaService), para que el handler que sí tiene HTTP responda 423. */
 class PinBloqueadoError extends Error {
@@ -134,7 +153,13 @@ async function verificarConLimite(persona, pinIngresado, verificar) {
         };
     }
 
-    const valido = await verificar(pinIngresado, persona._pinHash, persona.personaId);
+    // Formato antes de comparar: lo que no es un PIN no llega a scrypt ni cuenta.
+    const pin = typeof pinIngresado === 'string' ? pinIngresado : '';
+    if (!FORMATO_PIN.test(pin)) {
+        return { ok: false, bloqueada: false, hasta: null, mensaje: `El PIN debe tener ${LARGO_PIN} dígitos.` };
+    }
+
+    const valido = await verificar(pin, persona._pinHash, persona.personaId);
 
     if (valido) {
         await limpiar(persona.tenantId, persona.personaId);
@@ -144,6 +169,7 @@ async function verificarConLimite(persona, pinIngresado, verificar) {
     const { fallos, bloqueadaHasta } = await registrarFalloYQuizasBloquear(persona.tenantId, persona.personaId);
     if (bloqueadaHasta) {
         registrarBloqueo(persona.personaId, fallos, duracionPara(fallos));
+        await registrarBloqueoLento(persona);
         const min = minutos((new Date(bloqueadaHasta) - ahora) / 1000);
         return {
             ok: false,
@@ -166,6 +192,119 @@ async function verificarConLimiteOLanzar(persona, pinIngresado, verificar) {
     const r = await verificarConLimite(persona, pinIngresado, verificar);
     if (r.bloqueada) throw new PinBloqueadoError(r.hasta);
     return r.ok;
+}
+
+/**
+ * Anota el bloqueo en la ficha (solo la fecha, nunca el PIN) y, al cuarto en 24
+ * horas, emite la métrica del ataque lento. Trabaja sobre la ficha ya cargada:
+ * una carrera entre dos bloqueos puede perder una fecha, y lo peor que pasa es
+ * que la alarma llegue un bloqueo más tarde.
+ *
+ * Un PIN correcto NO borra esta historia (`limpiar` no la toca): que la persona
+ * firme bien entre medio no descarta que alguien más esté probando su PIN.
+ */
+async function registrarBloqueoLento(persona) {
+    try {
+        const ahora = Date.now();
+        const lista = [...(persona.pinBloqueos || []).filter((f) => ahora - new Date(f).getTime() < BLOQUEOS_VENTANA_MS), new Date(ahora).toISOString()].slice(-8);
+        await docClient.send(new UpdateCommand({
+            TableName: PERSONAS_TABLE,
+            Key: claveDe(persona.tenantId, persona.personaId),
+            UpdateExpression: 'SET pinBloqueos = :lista',
+            ExpressionAttributeValues: { ':lista': lista },
+        }));
+        if (lista.length > BLOQUEOS_TOLERADOS) {
+            const linea = {
+                _aws: {
+                    Timestamp: ahora,
+                    CloudWatchMetrics: [{ Namespace: ESPACIO, Dimensions: [['stage']], Metrics: [{ Name: 'PinBloqueosPersona', Unit: 'Count' }] }],
+                },
+                stage: process.env.STAGE || process.env.AWS_LAMBDA_FUNCTION_NAME?.split('-')[1] || 'desconocido',
+                PinBloqueosPersona: 1,
+                tenantId: persona.tenantId,
+                personaId: persona.personaId,
+                bloqueos24h: lista.length,
+            };
+            console.error('PIN_BLOQUEOS_24H', JSON.stringify(linea));
+        }
+    } catch { /* registrar no puede romper el rechazo que ya se decidió */ }
+}
+
+/**
+ * PIN distintos equivocados que una misma sincronización puede probar gastando
+ * UN intento en total. Es 1, como con red: el mismo PIN repetido no vuelve a
+ * contar (no enseña nada), y cada PIN distinto cuenta. Ver `verificarSobre`.
+ */
+const PINES_POR_SINCRONIZACION = 1;
+const FORMATO_SINCRONIZACION = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * Verifica el PIN de un sobre de firma sin conexión (D-37).
+ *
+ * Un intento por sincronización y por persona, no uno por firma: quien dejó diez
+ * firmas con el MISMO PIN mal escrito no se bloquea de golpe al volver la señal,
+ * y una cola no sirve para bloquear a un compañero.
+ *
+ * Pero la sincronización la nombra el cliente: lo que llega con el mismo nombre
+ * no puede ser gratis sin límite, porque sería una forma de probar PIN. Por eso:
+ *   - el mismo PIN equivocado repetido nunca vuelve a contar (no enseña nada);
+ *   - cada PIN DISTINTO equivocado cuenta, como con red (D-35: con un PIN de 4,
+ *     regalar intentos acorta demasiado el ataque lento);
+ *   - si dos peticiones chocan al anotar, la que pierde cuenta.
+ *
+ * @returns {Promise<{ok: boolean, bloqueada?: boolean, comprobado?: boolean}>}
+ *   `bloqueada` sin `comprobado`: la cuenta YA estaba bloqueada y este PIN no se
+ *   miró; la firma tiene que esperar en la cola. `comprobado` con `ok: false`: el
+ *   PIN está mal, y esa firma no va a entrar nunca, aunque este intento haya
+ *   provocado el bloqueo (si volviera a la cola, re-bloquearía para siempre).
+ */
+async function verificarSobre(persona, pinIngresado, verificar, sincronizacion) {
+    if (persona.pinBloqueadaHasta && new Date(persona.pinBloqueadaHasta) > new Date()) {
+        return { ok: false, bloqueada: true, comprobado: false, hasta: persona.pinBloqueadaHasta };
+    }
+    const pin = typeof pinIngresado === 'string' ? pinIngresado : '';
+    if (!FORMATO_PIN.test(pin)) {
+        return { ok: false, bloqueada: false, comprobado: false };
+    }
+    if (await verificar(pin, persona._pinHash, persona.personaId)) {
+        await limpiar(persona.tenantId, persona.personaId);
+        return { ok: true, bloqueada: false, comprobado: true };
+    }
+
+    let cuenta = true;
+    if (FORMATO_SINCRONIZACION.test(sincronizacion || '')) {
+        const previo = persona.intentoSobre?.sincronizacion === sincronizacion ? persona.intentoSobre : null;
+        const huellas = previo?.huellas || [];
+        const huella = await huellaIntentoPin(persona.personaId, sincronizacion, pin);
+        if (huellas.includes(huella)) return { ok: false, bloqueada: false, comprobado: true };
+        const gratis = previo && huellas.length < PINES_POR_SINCRONIZACION;
+        const version = persona.intentoSobreV || 0;
+        try {
+            await docClient.send(new UpdateCommand({
+                TableName: PERSONAS_TABLE,
+                Key: claveDe(persona.tenantId, persona.personaId),
+                UpdateExpression: 'SET intentoSobre = :e, intentoSobreV = :nueva',
+                ConditionExpression: 'attribute_not_exists(intentoSobreV) OR intentoSobreV = :v',
+                ExpressionAttributeValues: {
+                    ':e': { sincronizacion, huellas: [...huellas, huella].slice(-8) },
+                    ':nueva': version + 1,
+                    ':v': version,
+                },
+            }));
+            cuenta = !gratis;
+        } catch (err) {
+            if (err.name !== 'ConditionalCheckFailedException') throw err;
+            cuenta = true;
+        }
+    }
+    if (!cuenta) return { ok: false, bloqueada: false, comprobado: true };
+
+    const { fallos, bloqueadaHasta } = await registrarFalloYQuizasBloquear(persona.tenantId, persona.personaId);
+    if (bloqueadaHasta) {
+        registrarBloqueo(persona.personaId, fallos, duracionPara(fallos));
+        await registrarBloqueoLento(persona);
+    }
+    return { ok: false, bloqueada: Boolean(bloqueadaHasta), comprobado: true };
 }
 
 /** Igual que en toda la tabla de personas: `PK: TENANT#{tenantId}`,
@@ -212,6 +351,9 @@ async function limpiar(tenantId, personaId) {
 module.exports = {
     verificarConLimite,
     verificarConLimiteOLanzar,
+    verificarSobre,
+    PINES_POR_SINCRONIZACION,
+    BLOQUEOS_TOLERADOS,
     PinBloqueadoError,
     NOMBRE_METRICA,
     CADA,

@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { mensajeDeError } from '../api/client';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinCasillas from '../components/PinCasillas';
+import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
+import { LARGO_PIN } from '../utils/pin';
 import {
     FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
     FiKey, FiLogOut, FiPhone, FiShield, FiX,
@@ -174,7 +177,7 @@ export default function EnrollMe() {
             irA('profile');
         } catch (err) {
             console.error('Error en enrolamiento:', err);
-            const mensaje = err instanceof Error ? err.message : 'Error desconocido';
+            const mensaje = mensajeDeError(err, 'Error desconocido');
             // En cambio de PIN se vuelve a empezar: el PIN actual ya se usó (y pudo
             // ser el incorrecto), así que se pide de nuevo si corresponde.
             setPinActual('');
@@ -355,16 +358,22 @@ export default function EnrollMe() {
                             <div className="enr-credencial-pin">
                                 <span className="enr-credencial-pin-label">PIN de firma</span>
                                 <span className="enr-credencial-slots" aria-hidden="true">
-                                    <span /><span /><span /><span />
+                                    {Array.from({ length: LARGO_PIN }, (_, i) => <span key={i} />)}
                                 </span>
                             </div>
                         </div>
 
                         <ul className="enr-datos">
-                            <li><FiKey size={17} /><strong>4 dígitos</strong><span>que solo tú eliges</span></li>
+                            <li><FiKey size={17} /><strong>{LARGO_PIN} dígitos</strong><span>que solo tú eliges</span></li>
                             <li><FiShield size={17} /><strong>Cifrada</strong><span>nadie más puede verla</span></li>
                             <li><FiClock size={17} /><strong>1 minuto</strong><span>y queda lista</span></li>
                         </ul>
+
+                        {/* Deber de información (Ley 21.719): antes de crear la firma. */}
+                        <details className="aviso-privacidad-desplegable">
+                            <summary>Cómo se tratan tus datos</summary>
+                            <AvisoPrivacidad compacto />
+                        </details>
 
                         <button type="button" className="lp-submit enr-accion" onClick={() => irA('create-pin')}>
                             <span>Comenzar</span><FiArrowRight size={15} />
@@ -374,14 +383,14 @@ export default function EnrollMe() {
 
                 {/* ── PIN actual (solo al cambiar uno existente) ── */}
                 {currentStep === 'current-pin' && (
-                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pinActual.length === 4) irA('create-pin'); }}>
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pinActual.length === LARGO_PIN) irA('create-pin'); }}>
                         <h1 className="lp-title">Ingresa tu PIN actual</h1>
                         <p className="lp-hint">Para cambiarlo, primero confirma que eres tú.</p>
                         <PinCasillas id="enr-pin-actual" value={pinActual} onChange={setPinActual}
                             visible={verPin} autoFocus ariaLabel="PIN actual" />
                         {MostrarPin}
                         {ErrorServidor}
-                        <button type="submit" className="lp-submit enr-accion" disabled={pinActual.length < 4}>
+                        <button type="submit" className="lp-submit enr-accion" disabled={pinActual.length < LARGO_PIN}>
                             <span>Continuar</span><FiArrowRight size={15} />
                         </button>
                     </form>
@@ -389,17 +398,17 @@ export default function EnrollMe() {
 
                 {/* ── Elegir PIN ── */}
                 {currentStep === 'create-pin' && (
-                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pin.length === 4) { setPinConfirmacion(''); irA('confirm-pin'); } }}>
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pin.length === LARGO_PIN) { setPinConfirmacion(''); irA('confirm-pin'); } }}>
                         <h1 className="lp-title">{isChangePin ? 'Elige tu nuevo PIN' : 'Elige tu PIN'}</h1>
                         <p className="lp-hint">
-                            {isChangePin ? '4 dígitos, distintos al PIN actual.' : '4 dígitos que recuerdes. Lo usarás cada vez que firmes.'}
+                            {isChangePin ? `${LARGO_PIN} dígitos, distintos al PIN actual.` : `${LARGO_PIN} dígitos que recuerdes. Lo usarás cada vez que firmes.`}
                         </p>
                         <PinCasillas id="enr-pin" value={pin} onChange={setPin} visible={verPin} autoFocus
-                            ariaLabel="Nuevo PIN de 4 dígitos" />
+                            ariaLabel={`Nuevo PIN de ${LARGO_PIN} dígitos`} />
                         {MostrarPin}
                         <p className="enr-consejo"><FiShield size={14} /> Evita 1234, 0000 o tu año de nacimiento.</p>
                         {ErrorServidor}
-                        <button type="submit" className="lp-submit enr-accion" disabled={pin.length < 4}>
+                        <button type="submit" className="lp-submit enr-accion" disabled={pin.length < LARGO_PIN}>
                             <span>Continuar</span><FiArrowRight size={15} />
                         </button>
                     </form>
@@ -413,7 +422,7 @@ export default function EnrollMe() {
                         <PinCasillas id="enr-pin-confirmar" value={pinConfirmacion} autoFocus
                             onChange={(v) => { if (!reintentando.current) setPinConfirmacion(v); }}
                             onComplete={(v) => { if (!reintentando.current) confirmarPin(v); }}
-                            visible={verPin} error={noCoincide && pinConfirmacion.length === 4} disabled={procesando}
+                            visible={verPin} error={noCoincide && pinConfirmacion.length === LARGO_PIN} disabled={procesando}
                             ariaLabel="Repite tu PIN" />
                         {noCoincide ? (
                             <>

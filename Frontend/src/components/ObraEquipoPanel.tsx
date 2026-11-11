@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
+import { LARGO_PIN } from '../utils/pin';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -506,7 +508,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             await workersApi.update(w.personaId, { estado: 'activo' } as any);
             await reloadWorkers();
             showToast(`${w.nombre} reactivado`);
-        } catch (e: any) { setError(e?.message || 'No se pudo reactivar'); }
+        } catch (e: any) { setError(mensajeDeError(e, 'No se pudo reactivar')); }
         finally { setUpdating(null); }
     };
 
@@ -520,7 +522,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             await reloadWorkers();
             setAssignCargos((p) => { const n = { ...p }; delete n[w.personaId]; return n; });
             showToast('Cargo actualizado');
-        } catch (e: any) { setError(e?.message || 'No se pudo actualizar el cargo'); }
+        } catch (e: any) { setError(mensajeDeError(e, 'No se pudo actualizar el cargo')); }
         finally { setUpdating(null); }
     };
 
@@ -563,7 +565,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             reloadWorkers(); // sync silently — no await to avoid visual flash
         } catch (e: any) {
             setWorkers(prevWorkers); // roll back
-            setError(e?.message || 'No se pudo actualizar la cuadrilla');
+            setError(mensajeDeError(e, 'No se pudo actualizar la cuadrilla'));
         } finally {
             setUpdating(null);
         }
@@ -598,7 +600,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             reloadWorkers();
         } catch (e: any) {
             setWorkers(prevWorkers);
-            setError(e?.message || 'No se pudo actualizar el prevencionista');
+            setError(mensajeDeError(e, 'No se pudo actualizar el prevencionista'));
         } finally {
             setUpdating(null);
         }
@@ -774,7 +776,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             reloadWorkers(); // sync silently
         } catch (e: any) {
             setWorkers(prevWorkers); // roll back
-            setError(e?.message || 'No se pudo agregar');
+            setError(mensajeDeError(e, 'No se pudo agregar'));
         } finally {
             setUpdating(null);
         }
@@ -901,7 +903,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
     const handleFirmaRelator = async () => {
         if (!relatorSign || !user?.personaId) return;
-        if (!relatorPin || relatorPin.length < 4) { setRelatorError('Ingresa tu PIN para firmar.'); return; }
+        if (!relatorPin || relatorPin.length < LARGO_PIN) { setRelatorError('Ingresa tu PIN para firmar.'); return; }
         setRelatorSaving(true);
         setRelatorError(null);
         try {

@@ -120,6 +120,13 @@ class Persona {
         // aparte sería una lectura más en cada intento de firma.
         this.pinIntentosFallidos = data.pinIntentosFallidos || 0;
         this.pinBloqueadaHasta = data.pinBloqueadaHasta || null;
+        // Bloqueos de PIN de las últimas 24 horas (D-35, ataque lento): fechas,
+        // nunca el PIN. Lo escribe lib/limitePin.registrarBloqueoLento.
+        this.pinBloqueos = data.pinBloqueos || [];
+        // PIN equivocados de sobres en la última sincronización (D-37): huellas,
+        // nunca el PIN. Estado de `verificarSobre`, como el contador de arriba.
+        this.intentoSobre = data.intentoSobre || null;
+        this.intentoSobreV = data.intentoSobreV || 0;
         // Restablecimiento de PIN pendiente: `{por, nombre, en, motivo}` desde
         // que alguien lo restablece hasta que se configura el nuevo. Mientras
         // exista, quien restableció NO puede asistir en la configuración del
@@ -138,6 +145,11 @@ class Persona {
         // escribe en la misma transacción que él; la escribe solo el módulo de
         // consentimiento (nunca `crear` ni `actualizar`, igual que el bloqueo).
         this.consentimientos = data.consentimientos ? [...data.consentimientos] : [];
+        // Tratamientos a los que la persona se opuso con una solicitud acogida
+        // (lib/gobernanza/derechos.js, TRATAMIENTOS_OPONIBLES). La escribe solo
+        // lib/gobernanza: la respuesta de la solicitud la pone y el titular la
+        // retira desde Mis datos (nunca `crear` ni `actualizar`).
+        this.oposiciones = data.oposiciones ? [...data.oposiciones] : [];
         this.passwordTemporal = data.passwordTemporal || false;
 
         // Enrolamiento
@@ -357,6 +369,8 @@ class Persona {
             pinCreatedAt: this.pinCreatedAt,
             pinIntentosFallidos: this.pinIntentosFallidos,
             pinBloqueadaHasta: this.pinBloqueadaHasta,
+            ...(this.pinBloqueos.length ? { pinBloqueos: this.pinBloqueos } : {}),
+            ...(this.intentoSobre ? { intentoSobre: this.intentoSobre, intentoSobreV: this.intentoSobreV } : {}),
             pinRestablecido: this.pinRestablecido,
             pinHistorial: this.pinHistorial,
             passwordTemporal: this.passwordTemporal,

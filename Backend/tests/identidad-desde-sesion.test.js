@@ -88,8 +88,11 @@ test('sin sesión, toda ruta autenticada responde 401 y no toca AWS ni la red', 
     console.log = console.error = console.warn = console.info = () => {};
 
     const AJENA = 't-ajena';
-    const evento = (metodo, ruta) => ({
-        version: '2.0', routeKey: `${metodo} ${ruta}`, rawPath: ruta, rawQueryString: `tenantId=${AJENA}`,
+    // `routeKey` es el que pone API Gateway: el método y la ruta DECLARADOS
+    // (`DELETE /uploads/{fileKey}`, `ANY /incidents/{proxy+}`), no el camino
+    // concreto. Los módulos con una función para varias rutas eligen por él.
+    const evento = (metodo, ruta, routeKey = `${metodo} ${ruta}`) => ({
+        version: '2.0', routeKey, rawPath: ruta, rawQueryString: `tenantId=${AJENA}`,
         headers: { authorization: 'Bearer token-cualquiera', 'content-type': 'application/json' },
         queryStringParameters: { tenantId: AJENA, empresaId: AJENA, personaId: 'p-ajena', obraId: 'o-1', fecha: '2026-10-01', rut: '12.345.678-5' },
         pathParameters: new Proxy({}, { get: (_, k) => (typeof k === 'string' ? 'x' : undefined) }),
@@ -131,7 +134,7 @@ test('sin sesión, toda ruta autenticada responde 401 y no toca AWS ni la red', 
                     salidas = [];
                     sondeos++;
                     let res;
-                    try { res = await fn(evento(metodo, s.ruta)); } catch (err) { res = { statusCode: `lanzó: ${err.message}` }; }
+                    try { res = await fn(evento(metodo, s.ruta, `${r.metodo} ${r.ruta}`)); } catch (err) { res = { statusCode: `lanzó: ${err.message}` }; }
                     const estado = res?.statusCode;
                     const ok = salidas.length === 0
                         && (estado === 401 || (!s.exacto && [404, 405, 410].includes(estado)) || (s.exacto && estado === 410));

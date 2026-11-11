@@ -75,6 +75,7 @@ const ESTADOS_NO_PENALIZAN = new Set([ESTADO_REQUISITO.NO_APLICA, ESTADO_REQUISI
  * contenido se deriva del catálogo: si alguien agrega una sección allá, aparece
  * acá sola.
  */
+const { plural } = require('./utils/plural');
 const { SECCIONES_FUF, seccionDeItem } = require('./fuf');
 const A = require('./aplicabilidad');
 
@@ -182,7 +183,7 @@ function estadoPorDocumento(doc, { exigeFirma = false, fechaLimite = null, ahora
         if (faltan > 0) {
             return {
                 estado: ESTADO_REQUISITO.PARCIAL,
-                detalle: `Documento cargado, ${faltan} firma(s) pendiente(s).`,
+                detalle: `Documento cargado, ${plural(faltan, 'firma pendiente', 'firmas pendientes')}.`,
             };
         }
     }

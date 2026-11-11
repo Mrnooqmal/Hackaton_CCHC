@@ -4,6 +4,8 @@ service: BuildAndServe
 plugins:
   - serverless-prune-plugin
   - serverless-offline
+  # Todos los grupos de logs con la clave propia (ClaveDatos). Ver el plugin.
+  - ./plugins/logs-cifrados.js
 
 custom:
   prune:
@@ -149,6 +151,8 @@ provider:
     # La CMK del sistema (`ClaveDatos`), para el cifrado de sobre. Es un id, no
     # un secreto: puede ir resuelto en la plantilla sin problema.
     CAMPO_CIFRADO_KMS_KEY_ID: !Ref ClaveDatos
+    # La llave asimétrica de los sobres de firma sin conexión (D-37).
+    SOBRE_FIRMA_KMS_KEY_ID: !Ref ClaveSobreFirma
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
     GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     # --- Gating de alta de empresas (Fase 1: PIN estático) ---
@@ -323,6 +327,13 @@ provider:
             - kms:DescribeKey
           Resource:
             - !GetAtt ClaveDatos.Arn
+        # Sobres de firma sin conexión (D-37): leer la pública y abrir sobres.
+        - Effect: Allow
+          Action:
+            - kms:GetPublicKey
+            - kms:Decrypt
+          Resource:
+            - !GetAtt ClaveSobreFirma.Arn
         # Solo la pimienta, solo lectura. El descifrado lo cubre el permiso de
         # KMS de más arriba, porque el parámetro está cifrado con la misma CMK.
         - Effect: Allow
@@ -1044,11 +1055,18 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Disputas y firmas en revisión: una función, dos rutas (handler.listados
+  # despacha por routeKey). Una ruta más suma 1 recurso; una función, 4 (D-16).
   listSignatureDisputes:
-    handler: handlers/signatures/handler.listDisputes
+    handler: handlers/signatures/handler.listados
     events:
       - httpApi:
           path: /signatures/disputes
+          method: GET
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /signatures/revision
           method: GET
           authorizer:
             name: sesionUsuario
@@ -1056,45 +1074,34 @@ functions:
   # ========================================
   # UPLOADS (Subida de archivos a S3)
   # ========================================
-  getUploadUrl:
-    handler: handlers/uploads/handler.getUploadUrl
+  # Una función para las cinco rutas (antes una por ruta: 16 recursos menos,
+  # D-16). Cada ruta sigue declarada con su autorizador; `enrutar` elige por
+  # `event.routeKey`. Los grupos de logs de las funciones anteriores
+  # (getUploadUrl, getDownloadUrl, confirmUpload, deleteUpload,
+  # getBatchDownloadUrls) se borraron al desplegar (aprobado el 7 de noviembre).
+  uploadsModule:
+    handler: handlers/uploads/handler.enrutar
     events:
       - httpApi:
           path: /uploads/presigned-url
           method: POST
           authorizer:
             name: sesionUsuario
-
-  getDownloadUrl:
-    handler: handlers/uploads/handler.getDownloadUrl
-    events:
       - httpApi:
           path: /uploads/download-url
           method: POST
           authorizer:
             name: sesionUsuario
-
-  confirmUpload:
-    handler: handlers/uploads/handler.confirmUpload
-    events:
       - httpApi:
           path: /uploads/confirm
           method: POST
           authorizer:
             name: sesionUsuario
-
-  deleteUpload:
-    handler: handlers/uploads/handler.deleteFile
-    events:
       - httpApi:
           path: /uploads/{fileKey}
           method: DELETE
           authorizer:
             name: sesionUsuario
-
-  getBatchDownloadUrls:
-    handler: handlers/uploads/handler.getBatchDownloadUrls
-    events:
       - httpApi:
           path: /uploads/batch-download-urls
           method: POST
@@ -1112,37 +1119,28 @@ functions:
           authorizer:
             name: sesionUsuario
 
-  # Surveys (Encuestas)
-  createSurvey:
-    handler: handlers/surveys/handler.create
+  # Surveys (Encuestas). Una función para las cuatro rutas (antes una por ruta:
+  # 12 recursos menos, D-16). `enrutar` elige por `event.routeKey`. Los grupos de
+  # logs de createSurvey, listSurveys, getSurvey y updateSurveyResponse se
+  # borraron al desplegar (aprobado el 7 de noviembre).
+  surveysModule:
+    handler: handlers/surveys/handler.enrutar
     events:
       - httpApi:
           path: /surveys
           method: POST
           authorizer:
             name: sesionUsuario
-
-  listSurveys:
-    handler: handlers/surveys/handler.list
-    events:
       - httpApi:
           path: /surveys
           method: GET
           authorizer:
             name: sesionUsuario
-
-  getSurvey:
-    handler: handlers/surveys/handler.get
-    events:
       - httpApi:
           path: /surveys/{id}
           method: GET
           authorizer:
             name: sesionUsuario
-
-  updateSurveyResponse:
-    handler: handlers/surveys/handler.updateResponseStatus
-    events:
       - httpApi:
           path: /surveys/{id}/responses/{workerId}
           method: POST
@@ -1310,6 +1308,12 @@ resources:
         - HttpApiRouteGetOnboardingLicenciaTokenVar
         - HttpApiRoutePostOnboardingCompletar
         - HttpApiRoutePostCspReporte
+        - HttpApiRoutePostAuthLogin
+        - HttpApiRoutePostAuthSelectDashtenant
+        - HttpApiRoutePostAuthForgotDashpassword
+        - HttpApiRoutePostAuthResetDashpassword
+        - HttpApiRoutePostAuthValidateDashtoken
+        - HttpApiRouteGetSignaturesVerifyTokenVar
       Properties:
         DefaultRouteSettings:
           ThrottlingBurstLimit: 200
@@ -1328,6 +1332,35 @@ resources:
           'POST /csp/reporte':
             ThrottlingBurstLimit: 10
             ThrottlingRateLimit: 5
+          # Rutas públicas de autenticación (checklist 2.8, 8 de noviembre de
+          # 2026). El límite es de la ruta para TODO el ambiente, no por
+          # persona ni por IP (HTTP API no lo distingue y WAF no se asocia a HTTP
+          # API): frena una avalancha, no a un atacante paciente. A ese lo frenan
+          # el límite de intentos por cuenta y la detección (D-9, D-31).
+          # El ingreso alcanza para el inicio de turno de varias obras a la vez
+          # (cada ingreso es ~112 ms de scrypt): 20 por segundo sostenidos.
+          'POST /auth/login':
+            ThrottlingBurstLimit: 40
+            ThrottlingRateLimit: 20
+          'POST /auth/select-tenant':
+            ThrottlingBurstLimit: 40
+            ThrottlingRateLimit: 20
+          # Cada una manda un correo: que no sirva para hacer spam ni para gastar
+          # la cuota de SES.
+          'POST /auth/forgot-password':
+            ThrottlingBurstLimit: 5
+            ThrottlingRateLimit: 2
+          'POST /auth/reset-password':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 5
+          'POST /auth/validate-token':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 5
+          # Verificación pública de una firma: la usa un fiscalizador de vez en
+          # cuando, no un programa.
+          'GET /signatures/verify/{token}':
+            ThrottlingBurstLimit: 20
+            ThrottlingRateLimit: 10
 
   Resources:
     # ==========================================
@@ -1366,6 +1399,51 @@ resources:
                 - kms:Decrypt
                 - kms:GenerateDataKey
               Resource: '*'
+            # Los grupos de logs del stack (plugins/logs-cifrados.js). Solo para
+            # grupos de logs de esta cuenta y región: la condición sobre el
+            # contexto de cifrado es la que recomienda AWS para esta llave.
+            - Sid: Uso desde CloudWatch Logs
+              Effect: Allow
+              Principal:
+                Service: !Sub 'logs.${AWS::Region}.amazonaws.com'
+              Action:
+                - kms:Encrypt*
+                - kms:Decrypt*
+                - kms:ReEncrypt*
+                - kms:GenerateDataKey*
+                - kms:Describe*
+              Resource: '*'
+              Condition:
+                ArnLike:
+                  'kms:EncryptionContext:aws:logs:arn': !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+
+    # Sobres de firma sin conexión (D-37). Par RSA: el equipo cifra el PIN con la
+    # pública, que no es secreta; la privada no sale de KMS. Las llaves asimétricas
+    # no admiten rotación automática. Retain: una llave borrada dejaría sin abrir
+    # las firmas que todavía estén en la cola de algún equipo.
+    ClaveSobreFirma:
+      Type: AWS::KMS::Key
+      DeletionPolicy: Retain
+      UpdateReplacePolicy: Retain
+      Properties:
+        Description: Sobres de firma sin conexion de Build & Serve (${self:provider.stage})
+        KeySpec: RSA_2048
+        KeyUsage: ENCRYPT_DECRYPT
+        KeyPolicy:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: Administracion desde la cuenta
+              Effect: Allow
+              Principal:
+                AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+              Action: 'kms:*'
+              Resource: '*'
+
+    ClaveSobreFirmaAlias:
+      Type: AWS::KMS::Alias
+      Properties:
+        AliasName: alias/${self:service}-sobre-firma-${self:provider.stage}
+        TargetKeyId: !Ref ClaveSobreFirma
 
     ClaveDatosAlias:
       Type: AWS::KMS::Alias
@@ -1589,6 +1667,63 @@ resources:
         Period: 300
         EvaluationPeriods: 1
         Threshold: 5
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
+    # Ataque lento contra el PIN de una persona (D-35). `PinBloqueado` dispara
+    # con 5 bloqueos en 5 minutos; quien reparte sus intentos para no pasar del
+    # bloqueo de una hora nunca la alcanza (~5 PIN por hora, ~83 días para los
+    # 10.000 de un PIN de 4). `lib/limitePin.registrarBloqueoLento` cuenta los
+    # bloqueos por persona y emite esta métrica al cuarto en 24 horas: a ese
+    # ritmo, el ataque lento la cruza el primer día.
+    PinAtaqueLentoAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-pin-ataque-lento-${self:provider.stage}
+        AlarmDescription: >-
+          Una misma persona acumuló más de 3 bloqueos de PIN en 24 horas: el
+          ritmo de un ataque lento, no de un error de tecleo. Revisar los logs
+          filtrando por PIN_BLOQUEOS_24H (dice empresa y persona), avisar a la
+          constructora y considerar restablecer ese PIN.
+        Namespace: BuildAndServe
+        MetricName: PinBloqueosPersona
+        Dimensions:
+          - Name: stage
+            Value: ${self:provider.stage}
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertasOperacionTopic
+
+    # Vales de firma sin conexión anulados por vales inválidos
+    # (ValeFirmaService.registrarInvalido). En el equipo los vales están
+    # cifrados con el PIN y el equipo no confirma el PIN: quien copió el
+    # almacenamiento tiene que probar candidatos aquí, y al quinto vale inválido
+    # se anulan los de la persona. Uno solo ya importa: a quien solo se equivoca
+    # al teclear le pasa 1 de cada 256 veces, no cinco seguidas.
+    ValesInvalidosAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-vales-invalidos-${self:provider.stage}
+        AlarmDescription: >-
+          Se anularon los vales de firma sin conexión de una persona por cinco
+          vales inválidos. Revisar los logs filtrando por VALES_INVALIDOS: puede
+          ser alguien probando PIN con una copia del almacenamiento de un equipo.
+        Namespace: BuildAndServe
+        MetricName: ValesInvalidos
+        Dimensions:
+          - Name: stage
+            Value: ${self:provider.stage}
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
         ComparisonOperator: GreaterThanOrEqualToThreshold
         TreatMissingData: notBreaching
         AlarmActions:

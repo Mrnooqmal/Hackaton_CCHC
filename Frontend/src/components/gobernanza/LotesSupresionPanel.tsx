@@ -192,7 +192,7 @@ function DetalleLote({ loteId, nombreDe, onCerrar, onCambio }: {
                             <h4 className="lt-subtitulo">Archivos ({l.contenido.archivos.length}), con todas sus versiones</h4>
                             <ul className="lt-ops">
                                 {l.contenido.archivos.map((a) => (
-                                    <li key={a.key}><code className="lt-clave">{a.key}</code> · {a.versiones.length} versión(es)</li>
+                                    <li key={a.key}><code className="lt-clave">{a.key}</code> · {a.versiones.length === 1 ? "1 versión" : `${a.versiones.length} versiones`}</li>
                                 ))}
                             </ul>
                         </>

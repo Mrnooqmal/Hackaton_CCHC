@@ -21,6 +21,7 @@
  *   - Un órgano constituido sin estar obligado se rotula VOLUNTARIO (§2).
  */
 
+const { plural } = require('./utils/plural');
 const { ESTADO_REQUISITO } = require('./completitud');
 
 const { escaparHtml: esc } = require('./escaparHtml');
@@ -129,13 +130,13 @@ function renderHtml(exp) {
 <div class="muted">${esc(exp.alcance)}</div>
 <div class="muted">
   Ámbito: ${esc(exp.nombreAmbito || (exp.ambito === 'obra' ? 'Obra' : 'Entidad empleadora'))}
-  · Dotación: ${esc(d.dotacion)} persona(s)${d.origen === 'declarada' ? ' (declarada)' : ' (calculada del sistema)'}
+  · Dotación: ${plural(esc(d.dotacion), 'persona', 'personas')}${d.origen === 'declarada' ? ' (declarada)' : ' (calculada del sistema)'}
   · Generado: ${esc(String(exp.generadoEn).slice(0, 19).replace('T', ' '))}
 </div>
 
 <h2>Resumen <span class="pct">${exp.resumen.cumplidos}/${exp.resumen.exigibles} · ${exp.resumen.progreso}%</span></h2>
 <div class="muted">
-  ${exp.resumen.exigibles} requisito(s) exigible(s) a este ámbito.
+  ${plural(exp.resumen.exigibles, 'requisito exigible', 'requisitos exigibles')} a este ámbito.
   ${exp.resumen.excluidos > 0
         ? `${exp.resumen.excluidos} no aplican o están fuera de alcance y no penalizan; se detallan igualmente más abajo con su justificación.`
         : ''}

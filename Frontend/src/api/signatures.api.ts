@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { renovarValesEnSilencio } from '../utils/valesTurno';
 
 export interface SignData {
     tipo?: string;
@@ -86,9 +87,33 @@ export interface ResolveDisputeData {
     nuevoEstado: 'valida' | 'revocada';
 }
 
+export interface FirmaEnRevision {
+    signatureId: string;
+    personaId: string;
+    personaNombre?: string;
+    tipoFirma?: string;
+    referenciaId?: string;
+    referenciaTipo?: string;
+    obraId?: string | null;
+    timestamp?: string;
+    motivoRevision?: string;
+    offline?: {
+        valeEmitidoEn?: string;
+        valeExpiraEn?: string;
+        valeEmitidoPor?: string | null;
+        firmadaSinConexionEn?: string | null;
+        sincronizadaEn?: string;
+        valeAnuladoEn?: string | null;
+        valeVencido?: boolean;
+        personaDesvinculada?: boolean;
+    } | null;
+}
+
 export interface ValesResponse {
     vales: string[];
     personaId: string;
+    /** Obra del turno: el vale sirve para esa obra y para lo que no tiene obra. */
+    obraId: string;
     expiraEn: string;
     vigenciaHoras: number;
     mensaje: string;
@@ -101,11 +126,18 @@ export const signaturesApi = {
      * vales sí, y no sirven para nada más que firmar en nombre de esa persona
      * durante su vigencia.
      */
-    emitirVales: (data: { personaId?: string; pin: string; cantidad?: number; deviceId?: string }) =>
+    emitirVales: (data: { personaId?: string; obraId: string; pin: string; cantidad?: number; deviceId?: string }) =>
         apiRequest<ValesResponse>('/firmas/vales', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
+
+    /**
+     * Firmas sin conexión que esperan confirmación (vale vencido, o persona
+     * desvinculada antes de sincronizar). Exige `firmas.crear`.
+     */
+    enRevision: () =>
+        apiRequest<{ total: number; firmas: FirmaEnRevision[] }>('/signatures/revision'),
 
     /** Confirma o rechaza una firma sincronizada con un vale vencido. */
     revisar: (id: string, data: { decision: 'confirmada' | 'rechazada'; motivo?: string }) =>
@@ -114,11 +146,15 @@ export const signaturesApi = {
             body: JSON.stringify(data),
         }),
 
-    create: (data: CreateSignatureData) =>
-        apiRequest<SignatureCreateResult>('/signatures', {
+    create: async (data: CreateSignatureData) => {
+        const r = await apiRequest<SignatureCreateResult>('/signatures', {
             method: 'POST',
             body: JSON.stringify(data),
-        }),
+        });
+        // Escribió su PIN con red: el equipo le renueva los vales, sin decir nada.
+        if (r.success) void renovarValesEnSilencio(data.personaId, data.pin);
+        return r;
+    },
 
     get: (id: string) =>
         apiRequest<DigitalSignature>(`/signatures/${id}`),

@@ -509,3 +509,25 @@ module.exports.getBatchDownloadUrls = conAuditoriaSalud(async (event) => {
         return error(err.message, 500);
     }
 });
+
+/**
+ * Una sola función para el módulo (8 de noviembre de 2026). Eran cinco, y cada
+ * función con ruta HTTP suma 4 recursos al stack (función, permiso, grupo de
+ * logs e integración) contra el tope de 500 (D-16). Las rutas siguen declaradas
+ * una por una en `serverless.yml`, con su autorizador; aquí solo se elige qué
+ * atiende cada una por `event.routeKey`, que pone API Gateway (no el cliente).
+ * Una ruta que no está en la tabla responde 404: nunca cae en otra.
+ */
+const RUTAS_UPLOADS = {
+    'POST /uploads/presigned-url': module.exports.getUploadUrl,
+    'POST /uploads/download-url': module.exports.getDownloadUrl,
+    'POST /uploads/confirm': module.exports.confirmUpload,
+    'DELETE /uploads/{fileKey}': module.exports.deleteFile,
+    'POST /uploads/batch-download-urls': module.exports.getBatchDownloadUrls,
+};
+module.exports.enrutar = async (event, contexto) => {
+    const atender = RUTAS_UPLOADS[event?.routeKey];
+    if (!atender) return error('Ruta no encontrada', 404);
+    return atender(event, contexto);
+};
+module.exports.RUTAS = RUTAS_UPLOADS;

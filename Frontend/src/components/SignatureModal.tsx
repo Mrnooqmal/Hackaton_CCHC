@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { createPortal } from 'react-dom';
 import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 import PinInput from './PinInput';
@@ -54,7 +55,7 @@ export default function SignatureModal({
         try {
             await onConfirm(pin);
         } catch (err) {
-            setPinError(err instanceof Error ? err.message : 'Error al validar PIN');
+            setPinError(mensajeDeError(err, 'Error al validar PIN'));
         } finally {
             setIsProcessing(false);
         }

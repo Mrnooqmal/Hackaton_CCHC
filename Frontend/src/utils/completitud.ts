@@ -1,3 +1,4 @@
+import { plural } from './plural';
 /**
  * Presentación de la completitud del FUF.
  *
@@ -271,7 +272,7 @@ export function estadoPorDocumento(
     if (exigeFirma) {
         const faltan = firmasPendientes(doc);
         if (faltan > 0) {
-            return { estado: ESTADO_REQUISITO.PARCIAL, detalle: `Documento cargado, ${faltan} firma(s) pendiente(s).` };
+            return { estado: ESTADO_REQUISITO.PARCIAL, detalle: `Documento cargado, ${plural(faltan, 'firma pendiente', 'firmas pendientes')}.` };
         }
     }
     return { estado: ESTADO_REQUISITO.CUMPLIDO, detalle: 'Documento cargado.' };

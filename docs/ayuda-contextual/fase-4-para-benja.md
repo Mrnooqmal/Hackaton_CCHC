@@ -138,12 +138,13 @@ CAPTURAS_PUBLICAR=1 npm run capturas     # reemplaza las de public/manual-img
   `firmas/` y tres de `guia-inicio/`, más tres nuevas. No cubre `personas/menu-persona.png` ni el
   resto de las 88. Para sumar una, se agrega una entrada al catálogo; los datos están en
   `api-simulada.mjs`.
-- **Las nuevas (`por-enviar`, `no-se-valido`, `en-revision`):** se omiten hasta que la firma sin
-  conexión llegue a `tours`, y desde ahí corren solas. Las imágenes nuevas no están enlazadas en el
-  manual todavía.
+- **Las nuevas (`por-enviar`, `no-se-valido`, `en-revision`):** la firma sin conexión llegó a
+  `tours` el 10 de noviembre de 2026 (`6fe165a`), así que ya corren. Las imágenes nuevas no están
+  enlazadas en el manual todavía.
 - **Falla a propósito** si lo marcado en rojo está tapado o si la app da un error. Contra `pruebas`
-  (`8d95d6b`), `firmas/por-enviar` falla porque el encabezado de la página tapa el aviso de firmas por
-  enviar en Mis Firmas y Actividades; ese error ya está avisado a la otra sesión.
+  (`8d95d6b`), `firmas/por-enviar` fallaba porque el encabezado de la página tapaba el aviso de firmas
+  por enviar en Mis Firmas y Actividades. La otra sesión lo corrigió en `6fe165a`; no lo volví a
+  comprobar con el script, porque las capturas quedan en tus manos.
 - **Mira las imágenes** antes de publicar: que la corrida pase no garantiza que la captura sirva.
 
 ## Pendiente: "Firmar mi asistencia" según un permiso

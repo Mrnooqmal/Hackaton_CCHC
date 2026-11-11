@@ -55,6 +55,31 @@ test('la URL de CloudFront de prod redirige con 301 a la raíz, con la ruta y la
         'https://buildandserve.cl/restablecer-clave?pid=p-1&token=a%20b&vacio&varios=1&varios=2');
 });
 
+test('la comprobación del 301 acepta la consulta en otro orden, como la entrega CloudFront', () => {
+    // CloudFront no conserva el orden de `request.querystring`: lo que en el
+    // navegador es `?a=1&b=dos`, la función lo puede recorrer como `b`, `a`. Se
+    // simula armando el objeto en el orden inverso.
+    const { mismaUrl } = require(path.join(RAIZ, 'infra', 'misma-url.js'));
+    const handler = funcionDeRedireccion();
+    const esperada = 'https://buildandserve.cl/verificacion/redireccion?a=1&b=dos';
+    const r = handler(evento(CF_PROD, '/verificacion/redireccion', { b: { value: 'dos' }, a: { value: '1' } }));
+    const recibida = r.headers.location.value;
+    assert.notEqual(recibida, esperada, 'la simulación tiene que producir otro orden');
+    assert.ok(mismaUrl(esperada, recibida), 'el mismo destino en otro orden es la misma redirección');
+});
+
+test('mismaUrl: mismo origen, ruta y parámetros; el orden no importa, lo demás sí', () => {
+    const { mismaUrl } = require(path.join(RAIZ, 'infra', 'misma-url.js'));
+    const base = 'https://buildandserve.cl/x?a=1&b=dos';
+    assert.ok(mismaUrl(base, 'https://buildandserve.cl/x?b=dos&a=1'));
+    assert.ok(!mismaUrl(base, 'https://buildandserve.cl/x?b=dos'), 'falta un parámetro');
+    assert.ok(!mismaUrl(base, 'https://buildandserve.cl/x?a=1&b=tres'), 'otro valor');
+    assert.ok(!mismaUrl(base, 'https://buildandserve.cl/y?a=1&b=dos'), 'otra ruta');
+    assert.ok(!mismaUrl(base, `https://${CF_PROD}/x?a=1&b=dos`), 'otro origen');
+    assert.ok(!mismaUrl('https://buildandserve.cl/x?a=1&a=2', 'https://buildandserve.cl/x?a=1'), 'los repetidos cuentan');
+    assert.ok(!mismaUrl(base, ''), 'sin Location no hay redirección');
+});
+
 test('también con el host en mayúsculas, y www sigue redirigiendo', () => {
     const handler = funcionDeRedireccion();
     assert.equal(handler(evento(CF_PROD.toUpperCase(), '/x')).headers.location.value, 'https://buildandserve.cl/x');
@@ -86,7 +111,9 @@ test('los scripts verifican prod en el dominio propio, y comprueban la redirecci
     const infra = leer('infra', 'desplegar-infra-frontend.sh');
     assert.ok(infra.includes('DOMINIO="$(dominio_de "${par%%:*}")"') && infra.includes('DOMINIO="$(dominio_de "$par")"'),
         'las dos comprobaciones de la CSP miran el dominio propio en prod');
-    assert.ok(infra.includes('grep -qixF "location: $ESPERADO"'), 'después de desplegar se comprueba el 301');
+    assert.ok(infra.includes('node "$TMP/wt/infra/misma-url.js" "$ESPERADO" "$LOCATION"'),
+        'después de desplegar se comprueba el 301, comparando la consulta sin importar el orden');
+    assert.ok(!infra.includes('location: $ESPERADO'), 'comparar el texto del Location falla con la consulta reordenada');
 });
 
 test('ningún código fuera de la plantilla y las pruebas usa la URL de CloudFront de prod', () => {

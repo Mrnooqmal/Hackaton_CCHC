@@ -21,6 +21,8 @@ import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 // Legacy UserManagement replaced by PersonasManagement
 import ChangePassword from './pages/ChangePassword';
+import SincronizadorFirmas from './components/firmas/SincronizadorFirmas';
+import FirmasEnRevision from './pages/FirmasEnRevision';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Settings from './pages/Settings';
@@ -54,6 +56,8 @@ import { createPortal } from 'react-dom';
 // El manual (react-markdown + minisearch + contenido) se carga como chunk aparte:
 // solo se descarga al visitar /manual, sin engordar el bundle inicial de la app.
 const ManualLayout = lazy(() => import('./manual/ManualLayout'));
+// Medición de PBKDF2 en el teléfono (solo fuera de producción; ver la página).
+const MedicionPin = lazy(() => import('./pages/MedicionPin'));
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import { ToastProvider } from './context/ToastContext';
@@ -93,10 +97,9 @@ function SessionExpiredModal() {
       <div style={{
         background: 'var(--surface-card)', border: '1px solid var(--surface-border)',
         borderRadius: 'var(--radius-xl)', maxWidth: 400, width: '100%',
-        padding: '2.5rem 1.5rem 1.5rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+        padding: '2rem 1.5rem 1.5rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
         textAlign: 'center'
       }}>
-        <div style={{ fontSize: 48, marginBottom: '1rem' }}>⏰</div>
         <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
           Tu sesión ha expirado
         </h2>
@@ -117,7 +120,7 @@ function SessionExpiredModal() {
 const RUTAS_SIN_AMBITO = new Set([
   '/login', '/recuperar-clave', '/restablecer-clave', '/register-admin',
   '/onboarding', '/unauthorized', '/equipo', '/about',
-  '/change-password', '/enroll-me', '/seleccionar-obra',
+  '/change-password', '/enroll-me', '/seleccionar-obra', '/medicion-pin',
 ]);
 
 function AppContent() {
@@ -157,6 +160,7 @@ function AppContent() {
       <Route path="/unauthorized" element={<Unauthorized />} />
       <Route path="/equipo" element={<Equipo />} />
       <Route path="/about" element={<About />} />
+      <Route path="/medicion-pin" element={<Suspense fallback={null}><MedicionPin /></Suspense>} />
       {/* Manual de uso: sección nativa React (público + dentro del shell) */}
       <Route path="/manual/*" element={
         <Suspense fallback={<div className="route-outlet" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Cargando manual…</div>}>
@@ -218,6 +222,7 @@ function AppContent() {
       <Route path="/activities/planificar" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_PLANIFICAR}><ActivityPlanificar /></ProtectedRoute>} />
       <Route path="/signature-requests" element={<ProtectedRoute><SignatureRequests /></ProtectedRoute>} />
       <Route path="/my-signatures" element={<ProtectedRoute><MySignatures /></ProtectedRoute>} />
+      <Route path="/firmas/revision" element={<ProtectedRoute requiredPermission={PERMISSIONS.FIRMAS_CREAR}><FirmasEnRevision /></ProtectedRoute>} />
       <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/mi-empresa" element={<ProtectedRoute requiredPermission={PERMISSIONS.EMPRESA_VER}><MiEmpresa /></ProtectedRoute>} />
@@ -292,6 +297,10 @@ function AppContent() {
       {user && <Sidebar isOpen={isMobileMenuOpen} onClose={closeMobileMenu} />}
       <main className={user ? 'main-content' : 'auth-content'}>
         {user && <Header />}
+        {/* Firma sin conexión: envía lo pendiente desde cualquier pantalla y
+            ofrece habilitar el turno con señal. */}
+        {user && <SincronizadorFirmas />}
+        
         <div className="route-outlet">
           {routes}
         </div>

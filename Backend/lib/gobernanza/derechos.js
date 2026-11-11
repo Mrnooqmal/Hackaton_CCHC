@@ -85,6 +85,36 @@ const EXIGEN_EJECUCION = new Set([DERECHOS.RECTIFICACION, DERECHOS.SUPRESION]);
  */
 const CAMPOS_RECTIFICABLES = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'rut', 'fechaNacimiento'];
 const NOMBRE_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]{1,60}$/;
+
+/**
+ * Tratamientos a los que el titular se puede oponer. Son los que no descansan
+ * en una obligación legal, en el contrato ni en el consentimiento (lo que
+ * depende del consentimiento se retira revocándolo). Una oposición acogida deja
+ * una marca persistente en la ficha (`oposiciones`), que el sistema consulta
+ * antes de ejecutar ese tratamiento; se levanta solo si el titular la retira.
+ *
+ *   directorio_companeros  aparecer, ante compañeros sin permiso de ver
+ *                          personas, en el directorio y entre los destinatarios
+ *                          de la bandeja. Base: interés legítimo de coordinar la
+ *                          obra. Quien tiene `personas.ver` lo sigue viendo:
+ *                          gestionar al personal sí es contrato y obligación legal.
+ */
+const TRATAMIENTOS_OPONIBLES = {
+    directorio_companeros: {
+        nombre: 'Directorio de compañeros',
+        que: 'Mostrar tu nombre y cargo a compañeros sin permiso de ver personas, en el directorio y entre los destinatarios de la bandeja.',
+        base: 'Interés legítimo de coordinar el trabajo en la obra.',
+        efecto: 'Dejas de aparecer en esas listas para tus compañeros. Quienes tienen permiso para ver el personal (por defecto, '
+            + 'jefaturas, prevención y administración) te siguen viendo, y sigues recibiendo y enviando mensajes.',
+    },
+};
+
+/** ¿La persona tiene una oposición acogida a este tratamiento? Acepta Set (DynamoDB) o lista (modelo). */
+function seOpone(persona, tratamiento) {
+    const o = persona?.oposiciones;
+    if (!o) return false;
+    return typeof o.has === 'function' ? o.has(tratamiento) : Array.isArray(o) && o.includes(tratamiento);
+}
 const RESULTADOS = { ACOGIDA: 'acogida', ACOGIDA_PARCIAL: 'acogida_parcial', RECHAZADA: 'rechazada' };
 
 /** Qué queda en el historial. Solo crece: cada evento es un ítem nuevo, nunca se edita. */
@@ -135,6 +165,11 @@ function nuevaSolicitud(d, actor, { ahora = new Date(), config = CONFIG, solicit
     if (!d.recibidaEl || Number.isNaN(recibida.getTime())) throw error('Indica cuándo llegó la solicitud', 'RECEPCION_REQUERIDA');
     if (recibida.getTime() > ahora.getTime() + 60000) throw error('La fecha de recepción no puede ser futura', 'RECEPCION_FUTURA');
     const detalle = String(d.detalle || '').trim().slice(0, 2000);
+    // Oponerse es oponerse a ALGO: sin el tratamiento, una oposición acogida
+    // no tendría qué dejar de hacerse.
+    if (d.derecho === DERECHOS.OPOSICION && !TRATAMIENTOS_OPONIBLES[d.tratamiento]) {
+        throw error('Indica a qué tratamiento te opones', 'TRATAMIENTO_INVALIDO');
+    }
 
     const venceEl = sumarDias(recibida, config.plazoRespuestaDias);
     const exigeBloqueo = EXIGEN_BLOQUEO.has(d.derecho);
@@ -142,6 +177,7 @@ function nuevaSolicitud(d, actor, { ahora = new Date(), config = CONFIG, solicit
         solicitudId,
         personaId: d.personaId,
         derecho: d.derecho,
+        ...(d.derecho === DERECHOS.OPOSICION ? { tratamiento: d.tratamiento } : {}),
         canal,
         detalle,
         recibidaEl: recibida.toISOString(),
@@ -225,6 +261,21 @@ function validarCambios(cambios, actual, { ahora = new Date() } = {}) {
     }
     if (!Object.keys(resultado).length) throw error('Indica qué datos quieres corregir', 'SIN_CAMBIOS');
     return resultado;
+}
+
+/**
+ * Registro de una rectificación aplicada: por campo, el valor que tenía y el
+ * que quedó. Se calcula contra la ficha ACTUAL al aplicar (no contra la del
+ * momento de pedir). Quién y cuándo van en la ejecución de la solicitud. Lo
+ * guarda el handler cifrado: el valor anterior ya no se trata, solo se custodia
+ * como prueba de la corrección.
+ */
+function registroDeCambio(cambios, actual) {
+    return Object.keys(cambios).sort().map((campo) => ({
+        campo,
+        anterior: campo === 'rut' ? (validateRut(actual?.rut).formatted || String(actual?.rut ?? '')) : String(actual?.[campo] ?? ''),
+        nuevo: cambios[campo],
+    }));
 }
 
 /** Plazo vigente de respuesta: el original, o el prorrogado. */
@@ -331,5 +382,6 @@ function evento(tenantId, solicitudId, tipo, datos, actor, { ahora = new Date(),
 
 module.exports = {
     DERECHOS, EXIGEN_BLOQUEO, EXIGEN_EJECUCION, ESTADOS, ETAPAS, RESULTADOS, EVENTOS, CONFIG, METODOS_VERIFICACION, CAMPOS_RECTIFICABLES,
+    TRATAMIENTOS_OPONIBLES, seOpone, registroDeCambio,
     configDesdeEntorno, nuevaSolicitud, prorrogar, responder, verificar, etapaDe, validarCambios, alertasDe, evento, plazoVigente, sumarDias,
 };

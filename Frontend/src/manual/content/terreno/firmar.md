@@ -75,14 +75,17 @@ tu asistencia a una actividad y la firma asistida. No tienes que preparar ni act
 - La firma queda guardada en el equipo y **se envía sola cuando vuelve la señal**. Mientras
   tanto, arriba de la pantalla ves cuántas quedan, por ejemplo *2 firmas por enviar*. Con
   señal, **Enviar ahora** las manda en el momento.
-- Si **ya escribiste tu PIN con señal en ese equipo**, un error de tipeo se detecta al momento
-  y lo corriges ahí mismo.
+- Si escribiste tu PIN con señal en ese equipo **durante el turno**, para esa misma obra, el
+  equipo queda listo y un error de tipeo se detecta al momento: lo corriges ahí mismo. Eso dura
+  un turno (hasta 12 horas).
 - Si no, tu PIN se revisa **cuando vuelve la señal**. Si estaba mal, la firma no se valida y
-  aparece un aviso con tu nombre: *no se validó, tiene que firmar de nuevo*. Vuelve a firmar
-  con el PIN correcto.
+  aparece un aviso con tu nombre: *La firma de … no se validó: tiene que firmar de nuevo*. Vuelve
+  a firmar con el PIN correcto.
 
-Los intentos con un PIN equivocado cuentan igual que con señal: después de varios, la firma se
-bloquea por un tiempo (ver las preguntas frecuentes).
+Si firmaste varias veces sin señal con el mismo PIN mal escrito, cuenta como **un solo intento
+equivocado**. Cada PIN distinto sí cuenta, igual que con señal: después de varios, la firma se
+bloquea por un tiempo (ver las preguntas frecuentes). Si al volver la señal tu firma está
+bloqueada, las firmas no se pierden: esperan en el equipo y se envían cuando se desbloquea.
 
 ## Validez legal de la firma con PIN
 

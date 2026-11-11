@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
+import { plural } from '../utils/plural';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     FiBriefcase, FiShield, FiTag, FiPlus, FiTrash2, FiSave, FiLock,
@@ -513,7 +515,7 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                 toast.success(!personaId
                     ? 'Representante legal quitado.'
                     : asignados > 0
-                        ? `Representante legal designado. Se le pidió firmar ${asignados} documento(s); los verá en "Mis firmas".`
+                        ? `Representante legal designado. Se le pidió firmar ${plural(asignados, 'documento', 'documentos')}; los verá en "Mis firmas".`
                         : 'Representante legal designado.');
             } else {
                 setRepLegalId(anterior);
@@ -891,10 +893,10 @@ function RolesTab({ tenantId, tenant, personas, setPersonas, onSaved, toast }: {
             const nextRoles = roles.filter((r) => r._id !== role._id);
             if (await persist(nextRoles)) {
                 setRoles(nextRoles);
-                toast.success(`Rol "${role.nombre}" eliminado. ${affected.length} persona(s) reasignada(s) a "${target.nombre}".`);
+                toast.success(`Rol "${role.nombre}" eliminado. ${plural(affected.length, 'persona reasignada', 'personas reasignadas')} a "${target.nombre}".`);
             }
             setReassign(null);
-        } catch (e: any) { setErr(e?.message || 'Error al reasignar las personas.'); }
+        } catch (e: any) { setErr(mensajeDeError(e, 'Error al reasignar las personas.')); }
         finally { setSaving(false); }
     };
 
@@ -1593,7 +1595,7 @@ function ReassignModal({ open, title, noun, affected, options, busy, onCancel, o
 
     return (
         <Modal isOpen={open} onClose={onCancel} title={title} size="lg"
-            subtitle={`${affected.length} persona(s) tienen este ${noun}. Reasígnalas para poder eliminarlo.`}
+            subtitle={`${affected.length === 1 ? '1 persona tiene' : `${affected.length} personas tienen`} este ${noun}. ${affected.length === 1 ? 'Reasígnala' : 'Reasígnalas'} para poder eliminarlo.`}
             footer={<>
                 <button className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
                 <button className="btn btn-danger" disabled={busy || sinDestino || !target} onClick={() => onConfirm(target)}>

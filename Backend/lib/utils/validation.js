@@ -83,6 +83,19 @@ const generateSignatureToken = () => {
 };
 
 /**
+ * Largo del PIN de firma: 4 dígitos.
+ *
+ * El 8 de noviembre de 2026 pasó a 6 y el 9 volvió a 4, por decisión de Adrean:
+ * con el sobre (D-37) y el corte del servidor al quinto vale inválido (D-35), el
+ * riesgo que queda es asumible y nadie tiene que aprenderse un PIN nuevo. El
+ * riesgo asumido está registrado en D-35: quien copie el almacenamiento de un
+ * equipo con vales deja ~39 candidatos y tiene un 13% de confirmar el PIN antes
+ * de que el servidor anule los vales de esa persona.
+ */
+const LARGO_PIN = 4;
+const FORMATO_PIN = /^\d{4}$/;
+
+/**
  * Hashea un PIN de 4 dígitos.
  *
  * La función de costo y su formato viven en `lib/credenciales.js`; acá queda
@@ -93,8 +106,8 @@ const generateSignatureToken = () => {
  * @returns {Promise<string>} Hash del PIN, con su algoritmo y parámetros adentro
  */
 const hashPin = async (pin, personaId) => {
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-        throw new Error('PIN debe ser de 4 dígitos numéricos');
+    if (typeof pin !== 'string' || !FORMATO_PIN.test(pin)) {
+        throw new Error(`PIN debe ser de ${LARGO_PIN} dígitos numéricos`);
     }
 
     return credenciales.hashear(pin, personaId);
@@ -120,10 +133,10 @@ const validatePin = (pin) => {
     if (!pin) {
         return { valid: false, error: 'PIN es requerido' };
     }
-    if (typeof pin !== 'string' || pin.length !== 4) {
-        return { valid: false, error: 'PIN debe tener 4 dígitos' };
+    if (typeof pin !== 'string' || pin.length !== LARGO_PIN) {
+        return { valid: false, error: `PIN debe tener ${LARGO_PIN} dígitos` };
     }
-    if (!/^\d{4}$/.test(pin)) {
+    if (!FORMATO_PIN.test(pin)) {
         return { valid: false, error: 'PIN debe contener solo números' };
     }
     return { valid: true };
@@ -203,6 +216,8 @@ const normalizeRol = (rol) => {
 };
 
 module.exports = {
+    LARGO_PIN,
+    FORMATO_PIN,
     validateRut,
     enmascararRut,
     validateRequired,

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { LARGO_PIN } from '../utils/pin';
 import { Modal } from './ui';
 import { documentsApi, uploadsApi } from '../api/client';
 import PinInput from './PinInput';
+import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { guardarCopia, leerCopia } from '../utils/copiaLocal';
 import { FiArrowLeft, FiCheck, FiFileText, FiArrowRight, FiExternalLink } from 'react-icons/fi';
 
 interface FirmaAsistidaModalProps {
@@ -23,6 +26,7 @@ const workerInitials = (w: any) =>
 export default function FirmaAsistidaModal({
     isOpen, onClose, obraId, workers, asistidoPor, initialWorkerId, initialTipo, onSigned,
 }: FirmaAsistidaModalProps) {
+    const { signDocument } = useOfflineSignature();
     const [step, setStep] = useState<Step>('document');
     const [selectedWorker, setSelectedWorker] = useState<any | null>(null);
     const [docs, setDocs] = useState<any[]>([]);
@@ -65,7 +69,18 @@ export default function FirmaAsistidaModal({
         setLoadingDocs(true);
         try {
             const res = await documentsApi.list({ obraId } as any);
-            const all = res.success && res.data ? res.data.documents || [] : [];
+            let all: any[] = res.success && res.data ? res.data.documents || [] : [];
+            if (res.success) {
+                // Copia mínima para la firma asistida sin red: qué documento, de qué
+                // obra y a quién está asignado. Nada más.
+                guardarCopia(`firma-asistida:${obraId}`, all.map((d: any) => ({
+                    documentId: d.documentId, titulo: d.titulo, tipo: d.tipo, tipoDescripcion: d.tipoDescripcion,
+                    obraId: d.obraId || null,
+                    asignaciones: (d.asignaciones || []).map((a: any) => ({ personaId: a.personaId, estado: a.estado })),
+                })));
+            } else if (!navigator.onLine) {
+                all = leerCopia<any[]>(`firma-asistida:${obraId}`)?.datos || [];
+            }
             const pendientes = all.filter((d: any) =>
                 (d.asignaciones || []).some((a: any) => a.personaId === w.personaId && a.estado === 'pendiente')
             );
@@ -78,7 +93,14 @@ export default function FirmaAsistidaModal({
                 }
             }
         } catch {
-            setError('No se pudieron cargar los documentos.');
+            // Sin red la petición lanza: la copia guardada, si la hay.
+            const copia = leerCopia<any[]>(`firma-asistida:${obraId}`);
+            if (copia) {
+                setDocs(copia.datos.filter((d: any) =>
+                    (d.asignaciones || []).some((a: any) => a.personaId === w.personaId && a.estado === 'pendiente')));
+            } else {
+                setError('No se pudieron cargar los documentos.');
+            }
         } finally {
             setLoadingDocs(false);
         }
@@ -112,8 +134,8 @@ export default function FirmaAsistidaModal({
 
     const handleSign = async () => {
         if (!selectedWorker || !selectedDocId) return;
-        if (!pin || pin.length < 4) {
-            setError('El trabajador debe ingresar su PIN de 4 dígitos.');
+        if (!pin || pin.length < LARGO_PIN) {
+            setError(`El trabajador debe ingresar su PIN de ${LARGO_PIN} dígitos.`);
             return;
         }
         if (!declared) {
@@ -122,6 +144,19 @@ export default function FirmaAsistidaModal({
         }
         setSubmitting(true);
         setError(null);
+        // Sin red: el PIN del trabajador abre un vale suyo o va en un sobre para el
+        // servidor (él no ve la diferencia); queda en el equipo y se envía solo.
+        // Con red, la firma asistida con su PIN, que registra quién asistió.
+        if (!navigator.onLine) {
+            const nombre = [selectedWorker.nombre, selectedWorker.apellido].filter(Boolean).join(' ') || 'Trabajador';
+            const r = await signDocument(selectedDocId, selectedDoc?.titulo || 'Documento', selectedWorker.personaId, nombre, pin, selectedDoc?.obraId || null);
+            setSubmitting(false);
+            if (!r.success) { setError(r.error || 'No se pudo guardar la firma en este equipo.'); return; }
+            setOkMsg('Firma guardada en este equipo: se envía sola cuando vuelva la señal.');
+            setDocs((prev) => prev.filter((d: any) => d.documentId !== selectedDocId));
+            setStep('document');
+            return;
+        }
         try {
             const res = await documentsApi.signAssisted(selectedDocId, {
                 firmanteId: selectedWorker.personaId,
@@ -196,7 +231,7 @@ export default function FirmaAsistidaModal({
                                 className="btn btn-primary"
                                 style={{ flex: 2 }}
                                 onClick={handleSign}
-                                disabled={submitting || pin.length < 4 || !declared}
+                                disabled={submitting || pin.length < LARGO_PIN || !declared}
                             >
                                 {submitting
                                     ? <><div className="fa-spinner" /> Firmando…</>
@@ -308,7 +343,9 @@ export default function FirmaAsistidaModal({
                             onComplete={(completedPin) => { setPin(completedPin); setError(null); }}
                             mode="verify"
                             title={`${selectedWorker.nombre} ingresa su PIN`}
-                            subtitle="El trabajador introduce su clave personal de firma"
+                            subtitle={navigator.onLine
+                                ? 'El trabajador introduce su clave personal de firma'
+                                : 'El trabajador introduce su clave personal de firma. Sin señal, la firma queda en el equipo y se envía sola al volver.'}
                             error={error ?? undefined}
                             disabled={submitting}
                         />

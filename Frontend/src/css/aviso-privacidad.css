@@ -1,0 +1,18 @@
+/* Aviso de privacidad (Mis datos, enrolamiento propio y asistido). */
+.aviso-privacidad { display: flex; flex-direction: column; gap: var(--space-4, 16px); line-height: 1.55; font-size: 0.92rem; color: var(--text-primary); }
+.aviso-privacidad h3 { margin: 0 0 var(--space-2, 8px); font-size: 1rem; }
+.aviso-privacidad p { margin: 0 0 var(--space-2, 8px); }
+.aviso-privacidad ul { margin: 0 0 var(--space-2, 8px); padding-left: 18px; }
+.aviso-privacidad li + li { margin-top: 4px; }
+.aviso-privacidad__destacado { padding: 8px 12px; border-left: 3px solid var(--accent, #2563eb); background: var(--surface-hover, rgba(0, 0, 0, 0.03)); }
+.aviso-privacidad__nota { font-size: 0.8rem; color: var(--text-secondary); }
+.aviso-privacidad__tabla { overflow-x: auto; max-width: 100%; }
+.aviso-privacidad__tabla table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 520px; }
+.aviso-privacidad__tabla th,
+.aviso-privacidad__tabla td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--surface-border); }
+.aviso-privacidad__tabla thead th { color: var(--text-secondary); font-weight: 600; }
+.aviso-privacidad__cargando { display: flex; justify-content: center; padding: 24px; }
+.aviso-privacidad--compacto { font-size: 0.86rem; }
+.aviso-privacidad-desplegable { border: 1px solid var(--surface-border, #e2e8f0); border-radius: 10px; padding: 10px 12px; margin: 16px 0; text-align: left; }
+.aviso-privacidad-desplegable > summary { cursor: pointer; font-weight: 600; }
+.aviso-privacidad-desplegable[open] > summary { margin-bottom: 12px; }

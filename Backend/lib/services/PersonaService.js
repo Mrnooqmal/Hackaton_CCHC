@@ -12,7 +12,7 @@ const { docClient } = require('../clients/dynamodb');
 const { verificarConLimiteOLanzar } = require('../limitePin');
 const { construirMensaje, INBOX_TABLE } = require('../bandeja');
 const { registrarFallo } = require('../degradacion');
-const { ValeFirmaService } = require('./ValeFirmaService');
+const { ValeFirmaService, MOTIVO_DESVINCULACION } = require('./ValeFirmaService');
 
 /** Largo mínimo del motivo de un restablecimiento: una palabra suelta ("olvido")
  *  no sirve para que la persona afectada, o quien revise después, entienda qué
@@ -53,7 +53,7 @@ const exigirEdadMinima = (fechaNacimiento) => {
 const { llaveDeTenant, PROPOSITOS } = require('../llaveTenant');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
-    validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol
+    validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol,
 } = require('../utils/validation');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
@@ -884,7 +884,8 @@ class PersonaService {
                             Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
                             UpdateExpression: 'SET pinRestablecido = :rest, pinIntentosFallidos = :cero, updatedAt = :en,'
                                 + ' pinHistorial = list_append(if_not_exists(pinHistorial, :vacia), :evento)'
-                                + ' REMOVE pinHash, pinCreatedAt, pinBloqueadaHasta',
+                                // `pinLargo` es un resto del PIN de 6 (D-35, revertido): se limpia al pasar.
+                                + ' REMOVE pinHash, pinCreatedAt, pinBloqueadaHasta, pinLargo',
                             ConditionExpression: 'pinHash = :anterior',
                             ExpressionAttributeValues: {
                                 ':rest': restablecimiento,
@@ -1063,7 +1064,24 @@ class PersonaService {
                 ':updatedAt': now
             }
         }));
-        return { message: 'Persona desvinculada de la empresa', personaId };
+
+        // Sus vales sin usar se anulan: quien tenga el equipo no puede seguir
+        // firmando a su nombre sin red. Una firma que ya se tomó con uno de esos
+        // vales, y se sincroniza después, entra en revisión (ValeFirmaService).
+        // La desvinculación ya ocurrió: si anular falla, no se deshace, pero
+        // queda medido. Y aunque fallara, la firma de una persona desvinculada
+        // entra igual en revisión (FirmaService).
+        let vales;
+        try {
+            vales = await ValeFirmaService.revocarDePersona(personaId, {
+                tenantId, motivo: MOTIVO_DESVINCULACION, por: desvinculadoPor,
+            });
+            if (vales.fallidos > 0) registrarFallo('desvinculacion.revocar_vales', new Error(`${vales.fallidos} vales sin anular`), { personaId });
+        } catch (err) {
+            registrarFallo('desvinculacion.revocar_vales', err, { personaId });
+            vales = { revocados: 0, noAplicaban: 0, fallidos: null };
+        }
+        return { message: 'Persona desvinculada de la empresa', personaId, vales };
     }
 }
 

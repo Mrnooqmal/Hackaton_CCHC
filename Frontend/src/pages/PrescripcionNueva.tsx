@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { FiAlertCircle, FiClock } from 'react-icons/fi';
 import { FieldSection, FormPage, PageHeader, SegmentedControl } from '../components/ui';
@@ -131,7 +132,7 @@ export default function PrescripcionNueva() {
                     setSubida('subido');
                 } catch (err) {
                     setSubida('error');
-                    setErrorSubida(err instanceof Error ? err.message : 'error de conexión');
+                    setErrorSubida(mensajeDeError(err, 'error de conexión'));
                     enfocarResumen();
                     return;
                 }

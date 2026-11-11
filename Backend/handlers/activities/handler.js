@@ -1,3 +1,4 @@
+const { plural } = require('../../lib/utils/plural');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
@@ -5,6 +6,7 @@ const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile, horaChileHHMM } = require('../../lib/utils/fechaChile');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PERMISSIONS } = require('../../lib/permissions');
@@ -719,7 +721,7 @@ module.exports.list = async (event) => {
         );
 
         return success({
-            activities: await descifrarActividadesDeTenant(activities, tenantId),
+            activities: (await descifrarActividadesDeTenant(activities, tenantId)).map((a) => vistaActividad(a, ses.sesion)),
             types: ACTIVITY_TYPES,
             capacitacionSubtipos: CAPACITACION_SUBTIPOS,
         });
@@ -727,6 +729,27 @@ module.exports.list = async (event) => {
         console.error('Error listing activities:', err);
         return error(err.message, 500);
     }
+};
+
+/**
+ * Lo que ve de los OTROS asistentes quien no organiza actividades ni gestiona
+ * personal (fila 7.5, 8 de noviembre de 2026). `actividades.ver` lo tiene
+ * también el trabajador, y recibía de cada actividad de la empresa el RUT de
+ * todos los asistentes y del relator. Para firmar la suya y ver cuántas firmas
+ * hay le basta saber quién está: su propia entrada completa, de las demás el
+ * identificador.
+ */
+const veAsistentes = (sesion) => sesionPuede(sesion, PERMISSIONS.ACTIVIDADES_CREAR) || sesionPuede(sesion, PERMISSIONS.PERSONAS_DETALLE);
+const vistaActividad = (act, sesion) => {
+    if (!act || veAsistentes(sesion)) return act;
+    const propia = (x) => x && x.personaId === sesion.personaId;
+    return {
+        ...act,
+        ...(Array.isArray(act.asistentes) ? { asistentes: act.asistentes.map((a) => (propia(a) ? a : { personaId: a?.personaId })) } : {}),
+        ...(act.firmaRelator && !propia(act.firmaRelator) ? {
+            firmaRelator: { personaId: act.firmaRelator.personaId, nombre: act.firmaRelator.nombre, timestamp: act.firmaRelator.timestamp },
+        } : {}),
+    };
 };
 
 /**
@@ -748,7 +771,7 @@ module.exports.get = async (event) => {
             return error('Actividad no encontrada', 404);
         }
 
-        return success(await descifrarActividadDeTenant(actividad, ses.sesion.tenantId));
+        return success(vistaActividad(await descifrarActividadDeTenant(actividad, ses.sesion.tenantId), ses.sesion));
     } catch (err) {
         console.error('Error getting activity:', err);
         return error(err.message, 500);
@@ -783,7 +806,8 @@ module.exports.registerAttendance = async (event) => {
         // Sin red la asistencia se firma con un vale de un solo uso (ver
         // ValeFirmaService); con red, con el PIN del trabajador.
         const vale = body.vale || null;
-        if (!pin && !vale) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
+        const sobre = body.sobre || null;
+        if (!pin && !vale && !sobre) return error('Se requiere el PIN del trabajador para registrar la asistencia', 400);
         if (personas.length > 1) {
             return error('La firma con PIN es individual: registra un trabajador a la vez con su propio PIN', 400);
         }
@@ -791,7 +815,11 @@ module.exports.registerAttendance = async (event) => {
         // Cada quien firma su asistencia. Firmar por otro es la firma asistida (el
         // trabajador teclea su PIN en el dispositivo de quien asiste) y exige ese
         // permiso; el PIN, que acá ya era obligatorio, sigue siendo la prueba.
-        if (personas[0] !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
+        // Con un vale y sin PIN, es una firma tomada sin red que se sincroniza: la
+        // puede subir cualquier sesión de la empresa (el vale prueba el
+        // consentimiento; FirmaService lo rechaza si es de otra persona o empresa).
+        const firmaConVale = !pin && Boolean(vale || sobre);
+        if (personas[0] !== sesion.personaId && !firmaConVale && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para registrar la asistencia de otra persona', 403);
         }
 
@@ -829,7 +857,7 @@ module.exports.registerAttendance = async (event) => {
             if (!persona) return error('Persona no encontrada', 404);
 
             // Crear firma en SignaturesTable (PIN del trabajador, o su vale).
-            const metodo = vale ? 'VALE' : 'PIN';
+            const metodo = ValeFirmaService.metodoDelCuerpo(body);
             let firma;
             try {
                 firma = await FirmaService.crear({
@@ -837,9 +865,7 @@ module.exports.registerAttendance = async (event) => {
                     tenantId: activity.tenantId,
                     obraId: activity.obraId || null,
                     metodo,
-                    credencial: vale
-                        ? { vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-                        : pin,
+                    credencial: metodo === 'PIN' ? pin : ValeFirmaService.credencialDelCuerpo(body),
                     tipoFirma: 'actividad',
                     referenciaId: id,
                     referenciaTipo: 'activity',
@@ -849,6 +875,11 @@ module.exports.registerAttendance = async (event) => {
             } catch (firmaErr) {
                 // El límite de intentos (H-2) responde 423, no el 500 genérico.
                 if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+                // Un vale rechazado (de otra obra, ya usado, anulado) o una persona
+                // desvinculada son errores de la firma, no del servidor: 400 con
+                // su motivo. Antes caían al 500 genérico.
+                if (['VALE_RECHAZADO', 'SOBRE_RECHAZADO', 'PERSONA_DESVINCULADA'].includes(firmaErr.codigo)) return error(firmaErr.message, 400);
+                if (firmaErr.codigo === 'SOBRE_NO_DISPONIBLE') return error('No se pudo registrar la firma en este momento.', 503);
                 throw firmaErr;
             }
 
@@ -916,7 +947,7 @@ module.exports.registerAttendance = async (event) => {
         // lista de asistentes que dibuja el listado.
         const visible = descifrarActividad({ asistentes: nuevosAsistentes, firmaRelator }, llaveArreglos);
         return success({
-            message: `${nuevosAsistentes.length} asistente(s) registrado(s)`,
+            message: `${plural(nuevosAsistentes.length, 'asistente registrado', 'asistentes registrados')}`,
             totalAsistentes: asistentes.length,
             nuevosAsistentes: visible.asistentes,
             firmaRelator: incluirFirmaRelator ? visible.firmaRelator : undefined

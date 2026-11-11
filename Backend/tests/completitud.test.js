@@ -316,6 +316,6 @@ test('el export declara el denominador y lo excluido', () => {
     const exp = construirExport(comp, {});
     const html = renderHtml(exp);
     assert.ok(exp.resumen.excluidos > 0);
-    assert.match(html, /requisito\(s\) exigible\(s\)/);
+    assert.match(html, /requisitos? exigibles?/);
     assert.match(html, /no penalizan/);
 });

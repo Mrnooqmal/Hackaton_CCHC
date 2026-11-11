@@ -243,6 +243,8 @@ const fichaBase = () => ({
     personaId: PERSONA_INT, tenantId: TENANT_INT,
     rut: '12.345.678-5', nombre: 'Juan', apellido: 'Pérez', cargo: 'Maestro',
     rol: 'trabajador', estado: 'activo', habilitado: true,
+    // Asignada a una obra: los vales se piden para la obra del turno.
+    obraIds: ['o-1'],
     pinHash: 'hash-invalido-a-propósito', // cualquier PIN da "incorrecto"
     pinIntentosFallidos: 0, pinBloqueadaHasta: null,
 });
@@ -297,7 +299,7 @@ test('POST /firmas/vales: el 5º PIN incorrecto responde 423, no 401', async () 
     for (let i = 0; i < 5; i++) {
         ultimo = await vales.emitir({
             ...sesionInt(),
-            body: JSON.stringify({ pin: '0000', cantidad: 1 }),
+            body: JSON.stringify({ pin: '0000', cantidad: 1, obraId: 'o-1' }),
         });
     }
     restaurar();

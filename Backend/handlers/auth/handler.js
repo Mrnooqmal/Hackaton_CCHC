@@ -37,6 +37,8 @@ const tenantService = new TenantService();
  * Construye el payload de usuario con permisos resueltos dinámicamente
  * desde la definición de rol del tenant (admin => todos).
  */
+const sobreFirma = require('../../lib/sobreFirma');
+
 const buildUserPayload = async (persona) => {
     let permisos = [];
     let branding = null;
@@ -77,7 +79,9 @@ const buildUserPayload = async (persona) => {
     }
     // Es la ficha de quien inicia sesión: sobre sus propios datos de salud no hay
     // nada que ocultarle (ver Persona.toSafeFormat).
-    return { ...persona.toSafeFormat({ incluirSalud: true }), permisos, branding, empresaNombre };
+    // La llave pública de los sobres de firma sin conexión (D-37): no es secreta,
+    // y el equipo la guarda para poder firmar cuando no haya señal.
+    return { ...persona.toSafeFormat({ incluirSalud: true }), permisos, branding, empresaNombre, llaveSobreFirma: await sobreFirma.llavePublica() };
 };
 
 const generateSessionToken = () => {

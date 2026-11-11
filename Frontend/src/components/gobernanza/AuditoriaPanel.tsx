@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { plural } from '../../utils/plural';
 import { FiAlertTriangle, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
 import { AlertBanner, Badge, Select } from '../ui';
 import type { BadgeVariant } from '../ui/Badge';
@@ -131,9 +132,9 @@ export default function AuditoriaPanel() {
                 </div>
                 <div className="me-section-body au-resumen">
                     {alterados > 0
-                        ? <AlertBanner variant="error" message={`${alterados} registro(s) no calzan con su sello: fueron alterados fuera del sistema. Trátalo como un incidente.`} />
+                        ? <AlertBanner variant="error" message={`${alterados === 1 ? '1 registro no calza con su sello: fue alterado' : `${alterados} registros no calzan con su sello: fueron alterados`} fuera del sistema. Trátalo como un incidente.`} />
                         : <span className="au-ok"><FiCheckCircle aria-hidden /> Todos los registros sellados están íntegros.</span>}
-                    {alertas > 0 && <span className="au-alerta"><FiAlertTriangle aria-hidden /> {alertas} alerta(s) en esta vista.</span>}
+                    {alertas > 0 && <span className="au-alerta"><FiAlertTriangle aria-hidden /> {plural(alertas, 'alerta', 'alertas')} en esta vista.</span>}
                 </div>
             </section>
             <section className="me-section">

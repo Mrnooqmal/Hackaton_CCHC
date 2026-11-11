@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { renovarValesEnSilencio } from '../utils/valesTurno';
 
 export type SurveyAudienceType = 'todos' | 'cargo' | 'personalizado';
 export type SurveyQuestionType = 'multiple' | 'escala' | 'abierta';
@@ -73,6 +74,8 @@ export interface Survey {
     updatedAt?: string;
     /** La Ficha Básica de Salud: sus respuestas son datos de salud. */
     esFichaSalud?: boolean;
+    /** Obra de la encuesta; null si es de la empresa. Ata el vale de firma sin conexión. */
+    obraId?: string | null;
 }
 
 /** Lo que el listado dice de cada encuesta, para quien la mira. */
@@ -120,12 +123,16 @@ export const surveysApi = {
             body: JSON.stringify(payload),
         }),
 
-    updateResponseStatus: (surveyId: string, workerId: string, data: UpdateSurveyResponsePayload) =>
-        apiRequest<{ message: string; recipient: SurveyRecipient; survey: Survey }>(
+    updateResponseStatus: async (surveyId: string, workerId: string, data: UpdateSurveyResponsePayload) => {
+        const r = await apiRequest<{ message: string; recipient: SurveyRecipient; survey: Survey }>(
             `/surveys/${surveyId}/responses/${workerId}`,
             {
                 method: 'POST',
                 body: JSON.stringify(data),
             }
-        ),
+        );
+        // Escribió su PIN con red: el equipo le renueva los vales, sin decir nada.
+        if (r.success) void renovarValesEnSilencio(workerId, (data as { pin?: string }).pin);
+        return r;
+    },
 };

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { FiAlertTriangle, FiArrowRight, FiCheck, FiUploadCloud } from 'react-icons/fi';
 import { Badge, SgsstSkeleton } from './ui';
 import { estructuraApi } from '../api/estructura.api';
@@ -65,7 +66,7 @@ export default function SgsstPanel({ tenantId, onIrA }: SgsstPanelProps) {
             });
             await cargar(true);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error al cargar el documento.');
+            setError(mensajeDeError(e, 'Error al cargar el documento.'));
         } finally {
             setSubiendo(null);
         }

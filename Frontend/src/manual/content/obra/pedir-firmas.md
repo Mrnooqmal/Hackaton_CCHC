@@ -36,20 +36,35 @@ La firma asistida también funciona **sin señal**. Cada persona escribe su prop
 siempre; la firma queda guardada en tu equipo y **se envía sola cuando vuelve la señal**. Arriba
 de la pantalla ves cuántas quedan por enviar, por ejemplo *5 firmas por enviar*.
 
-- Si la persona **ya escribió su PIN con señal en tu equipo**, un error de tipeo se detecta al
-  momento y lo corrige ahí mismo.
+- Si la persona escribió su PIN con señal en tu equipo **durante el turno**, para esa misma obra,
+  un error de tipeo se detecta al momento y lo corrige ahí mismo. Eso dura un turno (hasta 12
+  horas).
 - Si no, su PIN se revisa **cuando vuelve la señal**. Si estaba mal, aparece un aviso con su
-  nombre y lo que firmaba: *la firma no se validó, tiene que firmar de nuevo*. Pídele que vuelva
-  a firmar; con **Entendido** cierras el aviso.
+  nombre y lo que firmaba: *La firma de … no se validó: tiene que firmar de nuevo*. Pídele que
+  vuelva a firmar; con **Entendido** cierras el aviso.
 ::::
 
 :::: solo firmas.crear
 ## Firmas en revisión
 
-Una firma tomada sin señal que llega **mucho después** de firmarse, o después de que la persona
-dejó la empresa, no cuenta como cumplimiento de inmediato: queda en **Firmas en revisión** (en el
-menú lateral). Ahí ves quién firmó, qué y cuándo, y la **confirmas** o la **rechazas** con un
-motivo. Si no hay ninguna, verás **No hay firmas en revisión**.
+Una firma tomada sin señal queda registrada, pero **no cuenta como cumplimiento** hasta que
+alguien la confirme, en uno de estos casos:
+
+- **Llegó tarde.** El equipo estaba listo para detectar el error de tipeo de esa persona (había
+  escrito su PIN con señal ahí), pero la firma llegó después de que eso venciera, al terminar el
+  turno (12 horas). Si pasan **30 días más** sin enviarse, ya no entra: hay que firmar de nuevo.
+- **La hora no es creíble.** La hora que marca el equipo está en el futuro o es de hace más de
+  30 días.
+- **La persona ya no está en la empresa** cuando la firma llega, y el equipo marca que firmó
+  antes de su salida. Si marca que firmó después, la firma se rechaza.
+
+Esas firmas aparecen en **Firmas en revisión**, en el menú lateral. Cada una muestra quién firmó,
+qué, el motivo, la hora según el equipo y cuándo llegó al sistema:
+
+- **Confirmar**: la firma pasa a contar como cumplimiento.
+- **Rechazar**: pide un motivo, que queda en el acta. La firma no se borra: queda revocada.
+
+Si no hay ninguna, verás **No hay firmas en revisión**.
 ::::
 
 ## Firma del relator

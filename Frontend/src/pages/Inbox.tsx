@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { plural } from '../utils/plural';
 import { useNavigate } from 'react-router-dom';
 import {
     FiMail, FiSend, FiInbox, FiArchive, FiSearch,
@@ -571,7 +572,6 @@ export default function Inbox() {
         return filteredRecipients
             .filter(r =>
                 (r.nombreCompleto || '').toLowerCase().includes(q) ||
-                (r.rut || '').toLowerCase().includes(q) ||
                 (r.cargo || '').toLowerCase().includes(q)
             )
             .slice(0, 8);
@@ -1173,7 +1173,7 @@ export default function Inbox() {
                                 <label className="form-label">
                                     Destinatarios *
                                     {composeData.recipientIds.length > 0 && (
-                                        <span className="recipient-count-badge">{composeData.recipientIds.length} seleccionado(s)</span>
+                                        <span className="recipient-count-badge">{plural(composeData.recipientIds.length, 'seleccionado', 'seleccionados')}</span>
                                     )}
                                 </label>
 
@@ -1263,7 +1263,7 @@ export default function Inbox() {
 
                                         {/* Acciones de selección masiva */}
                                         <div className="recipient-bulk-actions">
-                                            <span className="text-xs text-muted">{filteredRecipients.length} persona(s)</span>
+                                            <span className="text-xs text-muted">{plural(filteredRecipients.length, 'persona', 'personas')}</span>
                                             <div className="flex gap-2">
                                                 <button type="button" className="btn btn-sm btn-secondary" onClick={selectAllFiltered} disabled={filteredRecipients.length === 0}>
                                                     <FiCheck /> Seleccionar todos
@@ -1290,7 +1290,7 @@ export default function Inbox() {
                                                     <div>
                                                         <div className="font-semibold">{r.nombreCompleto}</div>
                                                         <div className="text-xs text-muted">
-                                                            {rolLabel(r.rol)}{r.cargo ? ` • ${r.cargo}` : ''} • {r.rut}
+                                                            {rolLabel(r.rol)}{r.cargo ? ` • ${r.cargo}` : ''}
                                                         </div>
                                                     </div>
                                                 </label>

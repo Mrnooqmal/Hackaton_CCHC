@@ -86,6 +86,10 @@ const OPERACIONES = {
     'derechos.exportacion': CATEGORIAS.DERECHOS,
     'derechos.exportacion_rechazada': CATEGORIAS.DERECHOS,
     'derechos.rectificacion_aplicada': CATEGORIAS.DERECHOS,
+    // Abrir el valor anterior y el nuevo de una rectificación ya aplicada.
+    'derechos.rectificacion_consultada': CATEGORIAS.DERECHOS,
+    'derechos.oposicion_aplicada': CATEGORIAS.DERECHOS,
+    'derechos.oposicion_retirada': CATEGORIAS.DERECHOS,
     'derechos.supresion_ejecutada': CATEGORIAS.DERECHOS,
     'datos.modificacion': CATEGORIAS.DATOS,
     'admin.cambio_rol': CATEGORIAS.ADMINISTRACION,

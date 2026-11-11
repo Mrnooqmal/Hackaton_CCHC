@@ -16,11 +16,15 @@ const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
 const { verificarConLimite } = require('../../lib/limitePin');
 const { PERMISSIONS } = require('../../lib/permissions');
+const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
 
 /**
  * POST /firmas/vales
  *
- * Body: { personaId?, pin, cantidad?, deviceId? }
+ * Body: { personaId?, obraId, pin, cantidad?, deviceId? }
+ *
+ * `obraId` es la obra del turno: el vale queda atado a la persona y a esa obra,
+ * y la persona tiene que estar asignada a ella.
  *
  * `personaId` se omite cuando la persona pide vales para sí misma. En el
  * dispositivo de quien asiste (supervisor, prevencionista) se indica el
@@ -39,6 +43,9 @@ module.exports.emitir = async (event) => {
         if (!body.pin) {
             return error('Debes ingresar tu PIN para habilitar la firma sin conexión', 400);
         }
+        if (!body.obraId) {
+            return error('Indica la obra del turno para habilitar la firma sin conexión', 400);
+        }
 
         // Pedir vales para otra persona es el mismo acto que la firma asistida.
         if (personaId !== sesion.personaId && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
@@ -50,8 +57,17 @@ module.exports.emitir = async (event) => {
         if (!persona || persona.tenantId !== sesion.tenantId) {
             return error('Persona no encontrada', 404);
         }
+        // La obra, de la empresa; y la persona, asignada a ella. 404 en los dos
+        // casos: que exista en otra empresa, o que la persona esté en otra obra,
+        // no se informa.
+        if (!await obraDeLaEmpresa(body.obraId, sesion)) return error('Obra no encontrada', 404);
+        if (!(persona.obraIds || []).includes(body.obraId)) return error('Persona no encontrada en esta obra', 404);
         if (!persona.habilitado) {
             return error('La persona no ha completado su enrolamiento', 400);
+        }
+        // Una persona desvinculada no recibe vales: sería firma a su nombre.
+        if (['desvinculado', 'suspendido', 'inactivo'].includes(persona.estado)) {
+            return error('La persona está desvinculada de la empresa', 400);
         }
         if (!persona.tienePinConfigurado()) {
             return error('La persona no tiene PIN configurado', 400);
@@ -59,12 +75,15 @@ module.exports.emitir = async (event) => {
 
         const chequeo = await verificarConLimite(persona, body.pin, verifyPin);
         if (!chequeo.ok) {
-            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : 401);
+            // 400 y no 401: el cliente lee todo 401 como sesión vencida, y un PIN mal
+            // escrito cerraba la sesión de quien estaba firmando.
+            return error(chequeo.mensaje, chequeo.bloqueada ? 423 : 400);
         }
 
         const { vales, expiraEn, vigenciaHoras } = await ValeFirmaService.emitir({
             personaId: persona.personaId,
             tenantId: persona.tenantId,
+            obraId: body.obraId,
             cantidad: body.cantidad,
             deviceId: body.deviceId || null,
             emitidoPor: sesion.personaId,
@@ -75,6 +94,7 @@ module.exports.emitir = async (event) => {
             // solo guarda su hash.
             vales,
             personaId: persona.personaId,
+            obraId: body.obraId,
             expiraEn,
             vigenciaHoras,
             mensaje: `Firma sin conexión habilitada por ${vigenciaHoras} horas.`,

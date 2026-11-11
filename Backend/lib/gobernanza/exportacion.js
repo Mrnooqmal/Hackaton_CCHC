@@ -163,9 +163,11 @@ function construirExportacion({
             solicitudes: {
                 finalidad: 'Tus solicitudes de acceso, rectificación, supresión y oposición.',
                 datos: (solicitudes || []).map((s) => ({
-                    ...solo(s, ['solicitudId', 'derecho', 'canal', 'recibidaEl', 'venceEl', 'estado']),
+                    ...solo(s, ['solicitudId', 'derecho', 'tratamiento', 'canal', 'recibidaEl', 'venceEl', 'estado']),
                     respuesta: s.respuesta ? solo(s.respuesta, ['resultado', 'fundamento', 'respondidaEl']) : null,
                 })),
+                // Las oposiciones acogidas que siguen vigentes: tratamientos que no se hacen con tus datos.
+                oposicionesVigentes: [...(persona.oposiciones || [])].sort(),
             },
         },
     };

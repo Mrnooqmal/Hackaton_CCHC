@@ -173,7 +173,7 @@ test('la prórroga se usa una sola vez', async () => {
 // ─── Respuesta y desbloqueo ─────────────────────────────────────────────────
 
 test('responder una oposición la cierra y levanta el bloqueo', async () => {
-    const { solicitudId } = datos(await pedir('POST', '/gobernanza/solicitudes', { ...SOLICITUD(), derecho: 'oposicion' }));
+    const { solicitudId } = datos(await pedir('POST', '/gobernanza/solicitudes', { ...SOLICITUD(), derecho: 'oposicion', tratamiento: 'directorio_companeros' }));
     const res = await pedir('POST', `/gobernanza/solicitudes/${solicitudId}/respuesta`, { resultado: 'rechazada', fundamento: 'El tratamiento es exigido por el DS 44; se explicó al titular por escrito.' });
     assert.equal(res.statusCode, 200, res.body);
     assert.ok(!('solicitudesBloqueo' in fichaTitular()), 'desbloqueada');
@@ -187,7 +187,7 @@ test('una supresión acogida mantiene el bloqueo hasta que se ejecute', async ()
 });
 
 test('con dos solicitudes abiertas, responder una no desbloquea: sigue bloqueada por la otra', async () => {
-    const a = datos(await pedir('POST', '/gobernanza/solicitudes', { ...SOLICITUD(), derecho: 'oposicion' }));
+    const a = datos(await pedir('POST', '/gobernanza/solicitudes', { ...SOLICITUD(), derecho: 'oposicion', tratamiento: 'directorio_companeros' }));
     const b = datos(await pedir('POST', '/gobernanza/solicitudes', { ...SOLICITUD(), derecho: 'rectificacion' }));
     await pedir('POST', `/gobernanza/solicitudes/${a.solicitudId}/respuesta`, { resultado: 'rechazada', fundamento: 'El tratamiento es exigido por el DS 44; se explicó al titular.' });
     assert.deepEqual([...fichaTitular().solicitudesBloqueo], [b.solicitudId]);

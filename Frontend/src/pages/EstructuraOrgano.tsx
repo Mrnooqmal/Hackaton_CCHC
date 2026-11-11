@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { useParams } from 'react-router-dom';
 import { FiAlertTriangle, FiCheck, FiInfo, FiUploadCloud } from 'react-icons/fi';
 import { AlertBanner, Badge, Modal, PageHeader, Select } from '../components/ui';
@@ -117,7 +118,7 @@ export default function EstructuraOrgano() {
             toast.success('Documento cargado.');
             await cargar();
         } catch (e: any) {
-            toast.error(e?.message || 'Error al cargar el documento.');
+            toast.error(mensajeDeError(e, 'Error al cargar el documento.'));
         } finally {
             setSubiendo(null);
         }
@@ -153,7 +154,7 @@ export default function EstructuraOrgano() {
             setArchivoActa(null);
             await cargar();
         } catch (e: any) {
-            toast.error(e?.message || 'Error al registrar la reunión.');
+            toast.error(mensajeDeError(e, 'Error al registrar la reunión.'));
         } finally {
             setGuardandoActa(false);
         }
@@ -183,7 +184,7 @@ export default function EstructuraOrgano() {
             toast.success('Comunicación de acuerdos registrada.');
             await cargar();
         } catch (e: any) {
-            toast.error(e?.message || 'Error al registrar la comunicación.');
+            toast.error(mensajeDeError(e, 'Error al registrar la comunicación.'));
         } finally {
             setSubiendoAcuerdos(false);
         }
@@ -208,7 +209,7 @@ export default function EstructuraOrgano() {
             toast.success('Programa de trabajo cargado.');
             await cargar();
         } catch (e: any) {
-            toast.error(e?.message || 'Error al cargar el programa.');
+            toast.error(mensajeDeError(e, 'Error al cargar el programa.'));
         } finally {
             setSubiendoPrograma(false);
         }

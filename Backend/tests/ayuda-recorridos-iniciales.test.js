@@ -17,7 +17,7 @@ const { DEFAULT_ROLE_PRESETS, ALL_PERMISSION_KEYS } = require('../lib/permission
 const AYUDA = path.join(__dirname, '..', '..', 'Frontend', 'src', 'ayuda');
 const importar = (archivo) => import(pathToFileURL(path.join(AYUDA, archivo)).href);
 
-/** Lo que vería cada rol si los recorridos estuvieran publicados. */
+/** Lo que ve cada rol con los recorridos publicados (también un borrador, para probarlo antes de publicarlo). */
 async function cargar() {
     const { RECORRIDOS } = await importar('recorridos.ts');
     const { colaAutomatica, deLaPantalla } = await importar('reglas.ts');
@@ -72,16 +72,18 @@ test('los opcionales llegan a quien tiene el permiso de la pantalla, y no a un t
     assert.ok(ids('trabajador', 'incidente-reportar').includes('reportar'), 'reportar lo ve cualquiera');
     assert.deepEqual(ids('trabajador', 'actividades'), [], 'un trabajador no programa actividades');
     assert.deepEqual(ids('supervisor', 'actividades'), ['programar-actividades']);
-    assert.deepEqual(ids('supervisor', 'repositorio'), [], 'el supervisor no sube documentos por defecto');
-    assert.deepEqual(ids('prevencionista', 'repositorio'), ['subir-documentos']);
+    // Encontrar es de quien ve el repositorio; subir, de quien sube (el supervisor no, por defecto).
+    assert.deepEqual(ids('trabajador', 'repositorio'), [], 'un trabajador no ve el repositorio');
+    assert.deepEqual(ids('supervisor', 'repositorio'), ['encontrar-documentos'], 'el supervisor busca, pero no sube documentos por defecto');
+    assert.deepEqual(ids('prevencionista', 'repositorio').sort(), ['encontrar-documentos', 'subir-documentos']);
     assert.deepEqual(ids('jefe_obra', 'obra-detalle'), ['cumplimiento-obra']);
     assert.ok(ids('supervisor', 'inicio').includes('cambiar-de-obra'));
     assert.ok(!ids('trabajador', 'inicio').includes('cambiar-de-obra'));
 });
 
-test('los recorridos iniciales entran como borrador', async () => {
+test('los 11 recorridos iniciales están publicados (revisados por Adrean en dev, 8 de noviembre de 2026)', async () => {
     const { RECORRIDOS } = await importar('recorridos.ts');
-    assert.equal(RECORRIDOS.length, 9);
-    assert.deepEqual(RECORRIDOS.filter((d) => d.estado !== 'borrador').map((d) => d.id), [],
-        'se publican después de la revisión de Adrean y Benja en dev');
+    assert.equal(RECORRIDOS.length, 11);
+    assert.deepEqual(RECORRIDOS.filter((d) => d.estado !== 'publicado').map((d) => d.id), [],
+        'un recorrido nuevo entra en borrador; este test se ajusta al publicarlo');
 });

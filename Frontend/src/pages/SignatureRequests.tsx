@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { plural } from '../utils/plural';
+import { LARGO_PIN } from '../utils/pin';
 import {
     FiPlus,
     FiUsers,
@@ -44,7 +46,7 @@ type TabType = 'pendientes' | 'historial';
 export default function SignatureRequests() {
     const { user, hasPermission } = useAuth();
     const canCrearSolicitud = hasPermission(PERMISSIONS.FIRMAS_CREAR);
-    const { isOnline, pendingCount, syncPendingSignatures } = useOfflineSignature();
+    const { isOnline, pendingCount, syncPendingSignatures, getPendingSignatures } = useOfflineSignature();
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
     const [requests, setRequests] = useState<SignatureRequest[]>([]);
     const [offlinePending, setOfflinePending] = useState<OfflinePendingSignature[]>([]);
@@ -83,22 +85,18 @@ export default function SignatureRequests() {
         loadOfflinePending();
     }, []);
 
-    // Auto-sync when coming back online
+    // Lo envía SincronizadorFirmas. Cuando cambia la cola, se refresca la lista.
+    const pendientesAntes = useRef(pendingCount);
     useEffect(() => {
-        if (isOnline && pendingCount > 0) {
-            handleSyncOffline();
-        }
+        if (pendingCount < pendientesAntes.current) loadData();
+        pendientesAntes.current = pendingCount;
         loadOfflinePending();
-    }, [isOnline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOnline, pendingCount]);
 
+    // La cola de la empresa de esta sesión (utils/colaFirmas).
     const loadOfflinePending = () => {
-        try {
-            const stored = localStorage.getItem('pendingOfflineSignatures');
-            const pending: OfflinePendingSignature[] = stored ? JSON.parse(stored) : [];
-            setOfflinePending(pending.filter(s => !s.synced));
-        } catch {
-            setOfflinePending([]);
-        }
+        setOfflinePending(getPendingSignatures());
     };
 
     const handleSyncOffline = async () => {
@@ -219,9 +217,10 @@ export default function SignatureRequests() {
                     const recipientsRes = await inboxApi.getRecipients(currentUserId, user?.tenantId || user?.empresaId || '');
                     if (recipientsRes.success && recipientsRes.data) {
                         const allRecipients = recipientsRes.data.recipients;
-                        // Map worker IDs to their RUTs, then find matching Inbox Recipients to extract userIds
-                        const assignedRuts = workers.filter(w => selectedWorkers.includes(w.personaId)).map(w => w.rut);
-                        const recipientUserIds = allRecipients.filter(r => assignedRuts.includes(r.rut)).map(r => r.userId);
+                        // Por identificador. Antes se cruzaba por RUT, y la lista de
+                        // destinatarios nunca traía el RUT (está cifrado en la tabla):
+                        // el aviso no le llegaba a nadie.
+                        const recipientUserIds = allRecipients.filter(r => selectedWorkers.includes(r.personaId)).map(r => r.userId);
                         
                         if (recipientUserIds.length > 0) {
                             const isUrgent = newRequest.fechaLimite && new Date(newRequest.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs
@@ -295,7 +294,7 @@ export default function SignatureRequests() {
     };
 
     const handleSign = async () => {
-        if (!selectedRequest || !user?.personaId || pin.length !== 4) return;
+        if (!selectedRequest || !user?.personaId || pin.length !== LARGO_PIN) return;
         setSigning(true);
         setSignError('');
         try {
@@ -513,24 +512,22 @@ export default function SignatureRequests() {
                                 </div>
                                 <div>
                                     <h3 style={{ margin: 0, fontWeight: 600, fontSize: '15px' }}>
-                                        {!isOnline ? 'Sin conexión' : `${offlinePending.length} firma(s) pendiente(s) de sincronizar`}
+                                        {!isOnline ? 'Sin conexión' : plural(offlinePending.length, 'firma por enviar', 'firmas por enviar')}
                                     </h3>
                                     <p className="text-xs text-muted" style={{ margin: 0 }}>
-                                        {!isOnline
-                                            ? 'Las firmas se guardan localmente hasta tener conexión'
-                                            : 'Firmas capturadas offline listas para sincronizar'}
+                                        Se envían solas cuando hay señal.
                                     </p>
                                 </div>
                             </div>
-                            {isOnline && offlinePending.length > 0 && (
+                            {offlinePending.length > 0 && (
                                 <button
-                                    className="btn btn-primary btn-sm"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={handleSyncOffline}
                                     disabled={syncingOffline}
                                     style={{ padding: '8px 16px' }}
                                 >
                                     <FiRefreshCw className={syncingOffline ? 'spin' : ''} size={14} />
-                                    {syncingOffline ? 'Sincronizando...' : 'Sincronizar ahora'}
+                                    {syncingOffline ? 'Enviando…' : 'Enviar ahora'}
                                 </button>
                             )}
                         </div>
@@ -1389,8 +1386,8 @@ export default function SignatureRequests() {
                             <button
                                 className="btn btn-primary"
                                 onClick={handleSign}
-                                disabled={signing || pin.length !== 4}
-                                style={{ flex: 2, boxShadow: pin.length === 4 ? 'var(--shadow-glow-primary)' : 'none' }}
+                                disabled={signing || pin.length !== LARGO_PIN}
+                                style={{ flex: 2, boxShadow: pin.length === LARGO_PIN ? 'var(--shadow-glow-primary)' : 'none' }}
                             >
                                 {signing
                                     ? <><div className="spinner" style={{ width: '16px', height: '16px' }} /> Firmando...</>

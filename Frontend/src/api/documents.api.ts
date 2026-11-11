@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { renovarValesEnSilencio } from '../utils/valesTurno';
 
 export interface DocumentSignature {
     token: string;
@@ -329,11 +330,15 @@ export const documentsApi = {
             body: JSON.stringify(data),
         }),
 
-    sign: (id: string, data: SignDocumentData) =>
-        apiRequest<{ message: string; signature: DocumentSignature }>(`/documents/${id}/sign`, {
+    sign: async (id: string, data: SignDocumentData) => {
+        const r = await apiRequest<{ message: string; signature: DocumentSignature }>(`/documents/${id}/sign`, {
             method: 'POST',
             body: JSON.stringify(data),
-        }),
+        });
+        // Escribió su PIN con red: el equipo le renueva los vales, sin decir nada.
+        if (r.success) void renovarValesEnSilencio((data as { personaId?: string }).personaId, (data as { pin?: string }).pin);
+        return r;
+    },
 
     signBulk: (id: string, data: BulkSignData) =>
         apiRequest<BulkSignResult>(`/documents/${id}/sign-bulk`, {
@@ -344,7 +349,7 @@ export const documentsApi = {
     // Firma asistida: un admin/jefe_obra/supervisor/prevencionista inicia la firma
     // y el TRABAJADOR teclea su PIN. La firma queda con personaId del trabajador y
     // metadata.asistidoPor para trazabilidad.
-    signAssisted: (
+    signAssisted: async (
         id: string,
         data: {
             firmanteId: string;
@@ -353,14 +358,17 @@ export const documentsApi = {
             pin?: string;
             firmaManuscrita?: string;
         }
-    ) =>
-        apiRequest<{ message: string; firma: DocumentSignature; signatureId: string; token: string }>(
+    ) => {
+        const r = await apiRequest<{ message: string; firma: DocumentSignature; signatureId: string; token: string }>(
             `/documents/${id}/sign-assisted`,
             {
                 method: 'POST',
                 body: JSON.stringify(data),
             }
-        ),
+        );
+        if (r.success) void renovarValesEnSilencio(data.firmanteId, data.pin);
+        return r;
+    },
 
     // PDF con el anexo de firmas estampado (legal). Responde con la URL lista:
     // el anexo se arma en la petición (244 ms en un PDF de 750 KB) y el resultado

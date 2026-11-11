@@ -24,6 +24,7 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { ancla } from '../ayuda/registro';
+import { resumenDelEquipo } from '../utils/colaFirmas';
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -113,6 +114,7 @@ const navObra = (obraId: string | null): NavSection[] => [
         section: 'Cumplimiento',
         items: [
             { path: '/my-signatures', icon: FiEdit3, label: 'Mis firmas' },
+            { path: '/firmas/revision', icon: FiCheckSquare, label: 'Firmas en revisión', permission: PERMISSIONS.FIRMAS_CREAR },
             { path: '/incidents', icon: FiAlertTriangle, label: 'Incidentes' },
             { path: '/prescripciones', icon: FiShield, label: 'Prescripciones', permission: PERMISSIONS.REPOSITORIO_VER },
         ]
@@ -125,6 +127,20 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const { user, hasPermission, logout } = useAuth();
     const { selectedObraId, selectedObra, modoEmpresa, puedeGestionarEmpresa, puedeCambiarDeObra, cambiarDeObra } = useObraContext();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+    /**
+     * Cerrar sesión borra los vales de firma sin conexión del equipo (no las
+     * firmas por enviar, que se quedan). Si hay algo de eso, se dice con cuántos
+     * son, para que el supervisor no deje a su cuadrilla sin poder firmar por un
+     * toque equivocado.
+     */
+    // Los vales se renuevan solos y sin ellos se firma igual: no hay nada que avisar
+    // de ellos. Las firmas por enviar no se pierden, pero conviene saberlo.
+    const mensajeCierre = () => {
+        const { firmas } = resumenDelEquipo();
+        if (firmas === 0) return '¿Estás seguro de que quieres cerrar sesión?';
+        return `En este equipo ${firmas === 1 ? 'hay 1 firma por enviar' : `hay ${firmas} firmas por enviar`}: no se pierden, y se envían la próxima vez que alguien de la empresa entre con señal en este equipo. ¿Cerrar sesión igual?`;
+    };
     const [showObraConfirm, setShowObraConfirm] = useState(false);
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
@@ -258,7 +274,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             <ConfirmModal
                 isOpen={showLogoutConfirm}
                 title="Cerrar sesión"
-                message="¿Estás seguro de que quieres cerrar sesión?"
+                message={mensajeCierre()}
                 confirmLabel="Cerrar sesión"
                 cancelLabel="Cancelar"
                 variant="danger"

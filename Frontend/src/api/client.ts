@@ -28,7 +28,28 @@ interface ApiResponse<T> {
     success: boolean;
     data?: T;
     error?: string;
+    /**
+     * El servidor no rechazó la petición por su contenido: estaba saturado (429,
+     * límite de tasa) o falló algo pasajero (5xx). Reintentar puede funcionar.
+     * La cola de firmas sin conexión NO descarta lo que vuelve así.
+     */
+    reintentable?: boolean;
+    /** No hubo respuesta: no hay señal. `error` trae un mensaje simple, sin nada técnico. */
+    sinRed?: boolean;
 }
+
+/** Lo que se le dice a una persona cuando no hay señal. */
+export const SIN_SENAL = 'No hay señal. Esto se carga cuando vuelva la conexión.';
+
+/** ¿Este error es de red (un `fetch` que no llegó a ninguna parte)? */
+export const esErrorDeRed = (e: unknown): boolean => e instanceof TypeError
+    || /failed to fetch|networkerror|load failed|network request failed/i.test(e instanceof Error ? e.message : String(e ?? ''));
+
+/** El mensaje de un error para mostrarlo: nunca "Failed to fetch". */
+export const mensajeDeError = (e: unknown, porOmision: string): string => {
+    if (esErrorDeRed(e)) return SIN_SENAL;
+    return e instanceof Error && e.message ? e.message : porOmision;
+};
 
 /**
  * Aviso de sesión caída.
@@ -85,16 +106,38 @@ export async function apiRequest<T>(
         // por escribir mal su contraseña.
         if (response.status === 401 && !endpoint.startsWith('/auth')) {
             avisarSesionCaida();
-            return { success: false, error: 'Tu sesión expiró. Vuelve a iniciar sesión.' };
+            // Reintentable: una firma sin conexión que se estaba enviando sigue en
+            // la cola, y la manda la próxima sesión de la empresa.
+            return { success: false, reintentable: true, error: 'Tu sesión expiró. Vuelve a iniciar sesión.' };
+        }
+
+        // Límite de tasa de la API (429) o una falla pasajera del servidor (5xx).
+        // API Gateway responde el 429 con `{ message }`, sin `success`: sin esto,
+        // la pantalla mostraba un error vacío.
+        // Un 423 (PIN bloqueado por un rato) también: la firma espera en la cola.
+        if (response.status === 423) {
+            const cuerpo = await response.json().catch(() => null);
+            return { success: false, reintentable: true, error: cuerpo?.error || 'El PIN está bloqueado por un rato. Inténtalo de nuevo más tarde.' };
+        }
+        if (response.status === 429 || response.status >= 500) {
+            const cuerpo = await response.json().catch(() => null);
+            return {
+                success: false,
+                reintentable: true,
+                error: response.status === 429
+                    ? 'Hay muchas solicitudes en este momento. Espera unos segundos y vuelve a intentarlo.'
+                    : (cuerpo?.error || 'El servidor no pudo responder. Vuelve a intentarlo en un momento.'),
+            };
         }
 
         const data = await response.json();
         return data;
     } catch (error) {
-        return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Error desconocido',
-        };
+        // `fetch` lanza solo cuando no hubo respuesta. Una respuesta que no es JSON
+        // tampoco se muestra tal cual.
+        return esErrorDeRed(error)
+            ? { success: false, sinRed: true, error: SIN_SENAL }
+            : { success: false, reintentable: true, error: 'El servidor no pudo responder. Vuelve a intentarlo en un momento.' };
     }
 }
 

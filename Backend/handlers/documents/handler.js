@@ -1,3 +1,4 @@
+const { plural } = require('../../lib/utils/plural');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, ScanCommand, UpdateCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
@@ -7,6 +8,7 @@ const { s3Client } = require('../../lib/clients/s3');
 const { success, error, created } = require('../../lib/utils/response');
 const { validateRequired, generateSignatureToken } = require('../../lib/utils/validation');
 const { FirmaService } = require('../../lib/services/FirmaService');
+const { ValeFirmaService } = require('../../lib/services/ValeFirmaService');
 const { PersonaService } = require('../../lib/services/PersonaService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { PdfStampingService } = require('../../lib/services/PdfStampingService');
@@ -80,6 +82,43 @@ const PERMISOS_SUBIR_DOC = [
 
 /** ¿La sesión puede subir o modificar documentos? */
 const puedeSubir = (sesion) => PERMISOS_SUBIR_DOC.some((p) => sesionPuede(sesion, p));
+
+/**
+ * Lo que ve de las asignaciones y firmas de OTRAS personas quien no gestiona
+ * documentos ni personal (fila 7.5, 8 de noviembre de 2026).
+ *
+ * `GET /documents` y `GET /documents/{id}` solo exigen sesión: un trabajador
+ * recibía, de cada documento de la empresa, el RUT y la IP de todos los que lo
+ * firmaron. Para firmar lo suyo y ver su cumplimiento le basta su propia
+ * asignación y su propia firma; de las demás, solo que existen y su estado.
+ * Quien tiene `repositorio.ver` o `personas.detalle` ve todo, como antes.
+ *
+ * El PDF firmado sí lleva el anexo con el RUT de cada firmante: es el documento
+ * legal, el mismo para todos los que lo firman (ver `downloadSigned`).
+ */
+const veFirmantes = (sesion) => sesionPuede(sesion, PERMISSIONS.REPOSITORIO_VER) || sesionPuede(sesion, PERMISSIONS.PERSONAS_DETALLE);
+const vistaDocumento = (doc, sesion) => {
+    if (!doc || veFirmantes(sesion)) return doc;
+    const propia = (x) => x && x.personaId === sesion.personaId;
+    return {
+        ...doc,
+        ...(Array.isArray(doc.asignaciones) ? {
+            asignaciones: doc.asignaciones.map((a) => (propia(a) ? a : { personaId: a?.personaId, estado: a?.estado })),
+        } : {}),
+        ...(Array.isArray(doc.firmas) ? {
+            firmas: doc.firmas.map((f) => (propia(f) ? f : { personaId: f?.personaId, tipoFirma: f?.tipoFirma, timestamp: f?.timestamp })),
+        } : {}),
+        // Las versiones anteriores archivan sus firmas y asignaciones, con los
+        // mismos datos: de cada versión queda todo menos esos arreglos.
+        ...(Array.isArray(doc.versiones) ? {
+            versiones: doc.versiones.map((v) => {
+                if (!v || typeof v !== 'object') return v;
+                const { firmasArchivadas, asignacionesArchivadas, firmas, asignaciones, ...resto } = v;
+                return resto;
+            }),
+        } : {}),
+    };
+};
 
 /**
  * Documento de la empresa de la sesión, o null.
@@ -431,7 +470,7 @@ module.exports.list = conAuditoriaSalud(async (event) => {
         anotarDocumentosSalud(documents);
 
         return success({
-            documents: await descifrarDocumentosDeTenant(documents, tenantId),
+            documents: (await descifrarDocumentosDeTenant(documents, tenantId)).map((d) => vistaDocumento(d, sesion)),
             types: DOCUMENT_TYPES,
         });
     } catch (err) {
@@ -463,7 +502,7 @@ module.exports.get = conAuditoriaSalud(async (event) => {
         }
         anotarDocumentosSalud([doc]);
 
-        return success(await descifrarDocumentoDeTenant(doc, sesion.tenantId));
+        return success(vistaDocumento(await descifrarDocumentoDeTenant(doc, sesion.tenantId), sesion));
     } catch (err) {
         console.error('Error getting document:', err);
         return error(err.message, 500);
@@ -779,7 +818,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
         }
 
         return success({
-            message: `Nueva versión publicada en ${actualizados} copia(s). El personal debe re-firmar.`,
+            message: `Nueva versión publicada en ${plural(actualizados, 'copia', 'copias')}. El personal debe re-firmar.`,
             tipo,
             copiasActualizadas: actualizados,
             firmantesConvocados: firmantes.size,
@@ -1058,7 +1097,7 @@ module.exports.assign = async (event) => {
         }
 
         return success({
-            message: `Documento asignado a ${nuevasAsignaciones.length} persona(s)`,
+            message: `Documento asignado a ${plural(nuevasAsignaciones.length, 'persona', 'personas')}`,
             // Lo que va al cliente es el RUT, no el sobre: esta respuesta la
             // dibuja la pantalla igual que un listado.
             asignaciones: descifrarDocumento({ asignaciones: nuevasAsignaciones }, llaveArreglos).asignaciones
@@ -1092,14 +1131,21 @@ module.exports.sign = async (event) => {
         // siempre (ver FirmaService), así que omitir el PIN permitía firmar por
         // otro. Toda firma exige el PIN de quien firma o —cuando se tomó sin red—
         // un vale de un solo uso que esa persona desbloqueó con su PIN.
-        if (!body.pin && !body.vale) {
+        if (!body.pin && !body.vale && !body.sobre) {
             return error('Debes ingresar tu PIN para firmar', 400);
         }
 
         // Quien tiene la sesión firma por sí mismo. Firmar por otro es la firma
         // asistida (el trabajador teclea SU PIN en el dispositivo de quien asiste)
         // y exige ese permiso: el PIN sigue siendo la prueba del consentimiento.
-        if (signerPersonaId !== sesion.personaId
+        //
+        // Con un vale y sin PIN es distinto: es una firma tomada sin red que se
+        // sincroniza, y la puede subir cualquier sesión de la empresa. El vale ya
+        // prueba el consentimiento (esa persona lo desbloqueó con su PIN), y
+        // FirmaService lo rechaza si es de otra persona o de otra empresa. Lo mismo
+        // con el sobre (D-37): trae el PIN de la persona, amarrado a esta firma.
+        const firmaConVale = !body.pin && Boolean(body.vale || body.sobre);
+        if (signerPersonaId !== sesion.personaId && !firmaConVale
             && !sesionPuede(sesion, PERMISSIONS.OBRA_FIRMA_ASISTIDA)) {
             return error('No tienes permiso para registrar la firma de otra persona', 403);
         }
@@ -1141,10 +1187,8 @@ module.exports.sign = async (event) => {
             userAgent: event.headers?.['user-agent'] || 'unknown'
         };
 
-        const metodo = body.vale ? 'VALE' : 'PIN';
-        const credencial = body.vale
-            ? { vale: body.vale, deviceId: body.deviceId || null, timestampLocal: body.timestampLocal || null }
-            : body.pin;
+        const metodo = ValeFirmaService.metodoDelCuerpo(body);
+        const credencial = metodo === 'PIN' ? body.pin : ValeFirmaService.credencialDelCuerpo(body);
         let firmaResult;
         try {
             firmaResult = await FirmaService.crear({
@@ -1162,6 +1206,9 @@ module.exports.sign = async (event) => {
             });
         } catch (firmaErr) {
             if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+            // Pasajero: la firma sin conexión tiene que seguir en la cola, y el
+            // cliente solo descarta lo que se rechaza por su contenido.
+            if (firmaErr.codigo === 'SOBRE_NO_DISPONIBLE' || firmaErr.$metadata) return error('No se pudo registrar la firma en este momento.', 503);
             return error(firmaErr.message, 400);
         }
 

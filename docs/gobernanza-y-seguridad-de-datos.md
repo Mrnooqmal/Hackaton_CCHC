@@ -67,9 +67,9 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 2.6 | **Función de derivación con costo para el PIN** | **Implementado** | scrypt `N=2^15, r=8, p=1`; ~112 ms por verificación, medidos en la Lambda. Cada hash guarda su algoritmo y sus parámetros, y se actualiza solo al usarse. Ver D-7. |
 | 2.7 | **Límite de intentos de PIN** | **Implementado** | Contador por persona, bloqueo progresivo (1/5/15/60 min), reseteo en el primer acierto. Ver D-9. |
 | 2.7b | Restablecimiento de un PIN olvidado, con control dual | **Implementado** | Permiso propio y motivo obligatorio; quien restablece no puede asistir en el PIN nuevo; aviso en bandeja en la misma transacción y por correo; vales anulados; historial. `PersonaService.restablecerPin`, `Backend/tests/cambio-pin.test.js`. Ver D-9, "Restablecimiento". |
-| 2.8 | **Throttling a nivel de API** | **Pendiente** | Sin plan de uso ni límite de tasa configurado en `Backend/serverless.yml`. |
+| 2.8 | **Throttling a nivel de API** | **Implementado** | Límite por omisión del stage (100 por segundo, ráfaga de 200) y límite propio y estricto en cada ruta pública: el alta de empresas y los reportes de CSP desde septiembre (`558923e`, en prod), y desde el 8 de noviembre de 2026 las de autenticación (ingreso 20/s, recuperar contraseña 2/s, restablecer y validar token 5/s, verificación pública de firmas 10/s). *Corrección:* esta fila decía "sin límite de tasa configurado". El límite es por ruta y por ambiente, no por IP (HTTP API no lo distingue y WAF no se asocia a HTTP API): frena una avalancha; al atacante paciente lo frenan el límite de intentos por cuenta y la detección (D-9, D-31). Un 429 o un 5xx no descartan las firmas sin conexión: quedan en la cola para reintentar. `Backend/tests/limite-tasa-api.test.js`. |
 | 2.9 | El token de sesión se almacena hasheado | **Implementado** | Se guarda `sha256(token)` y se resuelve por índice. Antes se guardaba el token en claro: un volcado de la tabla de sesiones era suplantación inmediata de cualquier usuario. `Backend/lib/auth/sesion.js` |
-| 2.10 | El PIN ya no se guarda en el dispositivo (modo sin conexión) | **Implementado** | Las firmas sin red se acreditan con un **vale de un solo uso** que la persona desbloquea con su PIN al inicio del turno, con red; el dispositivo guarda vales, no el PIN, y el servidor solo guarda el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/tests/vale-firma.test.js`. Ver D-3 para las dos decisiones de diseño (vale vencido y equipo que pierde su identificador). |
+| 2.10 | El PIN ya no se guarda legible en el dispositivo (modo sin conexión) | **Implementado** | Sin red se firma con un **vale de un solo uso**, guardado cifrado con el PIN (D-35), o, si no hay vales, con un **sobre**: el PIN cifrado con la llave pública de KMS y amarrado a esa firma, que solo el servidor puede abrir (D-37). El servidor guarda solo el hash del vale. `Backend/lib/services/ValeFirmaService.js`, `Backend/lib/sobreFirma.js`, `Backend/tests/vale-firma.test.js`, `sobre-firma.test.js`. |
 
 ### 2.3 Sesiones y recuperación de acceso
 
@@ -110,8 +110,8 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 | 5.3 | La persona siempre accede a sus propios datos de salud | **Implementado** | Ocultarle su propio examen sería improcedente. |
 | 5.4 | Falla cerrada ante solicitante no identificado | **Implementado** | Sin identificación se ocultan: el error es que falten documentos, nunca que se filtren datos de salud. Cubierto por pruebas. |
 | 5.5 | Archivos servidos por URL prefirmada temporal | **Implementado** | No hay URL pública permanente sobre el almacenamiento. |
-| 5.6 | Registro de auditoría de accesos a datos sensibles | **Implementado para salud; auditoría general en el árbol** | *Corrección:* esta fila seguía como pendiente. El acceso a datos de salud se audita desde D-18 (`Backend/lib/gobernanza/auditoriaSalud.js`, `Backend/tests/auditoria-salud.test.js`), en el código desplegado en prod (`d750646`) y en dev. La auditoría general y la detección de eventos sospechosos (D-31, `Backend/lib/gobernanza/auditoria.js`) están en el árbol desde `57c5a9b`, sin desplegar en ningún ambiente (verificado el 6 de noviembre de 2026). Ver H-5. |
-| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Parcial** | Cifrado en dev y prod: Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`), Tenants (`rutEmpresa`), los sidecars de firmas/incidentes, los arreglos embebidos de documentos/actividades/solicitudes, y las respuestas de encuesta. **Pendiente:** dos copias en claro que genera `RegistroService` en `DocumentsTable` — el RUT del accidentado y de los entrevistados (informe Art. 71) y la aptitud laboral y protocolos de vigilancia por persona (registro AT/EP). Se resuelven junto con la huella de integridad, porque son justo los snapshots que se firman. Ver D-10. |
+| 5.6 | Registro de auditoría de accesos a datos sensibles | **Implementado** | El acceso a datos de salud se audita desde D-18 (`Backend/lib/gobernanza/auditoriaSalud.js`, `Backend/tests/auditoria-salud.test.js`), y la auditoría general con detección de eventos sospechosos desde D-31 (`Backend/lib/gobernanza/auditoria.js`, `deteccion.js`). *Corrección:* esta fila decía que la auditoría general estaba sin desplegar; está en prod desde `14fa693` (verificado el 8 de noviembre de 2026). Ver H-5. |
+| 5.7 | **Cifrado a nivel de campo para RUT y datos de salud** | **Implementado** | Personas (`rut`, `vigilanciaSalud`, `restriccionLaboral`), Tenants (`rutEmpresa`), los sidecars de firmas e incidentes, los arreglos embebidos de documentos, actividades y solicitudes, las respuestas de encuesta y el contenido firmado de los registros AT/EP y del Art. 71 (`snapshotCifrado`, sin la copia `contenido`, desde `9128bca`, 26 de septiembre). *Corrección:* esta fila seguía como parcial por esas dos copias, que ya no existen: verificado el 8 de noviembre de 2026 que en dev y prod no queda ningún registro con `snapshot` o `contenido` en claro (no hay registros de esos dos tipos generados antes del cambio). El HTML firmado que se guarda en S3 lleva el contenido completo, cifrado en reposo con la CMK del bucket de evidencia: no es cifrado de campo, y su acceso pasa por la URL prefirmada con el resguardo de salud (5.2c). Ver D-10. |
 | 5.8 | Los índices de personas proyectan todos los atributos | **Implementado** | `personaId-index`, `email-index` y `tenantRutHmac-index` pasaron a `KEYS_ONLY`: el índice da la clave, la ficha se lee de la tabla. Ver D-6. |
 | 5.9 | El RUT no viaja completo en la verificación pública de firmas | **Implementado** | `GET /signatures/verify/{token}` es público por diseño (un fiscalizador comprueba una firma sin cuenta), y devolvía nombre y **RUT completo**: el token se convertía en una consulta abierta de identidad. Ahora el RUT va parcial (`···.678-5`), que cumple igual la función de cotejo. |
 
@@ -121,8 +121,8 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 |---|---|---|---|
 | 6.1 | Cifrado en tránsito | **Implementado; la brecha se cierra con el dominio propio** | API: solo TLS 1.2 y 1.3, sin puerto 80. Frontend: CloudFront redirige HTTP a HTTPS y envía HSTS (un año). Buckets: todos rechazan accesos sin TLS. En `buildandserve.cl` el mínimo es TLS 1.2 (certificado propio de ACM, D-21). La URL de `cloudfront.net` acepta TLS 1.0 mientras dure la transición. |
 | 6.10 | Los buckets se gobiernan desde el stack | **Implementado** | Estaban **fuera** de CloudFormation, creados a mano: ningún despliegue podía comprobar ni corregir su configuración, y de ahí venían los dos hallazgos anteriores. Se incorporaron por `IMPORT` de CloudFormation —sin recrearlos ni tocar los 135 objetos de producción— con `DeletionPolicy: Retain`, que es la forma correcta de protegerlos de un `serverless remove`. |
-| 6.11 | **Bloqueo de objetos (Object Lock)** | **Pendiente, requiere migración** | No se puede activar sobre un bucket existente. Ver D-5. |
-| 6.2 | Cifrado en reposo declarado | **Implementado, salvo logs** | Buckets de evidencia y trabajo con la CMK de su ambiente (D-4); el del frontend, con `AES256`. Tablas DynamoDB: pasan a la CMK (`SSESpecification`) con el commit del 28 de septiembre de 2026; antes, las 17 usaban la llave propiedad de AWS. Grupos de logs: sin clave propia, postergado. Ver D-14. |
+| 6.11 | **Bloqueo de objetos (Object Lock)** | **Implementado** | El bucket de evidencia de cada ambiente se creó con Object Lock en modo `GOVERNANCE` y retención por omisión de 5 años (`EvidenciaBucket` en `Backend/serverless.yml`); la aplicación extiende la retención de lo que debe seguir (D-15). *Corrección:* esta fila decía "pendiente, requiere migración" después de la migración a los buckets nuevos. Verificado contra AWS el 8 de noviembre de 2026: `Enabled`, `GOVERNANCE`, en dev y prod. Ver D-5. |
+| 6.2 | Cifrado en reposo declarado | **Implementado** | Buckets de evidencia y trabajo con la CMK de su ambiente (D-4); el del frontend, con `AES256`. Tablas DynamoDB con la CMK (`SSESpecification`) desde el 28 de septiembre de 2026. Grupos de logs: con la CMK desde el 8 de noviembre de 2026, todos los del stack, puestos por el plugin `Backend/plugins/logs-cifrados.js` (Serverless no permite ponerle llave a los grupos que crea) y con permiso para CloudWatch Logs en la política de la llave, acotado a la cuenta y la región. Asociar la llave no reemplaza el grupo: lo anterior sigue legible hasta que vence por la retención. `Backend/tests/logs-cifrados.test.js`. Ver D-14. |
 | 6.3 | Bloqueo explícito de acceso público a los buckets | **Implementado** | *Corrección de la versión anterior:* se declaraba **Pendiente** por ausencia en `serverless.yml`, pero en AWS ya estaba activo (las cuatro opciones en `true`). Lo que faltaba era la declaración, no la protección. Ahora está en el stack. |
 | 6.4 | Restricción de orígenes CORS en almacenamiento | **Implementado** | Estaba en `AllowedOrigins: ['*']`, es decir cualquier página de internet podía hacerle peticiones al bucket desde el navegador de quien la visitara. Acotado al CloudFront de la aplicación (y `localhost` solo en dev), con métodos `GET`, `PUT` y `HEAD`. |
 | 6.5 | Recuperación a un punto en el tiempo | **Implementado** | `PointInTimeRecoverySpecification` en **todas las tablas**, dev y prod: 22 por ambiente, verificadas `ENABLED` contra AWS el 6 de noviembre de 2026 (eran 16 cuando se activó). Antes estaba deshabilitado en todas: un borrado no tenía ninguna vía de recuperación. |
@@ -138,11 +138,12 @@ sus aspectos de seguridad y se agrega el análisis crítico que aquel no incluye
 
 | # | Punto | Estado | Evidencia o brecha |
 |---|---|---|---|
-| 7.1 | **Política de retención de datos personales** | **Implementada: cálculo y bloqueos. Pendiente: ejecutar la supresión** | Proceso diario (`retencionDiaria`) que calcula por empresa qué venció y qué se conserva, guarda el plan y extiende el Object Lock de la evidencia que debe seguir. Suprimir exige un lote aprobado por dos personas: siguiente etapa. Ver D-15. |
-| 7.2 | **Mecanismo de supresión a solicitud del titular** | **Parcial** | Implementado (API): solicitudes con canal de origen y fecha de recepción inmutable, bloqueo temporal real, prórroga solo a tiempo, respuesta con fundamento, avisos de plazo e historial que solo crece. Pendiente: pantalla y ejecución de la supresión en lotes aprobados por dos personas. Ver D-15. |
+| 7.1 | **Política de retención de datos personales** | **Implementado** | Proceso diario (`retencionDiaria`) que calcula por empresa qué venció y qué se conserva, guarda el plan y extiende el Object Lock de la evidencia que debe seguir. La supresión de lo vencido se ejecuta con un lote propuesto desde ese plan, aprobado por una persona y ejecutado por otra (`handlers/gobernanza/lotes.js`, pestaña Supresiones de Mi Empresa, `RolSupresion` como único rol que borra). *Corrección:* esta fila decía "pendiente: ejecutar la supresión" después de D-17. En prod desde `14fa693` (verificado el 8 de noviembre de 2026). `Backend/tests/lotes-supresion.test.js`, `retencion-proceso.test.js`. Ver D-15 y D-17. |
+| 7.2 | **Mecanismo de supresión a solicitud del titular** | **Implementado** | Solicitudes con canal de origen y fecha de recepción inmutable, verificación de identidad, bloqueo temporal real, prórroga solo a tiempo, respuesta con fundamento, avisos de plazo e historial que solo crece (D-15, D-30); el titular las presenta en Mis datos y privacidad y la empresa las gestiona en la pestaña Solicitudes de titulares. Una supresión acogida se ejecuta con un lote de dos personas (D-17). *Corrección:* esta fila decía "pendiente: pantalla y ejecución". En prod desde `14fa693`. `Backend/tests/derechos-*.test.js`, `lotes-supresion.test.js`. |
 | 7.3 | **Registro de tratamientos** | **Implementado** | Generado desde el inventario de datos (`lib/gobernanza/inventario.js`), que también recorre el proceso de retención: no pueden divergir. Una prueba falla si una tabla nueva no está clasificada. Ver D-15. |
-| 7.4 | **Procedimiento de notificación de brechas** | **Parcial** | Hay con qué responder qué se expuso, de quién y de qué empresas (`scripts/informe-brecha.js`, D-19), apoyado en la auditoría de salud (D-18). Falta el protocolo: quién decide, plazos y canal de notificación a la Agencia y a los titulares (decisión de producto y legal). |
-| 7.5 | Minimización en las respuestas de la API | **Parcial** | El hash del PIN nunca sale, pero no hay una revisión sistemática de qué campos personales viajan en cada respuesta. |
+| 7.4 | **Procedimiento de notificación de brechas** | **Parcial: falta solo la validación legal** | Hay con qué responder qué se expuso, de quién y de qué empresas (`scripts/informe-brecha.js`, D-19), apoyado en la auditoría de salud (D-18) y la general (D-31). El protocolo existe desde D-32 (`docs/plan-respuesta-incidentes.md`): quién decide (la constructora responsable), plazos internos, plantillas para la Agencia y los titulares, contención con scripts. Falta que un abogado valide los plazos internos y los responsables: no se puede cerrar desde el código. |
+| 7.5 | Minimización en las respuestas de la API | **Implementado** | Revisión del 8 de noviembre de 2026 con un mismo criterio: de OTRAS personas, quien no gestiona recibe solo lo necesario para elegir o contar; la propia, completa. **Personas:** el listado se recorta sin `personas.ver` (H-16); `GET /personas/{id}` y `/by-rut/{rut}` entregaban la ficha completa a cualquier sesión, y por RUT servía para averiguar a quién pertenece: ahora la ajena exige `personas.detalle` o `personas.ver` (sin permiso, lo del listado; por RUT, el 404 de uno inexistente), y validar un RUT exige crear o ver personas. **Bandeja:** los destinatarios llevaban el correo de todo el personal; ahora nombre, rol y cargo. **Documentos:** un trabajador recibía el RUT y la IP de todos los firmantes de cada documento, también en las versiones archivadas; sin `repositorio.ver` ni `personas.detalle`, de los demás solo el identificador y el estado. **Actividades:** el RUT de todos los asistentes y del relator; sin `actividades.crear` ni `personas.detalle`, de los demás el identificador. **Incidentes:** cualquier sesión leía todos, con afectado, relato, gravedad, RUT y lesiones; sin `incidentes.historial`, cada persona lee solo lo que reportó (la pantalla ya lo escondía; la API no). **Obras:** el expediente, el consolidado CHECK y las medidas correctivas exigen `obras.detalle`. El PDF firmado sigue llevando el RUT de cada firmante: es el documento legal. `Backend/tests/listado-personas.test.js`, `destinatarios-bandeja.test.js`, `minimizacion-respuestas.test.js` y la prueba de punta a punta. |
+| 7.6 | **Deber de información al titular** | **Implementado** | Aviso de privacidad generado desde el inventario de datos (`lib/gobernanza/aviso.js`): responsable y encargados, **transferencias internacionales** (AWS en Estados Unidos; Google solo con el consentimiento del dictado), categorías, finalidades, bases, plazos de conservación, lo que queda en el equipo para firmar sin señal, derechos, plazos de respuesta y el **reclamo ante la Agencia**. Se muestra en Mis datos y privacidad y en el enrolamiento propio y asistido, que es cuando se recogen los datos. *Hallazgo de la revisión del 8 de noviembre de 2026:* hasta entonces el titular veía las bases y los consentimientos, pero no que sus datos se alojan en Estados Unidos, cuánto se conservan ni que puede reclamar ante la Agencia. `Backend/tests/aviso-privacidad.test.js`. |
 
 ---
 
@@ -285,7 +286,7 @@ tres razones que conviene tener a la vista antes de decidir:
    adicional frente a un tercero externo.
 
 ### D-5. Bloqueo de objetos (Object Lock): requiere bucket nuevo
-**Estado: pendiente de decisión, ligado al vaciado**
+**Estado: resuelto. Los buckets de evidencia de dev y prod se crearon nuevos, con Object Lock en `GOVERNANCE` y retención por omisión de 5 años (verificado contra AWS el 8 de noviembre de 2026). Lo que sigue es el análisis con que se decidió.**
 
 Object Lock **solo se puede habilitar al crear el bucket**. Los actuales no lo
 tienen, así que la política de retención decidida en D-2 exige migrar a buckets
@@ -570,7 +571,7 @@ El cambio del propio PIN desde Configuración tampoco funcionaba: llamaba a
 `setPin` sin el PIN actual, que la ruta exigía desde antes. Ahora lo pide.
 
 ### D-10. Cifrado de campo: RUT buscable por HMAC, sobre de cifrado para el resto
-**Estado: casi completo. Implementado el 23 y 24 de septiembre de 2026 en Personas y Tenants, en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas, en dev y prod. Pendiente: las dos copias en claro que arma `RegistroService` (ver "Lo que D-10 todavía no cubre", al final de esta decisión).**
+**Estado: completo. Implementado el 23 y 24 de septiembre de 2026 en Personas y Tenants, en los sidecars de firmas e incidentes, en los arreglos embebidos de documentos, actividades y solicitudes, y en encuestas, en dev y prod. Las dos copias en claro que armaba `RegistroService` se resolvieron el 26 de septiembre (`9128bca`, con D-11): el contenido firmado se guarda cifrado y una sola vez. Verificado el 8 de noviembre de 2026 que no queda ninguna copia antigua en dev ni en prod.**
 
 **El principio que ordena todo el diseño:** solo dos entidades se BUSCAN por
 RUT —personas (dentro de su empresa, y global para el login multi-empresa) y
@@ -839,7 +840,7 @@ el listado no descifra nada ni va a buscar llaves — se comprueba en tiempo de
 ejecución en vez de asumirlo, para que si la proyección cambiara algún día el
 código descifre en lugar de devolverle sobres a la pantalla.
 
-**Lo que D-10 todavía no cubre: las copias que arma `RegistroService`.** Al
+**Lo que D-10 no cubría hasta el 26 de septiembre: las copias que arma `RegistroService`** (resuelto en `9128bca`; se conserva el análisis). Al
 evaluar si documentos podía quedarse con el índice en `ALL` apareció que la
 exposición no estaba resuelta ahí. Dos registros que genera
 `RegistroService` guardan en `DocumentsTable`, en claro y dos veces cada uno (el
@@ -1006,7 +1007,7 @@ Cada punto con su estado al diagnosticar, el riesgo concreto y lo que se hizo.
 | Punto | Estado encontrado | Riesgo concreto | Resolución |
 |---|---|---|---|
 | Tablas DynamoDB | Las 17 tablas de cada ambiente con la llave propiedad de AWS; sin `SSESpecification`. | Sin control de la llave: no se puede auditar su uso ni revocarla. Acotado: RUT, salud y snapshots ya iban cifrados por campo con la CMK (D-10). | `SSESpecification` con `ClaveDatos` en todas, definida una vez (`custom.cifradoTablas`). Es un cambio en caliente, sin reemplazar tablas. |
-| Grupos de logs | Los 146 sin `kmsKeyId`; retención de 14 días en dev y 90 en prod. | Bajo desde H-11: los logs llevan identificadores, no datos personales. | Postergado. Exige dar permiso a CloudWatch Logs en la política de la llave y declarar cada grupo. |
+| Grupos de logs | Con la CMK desde el 8 de noviembre de 2026 (plugin `logs-cifrados`); retención de 14 días en dev y 90 en prod. | Bajo desde H-11: los logs llevan identificadores, no datos personales. | Hecho. Lo escrito antes de asociar la llave sigue sin ella hasta que vence por la retención. |
 | Buckets S3 | Evidencia y trabajo con la CMK; frontend con `AES256`; acceso público bloqueado en todos. | Ninguno relevante. | Sin cambios. |
 
 **En tránsito**
@@ -1050,7 +1051,7 @@ la métrica `CspViolaciones` por directiva. Pasa a activa (renombrar la cabecera
 `Content-Security-Policy`) cuando pasen unos días sin violaciones legítimas.
 
 ### D-15. Gobernanza del dato personal: retención aplicada y derechos del titular
-**Estado: decidido el 28 de septiembre de 2026. Implementado: inventario, registro de tratamientos, proceso de retención (sin ejecutar supresiones) y, desde el 29 de septiembre, solicitudes del titular con bloqueo temporal, prórroga, respuesta, avisos e historial. Pendiente: pantalla de solicitudes y ejecución de lotes con aprobación de dos personas.**
+**Estado: decidido el 28 de septiembre de 2026. Implementado: inventario, registro de tratamientos, proceso de retención y, desde el 29 de septiembre, solicitudes del titular con bloqueo temporal, prórroga, respuesta, avisos e historial; la ejecución por lotes de dos personas (D-17) y las pantallas (D-30) cierran lo que quedaba. En prod desde `14fa693`. Desde el 8 de noviembre de 2026, el aviso de privacidad (deber de información) se genera desde este mismo inventario (`lib/gobernanza/aviso.js`).**
 
 **Roles.** Cada constructora es la **responsable** del tratamiento de los datos
 de sus trabajadores; la plataforma es **encargada**. Por eso el canal por el que
@@ -1597,7 +1598,7 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 - **Autoservicio** (`/gobernanza/mis-datos`, `handlers/gobernanza/titular.js`, pantalla "Mis datos y privacidad"): descargar una copia (portabilidad), pedir rectificación, supresión, oposición o bloqueo, y ver el estado. Lo sensible exige volver a escribir la contraseña; tres errores en 15 minutos cierran las sesiones de la cuenta.
 - **Exportación** en JSON con esquema declarado (`buildandserve.datos-titular` v1), armada por lista blanca: nada de terceros (de cada registro compartido sale solo lo del titular) ni interno (hashes, HMAC, sobres, IP, sesiones). Hasta 3 por día; la cuarta se rechaza y alerta. Sin registro en la auditoría no se entrega.
 - **Flujo y etapas:** recibida, verificada (en evaluación), respondida, cerrada. La etapa se calcula de lo registrado (`etapaDe`). Acoger exige identidad verificada; se registra el método (sesión y contraseña, cédula en persona, correo registrado u otro), nunca el número de documento.
-- **Rectificación:** campos de identidad (nombre, apellidos, RUT, fecha de nacimiento), validados (RUT, edad mínima, caracteres). Los valores propuestos viajan cifrados y se borran de la solicitud al responder; se aplican en la misma transacción que la respuesta. Un RUT nuevo actualiza el vínculo `afectadoRutHmac` de los incidentes. Lo firmado (actas, documentos) no se reescribe: es la prueba de lo que se firmó.
+- **Rectificación:** campos de identidad (nombre, apellidos, RUT, fecha de nacimiento), validados (RUT, edad mínima, caracteres). Los valores propuestos viajan cifrados y se borran de la solicitud al responder; se aplican en la misma transacción que la respuesta. Un RUT nuevo actualiza el vínculo `afectadoRutHmac` de los incidentes. Lo firmado (actas, documentos) no se reescribe: es la prueba de lo que se firmó. Desde el 8 de noviembre de 2026 la ejecución guarda además el valor anterior y el nuevo de cada campo, cifrados (D-36).
 - **Canal de la empresa:** la solicitud que llega por carta o correo se registra como antes y ahora puede verificarse y, si es de acceso, exportarse desde el panel.
 
 ### D-31. Auditoría general y detección de eventos sospechosos (Actividad 5)
@@ -1645,7 +1646,10 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 **Pruebas:** `Backend/tests/ayuda-progreso.test.js` (reglas, aislamiento entre empresas y entre personas, bloqueo, tope, concurrencia), `ayuda-gemelos.test.js` (estados y límites iguales en backend y frontend), casos nuevos en `retencion.test.js`, `derechos-autoservicio.test.js` y `gobernanza-permisos.test.js`; `Frontend/tests/ayuda-validacion.test.mjs` y `ayuda-verificacion.test.mjs` (`npm test` en Frontend). Se comprobó que cada una falla al romper lo que protege.
 
 ### D-34. Producción solo en buildandserve.cl: la URL de CloudFront sale del CORS y se redirige
-**Estado: decidido el 6 de noviembre de 2026; preparado en el árbol, sin desplegar.
+**Estado: decidido el 6 de noviembre de 2026; en producción desde el 7 de noviembre
+(`14fa693`). Verificado: `d30jksx91fodea.cloudfront.net` responde 301 a
+`https://buildandserve.cl/`, la API de prod no acepta ese origen (preflight sin
+`Access-Control-Allow-Origin`) y la prueba de punta a punta de prod lo comprueba.
 D-33 la usa la rama `tours` (recorridos guiados).**
 
 **Qué se decidió.** La URL de CloudFront de producción
@@ -1689,6 +1693,184 @@ prod, que la API rechaza ese origen. Los scripts de despliegue verificaban prod
 en la URL de CloudFront: con la redirección habrían fallado en cada archivo, y
 ahora verifican en `buildandserve.cl`. El enlace de las licencias, cuando falta
 `FRONTEND_URL`, también pasó al dominio propio.
+
+### D-35. Firma sin conexión con el PIN: vales cifrados en el equipo, sin oráculo, y corte del servidor
+**Estado: decidido el 8 de noviembre de 2026; en dev, pendiente de prod.
+Iteraciones de PBKDF2 fijadas en 600.000 con la medición del mismo día (ver
+"Medición").**
+
+**Qué se decidió.** Sin red, la firma solo se toma con el PIN del trabajador,
+también en la firma asistida:
+
+- al habilitar la firma sin conexión (con red, cuando el servidor ya comprobó el
+  PIN), el equipo guarda los vales cifrados con una llave derivada de ese PIN:
+  PBKDF2-HMAC-SHA256 (600.000 iteraciones, guardadas con cada emisión) y
+  AES-CTR **sin etiqueta**, con sal nueva por emisión y contador distinto por
+  vale. Se cifran los 32 bytes crudos del vale, no su texto hex
+  (`Frontend/src/utils/valesCifrados.ts`);
+- un solo byte derivado de la llave dice si el PIN tecleado es plausible:
+  descarta 255 de cada 256 PIN equivocados. Cinco PIN equivocados seguidos en el
+  equipo borran los vales de esa persona (`colaFirmas.tomarVale`);
+- el servidor cuenta los vales inexistentes presentados a nombre de una persona
+  de la empresa y, al quinto, anula sus vales vigentes, registra
+  `VALES_INVALIDOS` y dispara la alarma `vales-invalidos` (umbral 1). El contador
+  vuelve a cero solo al emitir vales nuevos, que exige el PIN con red
+  (`ValeFirmaService.registrarInvalido`);
+- el PIN de firma pasó a 6 dígitos el 8 de noviembre de 2026 y **volvió a 4 el
+  9 de noviembre**, por decisión de Adrean (ver "PIN de 4 dígitos: el riesgo
+  asumido", abajo). Se quitaron la exigencia de 6 y el cambio obligatorio al
+  entrar; en prod todos tienen PIN de 4.
+
+**Por qué sin etiqueta.** Con AES-GCM, quien copie el almacenamiento del equipo
+prueba los PIN fuera de la app y la etiqueta le confirma el correcto: el PIN,
+que sirve con red para cualquier firma, quedaría expuesto. Con 600.000
+iteraciones, una RTX 4090 (hashcat, ~8,8·10⁹ iteraciones de PBKDF2-SHA256 por
+segundo) recorre los 10.000 PIN de 4 dígitos en menos de un segundo, y el millón
+de 6 dígitos en ~70 s; un notebook de 8 núcleos, en ~5 minutos y ~8 horas. Sin
+etiqueta y con un byte, la copia solo reduce los candidatos: ~39 con 4 dígitos y
+~3.900 con 6, que hay que confirmar contra el servidor, que corta al quinto.
+Probabilidad de acertar antes del corte: **13% con 4 dígitos**, 0,13% con 6.
+
+**Medición (8 de noviembre de 2026).** Con `/medicion-pin` en dev, en un
+Android 10 de gama baja (8 núcleos, 4 GB, Chrome 156), cinco derivaciones de
+300.000 iteraciones tardaron 194, 182, 181, 183 y 178 ms: mediana de 182 ms. La
+página proponía 830.000 para llegar a 500 ms en ese equipo. Se fijaron
+**600.000** (~365 ms ahí): ese teléfono no es de los más débiles que habrá en
+obra, y con 600.000 uno el doble de lento no pasa de ~750 ms por firma sin
+señal. La protección principal es el corte del servidor al quinto vale
+inválido; las iteraciones solo encarecen descartar PIN con una copia del
+almacenamiento. Decidido por Adrean. Las iteraciones viajan con cada emisión,
+así que subirlas no invalida vales ya guardados.
+
+**Costos aceptados.**
+- 1 de cada 256 PIN equivocados pasa el byte de comprobación: esa firma se guarda
+  con un vale que no existe, el servidor la rechaza al sincronizar y se avisa en
+  la app con el nombre de la persona hasta que alguien lo vea («tiene que firmar
+  de nuevo»), y cuenta para el corte del servidor.
+- Cualquier sesión de la empresa puede anular los vales de un compañero mandando
+  cinco vales inventados a su nombre. No gana ninguna firma, queda registrado y
+  dispara la alarma; la persona se vuelve a habilitar con señal.
+- El contador de 5 intentos del equipo vive en el mismo almacenamiento: frena a
+  quien prueba PIN dentro de la app, no a quien copió el almacenamiento (a ese lo
+  frena el servidor).
+- Sin WebCrypto (fuera de https) no se habilita la firma sin conexión: nunca se
+  vuelve a guardar un vale en claro.
+
+**PIN de 4 dígitos: el riesgo asumido (9 de noviembre de 2026).** Adrean
+decidió volver a 4: con el sobre (D-37) y el corte del servidor el riesgo es
+asumible, y en prod todos tienen PIN de 4. Lo que queda:
+
+- **Copia del almacenamiento de un equipo con vales:** la copia deja ~39
+  candidatos (10.000 / 256), y el servidor corta al quinto vale inválido:
+  **13% de confirmar el PIN** de esa persona antes de que se anulen sus vales.
+  Dispara la alarma `vales-invalidos` al primer corte. Un equipo sin vales de la
+  persona no da nada: el sobre no se puede abrir ni probar desde la copia.
+- **Ataque lento con una sesión de la empresa:** quien reparte sus intentos para
+  no pasar del bloqueo de una hora prueba ~5 PIN por hora y recorre los 10.000
+  en unos 83 días (la mitad, en promedio, para acertar). Los sobres no lo
+  aceleran: cada PIN distinto en una sincronización cuenta, como con red (el
+  mismo PIN repetido no recuenta). `PinBloqueado` no lo ve (5 bloqueos en 5
+  minutos); lo ve la alarma nueva `pin-ataque-lento`: el servidor guarda en la
+  ficha las fechas de los bloqueos de cada persona (`pinBloqueos`, nunca el PIN)
+  y, al cuarto bloqueo en 24 horas, emite `PinBloqueosPersona` con empresa y
+  persona en el registro (`PIN_BLOQUEOS_24H`). A ~5 PIN por hora el ataque cruza
+  ese umbral el primer día. Un PIN correcto no borra esa historia. Suma 1 recurso.
+- Quien conoce el PIN firma, con o sin todo esto.
+
+**Verificación.** `Backend/tests/vales-cifrados.test.js` (WebCrypto real de Node:
+PIN bueno y malo, quinto intento, sin oráculo, qué queda guardado, sal e IV,
+vales en claro de antes), `vales-invalidos.test.js` (corte del servidor, métrica y
+alarma), `pin-seis-digitos.test.js` y `pin-pantallas.test.js` (formato, PIN de 4
+solo para cambiarlo, 409 en todas las rutas, cambio obligatorio), y la prueba de
+punta a punta (PIN de 4 rechazado al crearlo y al pedir vales; cinco vales
+inválidos anulan los de la persona).
+
+### D-36. Oposición persistente al directorio de compañeros, y registro del valor anterior y nuevo de una rectificación
+**Estado: decidido el 8 de noviembre de 2026 (actividad "Mecanismos técnicos
+para el ejercicio de derechos"); en el árbol, por commitear. El tratamiento
+oponible lo eligió Benjamin.**
+
+**Qué faltaba.** Contra la checklist de la actividad, dos puntos quedaban cortos:
+una oposición acogida levantaba el bloqueo temporal y no dejaba nada, así que el
+tratamiento seguía haciéndose; y la rectificación registraba qué campos cambiaron,
+quién y cuándo, pero no el valor anterior ni el nuevo.
+
+**Oposición.**
+- Los tratamientos oponibles están en `TRATAMIENTOS_OPONIBLES`
+  (`Backend/lib/gobernanza/derechos.js`, espejo del tipo en
+  `Frontend/src/api/gobernanza.api.ts`). Son los que no descansan en una
+  obligación legal, en el contrato ni en el consentimiento: lo que depende del
+  consentimiento se retira revocándolo.
+- Hoy hay uno: **`directorio_companeros`**, aparecer ante compañeros sin
+  `personas.ver` en `GET /personas` y en `/inbox/recipients`. Su base es el
+  interés legítimo de coordinar la obra. Quien tiene `personas.ver` lo sigue
+  viendo: gestionar al personal sí es contrato y obligación legal. Se eligió
+  porque es el único tratamiento del sistema con esa base. Los correos son todos
+  transaccionales o de seguridad (credenciales, recuperación, PIN restablecido).
+- Toda oposición nueva indica su tratamiento, por los dos canales. Sin él se
+  rechaza, antes de pedir la contraseña en el autoservicio.
+- Acogida, la respuesta escribe en la misma transacción `oposiciones` en la ficha
+  (conjunto) y la ejecución en la solicitud, con su evento en el historial. El
+  bloqueo temporal se levanta como antes: la marca toma su lugar.
+- Rechazada, no deja marca. Una oposición registrada antes de este cambio, sin
+  tratamiento, se puede responder, pero no marca nada (el panel lo advierte).
+- El titular la retira desde Mis datos (`POST /gobernanza/mis-datos/oposiciones/{tratamiento}`).
+  Basta la sesión, como al otorgar un consentimiento: amplía el tratamiento solo
+  por su decisión y no entrega datos. Queda en la auditoría
+  (`derechos.oposicion_retirada`).
+- Se informa en el aviso de privacidad (derechos y bases), en "Mis datos" y en
+  la copia de los datos (`solicitudes.oposicionesVigentes`).
+
+**Rectificación.**
+- La ejecución guarda `valoresCifrados`: un sobre con `{ campo, anterior, nuevo }`
+  por campo, calculado contra la ficha actual al aplicar. Quién y cuándo van en
+  claro en la misma ejecución.
+- El valor anterior no se trata: ningún listado ni pantalla lo lee. Solo el
+  detalle de la solicitud lo descifra, para quien tiene
+  `empresa.derechos_titulares`, y cada apertura queda en la auditoría
+  (`derechos.rectificacion_consultada`). El listado, la respuesta y la vista del
+  titular no llevan el sobre.
+- Antes no se guardaba el valor anterior, para que el dato inexacto dejara de
+  tratarse. La clase pide poder demostrar qué se corrigió. Guardarlo cifrado y
+  sin uso cumple las dos cosas.
+- Conservación: la misma de la solicitud, que es la prueba de cumplimiento. Las
+  tablas de gobernanza siguen sin clase de retención (`TABLAS_DE_GOBERNANZA` en
+  el inventario). Queda pendiente definirla.
+
+**Verificación.** `Backend/tests/oposicion-rectificacion.test.js`: oposición sin
+tratamiento, de punta a punta con el directorio y la bandeja, rechazada, retirada
+por el titular y no por otro, en la copia de los datos, y rectificación con valores
+cifrados, detalle auditado y sin el sobre en el listado. Además,
+`derechos-titular.test.js` (reglas puras). Los 13 sabotajes se detectaron.
+
+### D-37. Sin señal siempre se puede firmar: el sobre con el PIN cifrado para el servidor
+**Estado: decidido el 8 de noviembre de 2026 tras la prueba en terreno de Adrean (Android en modo avión). Implementado, por desplegar. Suma 2 recursos al stack (la llave y su alias).**
+
+**Qué se decidió.** Con vales (D-35) quien nunca escribió su PIN con red en ese equipo no podía firmar sin señal. Ahora siempre puede, y no elige ni ve la diferencia:
+
+- **Si hay vales** de esa persona para esa obra, se usan: detectan el error de tipeo al momento.
+- **Si no**, el equipo cifra el PIN con la llave pública de un par RSA de KMS (`ClaveSobreFirma`, `RSAES_OAEP_SHA_256`), junto con el hash de la firma: persona, empresa, obra, qué se firma, `idFirmaLocal` y hora declarada. Al sincronizar, el servidor descifra, recalcula el hash con lo que él sabe de la firma y valida el PIN (`lib/sobreFirma.js`, `FirmaService._validarSobre`). El cifrado asimétrico de KMS no tiene contexto de cifrado, por eso el amarre va dentro de lo cifrado.
+- **Si el PIN está mal**, la firma se rechaza y se avisa con nombre: «la firma de X no se validó: tiene que firmar de nuevo». Si la cuenta ya está bloqueada o KMS no responde, la firma no se rechaza: espera en la cola.
+- **Habilitar dejó de ser un paso.** Cada vez que alguien escribe su PIN con red, propio o asistido, el equipo le renueva los vales de la obra activa en silencio si le quedan menos de 3 o vencen en menos de 2 horas (`utils/valesTurno.ts`). Se retiraron el aviso al entrar y la pantalla «Preparar cuadrilla».
+
+**Un intento por sincronización y por persona.** Diez firmas con el PIN mal escrito no bloquean a nadie de golpe, y una cola no sirve para bloquear a un compañero. Pero la sincronización la nombra el cliente: si todo lo que llega con el mismo nombre fuera gratis, sería una forma de probar PIN sin límite. Por eso (`limitePin.verificarSobre`): el mismo PIN malo repetido nunca vuelve a contar; cada PIN distinto cuenta, como con red (el 9 de noviembre de 2026 bajó de 3 PIN por intento a 1, al volver el PIN a 4: ver D-35); y si dos peticiones chocan al anotar, la que pierde cuenta. Se guardan huellas (HMAC con llave del servidor, truncado), nunca el PIN.
+
+**Por qué no contradice D-35.** Desde una copia del almacenamiento no se puede abrir un sobre ni probar PIN contra él: la privada no sale de KMS, y cada intento pasa por el servidor. El PIN descifrado vive solo en memoria y no se registra; cada descifrado queda en CloudTrail.
+
+**Costos aceptados.**
+- Sin vales, el error de tipeo se conoce recién al volver la señal, y esa firma hay que tomarla de nuevo.
+- Quien tiene el teléfono puede dejar firmas a nombre de otra persona. Se rechazan al sincronizar, pero gastan intentos de esa persona (uno por sincronización).
+- Una firma tomada con el PIN de antes de un cambio de PIN se rechaza: se valida contra el PIN vigente.
+- La hora es declarada. Una futura, o de hace más de 30 días, entra en revisión. De una persona desvinculada: lo declarado antes de su salida entra en revisión, y lo declarado después se rechaza.
+- Las llaves asimétricas de KMS no rotan solas, y `Retain` evita que un borrado deje sin abrir lo que siga en la cola de algún equipo.
+
+**Lo demás que salió de la prueba en terreno.**
+- **Sesión:** sin red nunca se cierra. Una recarga sin señal borraba el token (`checkAuth` trataba cualquier fallo de `/auth/me` como sesión inválida), y el reloj la cerraba a la hora aunque no hubiera red. Ahora solo el servidor puede decir que terminó, y sin señal se sigue con una copia mínima (`utils/sesionLocal.ts`, sin RUT, correo ni salud). Además, un PIN equivocado respondía 401 en `/firmas/vales`, `/signatures` y el cambio de PIN, y el cliente lee todo 401 como sesión caída: escribirlo mal cerraba la sesión. Ahora responde 400.
+- **Sincronización:** al volver la red, al volver a la app y cada 20 segundos mientras haya pendientes, sin depender de `navigator.onLine` ni del evento `online`, que en Android no siempre llega.
+- **Firmas que se perdían:** un 401, un 423 o un error pasajero durante el envío ya no descartan la firma: sigue en la cola.
+- **Errores:** sin red ninguna pantalla muestra «Failed to fetch» (`mensajeDeError`, `SIN_SENAL` en `api/client.ts`). El selector de obra usa una copia local.
+
+**Verificación.** `Backend/tests/sobre-firma.test.js` cifra con el código real del frontend y abre con el real del servidor; `firma-sin-red-pantallas.test.js`; y la prueba de punta a punta abre un sobre de verdad en KMS. **No hay prueba automática en un teléfono:** falta repetir la prueba en terreno.
 
 ## 4. Hallazgos priorizados
 

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { documentsApi } from '../api/documents.api';
 import { resolverDocumentoFirmable } from '../utils/documentoFirmado';
@@ -27,7 +28,7 @@ export function useVistaDocumento(onError?: (mensaje: string) => void) {
             }
         } catch (e) {
             setVista(null);
-            onError?.(e instanceof Error ? e.message : 'No se pudo abrir el documento.');
+            onError?.(mensajeDeError(e, 'No se pudo abrir el documento.'));
         }
     }, [onError]);
 

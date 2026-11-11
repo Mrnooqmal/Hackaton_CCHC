@@ -1,5 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { FiLock, FiEye, FiEyeOff, FiAlertCircle } from 'react-icons/fi';
+import { LARGO_PIN } from '../utils/pin';
+
+const vacio = () => Array.from({ length: LARGO_PIN }, () => '');
 
 interface PinInputProps {
     onComplete: (pin: string) => void;
@@ -20,7 +23,7 @@ export default function PinInput({
     disabled = false,
     showToggle = true,
 }: PinInputProps) {
-    const [pin, setPin] = useState(['', '', '', '']);
+    const [pin, setPin] = useState<string[]>(vacio());
     const [showPin, setShowPin] = useState(false);
     const [isComplete, setIsComplete] = useState(false);
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -35,7 +38,7 @@ export default function PinInput({
     // Reset cuando cambia el error
     useEffect(() => {
         if (error) {
-            setPin(['', '', '', '']);
+            setPin(vacio());
             setIsComplete(false);
             inputRefs.current[0]?.focus();
         }
@@ -52,14 +55,14 @@ export default function PinInput({
         setPin(newPin);
 
         // Auto-focus al siguiente campo
-        if (digit && index < 3) {
+        if (digit && index < LARGO_PIN - 1) {
             inputRefs.current[index + 1]?.focus();
         }
 
         // Verificar si está completo
-        if (digit && index === 3) {
+        if (digit && index === LARGO_PIN - 1) {
             const completePin = newPin.join('');
-            if (completePin.length === 4) {
+            if (completePin.length === LARGO_PIN) {
                 setIsComplete(true);
                 onComplete(completePin);
             }
@@ -83,7 +86,7 @@ export default function PinInput({
         if (e.key === 'ArrowLeft' && index > 0) {
             inputRefs.current[index - 1]?.focus();
         }
-        if (e.key === 'ArrowRight' && index < 3) {
+        if (e.key === 'ArrowRight' && index < LARGO_PIN - 1) {
             inputRefs.current[index + 1]?.focus();
         }
     };
@@ -92,9 +95,9 @@ export default function PinInput({
         if (disabled || isComplete) return;
 
         e.preventDefault();
-        const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
+        const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, LARGO_PIN);
 
-        if (pastedData.length === 4) {
+        if (pastedData.length === LARGO_PIN) {
             const newPin = pastedData.split('');
             setPin(newPin);
             setIsComplete(true);
@@ -103,7 +106,7 @@ export default function PinInput({
     };
 
     const clearPin = () => {
-        setPin(['', '', '', '']);
+        setPin(vacio());
         setIsComplete(false);
         inputRefs.current[0]?.focus();
     };
@@ -112,7 +115,7 @@ export default function PinInput({
         if (title) return title;
         switch (mode) {
             case 'create':
-                return 'Crear PIN de 4 dígitos';
+                return `Crear PIN de ${LARGO_PIN} dígitos`;
             case 'confirm':
                 return 'Confirmar PIN';
             case 'verify':
@@ -130,7 +133,7 @@ export default function PinInput({
                 return 'Ingresa nuevamente el PIN para confirmar';
             case 'verify':
             default:
-                return 'Ingresa tu PIN de 4 dígitos para continuar';
+                return `Ingresa tu PIN de ${LARGO_PIN} dígitos para continuar`;
         }
     };
 
@@ -238,13 +241,18 @@ export default function PinInput({
 
                 .pin-inputs {
                     display: flex;
-                    gap: var(--space-3);
+                    justify-content: center;
+                    width: 100%;
+                    gap: var(--space-2);
                     margin-bottom: var(--space-4);
                 }
 
                 .pin-digit {
-                    width: 56px;
-                    height: 64px;
+                    /* Las casillas se reparten el ancho, sin pasar de 52px. */
+                    flex: 1 1 0;
+                    min-width: 0;
+                    max-width: 52px;
+                    height: 60px;
                     text-align: center;
                     font-size: var(--text-2xl);
                     font-weight: 600;
@@ -288,13 +296,13 @@ export default function PinInput({
                     75% { transform: translateX(4px); }
                 }
 
-                /* Móvil angosto (≤480px): los 4 dígitos + padding anidado (PinInput dentro de
+                /* Móvil angosto (≤480px): las casillas + padding anidado (PinInput dentro de
                    SignatureModal dentro de Modal) se desbordaban en teléfonos de 320–360px.
                    Se reducen dígitos, gap y padding para que el PIN entre sin scroll horizontal. */
                 @media (max-width: 480px) {
                     .pin-input-container { padding: var(--space-4); }
-                    .pin-inputs { gap: var(--space-2); }
-                    .pin-digit { width: 48px; height: 56px; font-size: var(--text-xl); }
+                    .pin-inputs { gap: var(--space-1); }
+                    .pin-digit { height: 52px; font-size: var(--text-xl); }
                 }
 
                 .pin-toggle {

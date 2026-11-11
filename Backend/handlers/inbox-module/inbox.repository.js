@@ -1,9 +1,11 @@
+const { plural } = require('../../lib/utils/plural');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { normalizeRol } = require('../../lib/utils/validation');
 const { construirMensaje, INBOX_TABLE } = require('../../lib/bandeja');
+const { seOpone } = require('../../lib/gobernanza/derechos');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
 
@@ -58,7 +60,7 @@ class InboxRepository {
         }
 
         return {
-            message: `Mensaje enviado a ${recipientIds.length} destinatario(s)`,
+            message: `Mensaje enviado a ${plural(recipientIds.length, 'destinatario', 'destinatarios')}`,
             messageId: baseMessageId,
             count: messages.length
         };
@@ -221,7 +223,7 @@ class InboxRepository {
             count++;
         }
 
-        return { message: `${count} mensaje(s) marcado(s) como leído(s)`, count };
+        return { message: plural(count, 'mensaje marcado como leído', 'mensajes marcados como leídos'), count };
     }
 
     async archiveMessage(messageId, userId) {
@@ -277,7 +279,7 @@ class InboxRepository {
     }
 
     async getRecipients(params) {
-        const { currentUserId, tenantId, obraId } = params;
+        const { currentUserId, tenantId, obraId, ocultarOpositores = false } = params;
         if (!tenantId) throw new Error('tenantId es requerido');
 
         // Obtener personas del tenant que puedan recibir mensajes. Se incluyen
@@ -326,18 +328,22 @@ class InboxRepository {
             return u.cargo || '';
         };
 
+        // Para elegir a quién escribir basta el nombre, el rol y el cargo. Hasta
+        // el 8 de noviembre de 2026 iba también el correo de todo el personal a
+        // cualquier sesión (revisión de minimización, fila 7.5), y un `rut` que
+        // siempre llegaba vacío, porque en la tabla está cifrado.
         const users = allItems
             .filter(u => u.personaId !== currentUserId)
+            // Oposición acogida al directorio de compañeros (lib/gobernanza/derechos.js).
+            .filter(u => !ocultarOpositores || !seOpone(u, 'directorio_companeros'))
             .map(u => ({
                 userId: u.personaId,
                 personaId: u.personaId,
                 nombre: u.nombre,
                 apellido: u.apellido || '',
                 nombreCompleto: `${u.nombre} ${u.apellido || ''}`.trim(),
-                rut: u.rut,
                 rol: u.rol,
                 cargo: cargoEnObra(u),
-                email: u.email
             }));
 
         const grouped = {

@@ -48,6 +48,11 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
     const puede = (permiso) => sesionPuede(sesion, permiso);
     // Crear, editar y avanzar de fase son la misma potestad sobre la obra.
     const puedeGestionarObras = () => puede(PERMISSIONS.OBRAS_CREAR);
+    // El expediente, el consolidado CHECK y las medidas correctivas traen
+    // incidentes con sus afectados, investigaciones y entregas por persona: son
+    // de la pantalla de detalle de la obra (`obras.detalle`). Solo exigían
+    // sesión (fila 7.5, 8 de noviembre de 2026).
+    const puedeVerDetalleObra = () => puede(PERMISSIONS.OBRAS_DETALLE);
 
     // Obra de ESTA empresa, o null.
     //
@@ -188,6 +193,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
         // del riesgo (indicadores, actividades, EPP, MIPER, docs, incidentes, salud).
         if (method === 'GET' && obraId && action === 'expediente') {
             if (!sesion) return sesionRes.respuesta;
+            if (!puedeVerDetalleObra()) return error('No tienes permiso para ver el expediente de la obra', 403);
             const q = event.queryStringParameters || {};
             const obra = await obraDelTenant(obraId);
             if (!obra) return error('Obra no encontrada', 404);
@@ -227,6 +233,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
         // GET /obras/{id}/check/consolidado — Read-model consolidado de la Fase CHECK
         if (method === 'GET' && obraId && action === 'check' && subAction === 'consolidado') {
             if (!sesion) return sesionRes.respuesta;
+            if (!puedeVerDetalleObra()) return error('No tienes permiso para ver el consolidado de la obra', 403);
             if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const { desde, hasta } = event.queryStringParameters || {};
             const consolidado = await registroService.consolidarCheck({
@@ -240,6 +247,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
         // GET /obras/{id}/medidas-correctivas — Read-model de medidas (Art. 71) para ACT
         if (method === 'GET' && obraId && action === 'medidas-correctivas') {
             if (!sesion) return sesionRes.respuesta;
+            if (!puedeVerDetalleObra()) return error('No tienes permiso para ver las medidas de la obra', 403);
             if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const { estado } = event.queryStringParameters || {};
             const resultado = await incidentsRepo.getMedidasByObra(tenantId, obraId, estado);

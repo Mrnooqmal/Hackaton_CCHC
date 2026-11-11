@@ -34,6 +34,10 @@
  *      de CloudFront (D-34).
  *   5. Las respuestas de la API no se cachean.
  *   6. Cierre de sesión.
+ *   7. Firma sin conexión con vales, por la API: pedirlos para la obra del
+ *      turno, sincronizar una asistencia firmada con vale, reintentar la misma
+ *      firma, un vale de otra obra, y desvincular (la firma tardía entra en
+ *      revisión; con PIN ya no firma).
  *
  * Los correos de bienvenida van a `atorres@thecodecookers.cl`, verificado en
  * SES: llegan aunque la cuenta siga en sandbox.
@@ -57,6 +61,8 @@ if (!process.env.AWS_PROFILE && !process.env.AWS_ACCESS_KEY_ID) {
 }
 process.env.AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
+const crypto = require('crypto');
+const sobreFirma = require('../lib/sobreFirma');
 const desechable = require('./e2e/empresa-desechable');
 const { ambiente, crearCliente } = require('./e2e/cliente');
 
@@ -77,6 +83,7 @@ const resumen = (r) => `HTTP ${r.status} ${JSON.stringify(r.cuerpo)?.slice(0, 30
 
 // ─── Flujos ──────────────────────────────────────────────────────────────────
 
+// PIN de 4 dígitos (volvió de 6 el 9 de noviembre de 2026, D-35).
 const PIN = '4827';
 
 /**
@@ -103,6 +110,10 @@ async function primerIngreso(c, { quien, rut, personaId }) {
     const tokenNuevo = cambio.cuerpo?.data?.token;
     comprobar(`${quien}: el cambio emite una sesión nueva`, tokenNuevo && tokenNuevo !== tokenInicial, resumen(cambio));
     const token = tokenNuevo || tokenInicial;
+
+    // Un PIN que no es de 4 dígitos no se acepta (y volvió a 4: D-35).
+    const largo = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: '482791' } });
+    comprobar(`${quien}: un PIN de 6 dígitos no se acepta (400)`, largo.status === 400 && /4 dígitos/.test(largo.cuerpo?.error || ''), resumen(largo));
 
     // Enseguida, sin esperar: dentro de los 60 s del caché del autorizador.
     const pin = await c.pedir('POST', `/personas/${personaId}/set-pin`, { token, cuerpo: { pin: PIN } });
@@ -156,6 +167,19 @@ async function recorrer(c, empresa, personasCreadas) {
     // El historial de firmas de otra persona es parte de su ficha (H-17).
     const historialAjeno = await c.pedir('GET', `/signature-requests/history/${empresa.adminPersonaId}`, { token: tokenTrabajadora });
     comprobar('trabajadora: no ve el historial de firmas de otra persona (404)', historialAjeno.status === 404, resumen(historialAjeno));
+    // Minimización (fila 7.5): la ficha ajena, la búsqueda por RUT, los
+    // destinatarios de la bandeja y los incidentes, sin datos de otros.
+    const fichaAjena = await c.pedir('GET', `/personas/${empresa.adminPersonaId}`, { token: tokenTrabajadora });
+    comprobar('trabajadora: la ficha de otra persona llega como en el listado (sin RUT ni correo)',
+        fichaAjena.status === 200 && !('rut' in (fichaAjena.cuerpo?.data || {})) && !('email' in (fichaAjena.cuerpo?.data || {})), resumen(fichaAjena));
+    const validar = await c.pedir('GET', '/personas/validate?rut=11.111.111-1', { token: tokenTrabajadora });
+    comprobar('trabajadora: no consulta si un RUT está registrado (403)', validar.status === 403, resumen(validar));
+    const destinatarios = await c.pedir('GET', '/inbox/recipients', { token: tokenTrabajadora });
+    comprobar('trabajadora: los destinatarios de la bandeja llegan sin correo ni RUT',
+        destinatarios.status === 200 && (destinatarios.cuerpo?.data?.recipients || []).every((r) => !('email' in r) && !('rut' in r)), resumen(destinatarios));
+    const incidentesAjenos = await c.pedir('GET', '/incidents', { token: tokenTrabajadora });
+    comprobar('trabajadora: sin historial de incidentes, solo ve lo que reportó (nada)',
+        incidentesAjenos.status === 200 && (incidentesAjenos.cuerpo?.data || []).length === 0, resumen(incidentesAjenos));
     const altaAjena = await c.pedir('POST', '/personas', {
         token: tokenTrabajadora,
         cuerpo: { rut: desechable.rutAlAzar(10_000_000, 25_000_000), nombre: 'No', rol: 'trabajador' },
@@ -197,6 +221,132 @@ async function recorrer(c, empresa, personasCreadas) {
     comprobar('trabajadora: cierra sesión', salida.status === 200, resumen(salida));
     const despues = await c.pedir('GET', '/auth/me', { token: tokenTrabajadora });
     comprobar('la sesión cerrada ya no vale', despues.status === 401, resumen(despues));
+
+    await firmaSinConexion(c, empresa, tokenAdmin, personaId);
+}
+
+/**
+ * Firma sin conexión con vales, por la API (sin pantallas). El administrador
+ * hace de supervisor: habilita a la trabajadora en su equipo con el PIN de ella y
+ * después sincroniza lo que se firmó sin red. Va al final porque desvincula a la
+ * trabajadora.
+ */
+async function firmaSinConexion(c, empresa, token, trabajadora) {
+    console.log('\n  Firma sin conexión (vales)');
+    const crearObra = async (nombre) => {
+        const r = await c.pedir('POST', '/obras', { token, cuerpo: { nombre } });
+        comprobar(`admin: crea la obra "${nombre}"`, r.status === 201, resumen(r), { detener: true });
+        return r.cuerpo.data.obra.obraId;
+    };
+    const obraA = await crearObra('Obra A E2E');
+    const obraB = await crearObra('Obra B E2E');
+    const asignar = await c.pedir('POST', `/personas/${trabajadora}/asignaciones`, { token, cuerpo: { obraId: obraA, cargos: [] } });
+    comprobar('admin: asigna a la trabajadora a la obra A', asignar.status === 200, resumen(asignar), { detener: true });
+
+    const crearActividad = async (obraId, titulo) => {
+        const r = await c.pedir('POST', '/activities', { token, cuerpo: {
+            tipo: 'OTRO', titulo, obraId, relatorId: empresa.adminPersonaId, asistentesRequeridos: [trabajadora],
+        } });
+        comprobar(`admin: crea la actividad "${titulo}"`, r.status === 201, resumen(r), { detener: true });
+        const datos = r.cuerpo.data;
+        return (Array.isArray(datos) ? datos[0] : (datos.actividades?.[0] || datos.activity || datos)).activityId;
+    };
+    const a1 = await crearActividad(obraA, 'Charla A1');
+    const a2 = await crearActividad(obraA, 'Charla A2');
+    const a3 = await crearActividad(obraA, 'Charla A3');
+    const b1 = await crearActividad(obraB, 'Charla B1');
+
+    // Habilitar: el supervisor pide los vales de la trabajadora para la obra del turno.
+    const sinAsignar = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraB, pin: PIN } });
+    comprobar('vales para una obra a la que no está asignada: 404', sinAsignar.status === 404, resumen(sinAsignar));
+    const emision = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN, deviceId: 'e2e' } });
+    const vales = emision.cuerpo?.data?.vales || [];
+    comprobar('admin: habilita a la trabajadora en la obra A (5 vales)', emision.status === 200 && vales.length === 5 && emision.cuerpo.data.obraId === obraA, resumen(emision), { detener: true });
+
+    const asistir = (actividad, cuerpo) => c.pedir('POST', `/activities/${actividad}/attendance`, {
+        token, cuerpo: { personaId: trabajadora, deviceId: 'e2e', timestampLocal: new Date().toISOString(), ...cuerpo },
+    });
+
+    const primera = await asistir(a1, { vale: vales[0], idFirmaLocal: 'e2e-1' });
+    comprobar('sincroniza una asistencia firmada con vale', primera.status === 200 && primera.cuerpo.data.totalAsistentes === 1, resumen(primera));
+    const reintento = await asistir(a1, { vale: vales[0], idFirmaLocal: 'e2e-1' });
+    comprobar('el reintento de la misma firma no la duplica', reintento.status === 200 && reintento.cuerpo.data.totalAsistentes === 1, resumen(reintento));
+
+    const otraObra = await asistir(b1, { vale: vales[1], idFirmaLocal: 'e2e-2' });
+    comprobar('un vale de la obra A no firma en la obra B (400, "otra obra")',
+        otraObra.status === 400 && /otra obra/.test(otraObra.cuerpo?.error || ''), resumen(otraObra));
+
+    // Un PIN equivocado no es una sesión vencida: responde 400, nunca 401, porque el
+    // cliente lee todo 401 como sesión caída y cerraba la sesión de quien firmaba.
+    const pinMalo = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: '0000' } });
+    comprobar('un PIN equivocado al pedir vales responde 400, no 401', pinMalo.status === 400, resumen(pinMalo));
+    const sesionViva = await c.pedir('GET', '/auth/me', { token });
+    comprobar('...y la sesión sigue viva', sesionViva.status === 200, resumen(sesionViva));
+
+    // El sobre (D-37): sin vales, el PIN va cifrado con la llave pública de KMS.
+    const llave = sesionViva.cuerpo?.data?.user?.llaveSobreFirma;
+    comprobar('la sesión entrega la llave pública de los sobres', typeof llave === 'string' && llave.length > 100, 'sin llave', { detener: true });
+    const a4 = await crearActividad(obraA, 'Charla A4');
+    const sobreDe = (pin, idFirmaLocal, timestampLocal) => {
+        const h = sobreFirma.hashDeFirma({ personaId: trabajadora, tenantId: empresa.tenantId, obraId: obraA, referenciaTipo: 'activity', referenciaId: a4, idFirmaLocal, timestampLocal });
+        return crypto.publicEncrypt({ key: crypto.createPublicKey({ key: Buffer.from(llave, 'base64'), format: 'der', type: 'spki' }), padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+            Buffer.from(JSON.stringify({ p: pin, h }))).toString('base64');
+    };
+    const hora = new Date().toISOString();
+    const conSobre = (pin, id, cuerpoExtra = {}) => c.pedir('POST', `/activities/${a4}/attendance`, { token, cuerpo: {
+        personaId: trabajadora, deviceId: 'e2e', timestampLocal: hora, idFirmaLocal: id, idSincronizacion: 'sinc_e2e_0001', sobre: sobreDe(pin, id, hora), ...cuerpoExtra,
+    } });
+    const sobreMalo = await conSobre('0000', 'e2e-sobre-malo');
+    comprobar('un sobre con el PIN equivocado se rechaza (400)', sobreMalo.status === 400 && /PIN/.test(sobreMalo.cuerpo?.error || ''), resumen(sobreMalo));
+    const sobreAjeno = await conSobre(PIN, 'e2e-sobre-otro', { idFirmaLocal: 'e2e-otra-firma' });
+    comprobar('un sobre no sirve para otra firma (400)', sobreAjeno.status === 400, resumen(sobreAjeno));
+    const sobreBueno = await conSobre(PIN, 'e2e-sobre-bueno');
+    comprobar('un sobre con el PIN correcto se abre en KMS y firma', sobreBueno.status === 200 && sobreBueno.cuerpo.data.totalAsistentes === 1, resumen(sobreBueno));
+
+    // Cinco vales inexistentes a su nombre (lo que produce un PIN equivocado al
+    // descifrar en el equipo): al quinto se anulan sus vales vigentes.
+    const basura = () => crypto.randomBytes(32).toString('hex');
+    let ultimo;
+    for (let i = 0; i < 5; i += 1) ultimo = await asistir(a3, { vale: basura(), idFirmaLocal: `e2e-basura-${i}` });
+    comprobar('cinco vales inválidos: el quinto anula los vales de la persona',
+        ultimo.status === 400 && /se anularon las firmas sin conexión/.test(ultimo.cuerpo?.error || ''), resumen(ultimo));
+    const anulado = await asistir(a2, { vale: vales[2], idFirmaLocal: 'e2e-anulado' });
+    comprobar('...y un vale que era bueno ya no firma', anulado.status === 400 && /intentos con vales inválidos/.test(anulado.cuerpo?.error || ''), resumen(anulado));
+    const otraVez = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN, deviceId: 'e2e' } });
+    const vales2 = otraVez.cuerpo?.data?.vales || [];
+    comprobar('admin: la vuelve a habilitar con su PIN', otraVez.status === 200 && vales2.length === 5, resumen(otraVez), { detener: true });
+
+    const baja = await c.pedir('DELETE', `/personas/${trabajadora}`, { token });
+    comprobar('admin: desvincula a la trabajadora', baja.status === 200, resumen(baja), { detener: true });
+
+    const tardia = await asistir(a2, { vale: vales2[0], idFirmaLocal: 'e2e-3' });
+    comprobar('una firma con vale sincronizada después de desvincular entra', tardia.status === 200 && tardia.cuerpo.data.totalAsistentes === 1, resumen(tardia));
+    const firmas = await c.pedir('GET', `/signatures/worker/${trabajadora}`, { token });
+    const lista = firmas.cuerpo?.data?.firmas || firmas.cuerpo?.data?.signatures || firmas.cuerpo?.data || [];
+    const deA2 = (Array.isArray(lista) ? lista : []).find((f) => f.referenciaId === a2);
+    const deA1 = (Array.isArray(lista) ? lista : []).find((f) => f.referenciaId === a1);
+    comprobar('...y queda en revisión; la anterior a la desvinculación no',
+        deA2?.requiereRevision === true && deA1 && deA1.requiereRevision === false, resumen(firmas));
+
+    const conPin = await asistir(a3, { pin: PIN });
+    comprobar('una persona desvinculada ya no firma con PIN (400)', conPin.status === 400 && /desvinculada/.test(conPin.cuerpo?.error || ''), resumen(conPin));
+    const mas = await c.pedir('POST', '/firmas/vales', { token, cuerpo: { personaId: trabajadora, obraId: obraA, pin: PIN } });
+    comprobar('una persona desvinculada no recibe vales', mas.status === 400 || mas.status === 404, resumen(mas));
+
+    // La pantalla "Firmas en revisión": la lista y la confirmación.
+    const enRevision = await c.pedir('GET', '/signatures/revision', { token });
+    const pendientes = enRevision.cuerpo?.data?.firmas || [];
+    const aRevisar = pendientes.find((f) => f.referenciaId === a2);
+    comprobar('firmas en revisión: lista la firma tardía, con su motivo y sus fechas',
+        enRevision.status === 200 && Boolean(aRevisar?.motivoRevision) && Boolean(aRevisar?.offline?.valeAnuladoEn)
+            && !pendientes.some((f) => f.referenciaId === a1), resumen(enRevision));
+    if (aRevisar) {
+        const confirmar = await c.pedir('PUT', `/signatures/${aRevisar.signatureId}/revision`, { token, cuerpo: { decision: 'confirmada' } });
+        comprobar('admin: confirma la firma en revisión', confirmar.status === 200, resumen(confirmar));
+        const despues = await c.pedir('GET', '/signatures/revision', { token });
+        comprobar('...y sale de la lista', despues.status === 200
+            && !(despues.cuerpo?.data?.firmas || []).some((f) => f.signatureId === aRevisar.signatureId), resumen(despues));
+    }
 }
 
 // ─── Principal ───────────────────────────────────────────────────────────────

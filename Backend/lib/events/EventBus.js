@@ -1,3 +1,4 @@
+const { plural } = require('../utils/plural');
 const { InboxRepository } = require('../../handlers/inbox-module/inbox.repository');
 const { ObraService } = require('../services/ObraService');
 const { PersonaService } = require('../services/PersonaService');
@@ -160,7 +161,7 @@ class EventBus {
         const fallas = resultados.filter((r) => r.status === 'rejected').map((r) => r.reason);
         if (!fallas.length) return;
         if (estricto) {
-            const err = new Error(`${fallas.length} suscriptor(es) de ${event} fallaron: ${fallas.map((f) => f?.message).join('; ')}`);
+            const err = new Error(`${plural(fallas.length, 'suscriptor', 'suscriptores')} de ${event} fallaron: ${fallas.map((f) => f?.message).join('; ')}`);
             err.causas = fallas;
             throw err;
         }

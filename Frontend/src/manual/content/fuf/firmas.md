@@ -50,8 +50,10 @@ plataforma se los pide automáticamente. Ver [Documentos](/obra/documentos#publi
 Sin señal se firma igual, con el PIN. La firma queda guardada en el equipo con la fecha y hora
 en que se firmó, y se envía sola cuando vuelve la señal. El servidor valida el PIN al recibirla:
 si estaba mal, la firma no se registra y la persona tiene que firmar de nuevo. Una firma que
-llega mucho después, o después de que la persona dejó la empresa, queda en revisión hasta que
-alguien de la obra la confirme o la rechace. Ver [Firmar sin conexión](/terreno/firmar#sin-conexión).
+llega fuera de plazo, con una hora que no es creíble o después de que la persona dejó la empresa
+se registra, pero no cuenta como cumplimiento hasta que alguien con permiso la confirme; si la
+rechaza, queda revocada con el motivo. Ver [Firmas en revisión](/obra/pedir-firmas#firmas-en-revisión)
+y [Firmar sin conexión](/terreno/firmar#sin-conexión).
 
 ## Quién firma según el documento
 

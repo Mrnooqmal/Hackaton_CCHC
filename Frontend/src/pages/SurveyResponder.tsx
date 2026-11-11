@@ -75,6 +75,7 @@ export default function SurveyResponder() {
                 descripcion: res.data.descripcion,
                 preguntas: res.data.preguntas || [],
                 esFichaSalud: res.data.esFichaSalud,
+                obraId: res.data.obraId ?? null,
             });
             setWorkerId(mio.workerId || mio.personaId || null);
             setYaRespondida(mio.estado === 'respondida');
@@ -112,6 +113,12 @@ export default function SurveyResponder() {
 
     const firmar = async (pin: string) => {
         if (!encuesta || !workerId) return;
+        // La Ficha Básica de Salud se responde solo con señal (el servidor también
+        // lo exige): sin red sus respuestas quedarían en el equipo, en claro.
+        if (encuesta.esFichaSalud && !navigator.onLine) {
+            setErrorFirma('La Ficha Básica de Salud se responde con señal. Vuelve a intentarlo cuando tengas conexión.');
+            return;
+        }
         setFirmando(true);
         setErrorFirma('');
         try {
@@ -121,7 +128,8 @@ export default function SurveyResponder() {
                 workerId,
                 user?.nombre || 'Trabajador',
                 armarRespuestas(encuesta.preguntas, valores),
-                pin
+                pin,
+                encuesta.obraId ?? null,
             );
             if (!resultado.success) {
                 setErrorFirma(resultado.error || 'No fue posible enviar tus respuestas.');
@@ -188,7 +196,9 @@ export default function SurveyResponder() {
                             {faltantes.size > 0
                                 ? `Faltan ${faltantes.size} pregunta${faltantes.size === 1 ? '' : 's'} obligatoria${faltantes.size === 1 ? '' : 's'}.`
                                 : !isOnline
-                                    ? <><FiWifiOff size={13} /> Sin conexión: se guarda en este equipo y se envía sola.</>
+                                    ? (encuesta?.esFichaSalud
+                                        ? <><FiWifiOff size={13} /> Sin conexión: la Ficha Básica de Salud se responde con señal.</>
+                                        : <><FiWifiOff size={13} /> Sin conexión: se guarda en este equipo y se envía sola.</>)
                                     : yaRespondida
                                         ? 'Ya respondiste: al firmar, reemplazas tu respuesta anterior.'
                                         : 'Tus respuestas se firman con tu PIN.'}

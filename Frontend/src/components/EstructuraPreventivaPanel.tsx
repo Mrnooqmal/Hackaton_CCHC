@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { mensajeDeError } from '../api/client';
+import { plural } from '../utils/plural';
 import { FiAlertTriangle, FiCheckCircle, FiClock, FiUploadCloud, FiUsers } from 'react-icons/fi';
 import { Badge, EstructuraPreventivaSkeleton } from './ui';
 import { estructuraApi, type ResumenEstructura } from '../api/estructura.api';
@@ -91,7 +93,7 @@ export default function EstructuraPreventivaPanel({
             if (!res.success) throw new Error(res.error || 'No se pudo registrar el documento.');
             await cargar();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error al cargar el documento.');
+            setError(mensajeDeError(e, 'Error al cargar el documento.'));
         } finally {
             setSubiendoReg(false);
         }
@@ -139,7 +141,7 @@ export default function EstructuraPreventivaPanel({
                     pregunta por la dotación y la respuesta necesita procedencia. */}
                 {dotacion.origen === 'declarada' && (
                     <div className="text-muted" style={{ fontSize: '0.78rem', marginBottom: 'var(--space-2)' }}>
-                        El sistema cuenta {dotacion.calculada} persona(s) asignada(s).
+                        El sistema cuenta {plural(dotacion.calculada, 'persona asignada', 'personas asignadas')}.
                         {dotacion.observacion ? ` Observación: ${dotacion.observacion}` : ''}
                     </div>
                 )}

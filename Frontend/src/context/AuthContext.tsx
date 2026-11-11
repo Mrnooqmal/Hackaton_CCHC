@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { purgarAlmacenOfflineAntiguo } from '../services/purgaOffline';
 import { borrarPreguntasEnCache } from '../utils/encuestas';
+import { borrarTodosLosVales } from '../utils/colaFirmas';
+import { borrarCopias } from '../utils/copiaLocal';
+import { guardarSesionLocal, leerSesionLocal, borrarSesionLocal } from '../utils/sesionLocal';
+import { guardarLlaveSobre } from '../utils/sobreFirma';
 import { EVENTO_SESION_CAIDA, authApi, type User, type SessionInfo, type LoginSuccess } from '../api/client';
 
 export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: string }
@@ -33,33 +37,41 @@ interface AuthContextType {
 }
 
 /**
- * Borra del dispositivo todo rastro de la sesión.
+ * Borra del dispositivo la sesión, y según el caso, los vales.
  *
- * En un equipo compartido de terreno —que es el caso normal— lo que queda en el
- * navegador después de cerrar sesión queda al alcance del siguiente que lo tome.
- * Por eso además de la sesión se borran los vales de firma, que son credenciales
- * de un solo uso a nombre de quien los desbloqueó, y la base del modo sin
- * conexión anterior, que guardaba PIN en claro.
+ * - **Siempre** se borra la sesión (token, empresa, persona).
+ * - **Nunca** se borra la cola de firmas tomadas sin red (utils/colaFirmas): son
+ *   actos que ya ocurrieron en terreno. Antes se borraba al caer la sesión, y un
+ *   turno largo sin señal —la sesión dura 6 horas— perdía todas las firmas. La
+ *   cola es por empresa: la sincroniza la próxima sesión de esa empresa.
+ * - Los **vales** y las preguntas de encuestas guardadas para responder sin red
+ *   se borran solo con un "Cerrar sesión" explícito (`cierreExplicito`). Al
+ *   vencer la sesión o ante un 401 se conservan: el supervisor que vuelve a
+ *   entrar a mitad de turno no pierde los vales de su cuadrilla. Al cerrar
+ *   sesión a propósito, el equipo puede pasar a otras manos, y los vales son
+ *   credenciales de un solo uso a nombre de quienes los desbloquearon.
  *
- * Tiene una consecuencia deliberada: lo que hubiera quedado sin sincronizar se
- * pierde. Vale más eso que dejar credenciales de otra persona en un dispositivo
- * que va a usar alguien más.
+ * La base del modo sin conexión anterior, que guardaba PIN en claro, se purga
+ * siempre.
  */
-const limpiarDatosLocales = () => {
+const limpiarDatosLocales = ({ cierreExplicito }: { cierreExplicito: boolean }) => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('session_id');
     localStorage.removeItem('tenant_id');
     localStorage.removeItem('persona_id');
-    localStorage.removeItem('pendingOfflineSignatures');
-    // Los vales de firma sin conexión son credenciales de un solo uso a nombre de
-    // quienes los desbloquearon: no sobreviven al cierre de sesión en un equipo
-    // compartido.
-    localStorage.removeItem('offlineVales');
-    // Progreso de recorridos guiados sin enviar (dato de conveniencia: perderlo
-    // solo hace que una ayuda vuelva a aparecer).
+    borrarSesionLocal();
+    // Progreso de recorridos guiados sin enviar: se va siempre, también al vencer
+    // la sesión. Es un dato personal (D-33) y perderlo solo hace que una ayuda
+    // vuelva a aparecer.
     localStorage.removeItem('recorridosPendientes');
-    // Preguntas de las encuestas asignadas, guardadas para responder sin red.
-    borrarPreguntasEnCache();
+    if (cierreExplicito) {
+        borrarTodosLosVales();
+        borrarPreguntasEnCache();
+        // Las copias para firmar sin red (actividades del día, documentos
+        // pendientes): como los vales, se quedan al vencer la sesión y se van
+        // al cerrarla a propósito.
+        borrarCopias();
+    }
     purgarAlmacenOfflineAntiguo();
 };
 
@@ -71,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [sessionExpired, setSessionExpired] = useState(false);
+    const [sinConfirmar, setSinConfirmar] = useState(false);
     const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
@@ -81,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // caminos terminan igual: se limpia el dispositivo y se muestra el aviso.
     useEffect(() => {
         const alCaerLaSesion = () => {
-            limpiarDatosLocales();
+            limpiarDatosLocales({ cierreExplicito: false });
             setUser(null);
             setSession(null);
             setSessionExpired(true);
@@ -90,12 +103,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return () => window.removeEventListener(EVENTO_SESION_CAIDA, alCaerLaSesion);
     }, []);
 
+    // Al cumplirse la hora se pregunta al servidor: sin red nunca se cierra la
+    // sesión. Antes el reloj la cerraba solo, en plena obra y en modo avión, y la
+    // persona no podía volver a entrar ni firmar hasta tener señal.
     const scheduleAutoLogout = useCallback((expiresAt: string) => {
         if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
-        const ms = new Date(expiresAt).getTime() - Date.now();
-        if (ms <= 0) return;
-        expiryTimerRef.current = setTimeout(() => {
-            limpiarDatosLocales();
+        const ms = Math.max(new Date(expiresAt).getTime() - Date.now(), 0);
+        expiryTimerRef.current = setTimeout(async () => {
+            const token = localStorage.getItem('auth_token');
+            const r = token ? await authApi.me(token) : null;
+            if (r && (r.sinRed || r.reintentable)) {
+                scheduleAutoLogout(new Date(Date.now() + 60000).toISOString());
+                return;
+            }
+            if (r?.success && r.data?.session?.expiresAt && new Date(r.data.session.expiresAt).getTime() > Date.now()) {
+                scheduleAutoLogout(r.data.session.expiresAt);
+                return;
+            }
+            limpiarDatosLocales({ cierreExplicito: false });
             setUser(null);
             setSession(null);
             setSessionExpired(true);
@@ -119,6 +144,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     tenantId: (userData as any).tenantId || (response.data as any).tenantId,
                 };
                 setUser(enrichedUser);
+                guardarSesionLocal(enrichedUser);
+                guardarLlaveSobre((userData as any).llaveSobreFirma);
+                setSinConfirmar(false);
                 setSession(response.data.session);
                 if (response.data.session?.expiresAt) {
                     scheduleAutoLogout(response.data.session.expiresAt);
@@ -132,7 +160,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (enrichedUser.personaId) {
                     localStorage.setItem('persona_id', enrichedUser.personaId);
                 }
+            } else if (response.sinRed || response.reintentable) {
+                // Sin red, o el servidor no pudo responder: la sesión no terminó,
+                // solo no se pudo preguntar. Se sigue con la copia local y se
+                // vuelve a preguntar (ver el efecto de abajo).
+                const copia = leerSesionLocal<User>();
+                if (copia) setUser(copia);
+                setSinConfirmar(true);
             } else {
+                borrarSesionLocal();
                 localStorage.removeItem('auth_token');
                 localStorage.removeItem('session_id');
                 localStorage.removeItem('tenant_id');
@@ -149,6 +185,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         checkAuth();
     }, [checkAuth]);
+
+    // Se entró con la copia local: al volver la señal se confirma con el servidor.
+    useEffect(() => {
+        if (!sinConfirmar) return undefined;
+        const id = window.setInterval(checkAuth, 60000);
+        window.addEventListener('online', checkAuth);
+        return () => {
+            window.clearInterval(id);
+            window.removeEventListener('online', checkAuth);
+        };
+    }, [sinConfirmar, checkAuth]);
 
     // Aplica una sesión ya creada por el backend (login directo o tras elegir
     // empresa): guarda localStorage + estado de React. Compartido por login()
@@ -176,6 +223,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         setUser(enrichedUser);
+        guardarSesionLocal(enrichedUser);
+        guardarLlaveSobre((userData as any).llaveSobreFirma);
         setSession({
             sessionId,
             expiresAt,
@@ -246,7 +295,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (sessionId) {
             await authApi.logout(sessionId);
         }
-        limpiarDatosLocales();
+        limpiarDatosLocales({ cierreExplicito: true });
         setUser(null);
         setSession(null);
     };
@@ -254,6 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateUser = (userData: Partial<User>) => {
         if (user) {
             setUser({ ...user, ...userData });
+            guardarSesionLocal({ ...user, ...userData });
         }
     };
 

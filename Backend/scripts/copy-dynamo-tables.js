@@ -17,6 +17,7 @@
  *     script se corre dos veces.
  */
 
+const { plural } = require('../lib/utils/plural');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const {
     DynamoDBDocumentClient,
@@ -126,7 +127,7 @@ async function main() {
             const dstItems = await scanAll(dst);
             if (dstItems.length > 0) {
                 console.log(
-                    `SALTADA: destino ya tiene ${dstItems.length} item(s) (usar --force para sobreescribir/duplicar de todos modos)`
+                    `SALTADA: destino ya tiene ${plural(dstItems.length, 'item', 'items')} (usar --force para sobreescribir/duplicar de todos modos)`
                 );
                 totalSkipped += 1;
                 continue;

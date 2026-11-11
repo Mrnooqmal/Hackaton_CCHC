@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import {
     FiAlertTriangle, FiCalendar, FiCheck, FiExternalLink, FiFileText, FiUploadCloud,
 } from 'react-icons/fi';
@@ -116,7 +117,7 @@ export default function FufPorFase({
             await subirComoDocumento({ file, tipo, titulo: r.titulo, tenantId, obraId });
             await cargar();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error al cargar el documento.');
+            setError(mensajeDeError(e, 'Error al cargar el documento.'));
         } finally {
             setSubiendo(null);
         }

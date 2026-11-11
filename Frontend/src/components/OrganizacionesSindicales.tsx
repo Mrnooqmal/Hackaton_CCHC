@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { mensajeDeError } from '../api/client';
 import { FiPlus, FiTrash2, FiUsers } from 'react-icons/fi';
 import { EmptyState } from './ui';
 import { tenantsApi, type OrganizacionSindical, type TenantReglas } from '../api/tenants.api';
@@ -52,7 +53,7 @@ export default function OrganizacionesSindicales({
             if (!res.success) throw new Error(res.error || 'No se pudo guardar.');
             onCambio?.();
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Error al guardar.');
+            setError(mensajeDeError(e, 'Error al guardar.'));
             // Se revierte el estado local: dejarlo pintado como guardado cuando el
             // servidor lo rechazó es peor que el error mismo.
             setLista(reglas?.organizacionesSindicales || []);

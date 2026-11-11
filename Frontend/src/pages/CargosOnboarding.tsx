@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { plural } from '../utils/plural';
 import { useSearchParams } from 'react-router-dom';
 import { FiPlus, FiCopy, FiTrash2, FiEdit2, FiLock, FiAlertTriangle, FiUpload, FiEye, FiRefreshCw, FiCheck } from 'react-icons/fi';
 import { AlertBanner, Modal, Select, SegmentedControl, PageHeader, Drawer } from '../components/ui';
@@ -135,7 +136,7 @@ export default function CargosOnboarding() {
                 invalidateCargoCatalog();
                 setDirty(false); setSaved(true);
                 const n = res.data?.documentosSincronizados || 0;
-                setSyncMsg(n > 0 ? `Se sincronizó la plantilla a ${n} documento(s) de trabajadores ya existentes y se les notificó.` : '');
+                setSyncMsg(n > 0 ? `Se sincronizó la plantilla a ${plural(n, 'documento', 'documentos')} de trabajadores ya existentes y se les notificó.` : '');
                 if (res.data?.cargos) setCargos(res.data.cargos);
             } else {
                 setError(res.error || 'No se pudo guardar');

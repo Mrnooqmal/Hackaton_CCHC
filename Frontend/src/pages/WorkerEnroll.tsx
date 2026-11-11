@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
 import { useNavigate } from 'react-router-dom';
 import PinInput from '../components/PinInput';
 import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield, FiMapPin } from 'react-icons/fi';
@@ -432,6 +433,13 @@ export default function WorkerEnroll() {
                             <strong>Importante:</strong> El PIN es personal e intransferible.
                             Se recomienda no usar secuencias obvias como 1234 o fechas de nacimiento.
                         </div>
+
+                        {/* Deber de información (Ley 21.719): el trabajador está presente
+                            y es cuando se recogen sus datos. */}
+                        <details className="aviso-privacidad-desplegable mb-4">
+                            <summary>Antes de crear el PIN, muéstrale al trabajador cómo se tratan sus datos</summary>
+                            <AvisoPrivacidad compacto />
+                        </details>
 
                         <PinInput
                             // Asistido: el trabajador teclea su PIN en un equipo ajeno. Quien
