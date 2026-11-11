@@ -1,0 +1,46 @@
+{
+  "cambiar-de-obra": {
+    "version": 1,
+    "huella": "8e9e751eaf7ef72f086619cb1f583d4ece6f495b02daa0f4aba58a06c97c8f46"
+  },
+  "cumplimiento-obra": {
+    "version": 1,
+    "huella": "70336f7316afa260065b2b1dfd99f58a837c50269bd4c448b8171b0473072a45"
+  },
+  "encontrar-documentos": {
+    "version": 1,
+    "huella": "fc404bd06168e1cafe041f7724da27960e75d7edd5374b5d2a6fa2a036ec047e"
+  },
+  "gestionar-incidentes": {
+    "version": 1,
+    "huella": "222a4b963fbdfaf7122d281e1baa06fa41cc60a8d0d3e5296c9ef20aa9daf518"
+  },
+  "inicio-empresa": {
+    "version": 1,
+    "huella": "b0313bf05bb8beac839ede1168199ce786ddddb17cee71b0dd83fd9ea68e474a"
+  },
+  "inicio-gestion": {
+    "version": 1,
+    "huella": "987d13cc9c467c9a8c72c94b8fa9d77920c8772266cbc06843b1c39ec91dd212"
+  },
+  "inicio-terreno": {
+    "version": 1,
+    "huella": "83d2e47ead440c3ec734c4c68a3d76746c9443414f3ebf001c2ef9d79fad0ed6"
+  },
+  "mis-firmas": {
+    "version": 2,
+    "huella": "e0bbecc31d0c8cd4df67aac54d6ea9503a9cb690f15711aee285d8c46c4b4c08"
+  },
+  "programar-actividades": {
+    "version": 1,
+    "huella": "80567d5d972400d8ea99af8773bbe5ba9349efa6cefcb40077c935c2301b65c9"
+  },
+  "reportar": {
+    "version": 1,
+    "huella": "6e2d13408ae8b8f7a007aa8bde83aad6c3d28b3ad72258fee6094e55c325865e"
+  },
+  "subir-documentos": {
+    "version": 1,
+    "huella": "f1d52bd05b8c95a6eb69eee1d8a0a453133e26430c5d657ea99cfdd0644d6bf5"
+  }
+}

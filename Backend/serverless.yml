@@ -106,6 +106,8 @@ provider:
     AUDITORIA_ACCESOS_TABLE: ${self:service}-auditoria-accesos-${self:provider.stage}
     EPP_TABLE: ${self:service}-epp-${self:provider.stage}
     ESTRUCTURA_TABLE: ${self:service}-estructura-preventiva-${self:provider.stage}
+    # Progreso de los recorridos guiados por persona (D-33). Dato de conveniencia.
+    RECORRIDOS_TABLE: ${self:service}-recorridos-${self:provider.stage}
     # --- Storage ---
     EVIDENCIA_BUCKET: ${self:custom.evidenciaBucketName}
     TRABAJO_BUCKET: ${self:custom.trabajoBucketName}
@@ -253,6 +255,8 @@ provider:
             - !Sub ${AusenciasTable.Arn}/index/*
             - !GetAtt EppTable.Arn
             - !GetAtt EstructuraPreventivaTable.Arn
+            # Sin `/index/*`: la tabla no tiene índices.
+            - !GetAtt RecorridosTable.Arn
 
         - Effect: Allow
           Action:
@@ -1176,6 +1180,24 @@ functions:
           authorizer:
             name: sesionUsuario
 
+  # Progreso de los recorridos guiados (D-33). Una función para las dos rutas,
+  # con métodos explícitos y no `any`: así el preflight lo responde la
+  # configuración CORS del API y no hace falta declararlo (D-16: cada ruta y
+  # cada función cuestan recursos del stack).
+  ayudaProgreso:
+    handler: handlers/ayuda/progreso.atender
+    events:
+      - httpApi:
+          path: /ayuda/progreso
+          method: get
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /ayuda/progreso/{recorridoId}
+          method: put
+          authorizer:
+            name: sesionUsuario
+
   # Derechos de los titulares (Ley 21.719): solicitudes, bloqueo temporal,
   # prórroga y respuesta, con historial que solo crece. Ver handlers/gobernanza.
   gobernanzaDerechos:
@@ -2067,6 +2089,31 @@ resources:
         PointInTimeRecoverySpecification:
           PointInTimeRecoveryEnabled: true
 
+    # Progreso de los recorridos guiados (D-33): qué recorrido vio cada persona,
+    # en qué versión y hasta dónde llegó. Empresa en la partición y la persona al
+    # inicio de la clave de orden: `<personaId>#<recorridoId>`. Conveniencia en
+    # el inventario: se suprime a solicitud del titular sin esperar el plazo.
+    RecorridosTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: ${self:custom.deletionPolicy}
+      UpdateReplacePolicy: ${self:custom.deletionPolicy}
+      Properties:
+        TableName: ${self:provider.environment.RECORRIDOS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        SSESpecification: ${self:custom.cifradoTablas}
+        AttributeDefinitions:
+          - AttributeName: tenantId
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenantId
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+
     RolGobernanza:
       Type: AWS::IAM::Role
       Properties:
@@ -2339,6 +2386,7 @@ resources:
                     - !GetAtt EstructuraPreventivaTable.Arn
                     - !GetAtt InboxTable.Arn
                     - !GetAtt SuggestionsTable.Arn
+                    - !GetAtt RecorridosTable.Arn
                 # Los lotes: crear y cambiar de estado (no borrar).
                 - Effect: Allow
                   Action: [dynamodb:PutItem, dynamodb:UpdateItem]

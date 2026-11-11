@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LuBuilding2, LuDownload, LuImage, LuPencil } from 'react-icons/lu';
+import { ancla } from '../../ayuda/registro';
 
 export type PestanaObra = 'resumen' | 'ds44';
 
@@ -101,7 +102,7 @@ export default function ObraCabecera({
             </div>
 
             <div className="ob-cabecera__barra">
-                <div className="ob-tabs" role="tablist" aria-label="Secciones de la obra">
+                <div className="ob-tabs" role="tablist" aria-label="Secciones de la obra" {...ancla('obra-detalle.pestanas')}>
                     <button type="button" role="tab" className="ob-tab" aria-selected={pestana === 'resumen'} onClick={() => onPestana('resumen')}>
                         Resumen
                     </button>
@@ -111,7 +112,7 @@ export default function ObraCabecera({
                 </div>
                 <div className="ob-acciones">
                     {onExportarFuf && (
-                        <button type="button" className="ob-btn ob-btn--quieto" disabled={exportando} onClick={exportar}
+                        <button type="button" className="ob-btn ob-btn--quieto" disabled={exportando} onClick={exportar} {...ancla('obra-detalle.exportar')}
                             title="Abre el reporte imprimible del FUF en una pestaña nueva">
                             <LuDownload size={15} /> {exportando ? 'Generando…' : 'Exportar FUF'}
                         </button>

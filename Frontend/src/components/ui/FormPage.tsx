@@ -1,3 +1,4 @@
+import type { AtributoAncla } from '../../ayuda/registro';
 export interface FormPageProps {
   header?: React.ReactNode;
   stepper?: React.ReactNode;
@@ -113,11 +114,13 @@ export interface FieldSectionProps {
    * que cuelgan los campos, igual que una cuadrilla en la vista de obra.
    */
   inline?: boolean;
+  /** Ancla de recorrido guiado (ver src/ayuda/registro.ts). */
+  ancla?: AtributoAncla;
 }
 
-export function FieldSection({ title, description, children, cols = 2, accent = 'none', inline = false }: FieldSectionProps) {
+export function FieldSection({ title, description, children, cols = 2, accent = 'none', inline = false, ancla }: FieldSectionProps) {
   return (
-    <section className="ui-field-section">
+    <section className="ui-field-section" {...ancla}>
       <div className={`ui-field-section-header${accent === 'blue' ? ' ui-field-section-header--blue' : ''}${inline ? ' ui-field-section-header--inline' : ''}`}>
         <h2 className="ui-field-section-title">{title}</h2>
         {description && <p className="ui-field-section-description">{description}</p>}

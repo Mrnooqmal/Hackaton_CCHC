@@ -12,6 +12,7 @@ import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
 import { FormPage, FieldSection, PageHeader, Select, SegmentedControl } from '../components/ui';
 import { ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { ancla } from '../ayuda/registro';
 
 const INITIAL_FORM: CreateIncidentData = {
     tipo: 'incidente',
@@ -296,7 +297,7 @@ export default function IncidentReportar() {
                 maxWidth={880}
                 onSubmit={handleSubmit}
                 header={
-                    <div style={{ marginBottom: 'var(--space-8)' }}>
+                    <div style={{ marginBottom: 'var(--space-8)' }} {...ancla('incidente-reportar.tipo')}>
                     <SegmentedControl
                         ariaLabel="Tipo de reporte"
                         fullWidth={false}
@@ -327,7 +328,7 @@ export default function IncidentReportar() {
                     </>
                 }
             >
-                <FieldSection title={esHallazgoForm ? 'Tipo de hallazgo' : 'Detalles del incidente'} inline cols={3}>
+                <FieldSection title={esHallazgoForm ? 'Tipo de hallazgo' : 'Detalles del incidente'} inline cols={3} ancla={ancla('incidente-reportar.datos')}>
                     {esHallazgoForm && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                             <label className="form-label">Tipo de hallazgo <span style={{ color: 'var(--accent-text)' }}>*</span></label>
@@ -372,7 +373,7 @@ export default function IncidentReportar() {
                 </FieldSection>
 
                 {!esHallazgoForm && (
-                    <FieldSection title="Trabajador afectado" inline>
+                    <FieldSection title="Trabajador afectado" inline ancla={ancla('incidente-reportar.afectados')}>
                         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                             <label className="form-label">Buscar trabajador</label>
                             <div style={{ position: 'relative' }}>
@@ -430,7 +431,7 @@ export default function IncidentReportar() {
                 )}
 
                 {esHallazgoForm && formData.tipoHallazgo === 'accion' && (
-                    <FieldSection title="Trabajadores afectados" inline description="Opcional">
+                    <FieldSection title="Trabajadores afectados" inline description="Opcional" ancla={ancla('incidente-reportar.afectados')}>
                         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                             {afectados.map((afectado, idx) => (
                                 <div key={idx}>
@@ -514,7 +515,7 @@ export default function IncidentReportar() {
                     </FieldSection>
                 )}
 
-                <FieldSection title="Descripción" inline>
+                <FieldSection title="Descripción" inline ancla={ancla('incidente-reportar.detalle')}>
                     <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <label className="form-label" style={{ margin: 0 }}>Detalle <span style={{ color: 'var(--accent-text)' }}>*</span></label>
@@ -551,7 +552,7 @@ export default function IncidentReportar() {
                     </div>
                 </FieldSection>
 
-                <FieldSection title="Evidencia fotográfica" inline description="Opcional, pero ayuda a la revisión">
+                <FieldSection title="Evidencia fotográfica" inline description="Opcional, pero ayuda a la revisión" ancla={ancla('incidente-reportar.evidencia')}>
                     <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                         <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch' }}>
                             <div className="upload-zone" style={{ flex: 1 }}>
@@ -600,7 +601,7 @@ export default function IncidentReportar() {
                     </div>
                 </FieldSection>
 
-                <FieldSection title="Confirmación de envío" inline>
+                <FieldSection title="Confirmación de envío" inline ancla={ancla('incidente-reportar.envio')}>
                     <div className="full-width inc-confirm-box">
                         <div className="inc-confirm-meta">
                             <span>Reportado por <strong>{[user?.nombre, user?.apellidoPaterno, user?.apellidoMaterno].filter(Boolean).join(' ')}</strong></span>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { plural } from '../utils/plural';
 import { Link, useLocation } from 'react-router-dom';
-import { FiChevronRight, FiBell, FiHome, FiSun, FiMoon, FiHelpCircle } from 'react-icons/fi';
+import { FiChevronRight, FiBell, FiHome, FiSun, FiMoon } from 'react-icons/fi';
 import { useLayout } from '../context/LayoutContext';
 import { useObraContext } from '../context/ObraContext';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,8 @@ import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
 import LogoMarca from './LogoMarca';
 import { inboxApi } from '../api/client';
+import MenuAyuda from '../ayuda/MenuAyuda';
+import { ancla } from '../ayuda/registro';
 
 interface Crumb {
     label: string;
@@ -32,37 +34,6 @@ const SECTION: Record<string, { label: string; path?: string }> = {
     settings: { label: 'Configuración' },
     'change-password': { label: 'Cambiar contraseña' },
     'enroll-me': { label: 'Mi enrolamiento' },
-};
-
-// Ayuda contextual: primer segmento de la ruta → página del módulo en el manual
-// (/manual/modulos/*). Las rutas sin página propia caen a la portada del manual.
-const MANUAL_SECTION: Record<string, string> = {
-    '': 'dashboard',
-    personas: 'personas',
-    workers: 'personas',
-    users: 'personas',
-    obras: 'obras',
-    'documents-repository': 'documentos',
-    surveys: 'encuestas',
-    incidents: 'incidentes',
-    activities: 'actividades',
-    'catalogos-actividad': 'catalogos',
-    'my-signatures': 'firmas',
-    'signature-requests': 'firmas',
-    inbox: 'bandeja-entrada',
-    'mi-empresa': 'tenants',
-    'cargos-onboarding': 'onboarding-cargos',
-    prescripciones: 'prescripciones',
-    estructura: 'estructura-preventiva',
-    configuracion: 'configuracion',
-    'change-password': 'configuracion',
-};
-
-/** Ruta SPA del manual correspondiente a la ruta actual (portada si no hay módulo). */
-const manualUrlFor = (pathname: string): string => {
-    const primer = pathname.split('/').filter(Boolean)[0] || '';
-    const slug = MANUAL_SECTION[primer];
-    return slug ? `/manual/modulos/${slug}` : '/manual';
 };
 
 // Etiqueta de la hoja para páginas de detalle (rutas con id dinámico)
@@ -184,6 +155,7 @@ export default function Header() {
                     <button
                         type="button"
                         className={`header-hamburger ${isMobileMenuOpen ? 'is-open' : ''}`}
+                        {...ancla('global.boton-menu')}
                         onClick={handleToggleSidebar}
                         aria-label={isMobileMenuOpen ? 'Cerrar el menú lateral' : 'Mostrar u ocultar el menú lateral'}
                         aria-expanded={isMobileMenuOpen}
@@ -236,20 +208,13 @@ export default function Header() {
 
                 <div className="header-mainbar-right">
                     {!isLoadingObras && scopeLabel && (
-                        <span className="header-obra-label" title={`Estás trabajando en: ${scopeLabel}`}>
+                        <span className="header-obra-label" title={`Estás trabajando en: ${scopeLabel}`} {...ancla('global.obra-actual')}>
                             {scopeLabel}
                         </span>
                     )}
 
-                    {/* Ayuda contextual: abre el manual en la página del módulo actual */}
-                    <Link
-                        to={manualUrlFor(location.pathname)}
-                        className="header-action header-action--help"
-                        aria-label="Abrir el manual de uso de esta sección"
-                        title="Ayuda de esta sección"
-                    >
-                        <FiHelpCircle />
-                    </Link>
+                    {/* Ayuda de la pantalla: recorridos, manual y novedades (src/ayuda). */}
+                    <MenuAyuda />
 
                     <button
                         type="button"

@@ -1,4 +1,4 @@
-// Navegación del manual — portado de manual-src/.vitepress/config.ts.
+// Navegación del manual.
 // Es solo data: define las secciones (nav superior) y la sidebar por sección.
 // Las rutas son relativas a /manual (el prefijo lo pone <ManualLayout>).
 
@@ -23,66 +23,90 @@ export interface NavSection {
     items: NavItem[];
 }
 
+// Ordenado por TAREA, no por módulo (Fase 4, aprobada el 7 de noviembre de
+// 2026): lo que hace cualquiera en terreno, lo que se gestiona en la obra, la
+// configuración de la empresa, una entrada por rol y la referencia normativa.
+// Los permisos de cada página son los de la pantalla que explica.
 export const MANUAL_SECTIONS: NavSection[] = [
     {
-        slug: 'guia-inicio',
-        text: 'Guía de Inicio',
-        navText: 'Guía de Inicio',
+        slug: 'empezar',
+        text: 'Empezar',
+        navText: 'Empezar',
         items: [
-            { text: '¿Qué es Build & Serve?', link: 'guia-inicio/' },
-            { text: 'Cómo ingresar', link: 'guia-inicio/instalacion' },
-            { text: 'Primeros pasos', link: 'guia-inicio/primeros-pasos' },
-            { text: 'Registro de una empresa', link: 'guia-inicio/onboarding', permiso: ['empresa.ver'] },
+            { text: 'Qué es Build & Serve', link: 'empezar/' },
+            { text: 'Cómo ingresar', link: 'empezar/ingresar' },
+            { text: 'Elegir obra y moverte', link: 'empezar/elegir-obra' },
+            { text: 'Ayuda en cada pantalla', link: 'empezar/ayuda' },
+            { text: 'Tu cuenta', link: 'empezar/mi-cuenta' },
         ],
     },
     {
-        slug: 'ds44',
-        text: 'DS44 & Normativa',
-        navText: 'DS44',
+        slug: 'terreno',
+        text: 'En terreno',
+        navText: 'En terreno',
         items: [
-            { text: '¿Qué es el DS 44?', link: 'ds44/' },
-            { text: 'Fases y estados del cumplimiento', link: 'ds44/fases-obra' },
-            { text: 'Documentos obligatorios', link: 'ds44/documentos-obligatorios' },
-            { text: 'Entrega de EPP', link: 'ds44/epp' },
-            { text: 'Capacitaciones (Art. 16)', link: 'ds44/capacitaciones' },
-            { text: 'Firmas digitales y DS 44', link: 'ds44/firmas-digitales' },
+            { text: 'Firmar lo que te asignaron', link: 'terreno/firmar' },
+            { text: 'Responder una encuesta', link: 'terreno/encuestas' },
+            { text: 'Reportar un hallazgo o un incidente', link: 'terreno/reportar' },
+            { text: 'Avisos y mensajes', link: 'terreno/avisos' },
+            { text: 'Tus datos y tu privacidad', link: 'terreno/mis-datos' },
         ],
     },
     {
-        slug: 'modulos',
-        text: 'Módulos',
-        navText: 'Módulos',
+        slug: 'obra',
+        text: 'En la obra',
+        navText: 'En la obra',
         items: [
-            { text: 'Resumen de módulos', link: 'modulos/' },
-            { text: 'Inicio', link: 'modulos/dashboard' },
-            { text: 'Obras', link: 'modulos/obras', permiso: ['obras.ver', 'obras.detalle'] },
-            { text: 'Personas', link: 'modulos/personas', permiso: ['personas.ver'] },
-            { text: 'Repositorio', link: 'modulos/documentos', permiso: ['repositorio.ver'] },
-            { text: 'Actividades', link: 'modulos/actividades', permiso: ['actividades.ver'] },
-            { text: 'Encuestas', link: 'modulos/encuestas' },
-            { text: 'Firmas', link: 'modulos/firmas' },
-            { text: 'Incidentes', link: 'modulos/incidentes' },
-            { text: 'Prescripciones', link: 'modulos/prescripciones', permiso: ['repositorio.ver'] },
-            { text: 'Estructura preventiva', link: 'modulos/estructura-preventiva', permiso: ['obras.detalle', 'empresa.ver'] },
-            { text: 'Notificaciones', link: 'modulos/bandeja-entrada' },
-            { text: 'Mi Empresa', link: 'modulos/tenants', permiso: ['empresa.ver'] },
-            { text: 'Onboarding por cargo', link: 'modulos/onboarding-cargos', permiso: ['cargos.gestionar'] },
-            { text: 'Catálogos', link: 'modulos/catalogos', permiso: ['cargos.gestionar'] },
-            { text: 'Datos personales', link: 'modulos/datos-personales', permiso: ['empresa.derechos_titulares', 'empresa.supresion_datos'] },
-            { text: 'Configuración', link: 'modulos/configuracion' },
+            { text: 'Seguir el cumplimiento del FUF', link: 'obra/cumplimiento', permiso: ['obras.detalle'] },
+            { text: 'Programar charlas y capacitaciones', link: 'obra/actividades', permiso: ['actividades.crear', 'actividades.planificar'] },
+            { text: 'Registrar la asistencia', link: 'obra/asistencia', permiso: ['actividades.crear'] },
+            { text: 'Pedir firmas y firma asistida', link: 'obra/pedir-firmas', permiso: ['firmas.crear', 'obra.firma_asistida'] },
+            { text: 'Subir y versionar documentos', link: 'obra/documentos', permiso: ['repositorio.ver'] },
+            { text: 'Entregar EPP', link: 'obra/epp', permiso: ['persona.epp', 'empresa.epp'] },
+            { text: 'Sumar personas a la obra', link: 'obra/equipo', permiso: ['personas.ver'] },
+            { text: 'Gestionar incidentes', link: 'obra/incidentes', permiso: ['incidentes.historial', 'incidentes.estadisticas'] },
+            { text: 'Prescripciones', link: 'obra/prescripciones', permiso: ['repositorio.ver'] },
+            { text: 'Comité paritario y delegados', link: 'obra/estructura', permiso: ['obras.detalle', 'empresa.ver'] },
+            { text: 'Crear encuestas', link: 'obra/encuestas', permiso: ['encuestas.crear'] },
+        ],
+    },
+    {
+        slug: 'empresa',
+        text: 'Empresa',
+        navText: 'Empresa',
+        items: [
+            { text: 'Mi Empresa', link: 'empresa/', permiso: ['empresa.ver'] },
+            { text: 'Roles y permisos', link: 'empresa/roles', permiso: ['empresa.ver'] },
+            { text: 'Personas', link: 'empresa/personas', permiso: ['personas.ver'] },
+            { text: 'Crear y administrar obras', link: 'empresa/obras', permiso: ['obras.ver', 'obras.detalle'] },
+            { text: 'Cargos, kits y catálogos', link: 'empresa/cargos', permiso: ['cargos.gestionar', 'empresa.cargos', 'empresa.epp'] },
+            { text: 'Ficha Básica de Salud', link: 'empresa/salud', permiso: ['empresa.ficha_salud'] },
+            { text: 'Datos personales', link: 'empresa/datos-personales', permiso: ['empresa.derechos_titulares', 'empresa.supresion_datos'] },
+            { text: 'Activar una empresa nueva', link: 'empresa/alta', permiso: ['empresa.ver'] },
         ],
     },
     {
         slug: 'roles',
-        text: 'Roles de Usuario',
-        navText: 'Roles',
+        text: 'Por rol',
+        navText: 'Por rol',
         items: [
-            { text: 'Todos los roles', link: 'roles/' },
-            { text: 'Administrador', link: 'roles/admin' },
-            { text: 'Prevencionista', link: 'roles/prevencionista' },
-            { text: 'Jefe de Obra', link: 'roles/jefe-obra' },
-            { text: 'Supervisor', link: 'roles/supervisor' },
+            { text: 'Qué hago según mi rol', link: 'roles/' },
             { text: 'Trabajador', link: 'roles/trabajador' },
+            { text: 'Supervisor', link: 'roles/supervisor' },
+            { text: 'Prevencionista', link: 'roles/prevencionista' },
+            { text: 'Jefe de obra', link: 'roles/jefe-obra' },
+            { text: 'Administrador', link: 'roles/administrador' },
+        ],
+    },
+    {
+        slug: 'fuf',
+        text: 'FUF y DS 44',
+        navText: 'FUF y DS 44',
+        items: [
+            { text: 'FUF y DS 44', link: 'fuf/' },
+            { text: 'Qué pide el FUF', link: 'fuf/requisitos' },
+            { text: 'Capacitaciones (Art. 16)', link: 'fuf/capacitaciones' },
+            { text: 'Firmas', link: 'fuf/firmas' },
         ],
     },
 ];

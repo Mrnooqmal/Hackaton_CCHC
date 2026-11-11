@@ -23,6 +23,7 @@ import { surveysApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
+import { ancla } from '../ayuda/registro';
 import { resumenDelEquipo } from '../utils/colaFirmas';
 
 interface SidebarProps {
@@ -282,7 +283,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             />
 
             <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
-                <nav className="sidebar-nav">
+                <nav className="sidebar-nav" {...ancla('global.menu-lateral')}>
                     {navSections.map((section: NavSection) => {
                         // Permissions are already filtered by role, but keep this for double-checking
                         const visibleItems = section.items.filter((item: NavItem) =>
@@ -368,6 +369,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                         type="button"
                                         ref={sessionTriggerRef}
                                         className="sidebar-menu-trigger"
+                                        {...ancla('global.menu-sesion')}
                                         onClick={() => setSessionMenuOpen((prev) => !prev)}
                                         title="Más opciones"
                                         aria-label="Más opciones"

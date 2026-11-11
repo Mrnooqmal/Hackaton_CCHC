@@ -1,7 +1,8 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useId } from 'react';
 import type { ReactNode, MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX } from 'react-icons/fi';
+import { useBloqueoAyuda } from '../../ayuda/useBloqueoAyuda';
 
 /* ------------------------------------------------------------------ */
 /*  Tamanhos predefinidos                                              */
@@ -63,6 +64,9 @@ export default function Modal({
 }: ModalProps) {
     const id = useRef<symbol>(undefined as unknown as symbol);
     if (!id.current) id.current = Symbol('modal');
+    const idTitulo = useId();
+    // Con un modal abierto (firma, PIN, formularios) ningún recorrido se lanza solo.
+    useBloqueoAyuda(isOpen);
 
     /* ----- Pila de modales abiertos ----- */
     // Un modal puede abrirse sobre otro (una vista previa sobre un formulario).
@@ -115,6 +119,9 @@ export default function Modal({
         <div className="modal-overlay" onClick={handleOverlayClick}>
             <div
                 className="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={idTitulo}
                 style={{ maxWidth: SIZE_MAP[size] }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -123,7 +130,7 @@ export default function Modal({
                     <div className="modal-header-left">
                         {icon && <div className="modal-header-icon">{icon}</div>}
                         <div>
-                            <h2 className="modal-title">{title}</h2>
+                            <h2 id={idTitulo} className="modal-title">{title}</h2>
                             {subtitle && <p className="modal-subtitle">{subtitle}</p>}
                         </div>
                     </div>

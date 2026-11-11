@@ -15,6 +15,7 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
 import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { ancla } from '../ayuda/registro';
 import { abrirHtmlEnPestana, htmlImpresionIncidentes } from '../utils/informesHtml';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -492,6 +493,7 @@ export default function Incidents() {
                     activeTab={activeTab}
                     onTabChange={(id) => setActiveTab(id as 'listado' | 'estadisticas')}
                     tabsLabel="Vista de incidentes"
+                    tabsAncla={ancla('incidentes.pestanas')}
                     actions={
                         <>
                             <button
@@ -806,7 +808,7 @@ export default function Incidents() {
                         <div className="card">
                             {/* Segmentado hallazgos/incidentes + buscador + filtros (reunion
                                 2026-06-10): antes eran dos botones sueltos sin buscador. */}
-                            <div className="inc-toolbar">
+                            <div className="inc-toolbar" {...ancla('incidentes.filtros')}>
                                 <SegmentedControl
                                     ariaLabel="Tipo"
                                     fullWidth={false}
@@ -842,7 +844,7 @@ export default function Incidents() {
                                 <span className="inc-toolbar-count">{abiertos} abiertos · {cerrados} cerrados</span>
                             </div>
 
-                            <div className="incident-list">
+                            <div className="incident-list" {...ancla('incidentes.lista')}>
                                 {loading ? (
                                     <IncidentesSkeleton />
                                 ) : filtered.length === 0 ? (

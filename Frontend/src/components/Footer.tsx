@@ -36,7 +36,7 @@ export default function Footer() {
 
                 <nav className="ft-links" aria-label="Enlaces del pie">
                     <Link to="/manual" className="ft-link">Manual de uso</Link>
-                    <Link to="/manual/guia-inicio/instalacion#preguntas-frecuentes" className="ft-link">
+                    <Link to="/manual/empezar/ingresar#preguntas-frecuentes" className="ft-link">
                         Preguntas frecuentes
                     </Link>
                     <a href="/about" target="_blank" rel="noopener noreferrer" className="ft-link">

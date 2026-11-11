@@ -61,6 +61,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     ACTIVITY_TYPES, TIPOS_TRABAJO, CAPACITACION_SUBTIPOS, NIVEL_BADGE,
 } from '../utils/actividadCatalogos';
+import { ancla } from '../ayuda/registro';
 
 export default function Activities() {
     const navigate = useNavigate();
@@ -869,6 +870,7 @@ export default function Activities() {
                         { id: 'lista', label: 'Lista', icon: <FiList size={15} /> },
                         { id: 'calendario', label: 'Calendario', icon: <FiCalendar size={15} /> },
                     ] : undefined}
+                    tabsAncla={ancla('actividades.vistas')}
                     activeTab={viewMode}
                     onTabChange={(id) => setViewMode(id as 'lista' | 'calendario')}
                     tabsLabel="Vista de las actividades"
@@ -881,6 +883,7 @@ export default function Activities() {
                                         disabled={!selectedObraId}
                                         title={!selectedObraId ? 'Selecciona una obra para planificar el mes' : 'Armar el esqueleto de actividades del mes'}
                                         onClick={irAPlanificar}
+                                        {...ancla('actividades.planificar')}
                                     >
                                         <FiCalendar /> Planificar mes
                                     </button>
@@ -891,6 +894,7 @@ export default function Activities() {
                                         disabled={!selectedObraId}
                                         title={!selectedObraId ? 'Entra a una obra para crear una actividad' : undefined}
                                         onClick={() => irANuevaActividad()}
+                                        {...ancla('actividades.nueva')}
                                     >
                                         <FiPlus /> Nueva actividad
                                     </button>
@@ -932,7 +936,7 @@ export default function Activities() {
                     y el calendario; el historial trae sus propios controles. */}
                 <div className="tbar act-toolbar">
                     {/* Buscador y filtro son un solo control: se consultan juntos */}
-                    <div className="act-filterbar">
+                    <div className="act-filterbar" {...ancla('actividades.buscar')}>
                         <div className="act-filterbar-search">
                             <FiSearch size={15} aria-hidden="true" />
                             <input
@@ -973,7 +977,7 @@ export default function Activities() {
 
                 {/* Borradores por completar (planificación pendiente del usuario) */}
                 {misBorradores.length > 0 && (
-                    <section className="act-section act-section--todo" aria-label="Del plan, por completar">
+                    <section className="act-section act-section--todo" aria-label="Del plan, por completar" {...ancla('actividades.por-completar')}>
                         <div className="act-rotulo">
                             <span className="act-rotulo-title">Del plan, por completar</span>
                             <span className="act-rotulo-sub">

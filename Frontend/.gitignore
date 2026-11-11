@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Resultados de Playwright (npm run test:e2e)
+test-results
+playwright-report
+blob-report
+dist-e2e

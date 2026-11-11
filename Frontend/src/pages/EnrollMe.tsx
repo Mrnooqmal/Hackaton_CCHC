@@ -11,6 +11,7 @@ import {
     FiKey, FiLogOut, FiPhone, FiShield, FiX,
 } from 'react-icons/fi';
 import '../css/AuthCard.css';
+import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 import { monograma } from '../utils/identidadEmpresa';
 
 /**
@@ -79,6 +80,8 @@ export default function EnrollMe() {
     const { user, updateUser, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    // Enrolamiento y cambio de PIN: flujo de firma, sin recorridos encima.
+    useBloqueoAyuda(true);
 
     // Modo "cambio de PIN": el usuario ya está enrolado y sólo quiere actualizar su PIN.
     // Llega desde Configuración → "Cambiar PIN". Omite la bienvenida y el paso de perfil.

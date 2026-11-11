@@ -60,6 +60,10 @@ const limpiarDatosLocales = ({ cierreExplicito }: { cierreExplicito: boolean }) 
     localStorage.removeItem('tenant_id');
     localStorage.removeItem('persona_id');
     borrarSesionLocal();
+    // Progreso de recorridos guiados sin enviar: se va siempre, también al vencer
+    // la sesión. Es un dato personal (D-33) y perderlo solo hace que una ayuda
+    // vuelva a aparecer.
+    localStorage.removeItem('recorridosPendientes');
     if (cierreExplicito) {
         borrarTodosLosVales();
         borrarPreguntasEnCache();

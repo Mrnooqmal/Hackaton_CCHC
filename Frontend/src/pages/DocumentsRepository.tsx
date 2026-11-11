@@ -26,6 +26,7 @@ import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { AlertBanner, Select, PageHeader, SegmentedControl } from '../components/ui';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import { ancla } from '../ayuda/registro';
 
 // ── Carpetas del repositorio ──────────────────────────────────────────────
 // Cada documento se ubica en una carpeta según su clasificación / fase.
@@ -412,9 +413,10 @@ export default function DocumentsRepository() {
                     activeTab={activeScope}
                     onTabChange={(id) => switchScope(id as 'general' | 'personal')}
                     tabsLabel="Ámbito del repositorio"
+                    tabsAncla={ancla('repositorio.ambito')}
                     actions={
                         canUpload && selectedObraId ? (
-                            <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)}>
+                            <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)} {...ancla('repositorio.subir')}>
                                 <FiUpload /> Subir documento
                             </button>
                         ) : undefined
@@ -547,7 +549,7 @@ export default function DocumentsRepository() {
                                 </>
                             )}
                         </div>
-                        <div className="repo-search">
+                        <div className="repo-search" {...ancla('repositorio.buscar')}>
                             <FiSearch className="repo-search-icon" size={15} />
                             <input
                                 type="text"
@@ -607,12 +609,12 @@ export default function DocumentsRepository() {
 
                 {/* ── Vista de carpetas (raíz) ── */}
                 {!loading && showFolders && carpetasVisibles.length > 0 && (
-                    <div className="repo-folder-grid">
+                    <div className="repo-folder-grid" {...ancla('repositorio.carpetas')}>
                         {carpetasVisibles.map((k) => {
                             const f = FOLDERS[k];
                             const Icon = f.icon;
                             return (
-                                <button key={k} className="repo-folder" onClick={() => setOpenFolder(k)}>
+                                <button key={k} className="repo-folder" onClick={() => setOpenFolder(k)} {...(k === 'ds44' ? ancla('repositorio.ds44') : {})}>
                                     <div className="repo-folder-icon" style={{ background: `${f.color}1a`, color: f.color }}>
                                         <Icon size={22} />
                                     </div>

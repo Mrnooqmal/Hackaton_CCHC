@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import type { AtributoAncla } from '../../ayuda/registro';
 
 export interface PageHeaderTab {
   id: string;
@@ -28,13 +29,15 @@ export interface PageHeaderProps {
   onTabChange?: (id: string) => void;
   /** Etiqueta del grupo de pestañas para lectores de pantalla. */
   tabsLabel?: string;
+  /** Ancla de recorrido guiado para el grupo de pestañas (ver src/ayuda/registro.ts). */
+  tabsAncla?: AtributoAncla;
   /** When true, renders as a full-bleed CChC navy→blue gradient banner */
   banner?: boolean;
 }
 
 export default function PageHeader({
   title, description, scope, breadcrumb, actions,
-  tabs, activeTab, onTabChange, tabsLabel, banner,
+  tabs, activeTab, onTabChange, tabsLabel, tabsAncla, banner,
 }: PageHeaderProps) {
   const conTabs = Boolean(tabs && tabs.length > 0);
   return (
@@ -59,7 +62,7 @@ export default function PageHeader({
         {actions && <div className="ui-page-header-actions">{actions}</div>}
       </div>
       {conTabs && (
-        <div className="ui-page-header-tabs" role="tablist" aria-label={tabsLabel ?? 'Secciones'}>
+        <div className="ui-page-header-tabs" role="tablist" aria-label={tabsLabel ?? 'Secciones'} {...tabsAncla}>
           {tabs!.map(tab => (
             <button
               key={tab.id}

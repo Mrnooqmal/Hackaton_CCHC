@@ -1,33 +1,49 @@
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkDirective from 'remark-directive';
 import rehypeSlug from 'rehype-slug';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 import Callout from './Callout';
 import { normalizeVitepressContainers, remarkCalloutData } from './remarkCallout';
-import type { ManualDoc } from './content';
+import { existePagina, type ManualDoc } from './content';
+import { resolverEnlace } from './publicacion';
+import { destinoDe } from './redirecciones';
+import { useRecorridos } from '../ayuda/contexto';
+
+/** `recorrido:<id>` pasa tal cual; todo lo demás, con la limpieza de siempre (sin `javascript:`). */
+const transformarUrl = (url: string) => (/^recorrido:[a-z0-9-]+$/.test(url) ? url : defaultUrlTransform(url));
 
 const remarkPlugins = [remarkGfm, remarkDirective, remarkCalloutData];
 const rehypePlugins = [rehypeSlug, [rehypeAutolinkHeadings, { behavior: 'wrap' }]] as never;
 
-/** Reescribe los enlaces del manual a rutas SPA (/manual/...) o externas. */
+/**
+ * "Ver recorrido": `[Ver recorrido](recorrido:<id>)` lleva a la pantalla del
+ * recorrido y lo abre. Solo aparece si la persona puede verlo: sin sesión (el
+ * manual es público), sin permiso o con el recorrido fuera de vigencia, el
+ * enlace no se muestra.
+ */
+function EnlaceRecorrido({ id, children }: { id: string; children: ReactNode }) {
+    const { enlaceA } = useRecorridos();
+    const destino = enlaceA(id);
+    return destino ? <Link to={destino} className="manual-ver-recorrido">{children}</Link> : null;
+}
+
+/**
+ * Reescribe los enlaces del manual a rutas SPA (/manual/...) o externas. Un
+ * enlace a una página que no se publica en este build (pendiente de revisión
+ * normativa, en prod) queda como texto: nunca un enlace roto.
+ */
 function MdLink({ href = '', children }: ComponentPropsWithoutRef<'a'>) {
-    const url = String(href);
-
-    if (/^(https?:|mailto:|tel:)/.test(url)) {
-        return <a href={url} target="_blank" rel="noopener noreferrer">{children}</a>;
+    const e = resolverEnlace(String(href), existePagina, destinoDe);
+    switch (e.tipo) {
+        case 'recorrido': return <EnlaceRecorrido id={e.url.slice('recorrido:'.length)}>{children}</EnlaceRecorrido>;
+        case 'externo': return <a href={e.url} target="_blank" rel="noopener noreferrer">{children}</a>;
+        case 'ancla': return <a href={e.url}>{children}</a>; // ancla en la misma página
+        case 'interno': return <Link to={e.to}>{children}</Link>;
+        case 'texto': return <>{children}</>;
     }
-    if (url.startsWith('#')) {
-        return <a href={url}>{children}</a>; // ancla en la misma página
-    }
-
-    // Enlaces internos del manual (root-relativos: /modulos/x, /ds44/x…).
-    let to = url.replace(/\.(md|html)(?=$|#)/, '');
-    if (!to.startsWith('/')) to = '/' + to;
-    to = '/manual' + to;
-    return <Link to={to}>{children}</Link>;
 }
 
 /** Imágenes del manual: las capturas viven en public/manual-img (antes /img). */
@@ -60,6 +76,7 @@ export default function ManualPage({ doc, body }: { doc: ManualDoc; body?: strin
                 remarkPlugins={remarkPlugins}
                 rehypePlugins={rehypePlugins}
                 components={components}
+                urlTransform={transformarUrl}
             >
                 {md}
             </ReactMarkdown>
