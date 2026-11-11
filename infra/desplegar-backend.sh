@@ -17,6 +17,7 @@
 #
 # Requiere AWS_PROFILE con acceso a la cuenta del proyecto.
 set -euo pipefail
+source "$(dirname "$0")/descarga.sh"
 
 COMMIT="${1:?uso: infra/desplegar-backend.sh <commit> <dev|prod>}"
 STAGE="${2:?uso: infra/desplegar-backend.sh <commit> <dev|prod>}"
@@ -62,7 +63,12 @@ echo "== serverless deploy --stage $STAGE"
 
 echo "== verificación del paquete desplegado"
 FN="BuildAndServe-$STAGE-personasModule"
-curl -fsS -o "$TMP/paquete.zip" "$(aws lambda get-function --function-name "$FN" --query Code.Location --output text)"
+# La descarga retoma si se corta (infra/descarga.sh). Después, la huella del zip
+# tiene que ser la de la función: así un tramo mal pegado no pasa.
+read -r TAMANO HUELLA < <(aws lambda get-function --function-name "$FN" --query '[Configuration.CodeSize, Configuration.CodeSha256]' --output text)
+url_paquete() { aws lambda get-function --function-name "$FN" --query Code.Location --output text; }
+descargar_reanudable "$TMP/paquete.zip" "$TAMANO" url_paquete || exit 1
+[ "$(openssl dgst -sha256 -binary "$TMP/paquete.zip" | base64)" = "$HUELLA" ] || { echo "El paquete descargado no tiene la huella de la función." >&2; exit 1; }
 mkdir -p "$TMP/paquete" && (cd "$TMP/paquete" && unzip -q ../paquete.zip)
 total=0; distintos=0
 while IFS= read -r f; do

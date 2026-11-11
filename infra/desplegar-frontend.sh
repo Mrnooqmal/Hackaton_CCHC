@@ -17,6 +17,7 @@
 #
 # Requiere AWS_PROFILE con acceso a la cuenta del proyecto.
 set -euo pipefail
+source "$(dirname "$0")/descarga.sh"
 
 COMMIT="${1:?uso: infra/desplegar-frontend.sh <commit> <dev|prod>}"
 AMBIENTE="${2:?uso: infra/desplegar-frontend.sh <commit> <dev|prod>}"
@@ -124,9 +125,14 @@ aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUCION" --i
 
 echo "== verificación archivo por archivo contra https://$DOMINIO"
 total=0; distintos=0
+# Cada archivo se descarga con reanudación (infra/descarga.sh) y se compara con
+# el del build: un corte de la conexión ya no deja la publicación sin verificar.
+mkdir -p "$TMP/publicado"
 while IFS= read -r f; do
     total=$((total + 1))
-    if ! curl -fsS "https://$DOMINIO/$f" | cmp -s - "dist/$f"; then
+    rm -f "$TMP/publicado/archivo"
+    if ! descargar_reanudable "$TMP/publicado/archivo" "$(stat -c %s "dist/$f")" echo "https://$DOMINIO/$f" \
+        || ! cmp -s "$TMP/publicado/archivo" "dist/$f"; then
         distintos=$((distintos + 1)); echo "DISTINTO: $f"
     fi
 done < <(cd dist && find . -type f | sed 's|^\./||')
