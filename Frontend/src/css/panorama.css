@@ -1,0 +1,359 @@
+/* panorama.css — Inicio de la gestión de empresa (pages/InicioEmpresa.tsx).
+ *
+ * Todas las clases llevan el prefijo `pan-`. El refactor de septiembre encontró
+ * veintitrés selectores definidos en más de un archivo, y los nombres genéricos
+ * (`.item-nombre`, `.celda`) eran justo los que chocaban.
+ *
+ * No se define ni un color literal: todo sale de los tokens de index.css, para
+ * que el panel siga al tema claro y al oscuro sin una regla aparte. El color del
+ * cumplimiento lo pone `colorProgreso()` en línea, el mismo que usa la obra: si
+ * acá un 60% se pintara distinto, la gente dejaría de creerle a los dos. */
+
+/* ── Composición ─────────────────────────────────────────────────────────── */
+
+.pan-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+/* La segunda fila invierte el peso: el detalle corto a la izquierda. */
+.pan-grid--invertida {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+}
+
+@media (max-width: 1024px) {
+  .pan-grid,
+  .pan-grid--invertida {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* La explicación del cálculo: va bajo los indicadores, en voz baja, porque se
+   lee una vez y después se confía. */
+.pan-metodo {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.pan-nota {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.pan-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--surface-border);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.pan-leyenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pan-muestra {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.pan-muestra--falta {
+  background: var(--danger-500);
+}
+
+.pan-muestra--tiene {
+  background: rgba(34, 197, 94, 0.28);
+  box-shadow: inset 0 0 0 1px var(--success-500);
+}
+
+.pan-card-icono {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* El icono de actualizar gira mientras se recarga. `spin` ya existe en
+   utilidades.css: no se declara otro keyframe. */
+.pan-girando {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Filas comunes a los cuatro paneles ──────────────────────────────────── */
+
+/* Son botones, porque cada fila lleva a algún lado: se les quita la apariencia
+   de control y se les deja el foco visible. */
+.pan-brecha-fila,
+.pan-obra-fila {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--surface-border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  display: grid;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.pan-brecha:first-of-type .pan-brecha-fila,
+.pan-obra-fila:first-of-type {
+  border-top: 0;
+}
+
+.pan-brecha-fila:hover,
+.pan-obra-fila:hover {
+  background: var(--surface-hover);
+}
+
+.pan-brecha-fila:focus-visible,
+.pan-obra-fila:focus-visible,
+.pan-enlace:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── Brechas entre obras ─────────────────────────────────────────────────── */
+
+.pan-brecha-fila {
+  grid-template-columns: minmax(0, 1fr) 132px auto;
+}
+
+.pan-brecha-texto,
+.pan-obra-texto,
+.pan-item-texto {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pan-brecha-nombre,
+.pan-obra-nombre,
+.pan-item-nombre {
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.pan-brecha-meta,
+.pan-obra-meta,
+.pan-item-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pan-brecha-sistemica {
+  color: var(--danger-500);
+  font-weight: 500;
+}
+
+/* Una celda por obra: de un vistazo se ve cuántas lo tienen y cuántas no, que
+   es la pregunta del panel. */
+.pan-brecha-barra {
+  display: flex;
+  gap: 3px;
+}
+
+.pan-celda {
+  flex: 1;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.pan-celda--falta {
+  background: var(--danger-500);
+}
+
+.pan-celda--tiene {
+  background: rgba(34, 197, 94, 0.28);
+  box-shadow: inset 0 0 0 1px var(--success-500);
+}
+
+.pan-brecha-conteo {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.pan-brecha-conteo b {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.pan-brecha-detalle {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.pan-enlace {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Cumplimiento por obra ───────────────────────────────────────────────── */
+
+.pan-obra-fila {
+  grid-template-columns: minmax(0, 1fr) 96px 52px;
+}
+
+.pan-obra-pct {
+  font-size: var(--text-base);
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Listas de detalle (por vencer, EPP) ─────────────────────────────────── */
+
+.pan-lista {
+  display: flex;
+  flex-direction: column;
+}
+
+.pan-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  border-top: 1px solid var(--surface-border);
+}
+
+.pan-item:first-child {
+  border-top: 0;
+}
+
+.pan-item-cifra {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Móvil ───────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  /* La barra de celdas pasa a su propia línea: con 400px de ancho, el nombre
+     del documento y la barra no caben en la misma fila sin partir palabras. */
+  .pan-brecha-fila {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pan-brecha-barra {
+    grid-column: 1 / -1;
+  }
+
+  .pan-obra-fila {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  /* La barra de progreso sobra en móvil: el porcentaje ya está al lado y con
+     96px fijos aprieta el nombre de la obra. */
+  .pan-obra-fila .progress {
+    display: none;
+  }
+}
+
+/* ── Siniestralidad (Arts. 73-75) ────────────────────────────────────────── */
+
+/* Banda propia, a todo el ancho y sobre los paneles: son los únicos números del
+   panel con consecuencia económica directa (la siniestralidad determina la
+   cotización adicional de la Ley 16.744). */
+.pan-sin {
+  margin-top: var(--space-4);
+}
+
+.pan-sin-cifras {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.pan-sin-cifra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border-left: 1px solid var(--surface-border);
+  padding-left: var(--space-4);
+}
+
+.pan-sin-cifra:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.pan-sin-valor {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pan-sin-rotulo {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 1024px) {
+  .pan-sin-cifras {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Al reflujo en tres columnas, la regla de la izquierda ya no marca columna:
+     se quita en la primera de cada fila. */
+  .pan-sin-cifra:nth-child(3n + 1) {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .pan-sin-cifras {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pan-sin-cifra:nth-child(3n + 1) {
+    border-left: 1px solid var(--surface-border);
+    padding-left: var(--space-4);
+  }
+
+  .pan-sin-cifra:nth-child(odd) {
+    border-left: 0;
+    padding-left: 0;
+  }
+}

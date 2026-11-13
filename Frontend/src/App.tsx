@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
+import InicioEmpresa from './pages/InicioEmpresa';
 import PersonasManagement from './pages/PersonasManagement';
 import PersonaNueva from './pages/PersonaNueva';
 import PersonasCargaMasiva from './pages/PersonasCargaMasiva';
@@ -81,6 +82,16 @@ import './css/incidentes.css';
 import './css/firmas.css';
 import './css/components.css';
 import './css/dashboard.css';
+import './css/panorama.css';
+
+/**
+ * Elige el inicio según el ámbito. Va acá y no dentro de cada página para que
+ * ninguna de las dos tenga que saber de la otra.
+ */
+function Inicio() {
+  const { modoEmpresa } = useObraContext();
+  return modoEmpresa ? <InicioEmpresa /> : <Dashboard />;
+}
 
 function SessionExpiredModal() {
   const { sessionExpired, clearSessionExpired } = useAuth();
@@ -168,7 +179,10 @@ function AppContent() {
         </Suspense>
       } />
 
-      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      {/* Dos inicios, uno por ámbito: administrar la empresa y operar una obra
+          son trabajos distintos, como ya lo dice el menú (NAV_EMPRESA declaraba
+          un "Inicio" que caía en el inicio de obra). */}
+      <Route path="/" element={<ProtectedRoute><Inicio /></ProtectedRoute>} />
       <Route path="/personas" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}><PersonasManagement /></ProtectedRoute>} />
       <Route path="/personas/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><PersonaNueva /></ProtectedRoute>} />
       <Route path="/personas/carga-masiva" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><PersonasCargaMasiva /></ProtectedRoute>} />
