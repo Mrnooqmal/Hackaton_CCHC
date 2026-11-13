@@ -1609,7 +1609,7 @@ autorización, empresa, sesión, la condición del borrado y su manejo).
 - Protección: IAM de solo agregar y leer para todos los roles (incluido `RolSupresion`, que ahora escribe aquí), `Retain`, recuperación a un punto en el tiempo, y el sello que delata una alteración hecha sin la llave.
 - Conservación por TTL: seguridad 1 año, alertas 2, operaciones sobre datos 5 (configurable). Los registros de acceso a salud de D-18 no llevan TTL.
 - Consulta: permiso nuevo `empresa.auditoria` (solo administrador por defecto), pestaña Auditoría en Mi Empresa; cada consulta queda registrada de forma estricta.
-- Detección (`lib/gobernanza/deteccion.js`): fuerza bruta contra una cuenta, contraseña reiterada al confirmar identidad (cierra sesiones), exportación sobre el límite, acceso masivo a salud y escalamiento de privilegios. Cada alerta queda en la auditoría, avisa en la bandeja y emite la métrica `EventoSospechoso` con su alarma.
+- Detección (`lib/gobernanza/deteccion.js`): fuerza bruta contra una cuenta, contraseña reiterada al confirmar identidad (cierra sesiones), exportación sobre el límite, acceso masivo a salud, **lectura de la ficha de muchas personas distintas** (agregada el 13 de noviembre de 2026 con las lecturas auditadas; ver D-39) y escalamiento de privilegios. Cada alerta queda en la auditoría, avisa en la bandeja y emite la métrica `EventoSospechoso` con su alarma.
 
 ### D-32. Plan de respuesta a incidentes y contención (Actividad 5)
 **Estado: plan escrito y scripts implementados el 29 de octubre de 2026. Cierra el punto 7.4 del checklist salvo la validación legal de plazos y responsables.**
@@ -1871,6 +1871,106 @@ cifrados, detalle auditado y sin el sobre en el listado. Además,
 - **Errores:** sin red ninguna pantalla muestra «Failed to fetch» (`mensajeDeError`, `SIN_SENAL` en `api/client.ts`). El selector de obra usa una copia local.
 
 **Verificación.** `Backend/tests/sobre-firma.test.js` cifra con el código real del frontend y abre con el real del servidor; `firma-sin-red-pantallas.test.js`; y la prueba de punta a punta abre un sobre de verdad en KMS. **No hay prueba automática en un teléfono:** falta repetir la prueba en terreno.
+
+### D-39. Las lecturas de datos personales se auditan, y registrarlas no puede impedirlas
+**Estado: implementado el 13 de noviembre de 2026 (en el árbol, por desplegar).
+Cierra el hueco que destapó el primer simulacro de incidente.**
+
+**Qué lo motivó.** El simulacro de `scripts/simulacro-incidente.js`, corrido en dev
+contra una empresa de ejemplo, midió cuánto de un incidente se podía reconstruir:
+**5 de 8 acciones**. Las tres ciegas eran lecturas. Una cuenta comprometida podía
+listar el personal completo con RUT, correo y fecha de nacimiento, abrir fichas
+una por una y bajar documentos firmados, y la auditoría solo decía que había
+iniciado sesión. El catálogo de operaciones no tenía ninguna lectura: solo las de
+datos de salud dejaban rastro, por el camino aparte de D-18.
+
+**Qué se registra.** Tres operaciones nuevas, en una categoría propia `acceso`:
+
+| Operación | Cuándo | Qué guarda |
+|---|---|---|
+| `datos.lectura_directorio` | `GET /personas` | cuántas personas y si el listado fue completo o recortado |
+| `datos.lectura_ficha` | la ficha de OTRA persona, por identificador o por RUT | el identificador del titular, y si fue por RUT |
+| `datos.descarga_documento` | el PDF firmado, que lleva los RUT en el anexo | los firmantes alcanzados |
+
+Leer la propia ficha no se registra: no es un acceso de un tercero y llenaría la
+auditoría con cada vez que alguien abre su perfil, enterrando el rastro de los
+accesos ajenos.
+
+**Categoría propia, un año de retención.** No van en `datos` (cinco años) porque
+son de otra naturaleza y otro volumen: `datos` acredita cómo se **trataron** los
+datos de alguien; esto responde quién **leyó** qué, que es lo que el plan de
+incidentes usa para reconstruir. Con cinco años, cada listado del personal
+multiplicaría el almacenamiento sin agregar nada. Configurable con
+`AUDITORIA_RETENCION_DIAS_ACCESO`.
+
+**No es estricto, al contrario que la salud.** D-18 dice que un dato de salud que
+no se puede registrar no se entrega (503). Aplicar eso al listado del personal
+dejaría la aplicación inutilizable por un problema de la auditoría, en pantallas
+que se usan en terreno: es la operación más frecuente del sistema. Así que
+`registrar` va sin `estricto`, devuelve null si falla y la lectura sigue; la falla
+queda en la métrica de `registrarFallo`. **El criterio distinto es deliberado y
+hay una prueba que lo fija**, para que no se uniforme por descuido.
+
+**Pero la escritura se espera.** Al implementarlo se escribió primero como
+"lanzar y seguir" (`void registrar(...)`), y una prueba lo atrapó: cuando el
+handler responde, Lambda puede congelar la ejecución antes de que la escritura
+llegue, y el registro se pierde en silencio. Una auditoría que pierde registros al
+azar es peor que no tenerla, porque se confía en ella. Son `await`.
+
+**Alerta nueva.** `lectura_masiva_fichas`: 30 personas **distintas** en una hora,
+el mismo umbral que el acceso masivo a salud y por la misma razón. Cuenta
+titulares, no peticiones: abrir diez veces la misma ficha no alerta.
+
+**Lo que sigue siendo cota superior.** Actividades, incidentes y obras se leen sin
+registro. De una cuenta comprometida se puede decir qué **podía** ver de esos
+módulos, no qué vio. Se decidió no auditarlos ahora: no llevan datos
+identificatorios de terceros como el directorio y la ficha, y auditar toda lectura
+costaría una escritura por petición.
+
+### D-38. La plataforma notifica las brechas por mandato, y el reloj corre desde la primera señal
+**Estado: decidido el 13 de noviembre de 2026 por la persona responsable
+(actividad "Trazabilidad y plan de respuesta"). Plan de incidentes en su versión
+2. Falta la cláusula en el contrato de encargo.**
+
+**Qué cambia.** La versión 1 del plan dejaba la decisión de notificar en cada
+constructora: la plataforma informaba y redactaba, y la responsable firmaba.
+Ahora la plataforma evalúa el riesgo y **firma la notificación a la Agencia y a
+los titulares en nombre de la constructora**, por mandato expreso del contrato de
+encargo.
+
+**Lo que NO cambia.** Los roles legales del art. 14 sexies: cada constructora
+sigue siendo la responsable del tratamiento y responde ante la Agencia; Build &
+Serve sigue siendo encargada (D-15). Ningún contrato traslada esa
+responsabilidad. Lo que el mandato traslada es el **acto material** de notificar,
+que sí se puede delegar.
+
+**Por qué.** Los hechos técnicos están en la plataforma: la auditoría, el informe
+de brecha y la línea de tiempo. Pedirle a cada constructora que los interprete y
+redacte agrega días a un plazo que la ley llama "sin dilaciones indebidas", y en
+una brecha que cruza empresas produciría notificaciones distintas del mismo
+hecho. Es el mismo criterio por el que la plataforma, y no cada constructora,
+corre los scripts de contención.
+
+**Resguardos.** Se informa a la constructora antes de notificar, con el informe y
+el borrador; puede objetar o notificar ella misma, y su decisión queda
+documentada junto con la recomendación contraria de la plataforma. Si no responde
+dentro del plazo, se notifica igual: el silencio de la responsable no suspende el
+plazo de la ley. La notificación la firman dos personas, como la supresión
+(D-17). El registro de brechas del art. 14 sexies lo lleva la plataforma por cada
+constructora y se le entrega cuando lo pida o al terminar el encargo.
+
+**Los plazos pasan a medirse desde la primera señal, no desde la confirmación.**
+En la versión 1 todos los relojes partían de la confirmación, que declara el
+coordinador: un incidente que tardaba una semana en declararse cumplía el plan y
+era, igual, una dilación indebida. Ahora hay un tope de **24 horas corridas para
+declarar o descartar** un incidente de gravedad alta, y de **72 horas desde la
+primera señal** para notificar. Las 72 horas no las exige la Ley 21.719 (que no
+fija plazo): se eligen porque son la referencia del reglamento europeo, que es
+con lo que la Agencia va a juzgar si una demora fue indebida.
+
+**Lo que queda fuera del código.** La cláusula de mandato en el contrato de
+encargo con cada constructora. Sin ella, la plataforma puede informar y redactar,
+pero no firmar por la responsable.
 
 ## 4. Hallazgos priorizados
 
