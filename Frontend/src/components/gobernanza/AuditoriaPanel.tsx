@@ -26,6 +26,7 @@ const CATEGORIAS = [
     { value: 'derechos', label: 'Derechos de los titulares' },
     { value: 'consentimiento', label: 'Consentimientos' },
     { value: 'datos', label: 'Modificaciones de datos' },
+    { value: 'acceso', label: 'Lecturas de datos personales' },
     { value: 'administracion', label: 'Roles y permisos' },
     { value: 'salud', label: 'Accesos a datos de salud' },
     { value: 'contencion', label: 'Contención de incidentes' },
@@ -48,6 +49,9 @@ const OPERACION_LABEL: Record<string, string> = {
     'derechos.rectificacion_aplicada': 'Rectificación aplicada',
     'derechos.supresion_ejecutada': 'Supresión ejecutada',
     'datos.modificacion': 'Modificación de una ficha',
+    'datos.lectura_directorio': 'Consulta del listado de personal',
+    'datos.lectura_ficha': 'Consulta de la ficha de otra persona',
+    'datos.descarga_documento': 'Descarga de un documento firmado',
     'admin.cambio_rol': 'Cambio de rol',
     'admin.roles_empresa': 'Cambio de roles y permisos',
     'contencion.revocar_sesiones': 'Sesiones revocadas (contención)',
@@ -59,6 +63,7 @@ const OPERACION_LABEL: Record<string, string> = {
     'alerta.verificacion_reiterada': 'ALERTA: contraseña reiterada al confirmar identidad (sesiones cerradas)',
     'alerta.exportacion_reiterada': 'ALERTA: exportaciones sobre el límite',
     'alerta.acceso_masivo_salud': 'ALERTA: acceso a datos de salud de muchas personas',
+    'alerta.lectura_masiva_fichas': 'ALERTA: consulta de la ficha de muchas personas',
     'alerta.escalamiento_privilegios': 'ALERTA: cambio de privilegios de administración',
 };
 

@@ -75,6 +75,20 @@ const REGLAS = [
         accion: null,
     },
     {
+        id: 'lectura_masiva_fichas',
+        descripcion: 'Una cuenta abrió la ficha de muchas personas distintas en poco tiempo: el patrón de quien se lleva el padrón, no de quien gestiona a su equipo.',
+        aplica: (ev) => ev.operacion === 'datos.lectura_ficha',
+        ventanaMs: 60 * MIN,
+        // El mismo umbral que el acceso masivo a salud, y por la misma razón:
+        // treinta personas distintas en una hora no es gestionar, es recorrer.
+        // Se cuentan TITULARES distintos, no peticiones: abrir diez veces la
+        // misma ficha no alerta.
+        umbral: 30,
+        cuenta: (eventos) => new Set(eventos.flatMap((e) => e.titulares || [])).size,
+        severidad: SEVERIDAD.ALTA,
+        accion: null,
+    },
+    {
         id: 'escalamiento_privilegios',
         descripcion: 'Se otorgó el rol de administrador o se cambiaron los permisos de los roles de la empresa.',
         aplica: (ev) => (ev.operacion === 'admin.cambio_rol' && ev.detalle?.rolNuevo === 'admin') || ev.operacion === 'admin.roles_empresa',

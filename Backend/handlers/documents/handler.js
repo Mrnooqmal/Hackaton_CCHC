@@ -17,6 +17,7 @@ const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { personaDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { TIPOS_SALUD, filtrarSalud, traeSalud } = require('../../lib/documentos-salud');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
+const auditoria = require('../../lib/gobernanza/auditoria');
 
 /** Deja en la auditoría los documentos de salud que se entregan (lib/gobernanza/auditoriaSalud.js). */
 const anotarDocumentosSalud = (docs, tipo = TIPOS_ACCESO_SALUD.DOCUMENTO) => {
@@ -1498,6 +1499,24 @@ module.exports.downloadFirmado = conAuditoriaSalud(async (event) => {
             return error('Documento no encontrado', 404);
         }
         anotarDocumentosSalud([documentData], TIPOS_ACCESO_SALUD.DESCARGA);
+
+        // El PDF firmado lleva el anexo con el RUT de cada firmante: descargarlo
+        // es llevarse los datos de todos ellos, y es la salida más silenciosa que
+        // tiene el sistema. No es estricto a propósito (ver el mismo criterio en
+        // personas-module): una falla de la auditoría no puede impedir que
+        // alguien baje un documento que ya firmó.
+        // Se espera, no se lanza y sigue: si el handler responde antes, Lambda
+        // puede congelarse y la escritura se pierde (ver el mismo criterio en
+        // personas-module).
+        await auditoria.registrar({
+            tenantId: sesion.tenantId,
+            operacion: 'datos.descarga_documento',
+            actor: { id: sesion.personaId, tipo: 'persona', rol: sesion.rol },
+            origen: auditoria.origenDe(event),
+            titulares: (documentData.firmas || []).map((f) => f?.personaId).filter(Boolean),
+            recurso: { tipo: 'documento', id },
+            detalle: { tipo: documentData.tipo, firmas: (documentData.firmas || []).length },
+        });
 
         // El archivo puede haber quedado guardado en s3Key o en archivoUrl
         // según el flujo de creación (ver documents.create / documents.list).

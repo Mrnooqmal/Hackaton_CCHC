@@ -1614,6 +1614,35 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             });
         }
 
+        /**
+         * Deja en la auditoría una lectura de datos personales.
+         *
+         * NO es estricto: a diferencia de los datos de salud (D-18, "si no se
+         * puede registrar, no se entrega"), una falla de la auditoría no puede
+         * dejar la aplicación inutilizable. Listar el personal es la operación
+         * más frecuente del sistema y la usan pantallas de terreno: negarla
+         * convertiría un problema de registro en una caída. `registrar` sin
+         * `estricto` devuelve null y no lanza, así que la lectura sigue; la falla
+         * queda en la métrica de `registrarFallo`, que es donde se vigila.
+         *
+         * Pero SÍ se espera. No alcanza con lanzar la escritura y seguir: cuando
+         * el handler responde, Lambda puede congelar la ejecución antes de que la
+         * escritura llegue, y el registro se pierde sin que nadie se entere. Una
+         * auditoría que pierde registros al azar es peor que no tenerla, porque
+         * se confía en ella.
+         */
+        const anotarLectura = async (operacion, { titulares = [], recurso = null, detalle = {} } = {}) => {
+            await auditoria.registrar({
+                tenantId,
+                operacion,
+                actor: { id: sesion.personaId, tipo: 'persona', rol: sesion.rol },
+                origen: auditoria.origenDe(event),
+                titulares,
+                recurso,
+                detalle,
+            });
+        };
+
         // GET /personas — Listar personas del tenant
         if (method === 'GET' && !personaId) {
             if (!sesion) return sesionRes.respuesta;
@@ -1636,12 +1665,25 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 // lib/gobernanza/derechos.js) no aparece en esta lista. Cada uno
                 // se sigue viendo a sí mismo.
                 const directorio = personas.filter((p) => p.personaId === sesion.personaId || !seOpone(p, 'directorio_companeros'));
+                // Los titulares NO van uno por uno: el alcance es "el personal de
+                // esta empresa", que el informe de brecha resuelve desde el
+                // `tenantId` y la fecha. Guardar cientos de identificadores por
+                // cada listado abultaría el registro sin decir nada nuevo.
+                await anotarLectura('datos.lectura_directorio', {
+                    detalle: { personas: directorio.length, alcance: 'recortado', filtros: { rol, estado, obraId } },
+                });
                 return success({ total: directorio.length, personas: directorio.map(listadoMinimo) });
             }
 
             // Resuelve nombre/tipo del rol desde la def. del tenant para que el
             // frontend muestre el rol y arme las cuadrillas (quién es supervisor).
             const tenantDef = await tenantSafe(tenantId);
+            // Con `personas.ver` el listado lleva RUT, correo y fecha de
+            // nacimiento de todo el personal: es la lectura más sensible del
+            // sistema después de la salud, y la que una cuenta robada usaría.
+            await anotarLectura('datos.lectura_directorio', {
+                detalle: { personas: personas.length, alcance: 'completo', filtros: { rol, estado, obraId } },
+            });
             return success({
                 total: personas.length,
                 personas: personas.map(p => {
@@ -1687,6 +1729,15 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             // Sin permiso, un RUT ajeno responde igual que uno que no existe:
             // buscar por RUT no puede servir para averiguar a quién pertenece.
             if (!persona || !puedeVerFicha(persona)) return error('Persona no encontrada', 404);
+            // Buscar por RUT y encontrar la ficha es un acceso a la persona
+            // buscada, igual que abrirla por su identificador.
+            if (persona.personaId !== sesion.personaId) {
+                await anotarLectura('datos.lectura_ficha', {
+                    titulares: [persona.personaId],
+                    recurso: { tipo: 'persona', id: persona.personaId },
+                    detalle: { via: 'rut' },
+                });
+            }
             return success(fichaVisible(persona));
         }
 
@@ -1696,6 +1747,14 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             const persona = await personaDelTenant(personaId);
             if (!persona) return error('Persona no encontrada', 404);
             if (!puedeVerFicha(persona)) return success(listadoMinimo(persona));
+            // Leer la propia ficha no se registra: no es un acceso de un tercero
+            // y llenaría la auditoría con cada vez que alguien abre su perfil.
+            if (persona.personaId !== sesion.personaId) {
+                await anotarLectura('datos.lectura_ficha', {
+                    titulares: [persona.personaId],
+                    recurso: { tipo: 'persona', id: persona.personaId },
+                });
+            }
             return success(fichaVisible(persona));
         }
 

@@ -47,7 +47,13 @@ const evento = (quien, metodo, ruta, { permisos = 'personas.ver,personas.detalle
     headers: { 'user-agent': 'Mozilla/5.0 prueba' }, rawPath: ruta, pathParameters: path, queryStringParameters: {},
     body: body ? JSON.stringify(body) : undefined,
 });
-const auditoria = () => doble.items('AUDITORIA_ACCESOS_TABLE');
+// Solo los registros de ACCESO A SALUD (D-18). La misma tabla guarda además la
+// auditoría general, y desde que las lecturas de datos personales se registran
+// (`datos.lectura_directorio`, `datos.lectura_ficha`) un listado deja dos filas:
+// una de salud y una de acceso. Lo que estas pruebas afirman es sobre las de
+// salud, que se reconocen por `tipos`, como ya hace la regla de detección.
+const auditoria = () => doble.items('AUDITORIA_ACCESOS_TABLE')
+    .filter((r) => Array.isArray(r.tipos) && r.tipos.length > 0);
 
 test('ver la ficha de salud de otra persona queda registrado: quién, cuándo, desde dónde, a quién', async () => {
     const r = await personas.personasHandler(evento(medica, 'GET', `/personas/${juan.personaId}`));

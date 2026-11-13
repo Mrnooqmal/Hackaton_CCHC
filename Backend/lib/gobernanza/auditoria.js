@@ -64,6 +64,13 @@ const CATEGORIAS = {
     CONSENTIMIENTO: 'consentimiento',
     DERECHOS: 'derechos',
     DATOS: 'datos',
+    // Lecturas de datos personales. Categoría propia y no `datos` porque son de
+    // otra naturaleza y de otro volumen: `datos` acredita cómo se TRATARON los
+    // datos de alguien (cinco años); esto responde quién LEYÓ qué, que es lo que
+    // se necesita para reconstruir un incidente reciente. Con cinco años de
+    // retención, cada listado del personal multiplicaría el almacenamiento sin
+    // agregar nada que el plan de incidentes use.
+    ACCESO: 'acceso',
     ADMINISTRACION: 'administracion',
     CONTENCION: 'contencion',
     ALERTA: 'alerta',
@@ -92,6 +99,12 @@ const OPERACIONES = {
     'derechos.oposicion_retirada': CATEGORIAS.DERECHOS,
     'derechos.supresion_ejecutada': CATEGORIAS.DERECHOS,
     'datos.modificacion': CATEGORIAS.DATOS,
+    // Lecturas de datos personales (punto 6 del simulacro: sin estas, una cuenta
+    // comprometida podía llevarse el directorio completo y la auditoría solo
+    // decía que había iniciado sesión).
+    'datos.lectura_directorio': CATEGORIAS.ACCESO,
+    'datos.lectura_ficha': CATEGORIAS.ACCESO,
+    'datos.descarga_documento': CATEGORIAS.ACCESO,
     'admin.cambio_rol': CATEGORIAS.ADMINISTRACION,
     'admin.roles_empresa': CATEGORIAS.ADMINISTRACION,
     'contencion.revocar_sesiones': CATEGORIAS.CONTENCION,
@@ -116,12 +129,14 @@ const ACTORES = new Set(['persona', 'cuenta', 'sistema', 'operador']);
  */
 const RETENCION_DIAS = {
     [CATEGORIAS.SEGURIDAD]: 365,
+    [CATEGORIAS.ACCESO]: 365,
     [CATEGORIAS.ALERTA]: 730,
     otras: 1825,
 };
 const retencionDias = (categoria, env = process.env) => {
     const porEnv = {
         [CATEGORIAS.SEGURIDAD]: env.AUDITORIA_RETENCION_DIAS_SEGURIDAD,
+        [CATEGORIAS.ACCESO]: env.AUDITORIA_RETENCION_DIAS_ACCESO,
         [CATEGORIAS.ALERTA]: env.AUDITORIA_RETENCION_DIAS_ALERTA,
     }[categoria] || env.AUDITORIA_RETENCION_DIAS;
     return Number(porEnv || RETENCION_DIAS[categoria] || RETENCION_DIAS.otras);
