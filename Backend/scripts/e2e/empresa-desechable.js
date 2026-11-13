@@ -24,8 +24,10 @@
  *
  * ── Qué impide que borre una empresa real ────────────────────────────────────
  *
- *   - El nombre de toda empresa desechable empieza con `MARCA`, y el borrado se
- *     niega si la ficha de la empresa no la tiene.
+ *   - El nombre de toda empresa desechable empieza con la marca de su perfil
+ *     (`PERFILES`), y el borrado se niega si la ficha de la empresa no la tiene.
+ *     Cada perfil lleva además su propio archivo de pendientes, para que la
+ *     purga del e2e no toque los datos de ejemplo de dev, que deben sobrevivir.
  *   - Solo se buscan UUID: un identificador corto o genérico nunca entra en la
  *     búsqueda.
  *
@@ -52,7 +54,21 @@ const { S3Client, ListObjectVersionsCommand, DeleteObjectCommand } = require('@a
 const ejecutar = promisify(execFile);
 
 const SERVICIO = 'BuildAndServe';
-const MARCA = 'E2E desechable';
+
+/**
+ * Perfiles de empresa desechable. La marca es el nombre con el que empieza toda
+ * empresa del perfil, y es lo único que autoriza a borrarla; la clave nombra su
+ * archivo de pendientes, para que un perfil no intente borrar las del otro.
+ *
+ * `E2E` son las de la prueba de punta a punta: viven minutos y la purga las
+ * recoge. `DEMO` son los datos de ejemplo de dev, que tienen que sobrevivir a
+ * esa purga, y por eso llevan otra marca y otro archivo.
+ */
+const PERFILES = {
+    E2E: { marca: 'E2E desechable', clave: 'e2e' },
+    DEMO: { marca: 'DEMO datos de ejemplo', clave: 'demo' },
+};
+const MARCA = PERFILES.E2E.marca;
 // Donde recibe correos toda persona de prueba: verificado en SES, así que llega
 // aunque la cuenta siga en sandbox.
 const CORREO_PRUEBAS = 'atorres@thecodecookers.cl';
@@ -91,29 +107,30 @@ const passwordInicial = (rut) => rut.replace(/\D/g, '').slice(0, 4);
 
 // ─── Pendientes ──────────────────────────────────────────────────────────────
 
-const archivoPendientes = (stage) => path.join(os.homedir(), '.cache', 'buildandserve', `e2e-pendientes-${stage}.json`);
+const archivoPendientes = (stage, perfil = PERFILES.E2E) =>
+    path.join(os.homedir(), '.cache', 'buildandserve', `${perfil.clave}-pendientes-${stage}.json`);
 
-function leerPendientes(stage) {
+function leerPendientes(stage, perfil = PERFILES.E2E) {
     try {
-        return JSON.parse(fs.readFileSync(archivoPendientes(stage), 'utf8'));
+        return JSON.parse(fs.readFileSync(archivoPendientes(stage, perfil), 'utf8'));
     } catch {
         return [];
     }
 }
 
-function escribirPendientes(stage, lista) {
-    const archivo = archivoPendientes(stage);
+function escribirPendientes(stage, lista, perfil = PERFILES.E2E) {
+    const archivo = archivoPendientes(stage, perfil);
     fs.mkdirSync(path.dirname(archivo), { recursive: true });
     fs.writeFileSync(archivo, JSON.stringify(lista, null, 2));
 }
 
-function anotarPendiente(stage, tenantId) {
-    const lista = leerPendientes(stage).filter((t) => t !== tenantId);
-    escribirPendientes(stage, [...lista, tenantId]);
+function anotarPendiente(stage, tenantId, perfil = PERFILES.E2E) {
+    const lista = leerPendientes(stage, perfil).filter((t) => t !== tenantId);
+    escribirPendientes(stage, [...lista, tenantId], perfil);
 }
 
-function quitarPendiente(stage, tenantId) {
-    escribirPendientes(stage, leerPendientes(stage).filter((t) => t !== tenantId));
+function quitarPendiente(stage, tenantId, perfil = PERFILES.E2E) {
+    escribirPendientes(stage, leerPendientes(stage, perfil).filter((t) => t !== tenantId), perfil);
 }
 
 // ─── Alta ────────────────────────────────────────────────────────────────────
@@ -127,9 +144,12 @@ function quitarPendiente(stage, tenantId) {
  *
  * @returns {{ tenantId, adminPersonaId, adminRut, nombre }}
  */
-async function crearEmpresa(stage) {
+async function crearEmpresa(stage, { perfil = PERFILES.E2E, admin: adminPedido = null, nombreEmpresa = null } = {}) {
     const ahora = new Date().toISOString().replace(/[:.]/g, '-');
-    const nombre = `${MARCA} ${ahora} ${crypto.randomBytes(3).toString('hex')}`;
+    // El nombre SIEMPRE empieza con la marca del perfil: es lo único que después
+    // autoriza a borrar la empresa.
+    const sufijo = nombreEmpresa ? ` ${nombreEmpresa}` : ` ${ahora} ${crypto.randomBytes(3).toString('hex')}`;
+    const nombre = `${perfil.marca}${sufijo}`;
 
     for (let intento = 1; intento <= 5; intento++) {
         const adminRut = rutAlAzar(10_000_000, 25_000_000);
@@ -137,11 +157,14 @@ async function crearEmpresa(stage) {
             nombre,
             rutEmpresa: rutAlAzar(76_000_000, 78_000_000),
             admin: {
-                rut: adminRut,
                 nombre: 'Prueba',
                 apellidoPaterno: 'Punta',
                 apellidoMaterno: 'Apunta',
                 email: CORREO_PRUEBAS,
+                ...(adminPedido || {}),
+                // El RUT lo elige el reintento, no quien llama: si estuviera
+                // ocupado, fijarlo dejaría el alta sin salida.
+                rut: adminRut,
             },
         };
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bys-e2e-'));
@@ -164,7 +187,7 @@ async function crearEmpresa(stage) {
 
         const tenantId = salida.match(/Empresa creada:\s+(\S+)/)?.[1] || null;
         const adminPersonaId = salida.match(/Administrador creado:\s+(\S+)/)?.[1] || null;
-        if (tenantId) anotarPendiente(stage, tenantId);
+        if (tenantId) anotarPendiente(stage, tenantId, perfil);
 
         if (!fallo && tenantId && adminPersonaId) {
             return { tenantId, adminPersonaId, adminRut, nombre };
@@ -254,7 +277,7 @@ async function versionesQueMencionan(bucket, ids) {
 }
 
 /** Se niega a seguir si el identificador no es de una empresa desechable. */
-async function comprobarQueEsDesechable(stage, tenantId) {
+async function comprobarQueEsDesechable(stage, tenantId, perfil = PERFILES.E2E) {
     if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error(`"${tenantId}" no es un identificador de empresa.`);
     const r = await dynamo.send(new ScanCommand({
         TableName: `${SERVICIO}-tenants-${stage}`,
@@ -266,9 +289,9 @@ async function comprobarQueEsDesechable(stage, tenantId) {
     // Sin ficha puede ser un alta que se cortó antes de escribirla, o un borrado
     // anterior que alcanzó a quitarla: se sigue, porque no hay nada ajeno que
     // pueda coincidir con un UUID recién generado.
-    const ajena = fichas.find((f) => !String(f.nombre?.S || '').startsWith(MARCA));
+    const ajena = fichas.find((f) => !String(f.nombre?.S || '').startsWith(perfil.marca));
     if (ajena) {
-        throw new Error(`La empresa ${tenantId} no es desechable (su nombre no empieza con "${MARCA}"). No se borra nada.`);
+        throw new Error(`La empresa ${tenantId} no es desechable (su nombre no empieza con "${perfil.marca}"). No se borra nada.`);
     }
 }
 
@@ -281,8 +304,8 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
  *   (personas creadas por la prueba). La búsqueda los encontraría igual por su
  *   ficha, salvo que la ficha ya se haya borrado en una ejecución anterior.
  */
-async function borrarEmpresa(stage, tenantId, idsExtra = [], { espera = 15_000 } = {}) {
-    await comprobarQueEsDesechable(stage, tenantId);
+async function borrarEmpresa(stage, tenantId, idsExtra = [], { espera = 15_000, perfil = PERFILES.E2E } = {}) {
+    await comprobarQueEsDesechable(stage, tenantId, perfil);
     const tablas = await tablasDelAmbiente(stage);
     const buckets = [`buildandserve-evidencia-${stage}`, `buildandserve-trabajo-${stage}`];
 
@@ -296,7 +319,7 @@ async function borrarEmpresa(stage, tenantId, idsExtra = [], { espera = 15_000 }
         if (hallado.elementos.length === 0 && archivos === 0) {
             if (vuelta === 1) log(`Borrado: no hay nada de la empresa ${tenantId}.`);
             else log(`Borrado confirmado: un recorrido completo de ${tablas.length} tablas y ${buckets.length} buckets no encuentra nada.`);
-            quitarPendiente(stage, tenantId);
+            quitarPendiente(stage, tenantId, perfil);
             return;
         }
 
@@ -335,13 +358,14 @@ function fechaDeNombre(nombre) {
  * a una prueba que está corriendo en paralelo.
  */
 async function borrarPendientes(stage, opciones = {}) {
+    const perfil = opciones.perfil || PERFILES.E2E;
     const huerfanas = [];
     let inicio;
     do {
         const r = await dynamo.send(new ScanCommand({
             TableName: `${SERVICIO}-tenants-${stage}`,
             FilterExpression: 'begins_with(nombre, :m) AND begins_with(PK, :t)',
-            ExpressionAttributeValues: { ':m': { S: MARCA }, ':t': { S: 'TENANT#' } },
+            ExpressionAttributeValues: { ':m': { S: perfil.marca }, ':t': { S: 'TENANT#' } },
             ProjectionExpression: 'PK, nombre',
             ExclusiveStartKey: inicio,
         }));
@@ -352,13 +376,14 @@ async function borrarPendientes(stage, opciones = {}) {
         inicio = r.LastEvaluatedKey;
     } while (inicio);
 
-    for (const tenantId of new Set([...leerPendientes(stage), ...huerfanas])) {
+    for (const tenantId of new Set([...leerPendientes(stage, perfil), ...huerfanas])) {
         log(`Quedó de una ejecución anterior: ${tenantId}`);
         await borrarEmpresa(stage, tenantId, [], opciones);
     }
 }
 
 module.exports = {
+    PERFILES,
     MARCA,
     CORREO_PRUEBAS,
     rutAlAzar,
