@@ -26,7 +26,7 @@ const PERFILES = {
     'admin-empresa': { rol: 'admin', permisos: [], obras: [{ obraId: 'o-1', nombre: 'Edificio Las Lilas', estado: 'activa' }], guardado: { obraScope: 'empresa' } },
 };
 
-async function prepararApp(page, perfil, { progreso = [] } = {}) {
+async function prepararApp(page, perfil, { progreso = [], respuestas = {} } = {}) {
     const p = PERFILES[perfil];
     const llamadas = { put: [] };
     await page.addInitScript((guardado) => {
@@ -56,6 +56,7 @@ async function prepararApp(page, perfil, { progreso = [] } = {}) {
             return json({ success: true, data: {} });
         }
         if (url.pathname === '/obras' && metodo === 'GET') return json({ success: true, data: p.obras });
+        if (respuestas[url.pathname]) return json({ success: true, data: respuestas[url.pathname] });
         return json({ success: true, data: [] });
     });
     return llamadas;
@@ -236,6 +237,37 @@ test.describe('a 360 px', () => {
         await expect(recorrido(page)).toHaveAttribute('data-recorrido', 'inicio-gestion', { timeout: 6000 });
         const titulos = await recorrerHastaElFinal(page);
         expect(titulos).toEqual(['El menú', 'Tus propios pendientes', 'Ayuda en cada pantalla']);
+    });
+
+    // Prueba en terreno del 11 de noviembre de 2026: el globo de "Cómo se
+    // firma" tapaba la lista de pendientes. Ahora va en la mitad libre.
+    test('mis-firmas, "Cómo se firma" con varias firmas pendientes: el globo no tapa lo resaltado', async ({ page }) => {
+        const pendientes = [1, 2, 3, 4].map((n) => ({
+            requestId: `sr-${n}`, tipo: 'CHARLA_5MIN', titulo: `Charla de seguridad ${n}`, descripcion: 'Uso de arnés y línea de vida en trabajos sobre 1,8 m.',
+            solicitanteNombre: 'Pedro Soto', fechaCreacion: '2026-11-10T12:00:00Z', documentos: [],
+        }));
+        await prepararApp(page, 'trabajador', {
+            progreso: [{ recorridoId: 'inicio-terreno', version: 1, estado: 'completado', ultimoPaso: 3, cierres: 0, actualizadoEn: '2026-11-07T00:00:00Z' }],
+            respuestas: {
+                '/signature-requests/pending/p-1': { pendientes, total: pendientes.length },
+                '/signature-requests/history/p-1': { historial: [], totalFirmas: 0 },
+            },
+        });
+        await vistaPrevia(page, '/my-signatures', 'mis-firmas');
+        await expect(globo(page).locator('h2')).toHaveText('Pendientes e historial', { timeout: 6000 });
+        await page.getByRole('button', { name: 'Siguiente' }).click();
+        await expect(globo(page).locator('h2')).toHaveText('Cómo se firma', { timeout: 6000 });
+        // Que el globo termine de colocarse (sigue al desplazamiento).
+        await page.waitForTimeout(600);
+        const g = await globo(page).boundingBox();
+        const r = await page.locator('.recorrido-resalte').boundingBox();
+        const v = page.viewportSize();
+        expect(g && r).toBeTruthy();
+        const seCruzan = g.x < r.x + r.width && r.x < g.x + g.width && g.y < r.y + r.height && r.y < g.y + g.height;
+        expect(seCruzan, `globo ${JSON.stringify(g)} resalte ${JSON.stringify(r)}`).toBe(false);
+        expect(g.y >= 0 && g.y + g.height <= v.height).toBe(true);
+        // Lo resaltado es la primera tarjeta, con su botón Firmar.
+        await expect(page.locator('[data-tour="mis-firmas.lista"]')).toContainText('Charla de seguridad 1');
     });
 
     test('cambiar-de-obra en el teléfono: un solo paso, abrir el menú', async ({ page }) => {

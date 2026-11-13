@@ -16,6 +16,8 @@ import { PERMISSIONS } from '../permissions';
 import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
 import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
 import { ancla } from '../ayuda/registro';
+import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
+import SinConexion from '../components/SinConexion';
 import { abrirHtmlEnPestana, htmlImpresionIncidentes } from '../utils/informesHtml';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -47,6 +49,10 @@ export default function Incidents() {
     const [stats, setStats] = useState<IncidentStats | null>(null);
     const [_analytics, setAnalytics] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
+    // El listado no se pudo cargar por falta de señal: ni lista vacía ni
+    // estadísticas en cero. Reportar necesita conexión: sin señal no se ofrece.
+    const [sinDatos, setSinDatos] = useState(false);
+    const hay = useHaySenal();
     const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [detailError, setDetailError] = useState('');
@@ -138,6 +144,9 @@ export default function Incidents() {
         loadStats();
     }, [filters, selectedObraId]);
 
+    // Sin datos por falta de señal: se cargan solos cuando vuelve.
+    useAlVolverLaSenal(() => { loadIncidents(); loadStats(); }, sinDatos);
+
     useEffect(() => {
         if (activeTab === 'estadisticas') {
             loadAnalytics();
@@ -169,6 +178,9 @@ export default function Incidents() {
                 // (registros legacy sin obraId, o respuesta sin filtrar), la tabla solo
                 // muestra reportes cuya obraId coincide EXACTAMENTE con la obra activa.
                 setIncidents(response.data.filter((inc) => inc.obraId === selectedObraId));
+                setSinDatos(false);
+            } else if (response.sinRed) {
+                setSinDatos(true);
             }
         } catch (error) {
             console.error('Error cargando incidentes:', error);
@@ -494,7 +506,7 @@ export default function Incidents() {
                     onTabChange={(id) => setActiveTab(id as 'listado' | 'estadisticas')}
                     tabsLabel="Vista de incidentes"
                     tabsAncla={ancla('incidentes.pestanas')}
-                    actions={
+                    actions={hay ? (
                         <>
                             <button
                                 className="btn btn-secondary"
@@ -513,7 +525,7 @@ export default function Incidents() {
                                 </button>
                             )}
                         </>
-                    }
+                    ) : undefined}
                 />
 
                 {/* Gate: obra requerida */}
@@ -539,8 +551,12 @@ export default function Incidents() {
                     </div>
                 )}
 
+                {selectedObraId && sinDatos && incidents.length === 0 && (
+                    <SinConexion detalle="Los reportes de la obra se cargan cuando vuelva la señal." />
+                )}
+
                 {/* Contenido — solo visible cuando hay obra seleccionada */}
-                {selectedObraId && <>
+                {selectedObraId && !(sinDatos && incidents.length === 0) && <>
 
                 {/* Statistics Dashboard Tab */}
                 {activeTab === 'estadisticas' && canVerEstadisticas && (() => {

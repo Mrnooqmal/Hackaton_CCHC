@@ -18,7 +18,6 @@ import {
     FiEye,
     FiDownload,
     FiTrash2,
-    FiWifiOff
 } from 'react-icons/fi';
 import {
     activitiesApi,
@@ -53,6 +52,9 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { useAlVolverLaSenal } from '../hooks/useSenal';
+import { haySenal } from '../utils/conexion';
+import SinConexion from '../components/SinConexion';
 import { guardarCopia, leerCopia, deCuando } from '../utils/copiaLocal';
 import { useNavigate } from 'react-router-dom';
 
@@ -69,6 +71,12 @@ export default function Activities() {
     const canCrearActividad = hasPermission(PERMISSIONS.ACTIVIDADES_CREAR);
     const canPlanificar = hasPermission(PERMISSIONS.ACTIVIDADES_PLANIFICAR);
     const { isOnline, pendingCount, signActivity } = useOfflineSignature();
+    // Crear, planificar y completar necesitan conexión: sin señal no se ofrecen
+    // (prueba en terreno del 11 de noviembre de 2026). Firmar asistencia sí.
+    const puedeCrear = canCrearActividad && isOnline;
+    const puedePlanificar = canPlanificar && isOnline;
+    // Nada cargado (ni copia guardada) por falta de señal: no se muestran listas vacías.
+    const [sinDatos, setSinDatos] = useState(false);
     const { toast } = useToast();
     const { selectedObraId } = useObraContext();
     const [activities, setActivities] = useState<Activity[]>([]);
@@ -174,6 +182,9 @@ export default function Activities() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pendingCount]);
 
+    // Sin datos por falta de señal: se cargan solos cuando vuelve.
+    useAlVolverLaSenal(() => { loadData(); }, sinDatos);
+
     const loadData = async () => {
         // Sin obra seleccionada no se carga nada: la vista muestra el estado vacío.
         if (!selectedObraId) {
@@ -212,12 +223,15 @@ export default function Activities() {
                     })),
                 });
                 setCopiaDe(null);
+                setSinDatos(false);
             } else if (!navigator.onLine || !activitiesRes.success) {
                 const copia = leerCopia<{ activities: Activity[]; workers: Worker[] }>(`actividades:${selectedObraId}`);
                 if (copia) {
                     setActivities(copia.datos.activities);
                     setWorkers(copia.datos.workers);
                     setCopiaDe(copia.guardadaEn);
+                } else if (activitiesRes.sinRed) {
+                    setSinDatos(true);
                 }
             }
             if (ausenciasRes && ausenciasRes.success && ausenciasRes.data) {
@@ -231,6 +245,8 @@ export default function Activities() {
                 setActivities(copia.datos.activities);
                 setWorkers(copia.datos.workers);
                 setCopiaDe(copia.guardadaEn);
+            } else if (!haySenal()) {
+                setSinDatos(true);
             }
         } finally {
             setLoading(false);
@@ -258,7 +274,7 @@ export default function Activities() {
 
     // Puede completar: un responsable del borrador, o quien puede crear actividades.
     const puedeCompletar = (a: Activity) =>
-        a.estado === 'borrador' && (
+        isOnline && a.estado === 'borrador' && (
             canCrearActividad ||
             a.relatorId === user?.personaId ||
             (a.responsables || []).includes(user?.personaId || '')
@@ -856,7 +872,8 @@ export default function Activities() {
             <div className="page-content">
                 {copiaDe && (
                     <p className="aviso-copia-local" role="status">
-                        <FiWifiOff aria-hidden /> Sin señal: estás viendo lo guardado el {deCuando(copiaDe)}. Las firmas se guardan en el equipo y se envían solas.
+                        {/* El aviso de "sin señal" es el del layout: aquí solo de cuándo es lo que se ve. */}
+                        <FiClock aria-hidden /> Estás viendo lo guardado el {deCuando(copiaDe)}.
                     </p>
                 )}
                 {/* Lista y calendario son dos vistas de lo mismo, no un filtro:
@@ -875,9 +892,9 @@ export default function Activities() {
                     onTabChange={(id) => setViewMode(id as 'lista' | 'calendario')}
                     tabsLabel="Vista de las actividades"
                     actions={
-                        (canCrearActividad || canPlanificar) ? (
+                        (puedeCrear || puedePlanificar) ? (
                             <div className="flex items-center gap-2">
-                                {canPlanificar && (
+                                {puedePlanificar && (
                                     <button
                                         className="btn btn-secondary"
                                         disabled={!selectedObraId}
@@ -888,7 +905,7 @@ export default function Activities() {
                                         <FiCalendar /> Planificar mes
                                     </button>
                                 )}
-                                {canCrearActividad && (
+                                {puedeCrear && (
                                     <button
                                         className="btn btn-primary"
                                         disabled={!selectedObraId}
@@ -919,18 +936,12 @@ export default function Activities() {
                 )}
 
                 {/* Contenido — solo visible cuando hay obra seleccionada */}
-                {selectedObraId && <>
-
-                {/* Offline Banner */}
-                {!isOnline && (
-                    <div
-                        className="mb-4 p-3 rounded-lg flex items-center gap-2"
-                        style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', color: '#b45309' }}
-                    >
-                        <FiAlertTriangle size={18} />
-                        <span className="font-medium">Sin señal: las firmas quedan en este equipo y se envían solas.</span>
-                    </div>
+                {selectedObraId && sinDatos && (
+                    <SinConexion detalle="Las actividades de la obra se cargan cuando vuelva la señal." />
                 )}
+                {selectedObraId && !sinDatos && <>
+
+                {/* Sin señal el único aviso es el del layout (SincronizadorFirmas). */}
 
                 {/* Toolbar: búsqueda + filtro. Alcanza al día en curso, lo próximo
                     y el calendario; el historial trae sus propios controles. */}
@@ -1044,12 +1055,12 @@ export default function Activities() {
                                     ? 'Parte por la charla de 5 minutos: queda registrada con la firma de cada asistente.'
                                     : 'Cuando el prevencionista programe una actividad, la verás aquí para firmar tu asistencia.'}
                             </p>
-                            {canCrearActividad && (
+                            {puedeCrear && (
                                 <div className="act-empty-actions">
                                     <button className="btn btn-primary" onClick={() => irANuevaActividad()}>
                                         <FiPlus /> Crear actividad
                                     </button>
-                                    {canPlanificar && (
+                                    {puedePlanificar && (
                                         <button className="btn btn-ghost" onClick={irAPlanificar}>
                                             <FiCalendar /> Planificar el mes
                                         </button>
@@ -1922,7 +1933,7 @@ export default function Activities() {
                     size="lg"
                     footer={
                         <>
-                            {canCrearActividad && dayModalFecha && (
+                            {puedeCrear && dayModalFecha && (
                                 <button className="btn btn-primary" onClick={() => crearEnFecha(dayModalFecha)}>
                                     <FiPlus /> Nueva actividad este día
                                 </button>

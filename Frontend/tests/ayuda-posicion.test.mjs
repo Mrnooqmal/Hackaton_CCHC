@@ -109,9 +109,65 @@ test('recolocar mantiene el lado o el borde elegido y solo sigue al elemento', (
     assert.equal(r.modo, 'flotante');
     assert.equal(r.lado, 'abajo');
     assert.ok(r.top + g.height <= v.height - MARGEN, 'queda dentro de la pantalla');
-    // Anclado arriba se queda arriba, con el alto nuevo del globo.
+    // Anclado arriba se queda arriba, con el alto nuevo del globo, mientras no
+    // tape el elemento (si lo tapa, pasa abajo: ver la prueba del 11 de noviembre).
     const arriba = { modo: 'anclado', borde: 'arriba', top: MARGEN, left: MARGEN, width: 1248 };
-    const r2 = recolocar(arriba, { top: 0, left: 0, width: 100, height: 100 }, { width: 360, height: 260 }, v);
+    const r2 = recolocar(arriba, { top: 400, left: 0, width: 100, height: 100 }, { width: 360, height: 260 }, v);
     assert.equal(r2.borde, 'arriba');
     assert.equal(r2.top, MARGEN);
+});
+
+// ─── Prueba en terreno del 11 de noviembre de 2026 (Mis firmas, paso 2) ───
+// En el teléfono el globo medía lo que pedía su texto y, anclado abajo, tapaba
+// la parte de abajo del elemento. Ahora no pasa de la mitad libre.
+
+test('a 360 px el globo anclado no pasa del espacio libre: un texto largo se desplaza dentro y no tapa el elemento', () => {
+    const v = { width: 360, height: 640 };
+    const casos = [
+        { o: { top: 120, left: 16, width: 328, height: 200 }, borde: 'abajo' },  // tarjeta arriba, globo alto
+        { o: { top: 360, left: 16, width: 328, height: 200 }, borde: 'arriba' }, // tarjeta abajo
+    ];
+    for (const { o, borde } of casos) {
+        const g = { width: anchoGlobo(v), height: 360 };
+        const c = colocar(o, g, v);
+        assert.equal(c.modo, 'anclado');
+        assert.equal(c.borde, borde);
+        assert.ok(c.altoMax && c.altoMax < g.height, `limita el alto: ${JSON.stringify(c)}`);
+        const r = rectGlobo(c, Math.min(g.height, c.altoMax));
+        assert.ok(dentro(r, v), `fuera de pantalla: ${JSON.stringify(c)}`);
+        assert.ok(!seCruzan(r, conHalo(o)), `tapa el elemento: ${JSON.stringify(c)}`);
+        // Con su alto ya limitado (lo que mide el motor después), queda igual.
+        const r2 = recolocar(c, o, { width: g.width, height: c.altoMax }, v);
+        assert.deepEqual(r2, c);
+    }
+    // Un globo corto no se toca.
+    const corto = colocar(casos[0].o, { width: anchoGlobo(v), height: 180 }, v);
+    assert.equal(corto.top, 640 - MARGEN - 180);
+});
+
+test('sin espacio libre legible (elemento más alto que la mitad o que la pantalla) no se limita el alto', () => {
+    const v = { width: 360, height: 640 };
+    for (const o of [{ top: 60, left: 16, width: 328, height: 520 }, { top: -200, left: 16, width: 328, height: 2000 }]) {
+        const c = colocar(o, { width: anchoGlobo(v), height: 220 }, v);
+        assert.equal(c.modo, 'anclado');
+        assert.equal(c.altoMax, undefined, JSON.stringify(o));
+    }
+});
+
+test('anclado con la página todavía desplazándose: si el borde elegido termina tapando el elemento, pasa al otro', () => {
+    // Lo que se vio en el teléfono: el borde se eligió con la tarjeta abajo (en
+    // pleno desplazamiento) y quedó arriba tapándola cuando subió.
+    const v = { width: 360, height: 640 };
+    const g = { width: anchoGlobo(v), height: 336 };
+    const antes = colocar({ top: 380, left: 14, width: 332, height: 242 }, g, v);
+    assert.equal(antes.borde, 'arriba');
+    const tarjeta = { top: 96, left: 14, width: 332, height: 242 };
+    const r = recolocar(antes, tarjeta, g, v);
+    assert.equal(r.borde, 'abajo');
+    assert.ok(!seCruzan(rectGlobo(r, Math.min(g.height, r.altoMax ?? g.height)), conHalo(tarjeta)), JSON.stringify(r));
+    // Y si el borde elegido no tapa, no se cambia aunque el centro cruce la mitad.
+    const corto = { width: anchoGlobo(v), height: 150 };
+    const arriba = colocar({ top: 400, left: 14, width: 332, height: 80 }, corto, v);
+    assert.equal(arriba.borde, 'arriba');
+    assert.equal(recolocar(arriba, { top: 300, left: 14, width: 332, height: 80 }, corto, v).borde, 'arriba');
 });

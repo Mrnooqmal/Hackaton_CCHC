@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FiUploadCloud, FiWifiOff, FiAlertTriangle } from 'react-icons/fi';
 import { useOfflineSignature } from '../../hooks/useOfflineSignature';
+import { useHaySenal } from '../../hooks/useSenal';
 import { useToast } from '../../context/ToastContext';
 import { plural } from '../../utils/plural';
+import { haySenal } from '../../utils/conexion';
+import { ENVIO_INICIAL, franjaDeEnvio, ofrecerEnviarAhora, trasIntento } from '../../utils/envioAutomatico';
 
 /**
  * Envía las firmas tomadas sin red, desde cualquier pantalla y sin que nadie lo
@@ -12,7 +15,11 @@ import { plural } from '../../utils/plural';
  * Los reintentos no miran `navigator.onLine` ni dependen del evento `online`: en
  * Android, Chrome no siempre lo dispara, y en la prueba en terreno hubo que tocar
  * "Enviar ahora" al volver la señal. Sin red el intento falla enseguida, sin ruido.
- * El botón queda solo como respaldo.
+ * Con señal dice "Enviando…"; "Enviar ahora" aparece solo si el envío automático
+ * lleva más de 2 minutos fallando con señal (utils/envioAutomatico).
+ *
+ * Sin señal, esta franja es el único aviso de la pantalla, aunque no haya nada
+ * por enviar: neutro, no rojo (prueba en terreno del 11 de noviembre de 2026).
  *
  * La cola es de la empresa de la sesión (utils/colaFirmas): lo de otra empresa en
  * el mismo equipo espera a una sesión de esa empresa.
@@ -23,15 +30,21 @@ import { plural } from '../../utils/plural';
 const CADA_MS = 20 * 1000;
 
 export default function SincronizadorFirmas() {
-    const { isOnline, pendingCount, syncing, syncPendingSignatures, rechazadas, olvidarRechazadas } = useOfflineSignature();
+    const { pendingCount, syncing, syncPendingSignatures, rechazadas, olvidarRechazadas } = useOfflineSignature();
+    const hay = useHaySenal();
     const { toast } = useToast();
     const avisando = useRef(false);
+    const estadoEnvio = useRef(ENVIO_INICIAL);
+    const [respaldo, setRespaldo] = useState(false);
 
     const enviar = useCallback(async () => {
         if (avisando.current) return;
         avisando.current = true;
         try {
             const r = await syncPendingSignatures();
+            const ahora = Date.now();
+            estadoEnvio.current = trasIntento(estadoEnvio.current, r, ahora);
+            setRespaldo(ofrecerEnviarAhora(estadoEnvio.current, haySenal(), ahora));
             if (r.synced > 0) {
                 const enviadas = plural(r.synced, 'firma enviada', 'firmas enviadas');
                 toast.success(r.enRevision > 0 ? `${enviadas}; ${plural(r.enRevision, 'quedó', 'quedaron')} en revisión.` : `${enviadas}.`);
@@ -79,20 +92,23 @@ export default function SincronizadorFirmas() {
         </div>
     );
 
-    if (!hayPendientes) return avisoRechazadas || null;
+    const franja = franjaDeEnvio({ hay, pendientes: pendingCount, respaldo: respaldo && hay });
+    if (!franja) return avisoRechazadas || null;
 
     return (
         <>
             {avisoRechazadas}
-            <div className="sincronizador-firmas" role="status" aria-live="polite">
-                {isOnline ? <FiUploadCloud aria-hidden /> : <FiWifiOff aria-hidden />}
+            <div className={`sincronizador-firmas${hay ? '' : ' sincronizador-firmas--sin-senal'}`} role="status" aria-live="polite">
+                {hay ? <FiUploadCloud aria-hidden /> : <FiWifiOff aria-hidden />}
                 <span>
-                    {plural(pendingCount, 'firma por enviar', 'firmas por enviar')}
-                    {isOnline ? '' : ': se envían solas cuando vuelva la señal.'}
+                    {franja.texto}
+                    {franja.enviando && <span className="sincronizador-firmas__enviando"> · Enviando…</span>}
                 </span>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={enviar} disabled={syncing}>
-                    {syncing ? 'Enviando…' : 'Enviar ahora'}
-                </button>
+                {franja.boton && (
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={enviar} disabled={syncing}>
+                        {syncing ? 'Enviando…' : 'Enviar ahora'}
+                    </button>
+                )}
             </div>
         </>
     );

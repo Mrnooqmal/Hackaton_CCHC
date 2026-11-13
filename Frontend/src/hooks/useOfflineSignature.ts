@@ -28,6 +28,7 @@ import {
 import { cifradoDisponible } from '../utils/valesCifrados';
 import { cifrarSobre, leerLlaveSobre } from '../utils/sobreFirma';
 import { deviceId, EVENTO_COLA } from '../utils/valesTurno';
+import { useHaySenal } from './useSenal';
 
 export type SignatureType = TipoFirma;
 export type OfflinePendingSignature = FirmaPendiente;
@@ -71,30 +72,14 @@ const pinIncorrecto = (quedan = 0) => (quedan === 1
 const PIN_INCORRECTO_FINAL = 'PIN incorrecto. Revísalo e inténtalo de nuevo; si no lo recuerdas, pide que te lo restablezcan.';
 
 export function useOfflineSignature() {
-    const [isOnline, setIsOnline] = useState(navigator.onLine);
+    // El mismo estado de señal en toda la app (utils/conexion): antes cada
+    // instancia de este hook tenía el suyo y las pantallas se contradecían.
+    const isOnline = useHaySenal();
     const [syncing, setSyncing] = useState(false);
     const [pendingCount, setPendingCount] = useState(getPendingSignatures().length);
     const [enRevision, setEnRevision] = useState(0);
     const [rechazadas, setRechazadas] = useState<FirmaRechazada[]>(leerRechazadas(empresa()));
 
-    useEffect(() => {
-        const handleOnline = () => setIsOnline(true);
-        const handleOffline = () => setIsOnline(false);
-
-        // En Android el evento `online` no siempre llega: al volver a la app se
-        // vuelve a mirar.
-        const alVolver = () => setIsOnline(navigator.onLine);
-
-        window.addEventListener('online', handleOnline);
-        window.addEventListener('offline', handleOffline);
-        document.addEventListener('visibilitychange', alVolver);
-
-        return () => {
-            window.removeEventListener('online', handleOnline);
-            window.removeEventListener('offline', handleOffline);
-            document.removeEventListener('visibilitychange', alVolver);
-        };
-    }, []);
 
     const refreshPendingCount = useCallback(() => {
         setPendingCount(getPendingSignatures().length);
@@ -387,8 +372,8 @@ export function useOfflineSignature() {
             }
         }
 
-        // Si algo llegó, hay señal aunque el navegador diga otra cosa.
-        setIsOnline(synced > 0 || navigator.onLine);
+        // Si algo llegó, hay señal aunque el navegador diga otra cosa: lo anota
+        // apiRequest en utils/conexion, igual que la falta de señal.
         refreshPendingCount();
         setRechazadas(leerRechazadas(tenantId));
         avisarCambio();

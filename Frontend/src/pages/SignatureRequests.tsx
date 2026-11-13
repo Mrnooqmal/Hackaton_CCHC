@@ -20,8 +20,7 @@ import {
     FiBriefcase,
     FiShield,
     FiLayers,
-    FiWifiOff,
-    FiWifi,
+    FiUploadCloud,
     FiClipboard,
 } from 'react-icons/fi';
 import {
@@ -39,6 +38,8 @@ import { PERMISSIONS } from '../permissions';
 import ConfirmModal from '../components/ConfirmModal';
 import PinInput from '../components/PinInput';
 import { useOfflineSignature, type OfflinePendingSignature } from '../hooks/useOfflineSignature';
+import { useAlVolverLaSenal } from '../hooks/useSenal';
+import SinConexion from '../components/SinConexion';
 import { Modal, AlertBanner, PageHeader } from '../components/ui';
 
 type TabType = 'pendientes' | 'historial';
@@ -46,11 +47,12 @@ type TabType = 'pendientes' | 'historial';
 export default function SignatureRequests() {
     const { user, hasPermission } = useAuth();
     const canCrearSolicitud = hasPermission(PERMISSIONS.FIRMAS_CREAR);
-    const { isOnline, pendingCount, syncPendingSignatures, getPendingSignatures } = useOfflineSignature();
+    const { isOnline, pendingCount, getPendingSignatures } = useOfflineSignature();
+    // La lista no se pudo cargar por falta de señal: ni "0 solicitudes" ni "No hay pendientes".
+    const [sinDatos, setSinDatos] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('pendientes');
     const [requests, setRequests] = useState<SignatureRequest[]>([]);
     const [offlinePending, setOfflinePending] = useState<OfflinePendingSignature[]>([]);
-    const [syncingOffline, setSyncingOffline] = useState(false);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -99,18 +101,8 @@ export default function SignatureRequests() {
         setOfflinePending(getPendingSignatures());
     };
 
-    const handleSyncOffline = async () => {
-        setSyncingOffline(true);
-        try {
-            const result = await syncPendingSignatures();
-            if (result.synced > 0) {
-                loadData();
-            }
-            loadOfflinePending();
-        } finally {
-            setSyncingOffline(false);
-        }
-    };
+    // Sin datos por falta de señal: se cargan solos cuando vuelve.
+    useAlVolverLaSenal(() => { loadData(); }, sinDatos);
 
     const loadData = async () => {
         try {
@@ -120,6 +112,9 @@ export default function SignatureRequests() {
             const requestsRes = await signatureRequestsApi.list({ tenantId });
             if (requestsRes.success && requestsRes.data) {
                 setRequests(requestsRes.data.requests);
+                setSinDatos(false);
+            } else if (requestsRes.sinRed) {
+                setSinDatos(true);
             }
         } catch (error) {
             console.error('Error loading data:', error);
@@ -488,48 +483,34 @@ export default function SignatureRequests() {
                     activeTab={activeTab}
                     onTabChange={(id) => setActiveTab(id as TabType)}
                     tabsLabel="Vista de solicitudes"
-                    actions={canCrearSolicitud ? (
+                    // Crear una solicitud necesita conexión: sin señal no se ofrece.
+                    actions={canCrearSolicitud && isOnline ? (
                         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
                             <FiPlus /> Nueva solicitud
                         </button>
                     ) : undefined}
                 />
 
-                {/* Offline Pending Signatures Section */}
-                {(offlinePending.length > 0 || !isOnline) && (
-                    <div className="card mb-6" style={{
-                        background: !isOnline
-                            ? 'linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 152, 0, 0.02))'
-                            : 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.02))',
-                        border: `1px solid ${!isOnline ? 'rgba(255, 152, 0, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
-                    }}>
+                {/* Firmas tomadas sin red que esperan envío. El envío y el aviso de
+                    "sin señal" son de la franja del layout (SincronizadorFirmas):
+                    aquí solo la lista, sin botón propio ni otro aviso de señal
+                    (prueba en terreno del 11 de noviembre de 2026). */}
+                {offlinePending.length > 0 && (
+                    <div className="card mb-6">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
-                                <div className="avatar avatar-sm" style={{
-                                    background: !isOnline ? 'var(--warning-500)' : 'var(--info-500)',
-                                }}>
-                                    {!isOnline ? <FiWifiOff size={16} /> : <FiWifi size={16} />}
+                                <div className="avatar avatar-sm" style={{ background: 'var(--info-500)' }}>
+                                    <FiUploadCloud size={16} />
                                 </div>
                                 <div>
                                     <h3 style={{ margin: 0, fontWeight: 600, fontSize: '15px' }}>
-                                        {!isOnline ? 'Sin conexión' : plural(offlinePending.length, 'firma por enviar', 'firmas por enviar')}
+                                        {plural(offlinePending.length, 'firma por enviar', 'firmas por enviar')}
                                     </h3>
                                     <p className="text-xs text-muted" style={{ margin: 0 }}>
                                         Se envían solas cuando hay señal.
                                     </p>
                                 </div>
                             </div>
-                            {offlinePending.length > 0 && (
-                                <button
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={handleSyncOffline}
-                                    disabled={syncingOffline}
-                                    style={{ padding: '8px 16px' }}
-                                >
-                                    <FiRefreshCw className={syncingOffline ? 'spin' : ''} size={14} />
-                                    {syncingOffline ? 'Enviando…' : 'Enviar ahora'}
-                                </button>
-                            )}
                         </div>
 
                         {offlinePending.length > 0 && (
@@ -598,15 +579,19 @@ export default function SignatureRequests() {
                                 {activeTab === 'pendientes' ? 'Solicitudes Pendientes' : 'Historial de Solicitudes'}
                             </h2>
                             <p className="card-subtitle" style={{ fontSize: '13px' }}>
-                                {filteredRequests.length} solicitud{filteredRequests.length !== 1 ? 'es' : ''}
+                                {sinDatos && requests.length === 0 ? '' : `${filteredRequests.length} solicitud${filteredRequests.length !== 1 ? 'es' : ''}`}
                             </p>
                         </div>
-                        <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading} title="Actualizar" style={{ padding: '8px' }}>
-                            <FiRefreshCw className={loading ? 'spin' : ''} size={16} />
-                        </button>
+                        {isOnline && (
+                            <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading} title="Actualizar" style={{ padding: '8px' }}>
+                                <FiRefreshCw className={loading ? 'spin' : ''} size={16} />
+                            </button>
+                        )}
                     </div>
 
-                    {filteredRequests.length === 0 ? (
+                    {filteredRequests.length === 0 && sinDatos ? (
+                        <SinConexion detalle="Las solicitudes se cargan cuando vuelva la señal." />
+                    ) : filteredRequests.length === 0 ? (
                         <div className="empty-state" style={{ padding: '60px 24px' }}>
                             <div className="empty-state-icon" style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>
                                 {activeTab === 'pendientes' ? <FiClock /> : <FiCheck />}

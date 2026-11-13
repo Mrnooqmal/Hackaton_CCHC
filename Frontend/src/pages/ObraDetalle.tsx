@@ -25,6 +25,8 @@ import EstructuraPreventivaPanel from '../components/EstructuraPreventivaPanel';
 import { requisitosDeFase, resumenDeFase, type FaseDeming } from '../components/FufPorFase';
 import ObraCabecera from '../components/obra/ObraCabecera';
 import ObraDetalleSkeleton from '../components/obra/ObraDetalleSkeleton';
+import SinConexion from '../components/SinConexion';
+import { useAlVolverLaSenal } from '../hooks/useSenal';
 import ObraResumen from '../components/obra/ObraResumen';
 import Ds44Fases, { type ModuloFase } from '../components/obra/Ds44Fases';
 import '../css/obra.css';
@@ -150,6 +152,9 @@ export default function ObraDetalle() {
 
   const [loading, setLoading] = useState(true);
   const [obra, setObra] = useState<any | null>(null);
+  // La obra no se pudo cargar por falta de señal: no es "Obra no encontrada".
+  const [obraSinSenal, setObraSinSenal] = useState(false);
+  useAlVolverLaSenal(() => setReloadTick((n) => n + 1), obraSinSenal);
   const [trabajadores, setTrabajadores] = useState<any[]>([]);
   const [allWorkers, setAllWorkers] = useState<any[]>([]);
   const [documentosPrevencion, setDocumentosPrevencion] = useState<any[]>([]);
@@ -375,6 +380,7 @@ export default function ObraDetalle() {
 
         const obraData = obraRes.success ? obraRes.data : null;
         setObra(obraData || null);
+        setObraSinSenal(Boolean(obraRes.sinRed));
 
         const workers = workersRes.success && workersRes.data ? workersRes.data : [];
         setAllWorkers(workers);
@@ -1453,6 +1459,16 @@ export default function ObraDetalle() {
     return (
       <div className="page-content">
         <ObraDetalleSkeleton pestana={activeTab} />
+      </div>
+    );
+  }
+
+  if (!obra && obraSinSenal) {
+    return (
+      <div className="page-content">
+        <div className="card">
+          <SinConexion detalle="La obra se carga cuando vuelva la señal." />
+        </div>
       </div>
     );
   }

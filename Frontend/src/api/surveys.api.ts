@@ -111,7 +111,9 @@ export const surveysApi = {
         if (params?.empresaId) queryParams.append('empresaId', params.empresaId);
         if (params?.obraId) queryParams.append('obraId', params.obraId);
         const query = queryParams.toString();
-        return apiRequest<{ total: number; surveys: SurveyListItem[] }>(`/surveys${query ? `?${query}` : ''}`);
+        // `alcance` viene solo a quien gestiona encuestas: personas distintas
+        // alcanzadas, de las que hoy están en la empresa.
+        return apiRequest<{ total: number; surveys: SurveyListItem[]; alcance?: { personasAlcanzadas: number; totalPersonas: number } }>(`/surveys${query ? `?${query}` : ''}`);
     },
 
     get: (surveyId: string) =>

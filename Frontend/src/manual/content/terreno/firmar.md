@@ -74,7 +74,8 @@ tu asistencia a una actividad y la firma asistida. No tienes que preparar ni act
   equipo. Firmas igual que siempre: lees, escribes tu PIN y confirmas.
 - La firma queda guardada en el equipo y **se envía sola cuando vuelve la señal**. Mientras
   tanto, arriba de la pantalla ves cuántas quedan, por ejemplo *2 firmas por enviar*. Con
-  señal, **Enviar ahora** las manda en el momento.
+  señal dice *Enviando…* y se mandan solas en segundos. Solo si el envío lleva más de 2 minutos
+  sin lograrlo aparece **Enviar ahora**, para intentarlo a mano.
 - Si escribiste tu PIN con señal en ese equipo **durante el turno**, para esa misma obra, el
   equipo queda listo y un error de tipeo se detecta al momento: lo corriges ahí mismo. Eso dura
   un turno (hasta 12 horas).

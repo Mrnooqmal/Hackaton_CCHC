@@ -107,6 +107,29 @@ const resumenParaListado = (encuesta, contenido, sesion) => {
     return resumen;
 };
 
+/**
+ * "Trabajadores alcanzados N de M" del resumen de quien gestiona encuestas.
+ *
+ * Personas DISTINTAS que recibieron al menos una encuesta, de las que hoy están
+ * en la empresa. Antes la pantalla sumaba los destinatarios de cada encuesta (la
+ * misma persona contaba una vez por encuesta) y el total lo pedía aparte a otra
+ * lista: en la prueba en terreno decía "48 de 0 en la obra". Los dos números
+ * salen ahora del mismo lugar y alcanzadas nunca pasa de total: quien dejó la
+ * empresa no cuenta en ninguno. El listado es de la empresa, no de una obra.
+ * Solo números: nadie recibe la lista de destinatarios desde aquí.
+ */
+const alcanceDeEncuestas = async (tenantId, contenido) => {
+    const vigentes = new Set((await scanAllWorkers(tenantId)).map((w) => w.personaId).filter(Boolean));
+    const alcanzadas = new Set();
+    for (const c of contenido.values()) {
+        for (const r of c?.recipients || []) {
+            const id = idDestinatario(r);
+            if (id && vigentes.has(id)) alcanzadas.add(id);
+        }
+    }
+    return { personasAlcanzadas: alcanzadas.size, totalPersonas: vigentes.size };
+};
+
 const normalizeRut = (rut = '') => rut.replace(/[^0-9kK]/g, '').toUpperCase();
 
 /**
@@ -350,10 +373,14 @@ module.exports.list = async (event) => {
         const visibles = items.map(({ recipients, preguntas, ...resto }) => resto);
         const contenido = await leerContenido(visibles.map((e) => e.surveyId));
 
-        return success({
+        const respuesta = {
             total: visibles.length,
             surveys: visibles.map((e) => resumenParaListado(e, contenido.get(e.surveyId), ses.sesion)),
-        });
+        };
+        if (sesionPuede(ses.sesion, PERMISSIONS.ENCUESTAS_CREAR)) {
+            respuesta.alcance = await alcanceDeEncuestas(tenantId, contenido);
+        }
+        return success(respuesta);
     } catch (err) {
         console.error('Error listing surveys:', err);
         return error(err.message || 'Error interno al listar encuestas', 500);

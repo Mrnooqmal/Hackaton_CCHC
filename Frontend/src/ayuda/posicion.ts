@@ -23,7 +23,7 @@ export interface Tamano { readonly width: number; readonly height: number }
 
 export type Colocacion =
     | { modo: 'flotante'; lado: Exclude<Posicion, 'auto'>; top: number; left: number; width: number }
-    | { modo: 'anclado'; borde: 'abajo' | 'arriba'; top: number; left: number; width: number }
+    | { modo: 'anclado'; borde: 'abajo' | 'arriba'; top: number; left: number; width: number; altoMax?: number }
     | { modo: 'centrado'; top: number; left: number; width: number };
 
 /** Ancho bajo el cual el globo va siempre anclado. */
@@ -34,6 +34,12 @@ export const SEPARACION = 12;
 /** Halo del resaltado alrededor del elemento: el globo tampoco lo tapa. */
 export const HALO = 6;
 export const ANCHO_GLOBO = 360;
+/**
+ * Alto mínimo útil del globo anclado (título, dos líneas y botones). Con menos
+ * espacio libre que esto junto al elemento no se le limita el alto: taparía el
+ * elemento igual, y además sería ilegible.
+ */
+export const ALTO_MINIMO_GLOBO = 140;
 
 const ORDEN_AUTO: Exclude<Posicion, 'auto'>[] = ['abajo', 'arriba', 'derecha', 'izquierda'];
 
@@ -55,10 +61,35 @@ export const bordeLibre = (objetivo: Rect | null, vista: Tamano): 'abajo' | 'arr
 /** ¿El elemento, con su halo, no cabe en el alto de la pantalla? */
 export const esMasAltoQueLaVista = (o: Rect, vista: Tamano) => o.height + 2 * HALO > vista.height - 2 * MARGEN;
 
+/**
+ * Espacio libre entre el elemento (con su halo y la separación) y el borde de la
+ * pantalla donde se ancla el globo, o null si no alcanza para un globo legible.
+ */
+export function altoLibre(objetivo: Rect | null, vista: Tamano, borde: 'abajo' | 'arriba'): number | null {
+    if (!objetivo || esMasAltoQueLaVista(objetivo, vista)) return null;
+    const libre = borde === 'abajo'
+        ? vista.height - MARGEN - (objetivo.top + objetivo.height + HALO + SEPARACION)
+        : objetivo.top - HALO - SEPARACION - MARGEN;
+    return libre >= ALTO_MINIMO_GLOBO ? Math.floor(libre) : null;
+}
+
+// Anclado, el globo no pasa de la mitad libre: su alto se limita al espacio que
+// deja el elemento de ese lado y el texto se desplaza dentro del globo. Antes
+// medía lo que pedía su contenido y en el teléfono tapaba la parte de abajo de
+// un elemento alto (prueba en terreno del 11 de noviembre de 2026, Mis firmas).
 function anclado(objetivo: Rect | null, globo: Tamano, vista: Tamano, borde: 'abajo' | 'arriba' = bordeLibre(objetivo, vista)): Colocacion {
     const width = vista.width - 2 * MARGEN;
-    return { modo: 'anclado', borde, left: MARGEN, width, top: borde === 'abajo' ? vista.height - MARGEN - globo.height : MARGEN };
+    const altoMax = altoLibre(objetivo, vista, borde);
+    const alto = altoMax === null ? globo.height : Math.min(globo.height, altoMax);
+    const top = borde === 'abajo' ? vista.height - MARGEN - alto : MARGEN;
+    return altoMax === null
+        ? { modo: 'anclado', borde, left: MARGEN, width, top }
+        : { modo: 'anclado', borde, left: MARGEN, width, top, altoMax };
 }
+
+/** ¿El globo anclado, con el alto que va a tener, tapa el elemento con su halo? */
+const tapa = (c: Colocacion, o: Rect, globo: Tamano) =>
+    seCruzan({ top: c.top, left: c.left, width: c.width, height: c.modo === 'anclado' && c.altoMax ? Math.min(globo.height, c.altoMax) : globo.height }, conHalo(o));
 
 type Lado = Exclude<Posicion, 'auto'>;
 
@@ -119,7 +150,16 @@ export function colocar(objetivo: Rect | null, globo: Tamano, vista: Tamano, pre
  * pantalla en vez de saltar al otro lado.
  */
 export function recolocar(previa: Colocacion, objetivo: Rect | null, globo: Tamano, vista: Tamano): Colocacion {
-    if (previa.modo === 'anclado') return anclado(objetivo, globo, vista, previa.borde);
+    if (previa.modo === 'anclado') {
+        const igual = anclado(objetivo, globo, vista, previa.borde);
+        // El borde se eligió con la página todavía desplazándose (el motor trae
+        // el elemento a la vista y mide en el cuadro siguiente): si ese borde
+        // ahora tapa el elemento y el otro no, se cambia. Solo en ese caso, para
+        // no saltar de un borde a otro con cada píxel de desplazamiento.
+        if (!objetivo || esMasAltoQueLaVista(objetivo, vista) || !tapa(igual, objetivo, globo)) return igual;
+        const otro = anclado(objetivo, globo, vista, previa.borde === 'abajo' ? 'arriba' : 'abajo');
+        return tapa(otro, objetivo, globo) ? igual : otro;
+    }
     if (previa.modo === 'centrado' || !objetivo) return colocar(objetivo, globo, vista);
     const { top, left } = enLado(previa.lado, objetivo, globo, vista);
     return {

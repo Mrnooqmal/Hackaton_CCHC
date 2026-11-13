@@ -17,6 +17,9 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { ListaInicioSkeleton, AccesoEstadoSkeleton } from '../components/inicio/InicioSkeleton';
 import { ancla } from '../ayuda/registro';
+import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
+import { NO_DISPONIBLE_SIN_CONEXION } from '../utils/conexion';
+import SinConexion from '../components/SinConexion';
 
 /**
  * Inicio de obra.
@@ -130,6 +133,13 @@ export default function Dashboard() {
     const [firmasPendientes, setFirmasPendientes] = useState(0);
     const [encuestasPendientes, setEncuestasPendientes] = useState(0);
     const [bloqueantes, setBloqueantes] = useState(0);
+    // Alguna de las tres cargas no tuvo respuesta por falta de señal: los
+    // contadores no se muestran ("Al día", "Nada hoy" y "Todo al día" se leían
+    // como datos). Vuelven solos con la señal.
+    const [sinDatos, setSinDatos] = useState(false);
+    const [recargas, setRecargas] = useState(0);
+    const hay = useHaySenal();
+    useAlVolverLaSenal(() => setRecargas((n) => n + 1), sinDatos);
 
     const personaId = user?.personaId;
     const obraActual = selectedObraId ? obras.find((o) => o.obraId === selectedObraId) : null;
@@ -148,6 +158,9 @@ export default function Dashboard() {
                 activitiesApi.list({ obraId: selectedObraId || undefined }),
             ]);
             if (!vivo) return;
+
+            const faltaSenal = [valor(docsRes), valor(encuestasRes), valor(actividadesRes)].some((r) => Boolean(r?.sinRed));
+            setSinDatos(faltaSenal);
 
             const lista: Pendiente[] = [];
             let bloqueantesPend = 0;
@@ -285,7 +298,7 @@ export default function Dashboard() {
             vivo = false;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user, selectedObraId]);
+    }, [user, selectedObraId, recargas]);
 
     /** Siempre los mismos cuatro, siempre en el mismo orden. No aparecen ni
      *  desaparecen según los datos: solo cambia su línea de estado. */
@@ -295,7 +308,7 @@ export default function Dashboard() {
                 key: 'firmas',
                 to: '/my-signatures',
                 nombre: 'Mis firmas',
-                estado: firmasPendientes > 0 ? `${firmasPendientes} por firmar` : 'Al día',
+                estado: sinDatos ? NO_DISPONIBLE_SIN_CONEXION : firmasPendientes > 0 ? `${firmasPendientes} por firmar` : 'Al día',
                 activo: firmasPendientes > 0,
                 alerta: false,
                 icono: <FiEdit3 size={21} />,
@@ -304,7 +317,7 @@ export default function Dashboard() {
                 key: 'actividades',
                 to: '/activities',
                 nombre: 'Actividades',
-                estado: totalActividadesHoy > 0 ? `${totalActividadesHoy} hoy` : 'Nada hoy',
+                estado: sinDatos ? NO_DISPONIBLE_SIN_CONEXION : totalActividadesHoy > 0 ? `${totalActividadesHoy} hoy` : 'Nada hoy',
                 activo: totalActividadesHoy > 0,
                 alerta: false,
                 icono: <FiCalendar size={21} />,
@@ -313,7 +326,7 @@ export default function Dashboard() {
                 key: 'encuestas',
                 to: '/surveys',
                 nombre: 'Encuestas',
-                estado: encuestasPendientes > 0 ? `${encuestasPendientes} sin responder` : 'Al día',
+                estado: sinDatos ? NO_DISPONIBLE_SIN_CONEXION : encuestasPendientes > 0 ? `${encuestasPendientes} sin responder` : 'Al día',
                 activo: encuestasPendientes > 0,
                 alerta: false,
                 icono: <FiClipboard size={21} />,
@@ -324,13 +337,14 @@ export default function Dashboard() {
                 key: 'incidente',
                 to: '/incidents',
                 nombre: 'Reportar incidente',
-                estado: 'Registro inmediato',
+                // Reportar necesita conexión.
+                estado: hay ? 'Registro inmediato' : NO_DISPONIBLE_SIN_CONEXION,
                 activo: false,
                 alerta: true,
                 icono: <FiAlertTriangle size={21} />,
             },
         ],
-        [firmasPendientes, totalActividadesHoy, encuestasPendientes],
+        [firmasPendientes, totalActividadesHoy, encuestasPendientes, sinDatos, hay],
     );
 
     const visibles = pendientes.slice(0, MAX_PENDIENTES);
@@ -352,7 +366,7 @@ export default function Dashboard() {
                     {chip && <span className="inicio-hd-chip">{chip}</span>}
                 </header>
 
-                {bloqueantes > 0 && !cargando && (
+                {bloqueantes > 0 && !cargando && !sinDatos && (
                     <Link to="/my-signatures" className="inicio-aviso" {...ancla('inicio.aviso-ingreso')}>
                         <span className="inicio-aviso-icono">
                             <FiAlertTriangle size={18} />
@@ -405,7 +419,7 @@ export default function Dashboard() {
                                 </span>
                             )}
                             <span className="inicio-panel-nota">
-                                {cargando
+                                {cargando || sinDatos
                                     ? ''
                                     : pendientes.length === 0
                                       ? 'Ninguno'
@@ -417,6 +431,8 @@ export default function Dashboard() {
 
                         {cargando ? (
                             <ListaInicioSkeleton filas={3} conMarca />
+                        ) : sinDatos ? (
+                            <SinConexion detalle="Tus pendientes se cargan cuando vuelva la señal." />
                         ) : pendientes.length === 0 ? (
                             <>
                                 <div className="inicio-vacio">
@@ -481,7 +497,7 @@ export default function Dashboard() {
                         <div className="inicio-panel-hd">
                             <h2 className="inicio-panel-titulo">Tu día</h2>
                             <span className="inicio-panel-nota">
-                                {cargando
+                                {cargando || sinDatos
                                     ? ''
                                     : totalActividadesHoy === 0
                                       ? 'Sin actividades'
@@ -491,6 +507,8 @@ export default function Dashboard() {
 
                         {cargando ? (
                             <ListaInicioSkeleton filas={2} />
+                        ) : sinDatos ? (
+                            <SinConexion detalle="Tu día se carga cuando vuelva la señal." />
                         ) : agenda.length === 0 ? (
                             <div className="inicio-vacio">
                                 <span className="inicio-vacio-icono">

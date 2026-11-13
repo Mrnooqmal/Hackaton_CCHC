@@ -114,6 +114,27 @@ test('el listado cuenta las preguntas y no expone a los destinatarios', async ()
     assert.equal(enLista.stats.totalRecipients, 3);
 });
 
+// ─── Prueba en terreno del 11 de noviembre de 2026: "48 de 0 en la obra" ─────
+
+test('el alcance cuenta personas distintas, de las que siguen en la empresa, y solo a quien gestiona', async () => {
+    // Tres encuestas a todos (3 personas) y una personalizada: 10 destinatarios
+    // sumados, 3 personas distintas.
+    await crearEncuesta({ audienceType: 'todos' });
+    await crearEncuesta({ audienceType: 'todos' });
+    await crearEncuesta({ audienceType: 'todos' });
+    await crearEncuesta({ audienceType: 'personalizado', ruts: [RUT_ADMIN] });
+    const res = await encuestas.list(ev(admin, { permisos: PERMISOS_ADMIN }));
+    assert.deepEqual(cuerpo(res).alcance, { personasAlcanzadas: 3, totalPersonas: 3 });
+
+    // Quien deja la empresa no cuenta en ninguno de los dos.
+    await new PersonaService().eliminar(tenantId, otro.personaId, admin.personaId);
+    const despues = cuerpo(await encuestas.list(ev(admin, { permisos: PERMISOS_ADMIN }))).alcance;
+    assert.deepEqual(despues, { personasAlcanzadas: 2, totalPersonas: 2 });
+
+    // Sin permiso de gestión no viene.
+    assert.equal(cuerpo(await encuestas.list(ev(trabajador))).alcance, undefined);
+});
+
 test('el listado no se rompe si una encuesta del índice ya no está en la tabla', async () => {
     const encuesta = await crearEncuesta({ audienceType: 'todos' });
     // Consistencia eventual del índice: la fila existe allá y no acá.

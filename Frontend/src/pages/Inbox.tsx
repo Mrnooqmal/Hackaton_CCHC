@@ -12,6 +12,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useObraContext } from '../context/ObraContext';
 import { Modal, Select, SegmentedControl, PageHeader } from '../components/ui';
+import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
+import SinConexion from '../components/SinConexion';
 
 type TabType = 'inbox' | 'sent' | 'archived';
 type FilterType = 'all' | 'unread' | 'archived';
@@ -205,6 +207,11 @@ export default function Inbox() {
     const [searchTerm, setSearchTerm] = useState('');
     const [unreadCount, setUnreadCount] = useState(0);
     const [errorCarga, setErrorCarga] = useState<string | null>(null);
+    // La carpeta no se pudo cargar por falta de señal: sin error rojo ni
+    // "Reintentar"; se carga sola cuando vuelve (el aviso es el del layout).
+    const [sinSenalCarga, setSinSenalCarga] = useState(false);
+    const hay = useHaySenal();
+    useAlVolverLaSenal(() => { loadMessages(); }, sinSenalCarga);
     // Descarta respuestas que llegan tarde tras cambiar de carpeta.
     const cargaVigente = useRef(0);
     // En móvil los filtros van plegados: en un teléfono, tres grupos de
@@ -312,6 +319,7 @@ export default function Inbox() {
         const cargaId = ++cargaVigente.current;
         setLoading(true);
         setErrorCarga(null);
+        setSinSenalCarga(false);
         try {
             let response;
             if (activeTab === 'inbox') {
@@ -333,7 +341,8 @@ export default function Inbox() {
                 // Sin esto la lista se quedaba con los mensajes de la carpeta
                 // anterior y parecía que la carpeta nueva no filtraba nada.
                 setMessages([]);
-                setErrorCarga(response.error || 'No se pudieron cargar los mensajes.');
+                if (response.sinRed) setSinSenalCarga(true);
+                else setErrorCarga(response.error || 'No se pudieron cargar los mensajes.');
             }
         } catch (error) {
             console.error('Error loading messages:', error);
@@ -805,13 +814,14 @@ export default function Inbox() {
                     banner
                     title="Mensajería interna"
                     description="Comunicación directa con tu equipo y supervisores."
-                    actions={
+                    // Enviar un mensaje necesita conexión: sin señal no se ofrece.
+                    actions={hay ? (
                         <button className="btn btn-primary" onClick={handleCompose}>
                             <FiPlus size={15} />
                             <span className="hide-mobile">Nuevo mensaje</span>
                             <span className="show-mobile-only">Nuevo</span>
                         </button>
-                    }
+                    ) : undefined}
                 />
 
                 <div className={`inbox-container ${selectedMessage ? 'has-selection' : ''}`}>
@@ -958,6 +968,8 @@ export default function Inbox() {
                                 <div className="inbox-empty">
                                     <div className="spinner" />
                                 </div>
+                            ) : sinSenalCarga ? (
+                                <SinConexion detalle="Tus mensajes se cargan cuando vuelva la señal." />
                             ) : errorCarga ? (
                                 /* Antes el fallo era mudo y la lista se quedaba con
                                    los mensajes de la carpeta anterior. Ahora dice qué

@@ -333,7 +333,7 @@ export default function MotorRecorrido({
     };
 
     const estiloGlobo = colocacion
-        ? { top: colocacion.top, left: colocacion.left, width: colocacion.width }
+        ? { top: colocacion.top, left: colocacion.left, width: colocacion.width, ...(colocacion.modo === 'anclado' && colocacion.altoMax ? { maxHeight: colocacion.altoMax } : {}) }
         : { top: 0, left: 0, width: anchoGlobo(vista()), visibility: 'hidden' as const };
     const etiquetaColocacion = !colocacion ? undefined
         : colocacion.modo === 'flotante' ? colocacion.lado

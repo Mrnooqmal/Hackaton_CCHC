@@ -19,6 +19,7 @@ export * from './ausencias.api';
 export * from './estructura.api';
 export * from './onboarding.api';
 //export type { User, PersonaResponse } from './types';
+import { marcarSenal } from '../utils/conexion';
 
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -99,6 +100,8 @@ export async function apiRequest<T>(
             ...options,
             headers,
         });
+        // Respondió el servidor (con lo que sea): hay señal (utils/conexion).
+        marcarSenal(true);
 
         // 401 = la sesión no existe o venció. Se excluyen las rutas de `/auth`,
         // donde un 401 significa "credenciales incorrectas" y no "se te cayó la
@@ -135,6 +138,7 @@ export async function apiRequest<T>(
     } catch (error) {
         // `fetch` lanza solo cuando no hubo respuesta. Una respuesta que no es JSON
         // tampoco se muestra tal cual.
+        if (esErrorDeRed(error)) marcarSenal(false);
         return esErrorDeRed(error)
             ? { success: false, sinRed: true, error: SIN_SENAL }
             : { success: false, reintentable: true, error: 'El servidor no pudo responder. Vuelve a intentarlo en un momento.' };

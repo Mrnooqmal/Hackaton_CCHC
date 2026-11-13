@@ -184,6 +184,26 @@
 .sincronizador-firmas > span { flex: 1 1 220px; }
 .sincronizador-firmas > svg { flex-shrink: 0; color: var(--accent); }
 .sincronizador-firmas--rechazadas { align-items: flex-start; border-left: 3px solid var(--danger-alerta); }
+/* Sin señal: el único aviso de la pantalla, neutro (no es un error). */
+.sincronizador-firmas--sin-senal > svg { color: var(--text-secondary); }
+.sincronizador-firmas__enviando { color: var(--text-secondary); }
+
+/* "No disponible sin conexión" en lugar de un dato (components/SinConexion). */
+.sin-conexion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-8) var(--space-4);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.sin-conexion > svg { width: 28px; height: 28px; margin-bottom: var(--space-1); }
+.sin-conexion__titulo { font-weight: 600; color: var(--text-primary); }
+.sin-conexion__texto { font-size: 14px; }
+.sin-conexion--compacto { flex-direction: row; justify-content: center; padding: var(--space-3); }
+.sin-conexion--compacto > svg { width: 16px; height: 16px; margin: 0; }
+.sin-conexion--compacto .sin-conexion__titulo { font-weight: 500; color: var(--text-secondary); }
 .sincronizador-firmas--rechazadas > svg { color: var(--danger-alerta); }
 .sincronizador-firmas--rechazadas ul { flex: 1 1 260px; margin: 0; padding-left: var(--space-4); }
 @media (max-width: 640px) {

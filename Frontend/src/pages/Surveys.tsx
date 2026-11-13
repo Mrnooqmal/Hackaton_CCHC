@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { surveysApi, workersApi, type SurveyListItem } from '../api/client';
+import { surveysApi, type SurveyListItem } from '../api/client';
 import {
     FiPlus,
     FiCheckCircle,
@@ -8,11 +8,12 @@ import {
     FiChevronRight,
     FiClipboard,
     FiSearch,
-    FiWifiOff,
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
+import SinConexion from '../components/SinConexion';
 import { PageHeader, SegmentedControl } from '../components/ui';
 import { SurveyStatTileSkeleton, SurveyRowSectionSkeleton, SurveyCardSkeleton } from '../components/surveys/SurveysSkeleton';
 import { antiguedadAsignacion, etiquetaAudiencia, fechaCorta, guardarPreguntasEnCache, leerPreguntasEnCache, porcentaje } from '../utils/encuestas';
@@ -40,7 +41,8 @@ export default function Surveys() {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, hasPermission } = useAuth();
-    const { isOnline, pendingCount } = useOfflineSignature();
+    const { pendingCount } = useOfflineSignature();
+    const hay = useHaySenal();
     const canManageSurveys = hasPermission(PERMISSIONS.ENCUESTAS_CREAR);
     const [surveys, setSurveys] = useState<SurveyListItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -51,8 +53,12 @@ export default function Surveys() {
     );
     const [showOnlyMine, setShowOnlyMine] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    // Solo para "de N en la obra" en la tarjeta de resumen del gestor.
-    const [totalWorkers, setTotalWorkers] = useState(0);
+    // "Trabajadores alcanzados N de M": lo calcula el backend (personas
+    // distintas). Antes se sumaban los destinatarios de cada encuesta y el total
+    // salía de otra lista: "48 de 0 en la obra" (prueba en terreno, 11-nov-2026).
+    const [alcance, setAlcance] = useState<{ personasAlcanzadas: number; totalPersonas: number } | null>(null);
+    // La lista no se pudo cargar por falta de señal: no se muestran ceros.
+    const [sinDatos, setSinDatos] = useState(false);
 
     const loadData = async () => {
         setLoading(true);
@@ -61,7 +67,13 @@ export default function Surveys() {
             const res = await surveysApi.list();
             if (res.success && res.data) {
                 setSurveys(res.data.surveys || []);
+                setAlcance(res.data.alcance || null);
+                setSinDatos(false);
                 precargarPendientes(res.data.surveys || []);
+            } else if (res.sinRed) {
+                // Lo ya cargado sigue valiendo; si no había nada, se dice que no
+                // está disponible sin conexión (el aviso de "sin señal" es el del layout).
+                setSinDatos(true);
             } else {
                 setError(res.error || 'No fue posible cargar las encuestas');
             }
@@ -92,12 +104,8 @@ export default function Surveys() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => {
-        if (!canManageSurveys) return;
-        workersApi.list().then((res) => {
-            if (res.success && res.data) setTotalWorkers(res.data.length);
-        }).catch(() => {});
-    }, [canManageSurveys]);
+    // Sin datos por falta de señal: se cargan solos cuando vuelve.
+    useAlVolverLaSenal(loadData, sinDatos);
 
     // Lo respondido sin red lo envía SincronizadorFirmas. Cuando baja la cola, se recarga.
     const pendientesAntes = useRef(pendingCount);
@@ -123,13 +131,13 @@ export default function Surveys() {
     const pendientesTotal = asignadas.filter((s) => s.miAsignacion?.estado !== 'respondida').length;
 
     const globalStats = useMemo(() => {
-        const destinatarios = surveys.reduce((acc, s) => acc + (s.stats?.totalRecipients || 0), 0);
+        // La tasa es por asignación (respondidas / asignadas): ahí sí se suman.
+        const asignaciones = surveys.reduce((acc, s) => acc + (s.stats?.totalRecipients || 0), 0);
         const respondidas = surveys.reduce((acc, s) => acc + (s.stats?.responded || 0), 0);
         return {
             total: surveys.length,
             activas: surveys.filter((s) => s.estado !== 'completada').length,
-            destinatarios,
-            tasa: porcentaje(respondidas, destinatarios),
+            tasa: porcentaje(respondidas, asignaciones),
         };
     }, [surveys]);
 
@@ -169,9 +177,15 @@ export default function Surveys() {
         );
     };
 
+    /** Nada cargado y sin señal: ni ceros ni "Estás al día". */
+    const noDisponible = sinDatos && surveys.length === 0;
+
     const renderAsignadas = () => {
         if (loading) {
             return <SurveyRowSectionSkeleton rows={3} />;
+        }
+        if (noDisponible) {
+            return <div className="card"><SinConexion detalle="Tus encuestas se cargan cuando vuelva la señal." /></div>;
         }
 
         const visibles = asignadas.filter(coincide);
@@ -256,7 +270,9 @@ export default function Surveys() {
         );
     };
 
-    const renderCreadas = () => (
+    const renderCreadas = () => (noDisponible && !loading ? (
+        <div className="card"><SinConexion detalle="Las encuestas se cargan cuando vuelva la señal." /></div>
+    ) : (
         <>
             <div className="survey-stats">
                 {loading ? (
@@ -274,8 +290,8 @@ export default function Surveys() {
                         </div>
                         <div className="survey-stat-tile">
                             <span className="survey-stat-tile-label">Trabajadores alcanzados</span>
-                            <span className="survey-stat-tile-value">{globalStats.destinatarios}</span>
-                            <span className="survey-stat-tile-sub">de {totalWorkers} en la obra</span>
+                            <span className="survey-stat-tile-value">{alcance ? alcance.personasAlcanzadas : '—'}</span>
+                            <span className="survey-stat-tile-sub">{alcance ? `de ${alcance.totalPersonas} en la empresa` : ''}</span>
                         </div>
                         <div className="survey-stat-tile">
                             <span className="survey-stat-tile-label">Tasa de respuesta</span>
@@ -310,7 +326,7 @@ export default function Surveys() {
                                     ? `No encontramos encuestas que coincidan con «${searchQuery}».`
                                     : 'Crea una encuesta para recoger la opinión de los trabajadores de la obra.'}
                             </p>
-                            {!searchQuery.trim() && (
+                            {!searchQuery.trim() && hay && (
                                 <button className="btn btn-primary" onClick={() => navigate('/surveys/nueva')}>
                                     <FiPlus /> Nueva encuesta
                                 </button>
@@ -322,7 +338,7 @@ export default function Surveys() {
                 )}
             </section>
         </>
-    );
+    ));
 
     return (
         <div className="page-content">
@@ -333,31 +349,23 @@ export default function Surveys() {
                 tabs={canManageSurveys ? [
                     {
                         id: 'created', label: 'Encuestas creadas',
-                        badge: surveys.length > 0 ? surveys.length : undefined,
+                        badge: !noDisponible && surveys.length > 0 ? surveys.length : undefined,
                     },
                     {
                         id: 'assigned', label: 'Mis encuestas asignadas',
-                        badge: pendientesTotal > 0 ? pendientesTotal : undefined,
+                        badge: !noDisponible && pendientesTotal > 0 ? pendientesTotal : undefined,
                     },
                 ] : undefined}
                 activeTab={pestana}
                 onTabChange={(id) => { setActiveTab(id as Pestana); setSearchQuery(''); }}
                 tabsLabel="Vista de las encuestas"
-                actions={canManageSurveys ? (
+                // Crear una encuesta necesita conexión: sin señal no se ofrece.
+                actions={canManageSurveys && hay ? (
                     <button className="btn btn-primary" onClick={() => navigate('/surveys/nueva')}>
                         <FiPlus /> Nueva encuesta
                     </button>
                 ) : undefined}
             />
-
-            {!isOnline && (
-                <div className="survey-offline-banner">
-                    <span className="survey-offline-banner-icon" aria-hidden="true">
-                        <FiWifiOff size={17} />
-                    </span>
-                    <span className="survey-offline-banner-text">Sin señal: las respuestas quedan en este equipo y se envían solas.</span>
-                </div>
-            )}
 
             {error && (
                 <div className="alert alert-danger">
@@ -376,7 +384,7 @@ export default function Surveys() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                {pestana === 'created' && (
+                {pestana === 'created' && !noDisponible && (
                     <SegmentedControl
                         ariaLabel="Mostrar"
                         fullWidth={false}

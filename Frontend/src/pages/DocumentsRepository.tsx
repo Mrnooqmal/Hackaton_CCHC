@@ -27,6 +27,8 @@ import { useToast } from '../context/ToastContext';
 import { AlertBanner, Select, PageHeader, SegmentedControl } from '../components/ui';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ancla } from '../ayuda/registro';
+import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
+import SinConexion from '../components/SinConexion';
 
 // ── Carpetas del repositorio ──────────────────────────────────────────────
 // Cada documento se ubica en una carpeta según su clasificación / fase.
@@ -95,6 +97,11 @@ export default function DocumentsRepository() {
     const [empresaDocuments, setEmpresaDocuments] = useState<RepoDocument[]>([]);
     const [documentTypes, setDocumentTypes] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
+    // Los documentos no se pudieron cargar por falta de señal: ni carpetas en
+    // cero ni "no hay documentos". Subir necesita conexión: sin señal no se ofrece.
+    const [sinDatos, setSinDatos] = useState(false);
+    const hay = useHaySenal();
+    useAlVolverLaSenal(() => { loadDocuments(); }, sinDatos);
     const [searchTerm, setSearchTerm] = useState('');
     const [openFolder, setOpenFolder] = useState<FolderKey | null>(null);
     const canViewGeneral = user?.rol !== 'trabajador';
@@ -144,6 +151,9 @@ export default function DocumentsRepository() {
             if (res.success && res.data) {
                 setDocuments((res.data.documents || []) as RepoDocument[]);
                 setDocumentTypes(res.data.types || {});
+                setSinDatos(false);
+            } else if (res.sinRed) {
+                setSinDatos(true);
             }
             // Documentos corporativos (Reglamento Interno, Política SST) subidos en
             // Onboarding: se reflejan en el repositorio como carpeta "Documentos de empresa".
@@ -415,7 +425,7 @@ export default function DocumentsRepository() {
                     tabsLabel="Ámbito del repositorio"
                     tabsAncla={ancla('repositorio.ambito')}
                     actions={
-                        canUpload && selectedObraId ? (
+                        canUpload && selectedObraId && hay ? (
                             <button className="btn btn-primary" onClick={() => setShowUploadForm((prev) => !prev)} {...ancla('repositorio.subir')}>
                                 <FiUpload /> Subir documento
                             </button>
@@ -432,7 +442,7 @@ export default function DocumentsRepository() {
                     />
                 )}
 
-                {showUploadForm && canUpload && selectedObraId && (
+                {showUploadForm && canUpload && selectedObraId && hay && (
                     <div className="card mb-6" style={{ padding: 'var(--space-5)' }}>
                         <form onSubmit={handleCreateDocument}>
                             <div className="grid grid-cols-2" style={{ gap: 'var(--space-4)' }}>
@@ -566,6 +576,10 @@ export default function DocumentsRepository() {
                     </div>
                 )}
 
+                {!loading && sinDatos && selectedObraId && (
+                    <SinConexion detalle="Los documentos de la obra se cargan cuando vuelva la señal." />
+                )}
+
                 {loading && (
                     <div className="flex items-center justify-center" style={{ height: '240px' }}>
                         <div className="spinner" />
@@ -608,7 +622,7 @@ export default function DocumentsRepository() {
                 )}
 
                 {/* ── Vista de carpetas (raíz) ── */}
-                {!loading && showFolders && carpetasVisibles.length > 0 && (
+                {!loading && !sinDatos && showFolders && carpetasVisibles.length > 0 && (
                     <div className="repo-folder-grid" {...ancla('repositorio.carpetas')}>
                         {carpetasVisibles.map((k) => {
                             const f = FOLDERS[k];
@@ -637,7 +651,7 @@ export default function DocumentsRepository() {
                 {/* Sin documentos pero con la carpeta DS44 presente, el mensaje no
                     puede decir que no hay nada: la contradiría el formulario que sí
                     está ahí arriba. */}
-                {!loading && selectedObraId && showFolders && scopeDocuments.length === 0 && (
+                {!loading && !sinDatos && selectedObraId && showFolders && scopeDocuments.length === 0 && (
                     carpetasVisibles.length > 0 ? (
                         <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 'var(--space-4)' }}>
                             Todavía no hay documentos cargados en esta obra. El formulario de
@@ -661,7 +675,7 @@ export default function DocumentsRepository() {
                     justamente pedir resultados sin importar dónde estén. En el ámbito
                     personal el formulario no aplica, así que ahí la carpeta vuelve a
                     ser una lista: sin esto quedaría en blanco. */}
-                {!loading && selectedObraId && !showFolders && (openFolder !== 'ds44' || isSearching || !puedeVerFuf) && (
+                {!loading && !sinDatos && selectedObraId && !showFolders && (openFolder !== 'ds44' || isSearching || !puedeVerFuf) && (
                     visibleDocuments.length === 0 ? (
                         <div className="repo-empty">
                             <div className="repo-empty-icon"><FiFileText size={34} /></div>

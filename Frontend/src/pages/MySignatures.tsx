@@ -4,6 +4,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
+import { useAlVolverLaSenal } from '../hooks/useSenal';
+import { haySenal } from '../utils/conexion';
+import SinConexion from '../components/SinConexion';
 import { guardarCopia, leerCopia, deCuando } from '../utils/copiaLocal';
 import {
     FiCheck,
@@ -19,7 +22,6 @@ import {
     FiRefreshCw,
     FiFilter,
     FiChevronRight,
-    FiWifiOff
 } from 'react-icons/fi';
 
 import {
@@ -163,6 +165,10 @@ export default function MySignatures() {
     const { signDocument } = useOfflineSignature();
     /** Si se está mostrando la copia guardada (sin red), desde cuándo. */
     const [copiaDe, setCopiaDe] = useState<string | null>(null);
+    // Sin señal, lo que no se pudo cargar ni hay copia: se dice que no está
+    // disponible, nunca "Todo al día", "Sin historial" ni "0 de 0".
+    const [pendientesSinDatos, setPendientesSinDatos] = useState(false);
+    const [historialSinDatos, setHistorialSinDatos] = useState(false);
 
     // Historial: buscador + filtro por tipo + paginación. Crece con el
     // tiempo, así que no todo cabe en pantalla de una vez.
@@ -178,6 +184,9 @@ export default function MySignatures() {
             setLoading(false);
         }
     }, [user?.personaId]);
+
+    // Lo que falta (o la copia guardada) se completa solo cuando vuelve la señal.
+    useAlVolverLaSenal(() => { loadData(); }, pendientesSinDatos || historialSinDatos || copiaDe !== null);
 
     useEffect(() => {
         const target = (location.state as { firmarRequestId?: string } | null)?.firmarRequestId;
@@ -223,28 +232,36 @@ export default function MySignatures() {
                 // solicitudes de firma exigen señal igual, ver handleSign).
                 guardarCopia(`mis-firmas:${user.personaId}`, onboardingDocs);
                 setCopiaDe(null);
-            } else if (!navigator.onLine) {
-                usarCopia();
+                setPendientesSinDatos(false);
+            } else if (!navigator.onLine || pendingRes.sinRed || onboardingDocsRes.sinRed) {
+                setPendientesSinDatos(!usarCopia());
             }
 
             if (historyRes.success && historyRes.data) {
                 setSignatureHistory(historyRes.data.historial);
+                setHistorialSinDatos(false);
+            } else if (historyRes.sinRed) {
+                setHistorialSinDatos(true);
             }
         } catch (error) {
             console.error('Error loading data:', error);
-            usarCopia();
+            // Un error no es falta de señal: solo sin señal se dice "no disponible".
+            setPendientesSinDatos(!usarCopia() && !haySenal());
         } finally {
             setLoading(false);
         }
     };
 
-    const usarCopia = () => {
-        if (!user?.personaId) return;
+    /** La copia guardada de lo pendiente, si hay. Devuelve si la había. */
+    const usarCopia = (): boolean => {
+        if (!user?.personaId) return false;
         const copia = leerCopia<PendingItem[]>(`mis-firmas:${user.personaId}`);
         if (copia) {
             setPendingRequests(copia.datos);
             setCopiaDe(copia.guardadaEn);
+            return true;
         }
+        return false;
     };
 
     const handleSign = async (pin: string) => {
@@ -434,7 +451,8 @@ export default function MySignatures() {
             <div className="page-content" aria-busy={loading}>
                 {copiaDe && (
                     <p className="aviso-copia-local" role="status">
-                        <FiWifiOff aria-hidden /> Sin señal: estás viendo los documentos guardados el {deCuando(copiaDe)}. Lo que firmes se guarda en el equipo y se envía solo.
+                        {/* El aviso de "sin señal" es el del layout: aquí solo de cuándo es lo que se ve. */}
+                        <FiClock aria-hidden /> Estás viendo los documentos guardados el {deCuando(copiaDe)}.
                     </p>
                 )}
                 {/* Pendientes / Historial son dos vistas de lo mismo, no un
@@ -470,14 +488,20 @@ export default function MySignatures() {
                     obra) — en vez de una sola columna de tarjetas sueltas. */}
                 {activeTab === 'pendientes' && (
                     <div className="msig-layout">
-                        <div className="msig-list-col" {...ancla('mis-firmas.lista')}>
+                        {/* El paso "Cómo se firma" apunta a la primera tarjeta (o al
+                            "Todo al día"), no a la lista entera: en el teléfono
+                            una lista de varias tarjetas pasa de la mitad de la
+                            pantalla y el globo no tenía dónde ir sin taparla. */}
+                        <div className="msig-list-col">
                             {loading ? (
                                 <div className="msig-list">
                                     <MsigCardSkeleton i={0} />
                                     <MsigCardSkeleton i={1} />
                                 </div>
+                            ) : pendingRequests.length === 0 && pendientesSinDatos ? (
+                                <SinConexion detalle="Tus firmas pendientes se cargan cuando vuelva la señal." />
                             ) : pendingRequests.length === 0 ? (
-                                <div className="empty-state" style={{ padding: 'var(--space-16)' }}>
+                                <div className="empty-state" style={{ padding: 'var(--space-16)' }} {...ancla('mis-firmas.lista')}>
                                     <div className="empty-state-icon">
                                         <FiCheck size={40} style={{ color: 'var(--success-apagado)' }} />
                                     </div>
@@ -488,10 +512,10 @@ export default function MySignatures() {
                                 </div>
                             ) : (
                                 <div className="msig-list">
-                                    {pendingRequests.map((request) => {
+                                    {pendingRequests.map((request, i) => {
                                         const urg = urgencia(request.fechaLimite);
                                         return (
-                                            <div key={request.requestId} className="msig-card">
+                                            <div key={request.requestId} className="msig-card" {...(i === 0 ? ancla('mis-firmas.lista') : {})}>
                                                 <div className="msig-card-main">
                                                     <div className="msig-card-icon">
                                                         {tipoIcon(request.tipo)}
@@ -547,6 +571,7 @@ export default function MySignatures() {
                                     <h2>Tu avance</h2>
                                     <span>Este mes</span>
                                 </div>
+                                {historialSinDatos || pendientesSinDatos ? <SinConexion compacto /> : (
                                 <div className="msig-avance-bar-wrap">
                                     <div className="msig-avance-numbers">
                                         <span className="msig-avance-pct">{progreso}%</span>
@@ -554,9 +579,10 @@ export default function MySignatures() {
                                     </div>
                                     <span className="msig-progress-track"><span className="msig-progress-fill" style={{ width: `${progreso}%` }} /></span>
                                 </div>
+                                )}
 
                                 <h3 className="msig-avance-sub">Próximos vencimientos</h3>
-                                {proximosVencimientos.length === 0 ? (
+                                {pendientesSinDatos ? <SinConexion compacto /> : proximosVencimientos.length === 0 ? (
                                     <p className="msig-avance-empty">No hay vencimientos próximos en tu obra.</p>
                                 ) : (
                                     <ul className="msig-timeline">
@@ -621,6 +647,8 @@ export default function MySignatures() {
                                 <MsigHistRowSkeleton i={1} />
                                 <MsigHistRowSkeleton i={2} />
                             </div>
+                        ) : signatureHistory.length === 0 && historialSinDatos ? (
+                            <SinConexion detalle="Tu historial se carga cuando vuelva la señal." />
                         ) : signatureHistory.length === 0 ? (
                             <div className="empty-state" style={{ padding: 'var(--space-16)' }}>
                                 <div className="empty-state-icon">
