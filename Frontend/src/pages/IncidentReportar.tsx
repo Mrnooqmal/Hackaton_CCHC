@@ -4,13 +4,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
     FiUpload, FiCamera, FiX, FiMic, FiRefreshCw, FiCheck,
 } from 'react-icons/fi';
-import { incidentsApi, workersApi, aiApi } from '../api/client';
+import { incidentsApi, workersApi, aiApi, SIN_CONSENTIMIENTO_DICTADO } from '../api/client';
+import { privacidadApi } from '../api/gobernanza.api';
 import type { CreateIncidentData } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
-import { FormPage, FieldSection, PageHeader, Select, SegmentedControl } from '../components/ui';
+import { FormPage, FieldSection, PageHeader, Select, SegmentedControl, AlertBanner } from '../components/ui';
 import { ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
 import { ancla } from '../ayuda/registro';
 
@@ -130,36 +131,78 @@ export default function IncidentReportar() {
     const [isTranscribingDesc, setIsTranscribingDesc] = useState(false);
     const dictationRecorderRef = useRef<MediaRecorder | null>(null);
     const dictationChunksRef = useRef<Blob[]>([]);
+    const dictationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Al salir de la pantalla a media grabación, el audio se descarta: no se
+    // envía a transcribir lo que la persona ya no va a ver.
+    const descartarDictadoRef = useRef(false);
+
+    // Se pregunta al abrir para no hacer hablar a nadie un minuto y recién ahí
+    // decirle que falta el consentimiento. `null` = no se supo (sin señal, error):
+    // se intenta igual y decide el servidor, que es quien de verdad lo exige.
+    const [consienteDictado, setConsienteDictado] = useState<boolean | null>(null);
+    const [avisoConsentimiento, setAvisoConsentimiento] = useState(false);
+    useEffect(() => {
+        privacidadApi.consentimientos().then((r) => {
+            const f = r.success ? r.data?.finalidades.find((x) => x.finalidad === 'dictado_voz_ia') : undefined;
+            if (f) setConsienteDictado(f.vigente);
+        }).catch(() => { /* decide el servidor */ });
+    }, []);
+
+    // Ir a dar el consentimiento saca de esta pantalla, que no guarda borrador.
+    const irAConsentimientos = () => {
+        const tieneDatos = Boolean(formData.descripcion?.trim() || formData.centroTrabajo || uploadedFiles.length
+            || afectados.some((a) => a.nombre));
+        if (tieneDatos && !window.confirm('Se descartará lo que llevas de este reporte. ¿Ir a Mis datos y privacidad?')) return;
+        navigate('/mis-datos?seccion=consentimientos');
+    };
 
     const startDictation = async () => {
+        if (consienteDictado === false) {
+            setAvisoConsentimiento(true);
+            return;
+        }
+        setAvisoConsentimiento(false);
         setIsDictating(true);
         dictationChunksRef.current = [];
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
+            // 32 kbps alcanza para voz y deja dos minutos en ~0,5 MB. Safari graba
+            // MP4 y no WebM: se manda el tipo con que de verdad se grabó.
+            const mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
             dictationRecorderRef.current = mediaRecorder;
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) dictationChunksRef.current.push(e.data);
             };
             mediaRecorder.onstop = async () => {
+                if (dictationTimerRef.current) clearTimeout(dictationTimerRef.current);
                 setIsDictating(false);
                 setIsTranscribingDesc(true);
                 stream.getTracks().forEach((t) => t.stop());
-                const audioBlob = new Blob(dictationChunksRef.current, { type: 'audio/webm' });
+                if (descartarDictadoRef.current) return;
+                const mimeType = mediaRecorder.mimeType || 'audio/webm';
+                const audioBlob = new Blob(dictationChunksRef.current, { type: mimeType });
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
                     const base64 = (reader.result as string).split(',')[1];
                     try {
-                        const result = await aiApi.transcribeAudio(base64, 'audio/webm');
+                        const result = await aiApi.transcribeAudio(base64, mimeType);
                         if (result.success && result.data) {
-                            setFormData((prev) => ({
-                                ...prev,
-                                descripcion: prev.descripcion ? `${prev.descripcion} ${result.data!.text}` : result.data!.text,
-                            }));
-                        } else if (result.error) {
+                            const texto = result.data.text;
+                            if (!texto) {
+                                setFormError('No se escuchó nada en la grabación. Intenta de nuevo, más cerca del micrófono.');
+                            } else {
+                                setFormData((prev) => ({
+                                    ...prev,
+                                    descripcion: prev.descripcion ? `${prev.descripcion} ${texto}` : texto,
+                                }));
+                            }
+                        } else if (result.codigo === SIN_CONSENTIMIENTO_DICTADO) {
                             // Sin consentimiento para el dictado (Mis datos y privacidad) el
                             // audio no sale: se explica y se puede seguir escribiendo.
+                            setConsienteDictado(false);
+                            setAvisoConsentimiento(true);
+                        } else if (result.error) {
                             setFormError(result.error);
                         }
                     } catch {
@@ -170,6 +213,11 @@ export default function IncidentReportar() {
                 };
             };
             mediaRecorder.start();
+            // Tope de 3 minutos: un relato más largo conviene dictarlo en partes,
+            // y así una grabación olvidada no crece sin fin.
+            dictationTimerRef.current = setTimeout(() => {
+                if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            }, 3 * 60 * 1000);
             setFormError('');
         } catch {
             setIsDictating(false);
@@ -184,11 +232,16 @@ export default function IncidentReportar() {
     };
 
     // Libera cámara y micrófono si la persona navega fuera sin cerrar ninguno.
-    useEffect(() => () => {
-        stopCamera();
-        if (dictationRecorderRef.current && dictationRecorderRef.current.state !== 'inactive') {
-            dictationRecorderRef.current.stop();
-        }
+    useEffect(() => {
+        descartarDictadoRef.current = false;
+        return () => {
+            stopCamera();
+            descartarDictadoRef.current = true;
+            if (dictationTimerRef.current) clearTimeout(dictationTimerRef.current);
+            if (dictationRecorderRef.current && dictationRecorderRef.current.state !== 'inactive') {
+                dictationRecorderRef.current.stop();
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -536,6 +589,18 @@ export default function IncidentReportar() {
                                 )}
                             </button>
                         </div>
+                        {avisoConsentimiento && (
+                            <AlertBanner
+                                variant="warning"
+                                autoDismissMs={0}
+                                onDismiss={() => setAvisoConsentimiento(false)}
+                                message="Para dictar por voz, primero otorga tu consentimiento en Mis datos y privacidad. También puedes escribir el relato."
+                            >
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={irAConsentimientos}>
+                                    Ir a Mis datos y privacidad
+                                </button>
+                            </AlertBanner>
+                        )}
                         <textarea
                             className="form-input"
                             rows={5}

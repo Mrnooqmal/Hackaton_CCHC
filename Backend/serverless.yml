@@ -52,6 +52,10 @@ custom:
   # para decidir dónde va cada archivo vive en `lib/almacenamiento.js`.
   evidenciaBucketName: buildandserve-evidencia-${self:provider.stage}
   trabajoBucketName: buildandserve-trabajo-${self:provider.stage}
+  # Tercer bucket, de paso: el audio del dictado por voz mientras Transcribe lo
+  # pasa a texto. Sin versionado, para que borrarlo sea borrarlo (ver
+  # lib/ai/transcribe.js).
+  dictadosBucketName: buildandserve-dictados-${self:provider.stage}
   deletionPolicies:
     prod: Retain
   deletionPolicy: ${self:custom.deletionPolicies.${self:provider.stage}, 'Delete'}
@@ -111,6 +115,9 @@ provider:
     # --- Storage ---
     EVIDENCIA_BUCKET: ${self:custom.evidenciaBucketName}
     TRABAJO_BUCKET: ${self:custom.trabajoBucketName}
+    DICTADOS_BUCKET: ${self:custom.dictadosBucketName}
+    # ARN y no id: Transcribe rechaza `OutputEncryptionKMSKeyId` si no es ARN.
+    DICTADOS_KMS_KEY_ARN: !GetAtt ClaveDatos.Arn
     INCIDENT_NOTIFICATION_TOPIC: ${self:service}-incident-notifications-${self:provider.stage}
     # --- External ---
     # Correo (lib/correo.js, D-21): remitente del dominio verificado, respuestas
@@ -154,7 +161,6 @@ provider:
     # La llave asimétrica de los sobres de firma sin conexión (D-37).
     SOBRE_FIRMA_KMS_KEY_ID: !Ref ClaveSobreFirma
     IS_OFFLINE: ${env:IS_OFFLINE, 'false'}
-    GEMINI_API_KEY: ${env:GEMINI_API_KEY, ''}
     # --- Gating de alta de empresas (Fase 1: PIN estático) ---
     # Código de habilitación requerido para crear una empresa via /tenants/setup.
     # El valor vive en el .env de Backend (TENANT_SIGNUP_CODE). Si queda vacío, no se gatea.
@@ -316,6 +322,23 @@ provider:
             - s3:DeleteObject
           Resource:
             - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}/*'
+        # Dictado por voz: el audio y su transcripción entran, se leen y se
+        # borran apenas hay texto. Transcribe lee el audio y escribe el resultado
+        # con estos mismos permisos (no hay rol de acceso a datos aparte).
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource:
+            - !Sub 'arn:aws:s3:::${self:custom.dictadosBucketName}/dictados/*'
+        - Effect: Allow
+          Action:
+            - transcribe:StartTranscriptionJob
+            - transcribe:GetTranscriptionJob
+            - transcribe:DeleteTranscriptionJob
+          Resource:
+            - !Sub 'arn:aws:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/dictado-*'
         # Sin esto, un objeto cifrado con la clave propia no se puede ni escribir
         # ni leer: la CMK no es solo una casilla de configuración.
         - Effect: Allow
@@ -1108,14 +1131,22 @@ functions:
           authorizer:
             name: sesionUsuario
 
-  # Transcripción de audio (dictado del relato al reportar un incidente)
+  # Dictado del relato al reportar un incidente (Amazon Transcribe). Dos rutas,
+  # una función: iniciar y consultar (ver handlers/ai/handler.js).
   aiTranscribeAudio:
-    handler: handlers/ai/handler.transcribeAudio
-    timeout: 60
+    handler: handlers/ai/handler.enrutar
+    # 29s: el tope de HTTP API es 30 (ver tenantsModule). Ninguna de las dos
+    # rutas espera a Transcribe, así que en la práctica responden en menos de uno.
+    timeout: 29
     events:
       - httpApi:
           path: /ai/transcribe
           method: POST
+          authorizer:
+            name: sesionUsuario
+      - httpApi:
+          path: /ai/transcribe/{jobId}
+          method: GET
           authorizer:
             name: sesionUsuario
 
@@ -1552,6 +1583,32 @@ resources:
               ExposedHeaders: [ETag]
               MaxAge: 3000
 
+    DictadosBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.dictadosBucketName}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: aws:kms
+                KMSMasterKeyID: !GetAtt ClaveDatos.Arn
+              BucketKeyEnabled: true
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        LifecycleConfiguration:
+          Rules:
+            # El servidor borra el audio y el texto apenas los entrega. Esto es
+            # el respaldo para cuando no alcanza: quien dictó cerró la pestaña
+            # antes de que terminara, o falló un borrado. Acá sí puede ir el
+            # prefijo vacío: en este bucket no vive nada más.
+            - Id: dictados-efimeros
+              Status: Enabled
+              Prefix: ''
+              ExpirationInDays: 1
+
     # Solo con TLS. Las URL firmadas y el SDK ya usan https, pero S3 también
     # acepta http: una URL firmada editada a http:// funcionaba y el archivo
     # (evidencia con datos personales) viajaba en claro. Con esto S3 rechaza
@@ -1570,6 +1627,24 @@ resources:
               Resource:
                 - !GetAtt EvidenciaBucket.Arn
                 - !Sub '${EvidenciaBucket.Arn}/*'
+              Condition:
+                Bool:
+                  'aws:SecureTransport': 'false'
+
+    DictadosBucketSoloTls:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref DictadosBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Sid: SoloConTLS
+              Effect: Deny
+              Principal: '*'
+              Action: 's3:*'
+              Resource:
+                - !GetAtt DictadosBucket.Arn
+                - !Sub '${DictadosBucket.Arn}/*'
               Condition:
                 Bool:
                   'aws:SecureTransport': 'false'

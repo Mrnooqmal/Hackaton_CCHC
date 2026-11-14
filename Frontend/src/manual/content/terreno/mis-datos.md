@@ -20,7 +20,7 @@ por separado:
 | --- | --- | --- |
 | **Ficha básica de salud** | Alergias, enfermedades crónicas y otros antecedentes que declares en la ficha. | Dejas de poder responder la ficha y tus respuestas dejan de mostrarse a la empresa. |
 | **Foto de perfil** | La fotografía que subas a tu perfil. | Tu foto deja de mostrarse de inmediato y no se puede subir otra. |
-| **Dictado por voz con inteligencia artificial** | El audio que grabes al dictar el relato de un incidente. El audio se envía a un servicio de Google, fuera de Chile, solo para pasarlo a texto. | El botón **Dictar** deja de funcionar para ti; puedes seguir escribiendo. |
+| **Dictado por voz con inteligencia artificial** | El audio que grabes al dictar el relato de un incidente. El audio se envía a Amazon Transcribe (AWS, en Estados Unidos) solo para pasarlo a texto, y se borra apenas se obtiene el texto. | El botón **Dictar** deja de funcionar para ti; puedes seguir escribiendo. |
 
 Toca **Autorizar** o **Revocar autorización**. Antes de decidir, lee el texto completo de cada
 uno. Si el texto cambia, la plataforma te pide volver a decidir. Abajo verás el **historial de tus

@@ -37,6 +37,8 @@ interface ApiResponse<T> {
     reintentable?: boolean;
     /** No hubo respuesta: no hay señal. `error` trae un mensaje simple, sin nada técnico. */
     sinRed?: boolean;
+    /** Motivo del rechazo para que la pantalla actúe, p. ej. `SIN_CONSENTIMIENTO`. */
+    codigo?: string;
 }
 
 /** Lo que se le dice a una persona cuando no hay señal. */

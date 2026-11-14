@@ -30,6 +30,7 @@ function rutasDe(nombre) {
 for (const [modulo, funcion, archivo] of [
     ['uploads', 'uploadsModule', '../handlers/uploads/handler'],
     ['surveys', 'surveysModule', '../handlers/surveys/handler'],
+    ['ai', 'aiTranscribeAudio', '../handlers/ai/handler'],
 ]) {
     test(`${modulo}: las rutas declaradas y las de la tabla son las mismas`, () => {
         const h = require(archivo);

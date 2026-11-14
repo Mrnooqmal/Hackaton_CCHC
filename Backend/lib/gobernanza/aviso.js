@@ -65,9 +65,9 @@ const ENCARGADOS = [
         transferenciaInternacional: true,
     },
     {
-        quien: 'Google (servicio Gemini)',
-        que: 'Convierte en texto el audio del dictado por voz. Solo recibe audio si autorizas el dictado; Build & Serve no guarda el audio.',
-        donde: 'Fuera de Chile',
+        quien: 'Amazon Transcribe (AWS)',
+        que: 'Convierte en texto el audio del dictado por voz. Solo recibe audio si autorizas el dictado; el audio se borra apenas se obtiene el texto.',
+        donde: 'Estados Unidos (región us-east-1, Virginia del Norte)',
         transferenciaInternacional: true,
         soloConConsentimiento: 'dictado_voz_ia',
     },

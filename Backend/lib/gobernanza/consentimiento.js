@@ -90,13 +90,23 @@ const FINALIDADES = {
         nombre: 'Dictado por voz con inteligencia artificial',
         dato: 'El audio que grabes al dictar el relato de un incidente.',
         efectoRevocacion: 'El botón de dictado deja de funcionar para ti; puedes seguir escribiendo el relato.',
-        versionActual: 'v1',
+        // v2: el dictado pasó de Gemini (Google) a Amazon Transcribe. Cambió a
+        // quién se envía el audio, así que quien aceptó la v1 tiene que volver
+        // a decidir: `consentimientoVigente` solo reconoce la versión actual.
+        versionActual: 'v2',
         versiones: {
             v1: {
                 publicadaEl: '2026-10-29',
                 texto: 'Autorizo que el audio que grabe al dictar el relato de un incidente se envíe a Google (servicio Gemini, con '
                     + 'servidores fuera de Chile) solo para convertirlo en texto. Build & Serve no guarda el audio; guarda únicamente el texto '
                     + 'que yo revise y envíe. Es voluntario: puedo escribir el relato sin dictarlo.',
+            },
+            v2: {
+                publicadaEl: '2026-11-14',
+                texto: 'Autorizo que el audio que grabe al dictar el relato de un incidente se envíe a Amazon Web Services (servicio Amazon '
+                    + 'Transcribe, con servidores en Estados Unidos) solo para convertirlo en texto. Build & Serve no conserva el audio: se '
+                    + 'borra apenas se obtiene el texto y, si algo falla, a más tardar en un día. Se guarda únicamente el texto que yo revise '
+                    + 'y envíe. Es voluntario: puedo escribir el relato sin dictarlo.',
             },
         },
     },

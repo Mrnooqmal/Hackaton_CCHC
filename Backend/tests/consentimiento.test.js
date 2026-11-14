@@ -125,7 +125,7 @@ test('revocar una finalidad deja intactas las demás', async () => {
     await otorgar(juan, 'foto_perfil');
     await otorgar(juan, 'dictado_voz_ia');
     await revocar(juan, 'foto_perfil');
-    assert.deepEqual([...ficha(juan).consentimientos], ['dictado_voz_ia@v1']);
+    assert.deepEqual([...ficha(juan).consentimientos], ['dictado_voz_ia@v2']);
 });
 
 test('no se otorga dos veces lo mismo ni se revoca lo que no está otorgado', async () => {
@@ -178,22 +178,31 @@ test('ficha básica de salud: sin consentimiento no se puede responder, y al rev
 
 test('dictado por voz: sin consentimiento vigente el audio no sale a terceros', async () => {
     const ai = require('../handlers/ai/handler');
-    const gemini = require('../lib/ai/gemini');
-    const original = gemini.transcribeAudio;
+    const transcribe = require('../lib/ai/transcribe');
+    const original = transcribe.iniciar;
     let enviados = 0;
-    gemini.transcribeAudio = async () => { enviados += 1; return 'texto'; };
+    transcribe.iniciar = async () => { enviados += 1; return '00000000-0000-4000-8000-000000000000'; };
     try {
-        const ev = () => evento(juan, 'POST', '/ai/transcribe', { audio: 'AAAA', mimeType: 'audio/webm' });
-        assert.equal((await ai.transcribeAudio(ev())).statusCode, 403);
+        const ev = () => evento(juan, 'POST', '/ai/transcribe', { audio: 'AAAA', mimeType: 'audio/webm;codecs=opus' });
+        const negado = await ai.iniciar(ev());
+        assert.equal(negado.statusCode, 403);
+        assert.equal(JSON.parse(negado.body).codigo, 'SIN_CONSENTIMIENTO', 'la pantalla ofrece ir a darlo');
         assert.equal(enviados, 0);
         await otorgar(juan, 'dictado_voz_ia');
-        assert.equal((await ai.transcribeAudio(ev())).statusCode, 200);
+        assert.equal((await ai.iniciar(ev())).statusCode, 202);
         await revocar(juan, 'dictado_voz_ia');
-        assert.equal((await ai.transcribeAudio(ev())).statusCode, 403);
+        assert.equal((await ai.iniciar(ev())).statusCode, 403);
         assert.equal(enviados, 1, 'solo mientras estuvo vigente');
     } finally {
-        gemini.transcribeAudio = original;
+        transcribe.iniciar = original;
     }
+});
+
+test('dictado por voz: quien aceptó el texto que nombraba a Google tiene que volver a decidir', () => {
+    assert.equal(C.consentimientoVigente({ consentimientos: ['dictado_voz_ia@v1'] }, 'dictado_voz_ia'), false);
+    assert.equal(C.consentimientoVigente({ consentimientos: ['dictado_voz_ia@v2'] }, 'dictado_voz_ia'), true);
+    assert.match(C.FINALIDADES.dictado_voz_ia.versiones.v2.texto, /Amazon Transcribe/);
+    assert.doesNotMatch(C.FINALIDADES.dictado_voz_ia.versiones.v2.texto, /Google|Gemini/);
 });
 
 test('el historial de consentimientos no guarda el dato que el consentimiento habilita', async () => {

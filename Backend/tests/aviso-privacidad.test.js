@@ -37,9 +37,10 @@ test('responsable, encargados y transferencias internacionales', () => {
     assert.equal(a.responsable.nombre, 'Constructora Uno');
     const aws = a.encargados.find((e) => /Amazon Web Services/.test(e.quien));
     assert.ok(aws && aws.transferenciaInternacional && /Estados Unidos/.test(aws.donde), 'el alojamiento en Estados Unidos se informa');
-    const google = a.encargados.find((e) => /Google/.test(e.quien));
-    assert.equal(google.soloConConsentimiento, 'dictado_voz_ia', 'Google solo con el consentimiento del dictado');
-    assert.ok(FINALIDADES[google.soloConConsentimiento]);
+    const dictado = a.encargados.find((e) => /Transcribe/.test(e.quien));
+    assert.equal(dictado.soloConConsentimiento, 'dictado_voz_ia', 'Transcribe solo con el consentimiento del dictado');
+    assert.ok(FINALIDADES[dictado.soloConConsentimiento]);
+    assert.ok(!a.encargados.some((e) => /Google|Gemini/.test(e.quien)), 'el audio ya no va a Google');
     assert.equal(avisoDePrivacidad({}).responsable.nombre, 'Tu empleador', 'sin empresa no inventa un nombre');
 });
 

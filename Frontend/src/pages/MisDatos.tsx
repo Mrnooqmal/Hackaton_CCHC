@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
 import { FiShield, FiDownload, FiEdit3, FiCheck, FiX, FiClock, FiInfo } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
@@ -25,13 +26,20 @@ import {
  */
 
 type Pestana = 'aviso' | 'consentimientos' | 'descarga' | 'solicitudes';
+const PESTANAS: Pestana[] = ['aviso', 'consentimientos', 'descarga', 'solicitudes'];
 const TZ = 'America/Santiago';
 const fechaHora = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('es-CL', { timeZone: TZ, dateStyle: 'medium', timeStyle: 'short' }) : '');
 const fecha = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('es-CL', { timeZone: TZ, dateStyle: 'medium' }) : '');
 const ETAPA_VARIANTE: Record<Etapa, BadgeVariant> = { recibida: 'warning', verificada: 'info', respondida: 'secondary', cerrada: 'success' };
 
 export default function MisDatos() {
-    const [pestana, setPestana] = useState<Pestana>('aviso');
+    // `?seccion=consentimientos` abre directo esa pestaña: así llega quien quiso
+    // dictar un relato sin haber dado el consentimiento.
+    const [params] = useSearchParams();
+    const [pestana, setPestana] = useState<Pestana>(() => {
+        const s = params.get('seccion') as Pestana | null;
+        return s && PESTANAS.includes(s) ? s : 'aviso';
+    });
     return (
         <div className="page-content md-pagina">
             <PageHeader

@@ -99,7 +99,7 @@ VITE_INCIDENT_EVIDENCE_BASE_URL=https://tu-bucket.s3.amazonaws.com
 - **Base de Datos**: AWS DynamoDB
 - **Almacenamiento**: AWS S3
 - **Notificaciones**: AWS SNS
-- **IA**: Google Gemini (solo transcripción de audio)
+- **IA**: Amazon Transcribe (solo transcripción de audio)
 - **Autenticación**: JWT + Bcrypt
 
 

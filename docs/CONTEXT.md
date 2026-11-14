@@ -68,8 +68,8 @@ documentos firmables con trazabilidad.
 - **DynamoDB** (todas las tablas `PAY_PER_REQUEST`)
 - **S3** para archivos (documentos, evidencias, firmas de enrolamiento)
 - **Auth:** JWT + Bcrypt; firma digital por **PIN** (hash con `personaId`)
-- **IA:** Google Gemini (`lib/ai/gemini.js`), solo para transcribir audio al
-  reportar un incidente
+- **IA:** Amazon Transcribe (`lib/ai/transcribe.js`), solo para transcribir audio
+  al reportar un incidente
 - **Notificaciones:** email e inbox interno (el SMS se abandonó el 2026-09-29)
 - **EventBus** interno (`lib/events/EventBus.js`) para notificaciones
   desacopladas (p.ej. `document.assigned` → mensaje en inbox)
@@ -98,7 +98,7 @@ Hackaton_CCHC/
 │   │   ├── clients/        # dynamodb.js, s3.js
 │   │   ├── models/         # Tenant.js, Obra.js, Persona.js
 │   │   ├── services/       # Lógica de negocio (ver §6)
-│   │   ├── ai/             # gemini.js (transcripción de audio)
+│   │   ├── ai/             # transcribe.js (transcripción de audio)
 │   │   ├── events/         # EventBus.js
 │   │   ├── ds44.js         # ★ Catálogo de cargos + kits DS44 (núcleo del dominio)
 │   │   ├── ptp.js          # ★ Plazo del Art. 8 + aprobación (espejo de utils/ptp.ts)
