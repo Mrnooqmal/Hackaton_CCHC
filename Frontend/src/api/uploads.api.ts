@@ -61,6 +61,20 @@ export const uploadsApi = {
             body: JSON.stringify({ fileKey }),
         }),
 
+    /**
+     * Lectura en voz alta de un archivo. La primera vez responde `preparando` y
+     * el audio se hace en segundo plano: se vuelve a llamar hasta `listo`.
+     */
+    lectura: (fileKey: string) =>
+        apiRequest<
+            | { estado: 'listo'; audioUrl: string }
+            | { estado: 'preparando' }
+            | { estado: 'no_disponible'; motivo: string }
+        >('/uploads/lectura', {
+            method: 'POST',
+            body: JSON.stringify({ fileKey }),
+        }),
+
     confirmUpload: (data: { fileKey: string; fileName: string; fileType: string; fileSize: number }) =>
         apiRequest<ConfirmUploadResponse>('/uploads/confirm', {
             method: 'POST',

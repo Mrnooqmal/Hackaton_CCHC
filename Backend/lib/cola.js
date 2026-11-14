@@ -5,6 +5,9 @@
  *    velocidad: un aviso que falla se reintenta en vez de perderse en silencio.
  *  - `CARGAS`: la carga masiva de personas, un mensaje por fila.
  *
+ * La lectura en voz alta de documentos (lib/lectura) también va por `EVENTOS`:
+ * es poco volumen y no justifica una cola propia.
+ *
  * Las consume `handlers/cola/trabajador.js`. Sin la URL de la cola en el
  * entorno (pruebas, ejecución local) `colaConfigurada` devuelve false y quien
  * encola decide qué hacer (el EventBus despacha en la petición).
@@ -26,15 +29,22 @@ const colaConfigurada = (cola) => Boolean(URL_DE[cola]?.());
  * Encola `mensajes` (objetos; se serializan a JSON) en lotes de 10, en paralelo.
  * Lo que SQS rechaza se reintenta una vez; si aún falla, lanza con la cuenta,
  * y ningún mensaje queda "a medias": el que no salió, no salió.
+ *
+ * `demoraSegundos` (0 a 900) hace que el mensaje aparezca recién después: sirve
+ * para volver a preguntar por un trabajo externo sin quedarse esperando.
  */
-async function encolar(cola, mensajes) {
+async function encolar(cola, mensajes, { demoraSegundos = 0 } = {}) {
     const url = URL_DE[cola]?.();
     if (!url) throw new Error(`Cola ${cola} sin configurar`);
     const lotes = [];
     for (let i = 0; i < mensajes.length; i += 10) lotes.push(mensajes.slice(i, i + 10));
 
     const enviarLote = async (lote) => {
-        const entradas = lote.map((m) => ({ Id: crypto.randomUUID(), MessageBody: JSON.stringify(m) }));
+        const entradas = lote.map((m) => ({
+            Id: crypto.randomUUID(),
+            MessageBody: JSON.stringify(m),
+            ...(demoraSegundos ? { DelaySeconds: demoraSegundos } : {}),
+        }));
         const porId = new Map(entradas.map((e) => [e.Id, e]));
         let pendientes = entradas;
         for (let intento = 0; intento < 2 && pendientes.length; intento++) {

@@ -11,6 +11,7 @@ const { TIPOS_SALUD, TIPOS_CON_SALUD } = require('../../lib/documentos-salud');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const { registrarFallo } = require('../../lib/degradacion');
 const almacenamiento = require('../../lib/almacenamiento');
+const lectura = require('../../lib/lectura');
 
 const isOffline = process.env.IS_OFFLINE === 'true';
 
@@ -518,12 +519,56 @@ module.exports.getBatchDownloadUrls = conAuditoriaSalud(async (event) => {
  * atiende cada una por `event.routeKey`, que pone API Gateway (no el cliente).
  * Una ruta que no está en la tabla responde 404: nunca cae en otra.
  */
+/**
+ * POST /uploads/lectura - Escuchar un archivo leído en voz alta (lib/lectura)
+ *
+ * Body: { fileKey: string }
+ *
+ * Returns: { estado: 'listo', audioUrl } | { estado: 'preparando' }
+ *        | { estado: 'no_disponible', motivo }
+ *
+ * La primera vez encola la preparación y responde `preparando`; el navegador
+ * vuelve a preguntar con la misma petición hasta que esté listo.
+ *
+ * El acceso es exactamente el de la descarga: el audio dice lo mismo que el
+ * archivo, incluido el resguardo de los documentos de salud y su auditoría.
+ */
+module.exports.getLectura = conAuditoriaSalud(async (event) => {
+    try {
+        const ses = conSesion(event);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+
+        const body = JSON.parse(event.body || '{}');
+        if (!body.fileKey) {
+            return error('fileKey es requerido');
+        }
+
+        const mapaDocs = await documentosPorClave(sesion.tenantId);
+        if (!puedeLeerClave(body.fileKey, sesion, mapaDocs)) {
+            return error('Archivo no encontrado', 404);
+        }
+        // No se lee en voz alta un archivo que no es el que se registró.
+        if (await integridadParaEntregar(body.fileKey, mapaDocs) === 'alterada') {
+            return error('El archivo guardado no coincide con su huella de integridad registrada. No se entrega.', 409);
+        }
+
+        const r = await lectura.estado({ tenantId: sesion.tenantId, fileKey: body.fileKey });
+        if (!r) return error('Archivo no encontrado', 404);
+        return success(r);
+    } catch (err) {
+        console.error('Error preparando la lectura en voz alta:', err);
+        return error('No se pudo preparar la lectura del documento.', 500);
+    }
+});
+
 const RUTAS_UPLOADS = {
     'POST /uploads/presigned-url': module.exports.getUploadUrl,
     'POST /uploads/download-url': module.exports.getDownloadUrl,
     'POST /uploads/confirm': module.exports.confirmUpload,
     'DELETE /uploads/{fileKey}': module.exports.deleteFile,
     'POST /uploads/batch-download-urls': module.exports.getBatchDownloadUrls,
+    'POST /uploads/lectura': module.exports.getLectura,
 };
 module.exports.enrutar = async (event, contexto) => {
     const atender = RUTAS_UPLOADS[event?.routeKey];

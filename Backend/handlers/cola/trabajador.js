@@ -5,6 +5,8 @@
  *                     el mensaje vuelve a la cola y se reintenta.
  *  - `carga.fila`   → crea una persona de una carga masiva (lib/cargas.js).
  *  - `carga.fase2`  → asigna supervisores cuando la carga terminó.
+ *  - `lectura`      → prepara el audio de un documento leído en voz alta
+ *                     (lib/lectura): extraer texto, OCR, Polly.
  *
  * Devuelve `batchItemFailures`: SQS reintenta solo los mensajes que fallaron,
  * no el lote entero. Lo que falla repetidamente termina en la cola de mensajes
@@ -31,6 +33,8 @@ async function procesar(record) {
             return cargas.procesarFila(msg, deps(), { intento });
         case 'carga.fase2':
             return cargas.fase2(msg, deps());
+        case 'lectura':
+            return require('../../lib/lectura').procesar(msg);
         default:
             // Un mensaje que nadie entiende no se reintenta: se registra y se descarta.
             registrarFallo('cola.mensaje_desconocido', new Error(`tipo ${msg.tipo}`), {});

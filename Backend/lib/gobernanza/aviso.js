@@ -54,7 +54,9 @@ const ENCARGADOS = [
     },
     {
         quien: 'Amazon Web Services (AWS)',
-        que: 'Aloja la plataforma: la base de datos, los archivos y los registros, cifrados con llaves propias de la plataforma.',
+        que: 'Aloja la plataforma: la base de datos, los archivos y los registros, cifrados con llaves propias de la plataforma. '
+            + 'También lee en voz alta los documentos cuando alguien toca "Escuchar" (Amazon Polly y, si el documento está escaneado, '
+            + 'Amazon Textract).',
         donde: 'Estados Unidos (región us-east-1, Virginia del Norte)',
         transferenciaInternacional: true,
     },

@@ -3,6 +3,7 @@ import { LARGO_PIN } from '../utils/pin';
 import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
+import LecturaEnVoz from '../components/LecturaEnVoz';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import { useAlVolverLaSenal } from '../hooks/useSenal';
 import { haySenal } from '../utils/conexion';
@@ -412,15 +413,20 @@ export default function MySignatures() {
         documentos.length === 0 ? null : (
             <div className="msig-doc-cards">
                 {documentos.map((doc, idx) => (
-                    <div key={idx} className="msig-doc-card">
-                        <span className="msig-doc-card-icon"><FiFileText size={15} /></span>
-                        <div className="msig-doc-card-body">
-                            <span className="msig-doc-card-name">{doc.nombre}</span>
-                            {bytesToLabel(doc.tamaño) && <span className="msig-doc-card-size">{bytesToLabel(doc.tamaño)}</span>}
+                    // "Escuchar" va en la misma tarjeta y no solo en el visor: quien
+                    // no sabe leer no tiene por qué abrir el documento para oírlo.
+                    <div key={idx} className="msig-doc-card msig-doc-card--con-lectura">
+                        <div className="msig-doc-card-fila">
+                            <span className="msig-doc-card-icon"><FiFileText size={15} /></span>
+                            <div className="msig-doc-card-body">
+                                <span className="msig-doc-card-name">{doc.nombre}</span>
+                                {bytesToLabel(doc.tamaño) && <span className="msig-doc-card-size">{bytesToLabel(doc.tamaño)}</span>}
+                            </div>
+                            <button type="button" className="msig-doc-card-action" onClick={() => abrirVistaPrevia(doc)}>
+                                Ver documento <FiChevronRight size={13} />
+                            </button>
                         </div>
-                        <button type="button" className="msig-doc-card-action" onClick={() => abrirVistaPrevia(doc)}>
-                            Ver documento <FiChevronRight size={13} />
-                        </button>
+                        {doc.url && <LecturaEnVoz fileKey={doc.url} compacto />}
                     </div>
                 ))}
             </div>
@@ -826,6 +832,7 @@ export default function MySignatures() {
                 url={previewDoc?.url ?? null}
                 fileName={previewDoc?.nombre}
                 onDownload={() => previewDoc && downloadDocument(previewDoc.fileKey, previewDoc.nombre)}
+                fileKey={previewDoc?.fileKey ?? null}
             />
 
             <style>{`
@@ -970,6 +977,8 @@ export default function MySignatures() {
                     border-radius: var(--radius-sm);
                     color: var(--text-secondary);
                 }
+                .msig-doc-card--con-lectura { flex-direction: column; align-items: stretch; }
+                .msig-doc-card-fila { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
                 .msig-doc-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
                 .msig-doc-card-name {
                     font-size: var(--text-sm);

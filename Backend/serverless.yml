@@ -322,6 +322,22 @@ provider:
             - s3:DeleteObject
           Resource:
             - !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}/*'
+        # Sin ListBucket, S3 responde 403 y no 404 a un HeadObject de una clave
+        # que no existe: preguntar "¿ya está hecho?" (el audio de una lectura,
+        # un estampado) fallaba en vez de contestar que no.
+        - Effect: Allow
+          Action: s3:ListBucket
+          Resource: !Sub 'arn:aws:s3:::${self:custom.trabajoBucketName}'
+        # Lectura en voz alta de documentos (lib/lectura): Polly pasa el texto a
+        # voz y Textract lee los escaneados. Textract lee el archivo de S3 con
+        # estos mismos permisos (GetObject y la CMK, más abajo).
+        - Effect: Allow
+          Action:
+            - polly:SynthesizeSpeech
+            - textract:DetectDocumentText
+            - textract:StartDocumentTextDetection
+            - textract:GetDocumentTextDetection
+          Resource: '*'
         # Dictado por voz: el audio y su transcripción entran, se leen y se
         # borran apenas hay texto. Transcribe lee el audio y escribe el resultado
         # con estos mismos permisos (no hay rol de acceso a datos aparte).
@@ -1130,6 +1146,12 @@ functions:
           method: POST
           authorizer:
             name: sesionUsuario
+      # Lectura en voz alta de un archivo (lib/lectura).
+      - httpApi:
+          path: /uploads/lectura
+          method: POST
+          authorizer:
+            name: sesionUsuario
 
   # Dictado del relato al reportar un incidente (Amazon Transcribe). Dos rutas,
   # una función: iniciar y consultar (ver handlers/ai/handler.js).
@@ -1569,6 +1591,17 @@ resources:
                 - Key: ciclo
                   Value: efimero
               ExpirationInDays: 1
+              NoncurrentVersionExpirationInDays: 1
+            # Audio de los documentos leídos en voz alta (lib/lectura). Se
+            # reutiliza mientras el documento no cambie; si alguien lo pide
+            # después de esto, se rehace desde el original. También por
+            # etiqueta, por la misma razón que la regla de arriba.
+            - Id: lecturas
+              Status: Enabled
+              TagFilters:
+                - Key: ciclo
+                  Value: lectura
+              ExpirationInDays: 180
               NoncurrentVersionExpirationInDays: 1
             # El resto (logos, plantillas, fotos) se conserva, pero sus versiones
             # viejas no tienen por qué acumularse para siempre.

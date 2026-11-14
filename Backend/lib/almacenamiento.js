@@ -141,6 +141,28 @@ const claveEstampado = ({ tenantId, documentId, s3KeyOriginal, firmas = [] }) =>
     return `${prefijoDeEmpresa(tenantId)}${CATEGORIAS.estampados.carpeta}/${documentId}-${huella}.pdf`;
 };
 
+/**
+ * Clave del audio de un archivo leído en voz alta (lib/lectura), sin extensión:
+ * el audio es `.mp3` y su estado mientras se prepara, `.json`.
+ *
+ * Mismo criterio que `claveEstampado`: se deriva del archivo (clave y ETag) y de
+ * la voz, así que una versión nueva del documento o un cambio de voz generan
+ * otra clave solos. Vive en `trabajo` (la carpeta `lecturas` no es evidencia):
+ * se rehace desde el original cuando haga falta.
+ */
+const claveLectura = ({ tenantId, fileKey, etag, voz }) => {
+    const crypto = require('crypto');
+    const huella = crypto.createHash('sha256')
+        .update(String(fileKey || ''))
+        .update('|')
+        .update(String(etag || ''))
+        .update('|')
+        .update(String(voz || ''))
+        .digest('hex')
+        .slice(0, 24);
+    return `${prefijoDeEmpresa(tenantId)}lecturas/${huella}`;
+};
+
 module.exports = {
     EVIDENCIA,
     TRABAJO,
@@ -156,6 +178,7 @@ module.exports = {
     prefijoDeEmpresa,
     esDeLaEmpresa,
     claveEstampado,
+    claveLectura,
     nombreBucketEvidencia: () => EVIDENCIA_BUCKET,
     nombreBucketTrabajo: () => TRABAJO_BUCKET,
 };

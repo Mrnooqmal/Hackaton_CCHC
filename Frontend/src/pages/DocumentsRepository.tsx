@@ -833,6 +833,7 @@ export default function DocumentsRepository() {
                 fileName={preview?.name}
                 onDownload={preview ? () => handleDownload(preview.doc) : undefined}
                 documento={preview?.doc ?? null}
+                fileKey={preview ? (preview.doc.s3Key || preview.doc.archivoUrl || null) : null}
             />
         </>
     );

@@ -2,6 +2,7 @@ import { Modal, Badge } from './ui';
 import { FiDownload, FiFile } from 'react-icons/fi';
 import type { Document } from '../api/documents.api';
 import { ultimaDifusion, descripcionDifusion } from '../utils/difusion';
+import LecturaEnVoz from './LecturaEnVoz';
 
 interface DocumentPreviewModalProps {
     isOpen: boolean;
@@ -16,6 +17,12 @@ interface DocumentPreviewModalProps {
         'tipo' | 'tipoDescripcion' | 'version' | 'fecha' | 'createdAt' |
         'fechaEntradaVigencia' | 'asignaciones' | 'difusiones'
     > | null;
+    /**
+     * Clave de S3 del archivo ORIGINAL. Con ella aparece "Escuchar documento".
+     * La original y no la del PDF estampado: lo que se lee es el documento, no
+     * el anexo de firmas.
+     */
+    fileKey?: string | null;
 }
 
 const fmt = (iso?: string | null) =>
@@ -34,7 +41,7 @@ const getExt = (name?: string) => (name?.split('?')[0].split('.').pop() || '').t
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
 
 export default function DocumentPreviewModal({
-    isOpen, onClose, url, fileName, onDownload, documento = null,
+    isOpen, onClose, url, fileName, onDownload, documento = null, fileKey = null,
 }: DocumentPreviewModalProps) {
     const ext = getExt(fileName);
     const isPdf = ext === 'pdf';
@@ -58,6 +65,9 @@ export default function DocumentPreviewModal({
                 cuándo se informó. Tenerlo que buscar fuera del visor es un paso de
                 más en el peor momento. */}
             {documento && <FichaDocumento documento={documento} />}
+
+            {/* `key`: al cambiar de documento, el reproductor parte de cero. */}
+            {fileKey && <LecturaEnVoz key={fileKey} fileKey={fileKey} />}
 
             <div style={{ height: documento ? '58vh' : '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base, #0f0f1a)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                 {!url ? (
