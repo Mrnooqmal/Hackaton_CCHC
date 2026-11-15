@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useEffectEvent, useMemo } from 'react';
 import { LARGO_PIN } from '../utils/pin';
 import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import LecturaEnVoz from '../components/LecturaEnVoz';
 import { useLecturaActiva } from '../components/lecturaActiva';
+import { avisarFirmasCambiaron } from '../utils/firmasPendientes';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import { useAlVolverLaSenal } from '../hooks/useSenal';
 import { haySenal } from '../utils/conexion';
@@ -35,6 +36,8 @@ import {
     type SignatureRequest,
     type NewSignature,
     type DocumentoAdjunto,
+    type Document as DocumentoApi,
+    type DocumentAssignment,
     REQUEST_TYPES,
 } from '../api/client';
 
@@ -44,13 +47,30 @@ type PendingItem = SignatureRequest & {
     __tipoLabel?: string;
 };
 
-const docToPendingItem = (doc: any): PendingItem => {
+/**
+ * Un documento asignado tal como lo devuelve `documentsApi.list({ pendienteDe })`.
+ * Trae campos que el tipo `Document` de la API no declara: la obra y la empresa, quién lo
+ * creó, el artículo del onboarding y el rol de cada asignación (representante).
+ */
+type DocumentoAsignado = Omit<DocumentoApi, 'asignaciones'> & {
+    obraId?: string | null;
+    tenantId?: string;
+    createdBy?: string;
+    creatorName?: string;
+    articulo?: string;
+    asignaciones?: Array<DocumentAssignment & { rol?: string }>;
+};
+
+const docToPendingItem = (doc: DocumentoAsignado): PendingItem => {
     const fileKey: string | null = doc.s3Key || doc.archivoUrl || null;
     const nombre: string = doc.archivoNombre || doc.titulo || 'Documento';
+    const tipoLabel = esDelRepresentante(doc)
+        ? 'Aprobación como representante legal'
+        : doc.articulo ? `Onboarding · ${doc.articulo}` : 'Onboarding';
     return {
         requestId: `doc:${doc.documentId}`,
         tipo: doc.tipo,
-        tipoInfo: undefined as any,
+        tipoInfo: { label: tipoLabel, icon: '📄', requiresDoc: true },
         titulo: doc.titulo || doc.tipoDescripcion || 'Documento de onboarding',
         descripcion: doc.descripcion || '',
         documentos: fileKey ? [{ nombre, url: fileKey, tipo: '', tamaño: 0 }] : [],
@@ -72,9 +92,7 @@ const docToPendingItem = (doc: any): PendingItem => {
         updatedAt: doc.updatedAt || '',
         __kind: 'document',
         __documentId: doc.documentId,
-        __tipoLabel: esDelRepresentante(doc)
-            ? 'Aprobación como representante legal'
-            : doc.articulo ? `Onboarding · ${doc.articulo}` : 'Onboarding',
+        __tipoLabel: tipoLabel,
     };
 };
 
@@ -213,13 +231,17 @@ export default function MySignatures() {
     const [historyVisible, setHistoryVisible] = useState(8);
     const [selectedHistorial, setSelectedHistorial] = useState<{ firma: NewSignature; solicitud: SignatureRequest | null } | null>(null);
 
-    useEffect(() => {
+    // Se carga al entrar y cada vez que cambia la persona. `loadData` se lee
+    // desde un evento de efecto: es una función nueva en cada render, y como
+    // dependencia volvería a cargar después de cada carga, sin fin.
+    const cargarAlCambiarPersona = useEffectEvent(() => {
         if (user?.personaId) {
             loadData();
         } else {
             setLoading(false);
         }
-    }, [user?.personaId]);
+    });
+    useEffect(() => { cargarAlCambiarPersona(); }, [user?.personaId]);
 
     // Lo que falta (o la copia guardada) se completa solo cuando vuelve la señal.
     useAlVolverLaSenal(() => { loadData(); }, pendientesSinDatos || historialSinDatos || copiaDe !== null);
@@ -235,7 +257,7 @@ export default function MySignatures() {
             setActiveTab('pendientes');
         }
         navigate(location.pathname, { replace: true, state: null });
-    }, [pendingRequests, location.state]);
+    }, [pendingRequests, location.state, location.pathname, navigate]);
 
     const loadData = async () => {
         if (!user?.personaId) return;
@@ -324,6 +346,7 @@ export default function MySignatures() {
                 } else {
                     await loadData();
                 }
+                avisarFirmasCambiaron();
                 setShowSignModal(false);
                 setSelectedRequest(null);
                 return;
@@ -342,6 +365,7 @@ export default function MySignatures() {
 
             if (response.success) {
                 await loadData();
+                avisarFirmasCambiaron();
                 setShowSignModal(false);
                 setSelectedRequest(null);
             } else {

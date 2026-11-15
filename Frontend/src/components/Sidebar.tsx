@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { IconType } from 'react-icons';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ConfirmModal from './ConfirmModal';
 import {
@@ -25,6 +26,7 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { ancla } from '../ayuda/registro';
 import { resumenDelEquipo } from '../utils/colaFirmas';
+import { contarFirmasPendientes, EVENTO_FIRMAS_CAMBIARON } from '../utils/firmasPendientes';
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -33,7 +35,7 @@ interface SidebarProps {
 
 interface NavItem {
     path: string;
-    icon: any;
+    icon: IconType;
     label: string;
     permission?: string;
     badge?: number;
@@ -144,6 +146,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     const [showObraConfirm, setShowObraConfirm] = useState(false);
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const [pendingSurveyCount, setPendingSurveyCount] = useState(0);
+    const [pendingFirmasCount, setPendingFirmasCount] = useState(0);
     const sessionMenuRef = useRef<HTMLDivElement | null>(null);
     const sessionTriggerRef = useRef<HTMLButtonElement | null>(null);
     const pendingBadgeLabel = pendingSurveyCount > 99 ? '99+' : String(pendingSurveyCount);
@@ -156,10 +159,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
     // backend para quien pregunta.
     const personaId = user?.personaId;
     useEffect(() => {
-        if (!personaId) {
-            setPendingSurveyCount(0);
-            return;
-        }
+        // Sin persona no se consulta; el badge se oculta abajo (sin poner el
+        // contador en 0 desde el efecto, que fuerza un render de más).
+        if (!personaId) return;
 
         let cancelled = false;
 
@@ -187,6 +189,28 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
             cancelled = true;
             window.clearInterval(intervalId);
             window.removeEventListener('surveyResponded', handleSurveyResponded);
+        };
+    }, [personaId]);
+
+    // Firmas por hacer, igual que las encuestas. Se recuenta cada minuto, al
+    // firmar o sincronizar (evento) y al volver la señal. Sin señal se queda
+    // el último número: un 0 diría "al día" sin saberlo.
+    useEffect(() => {
+        if (!personaId) return;
+        let cancelled = false;
+        const cargar = async () => {
+            const n = await contarFirmasPendientes(personaId).catch(() => null);
+            if (!cancelled && n !== null) setPendingFirmasCount(n);
+        };
+        cargar();
+        const intervalId = window.setInterval(cargar, 60000);
+        window.addEventListener(EVENTO_FIRMAS_CAMBIARON, cargar);
+        window.addEventListener('online', cargar);
+        return () => {
+            cancelled = true;
+            window.clearInterval(intervalId);
+            window.removeEventListener(EVENTO_FIRMAS_CAMBIARON, cargar);
+            window.removeEventListener('online', cargar);
         };
     }, [personaId]);
 
@@ -298,8 +322,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                 {visibleItems.map((item: NavItem) => {
                                     const Icon = item.icon;
                                     const isActive = location.pathname === item.path;
-                                    const showSurveyBadge = item.path === '/surveys' && pendingSurveyCount > 0;
-                                    const showStaticBadge = !showSurveyBadge && typeof item.badge === 'number' && item.badge > 0;
+                                    const showSurveyBadge = item.path === '/surveys' && !!personaId && pendingSurveyCount > 0;
+                                    const showFirmasBadge = item.path === '/my-signatures' && !!personaId && pendingFirmasCount > 0;
+                                    const showStaticBadge = !showSurveyBadge && !showFirmasBadge && typeof item.badge === 'number' && item.badge > 0;
 
                                     return (
                                         <Link
@@ -315,6 +340,14 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps = {}) 
                                             {showSurveyBadge && (
                                                 <span className="nav-item-badge survey-badge">
                                                     {pendingBadgeLabel}
+                                                </span>
+                                            )}
+                                            {showFirmasBadge && (
+                                                <span
+                                                    className="nav-item-badge survey-badge"
+                                                    aria-label={`${pendingFirmasCount} ${pendingFirmasCount === 1 ? 'firma pendiente' : 'firmas pendientes'}`}
+                                                >
+                                                    {pendingFirmasCount > 99 ? '99+' : pendingFirmasCount}
                                                 </span>
                                             )}
                                             {showStaticBadge && (

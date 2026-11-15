@@ -33,7 +33,7 @@ const fmt = (iso?: string | null) =>
  *  completitud: un campo duplicado se desincroniza. */
 function firmasPendientes(doc?: DocumentPreviewModalProps['documento']): { firmadas: number; total: number } {
     const asignaciones = Array.isArray(doc?.asignaciones) ? doc!.asignaciones : [];
-    const firmadas = asignaciones.filter((a: any) => a?.estado === 'firmado' || a?.fechaFirma).length;
+    const firmadas = asignaciones.filter((a) => a?.estado === 'firmado' || a?.fechaFirma).length;
     return { firmadas, total: asignaciones.length };
 }
 

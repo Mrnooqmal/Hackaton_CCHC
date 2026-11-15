@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { avisarFirmasCambiaron } from '../../utils/firmasPendientes';
 import { FiUploadCloud, FiWifiOff, FiAlertTriangle } from 'react-icons/fi';
 import { useOfflineSignature } from '../../hooks/useOfflineSignature';
 import { useHaySenal } from '../../hooks/useSenal';
@@ -46,6 +47,7 @@ export default function SincronizadorFirmas() {
             estadoEnvio.current = trasIntento(estadoEnvio.current, r, ahora);
             setRespaldo(ofrecerEnviarAhora(estadoEnvio.current, haySenal(), ahora));
             if (r.synced > 0) {
+                avisarFirmasCambiaron();
                 const enviadas = plural(r.synced, 'firma enviada', 'firmas enviadas');
                 toast.success(r.enRevision > 0 ? `${enviadas}; ${plural(r.enRevision, 'quedó', 'quedaron')} en revisión.` : `${enviadas}.`);
             }
