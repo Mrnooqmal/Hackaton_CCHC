@@ -1,5 +1,6 @@
 import { Modal, Badge } from './ui';
-import { FiDownload, FiFile } from 'react-icons/fi';
+import { useState } from 'react';
+import { FiDownload, FiFile, FiVolume2 } from 'react-icons/fi';
 import type { Document } from '../api/documents.api';
 import { ultimaDifusion, descripcionDifusion } from '../utils/difusion';
 import LecturaEnVoz from './LecturaEnVoz';
@@ -48,16 +49,48 @@ export default function DocumentPreviewModal({
     const isImage = IMAGE_EXTS.includes(ext);
     const canPreview = isPdf || isImage;
 
+    // "Escuchar" es un botón del pie; al tocarlo se convierte en la barra de
+    // reproducción, ahí mismo. Antes el reproductor iba fijo sobre el visor y
+    // le quitaba alto al documento aunque nadie lo usara.
+    // Se recuerda DE QUÉ archivo se abrió la barra: al cambiar de documento
+    // o al cerrar y volver a abrir el visor, vuelve a ser solo el botón.
+    const [escuchandoDe, setEscuchandoDe] = useState<string | null>(null);
+    const [abiertoAntes, setAbiertoAntes] = useState(isOpen);
+    if (isOpen !== abiertoAntes) {
+        setAbiertoAntes(isOpen);
+        setEscuchandoDe(null);
+    }
+    const escuchando = !!fileKey && escuchandoDe === fileKey;
+    const setEscuchando = (si: boolean) => setEscuchandoDe(si ? fileKey ?? null : null);
+
+    const hayPie = !!fileKey || !!onDownload;
+
     return (
         <Modal
             isOpen={isOpen}
             onClose={onClose}
             title={fileName || 'Vista previa'}
             size="xl"
-            footer={onDownload && (
-                <button className="btn btn-secondary" onClick={onDownload}>
-                    <FiDownload /> Descargar
-                </button>
+            className="dpv-modal"
+            footer={hayPie && (
+                <div className={`dpv-pie${escuchando ? ' is-escuchando' : ''}`}>
+                    {/* `key`: al cambiar de documento, el reproductor parte de cero. */}
+                    {fileKey && escuchando && (
+                        <LecturaEnVoz key={fileKey} fileKey={fileKey} variante="barra" autoIniciar onCerrar={() => setEscuchando(false)} />
+                    )}
+                    <div className="dpv-acciones">
+                        {fileKey && !escuchando && (
+                            <button type="button" className="btn btn-primary" onClick={() => setEscuchando(true)}>
+                                <FiVolume2 /> Escuchar
+                            </button>
+                        )}
+                        {onDownload && (
+                            <button type="button" className="btn btn-secondary" onClick={onDownload}>
+                                <FiDownload /> Descargar
+                            </button>
+                        )}
+                    </div>
+                </div>
             )}
         >
             {/* Ficha del documento. Frente a un fiscalizador la primera pregunta no
@@ -66,10 +99,8 @@ export default function DocumentPreviewModal({
                 más en el peor momento. */}
             {documento && <FichaDocumento documento={documento} />}
 
-            {/* `key`: al cambiar de documento, el reproductor parte de cero. */}
-            {fileKey && <LecturaEnVoz key={fileKey} fileKey={fileKey} />}
-
-            <div style={{ height: documento ? '58vh' : '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base, #0f0f1a)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+            {/* El visor llena el alto que queda: el modal no scrollea. */}
+            <div className="dpv-visor" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base, #0f0f1a)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                 {!url ? (
                     <div className="spinner" />
                 ) : !canPreview ? (

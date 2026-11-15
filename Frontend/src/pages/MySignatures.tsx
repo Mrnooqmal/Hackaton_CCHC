@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import LecturaEnVoz from '../components/LecturaEnVoz';
+import { useLecturaActiva } from '../components/lecturaActiva';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
 import { useAlVolverLaSenal } from '../hooks/useSenal';
 import { haySenal } from '../utils/conexion';
@@ -23,6 +24,7 @@ import {
     FiRefreshCw,
     FiFilter,
     FiChevronRight,
+    FiExternalLink,
 } from 'react-icons/fi';
 
 import {
@@ -130,6 +132,39 @@ const bytesToLabel = (bytes: number) => {
 /** Comprobante generado en el cliente: no existe un endpoint que emita un PDF
  *  de constancia, así que se arma un recibo de texto con los mismos datos que
  *  ya se muestran en el detalle — nada que el backend no haya devuelto ya. */
+/** Documentos de una solicitud: abrir la vista previa o escucharlos ahí mismo. */
+function DocPreviewCards({ documentos, onVer }: { documentos: DocumentoAdjunto[]; onVer: (doc: DocumentoAdjunto) => void }) {
+    const lectura = useLecturaActiva();
+    if (documentos.length === 0) return null;
+    return (
+        <div className="msig-doc-cards">
+            {documentos.map((doc, idx) => (
+                // "Escuchar" va en la misma tarjeta y no solo en el visor: quien
+                // no sabe leer no tiene por qué abrir el documento para oírlo.
+                <div key={idx} className="msig-doc-card msig-doc-card--con-lectura">
+                    <div className="msig-doc-card-fila">
+                        <span className="msig-doc-card-icon"><FiFileText size={16} /></span>
+                        <div className="msig-doc-card-body">
+                            <span className="msig-doc-card-name">{doc.nombre}</span>
+                            {bytesToLabel(doc.tamaño) && <span className="msig-doc-card-size">{bytesToLabel(doc.tamaño)}</span>}
+                        </div>
+                        <button
+                            type="button"
+                            className="msig-doc-card-action"
+                            onClick={() => { lectura?.alRevisar(); onVer(doc); }}
+                        >
+                            <span className="msig-doc-card-action-largo">Ver documento</span>
+                            <span className="msig-doc-card-action-corto">Abrir</span>
+                            <FiExternalLink size={13} />
+                        </button>
+                    </div>
+                    {doc.url && <LecturaEnVoz fileKey={doc.url} compacto />}
+                </div>
+            ))}
+        </div>
+    );
+}
+
 const descargarComprobante = (firma: NewSignature, solicitud: SignatureRequest | null) => {
     const { date, time } = formatLocalDateTime(firma.timestamp || firma.createdAt);
     const lineas = [
@@ -409,29 +444,9 @@ export default function MySignatures() {
         }
     };
 
-    const DocPreviewCards = ({ documentos }: { documentos: DocumentoAdjunto[] }) => (
-        documentos.length === 0 ? null : (
-            <div className="msig-doc-cards">
-                {documentos.map((doc, idx) => (
-                    // "Escuchar" va en la misma tarjeta y no solo en el visor: quien
-                    // no sabe leer no tiene por qué abrir el documento para oírlo.
-                    <div key={idx} className="msig-doc-card msig-doc-card--con-lectura">
-                        <div className="msig-doc-card-fila">
-                            <span className="msig-doc-card-icon"><FiFileText size={15} /></span>
-                            <div className="msig-doc-card-body">
-                                <span className="msig-doc-card-name">{doc.nombre}</span>
-                                {bytesToLabel(doc.tamaño) && <span className="msig-doc-card-size">{bytesToLabel(doc.tamaño)}</span>}
-                            </div>
-                            <button type="button" className="msig-doc-card-action" onClick={() => abrirVistaPrevia(doc)}>
-                                Ver documento <FiChevronRight size={13} />
-                            </button>
-                        </div>
-                        {doc.url && <LecturaEnVoz fileKey={doc.url} compacto />}
-                    </div>
-                ))}
-            </div>
-        )
-    );
+    // DocPreviewCards vive fuera del componente: definida aquí adentro era un
+    // componente nuevo en cada render, y cualquier cambio de estado (un PIN
+    // rechazado) desmontaba el reproductor y cortaba la lectura en curso.
 
     if (!loading && !user?.personaId) {
         return (
@@ -750,7 +765,7 @@ export default function MySignatures() {
                             { label: 'Solicitado por', valor: selectedRequest.solicitanteNombre },
                             { label: 'Fecha límite', valor: selectedRequest.fechaLimite ? formatLocalDateTime(selectedRequest.fechaLimite).date : 'Sin fecha límite' },
                             ...(selectedRequest.ubicacion ? [{ label: 'Ubicación', valor: selectedRequest.ubicacion }] : []),
-                            ...(selectedRequest.documentos.length > 0 ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={selectedRequest.documentos} />, full: true }] : []),
+                            ...(selectedRequest.documentos.length > 0 ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={selectedRequest.documentos} onVer={abrirVistaPrevia} />, full: true }] : []),
                         ]} />
                         {selectedRequest.trabajadores.length > 1 && (() => {
                             const firmantes = selectedRequest.trabajadores.filter((t) => t.firmado);
@@ -797,7 +812,7 @@ export default function MySignatures() {
                                 <FichaFirma items={[
                                     { label: 'Tipo', valor: REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo || 'Documento' },
                                     { label: 'Solicitado por', valor: firma.solicitanteNombre || '—' },
-                                    ...(documentos?.length ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={documentos} />, full: true }] : []),
+                                    ...(documentos?.length ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={documentos} onVer={abrirVistaPrevia} />, full: true }] : []),
                                 ]} />
                                 {solicitud && solicitud.trabajadores.length > 1 && (() => {
                                     const firmantes = solicitud.trabajadores.filter((t) => t.firmado);
@@ -964,17 +979,17 @@ export default function MySignatures() {
                     padding: var(--space-3);
                     background: var(--surface-elevated);
                     border: 1px solid var(--surface-border);
-                    border-radius: var(--radius-md);
+                    border-radius: 14px;
                 }
                 .msig-doc-card-icon {
                     flex-shrink: 0;
-                    width: 30px;
-                    height: 30px;
+                    width: 36px;
+                    height: 36px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     background: var(--surface-hover);
-                    border-radius: var(--radius-sm);
+                    border-radius: 9px;
                     color: var(--text-secondary);
                 }
                 .msig-doc-card--con-lectura { flex-direction: column; align-items: stretch; }
@@ -988,20 +1003,32 @@ export default function MySignatures() {
                     overflow: hidden;
                     text-overflow: ellipsis;
                 }
-                .msig-doc-card-size { font-size: 11px; color: var(--text-muted); }
+                .msig-doc-card-size { font-size: 12px; color: var(--text-secondary); }
+                /* Botón con borde, no un enlace suelto: en el celular es un
+                   blanco de dedo de 40 px. */
                 .msig-doc-card-action {
                     flex-shrink: 0;
                     display: inline-flex;
                     align-items: center;
-                    gap: 4px;
-                    padding: 0;
-                    background: none;
-                    border: none;
-                    font-size: 12.5px;
+                    gap: 7px;
+                    height: 36px;
+                    padding: 0 12px;
+                    background: var(--surface-card);
+                    border: 1px solid var(--surface-border);
+                    border-radius: 9px;
+                    font-size: 13px;
                     font-weight: 600;
                     color: var(--accent-text);
                     cursor: pointer;
                     font-family: inherit;
+                    transition: border-color 0.15s, background 0.15s;
+                }
+                .msig-doc-card-action:hover { border-color: var(--accent); background: var(--accent-tint); }
+                .msig-doc-card-action-corto { display: none; }
+                @media (max-width: 640px) {
+                    .msig-doc-card-action { height: 40px; }
+                    .msig-doc-card-action-largo { display: none; }
+                    .msig-doc-card-action-corto { display: inline; }
                 }
                 .msig-card-action {
                     flex-shrink: 0;

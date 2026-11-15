@@ -45,6 +45,8 @@ export interface ModalProps {
     closeOnOverlay?: boolean;
     /** Deshabilita todo cierre (para procesos en curso) */
     preventClose?: boolean;
+    /** Clase extra en el contenedor .modal (variantes de un modal puntual) */
+    className?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -61,6 +63,7 @@ export default function Modal({
     footer,
     closeOnOverlay = true,
     preventClose = false,
+    className,
 }: ModalProps) {
     const id = useRef<symbol>(undefined as unknown as symbol);
     if (!id.current) id.current = Symbol('modal');
@@ -118,7 +121,7 @@ export default function Modal({
     const modalContent = (
         <div className="modal-overlay" onClick={handleOverlayClick}>
             <div
-                className="modal"
+                className={className ? `modal ${className}` : 'modal'}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={idTitulo}
