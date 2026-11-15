@@ -1,28 +1,43 @@
 # Estado actual de Build & Serve
 
-**Actualizado: 7 de noviembre de 2026.** Este documento sirve para retomar el trabajo sin leer conversaciones anteriores. Si algo de lo que dice aquí no coincide con lo que ves en AWS o en git, gana lo que ves. Si lo compruebas, actualiza este documento.
+**Checkpoint del 15 de noviembre de 2026, al cerrar la sesión del paso a prod 2.** Este documento basta para retomar el trabajo sin leer conversaciones anteriores: léelo entero antes de tocar nada. Si algo de lo que dice aquí no coincide con lo que ves en AWS o en git, gana lo que ves. Si lo compruebas, actualiza este documento.
 
 El producto está en producción con datos reales. Ante la duda, prioriza la solidez.
+
+**Para empezar una sesión nueva:** lee las secciones 2 (reglas) y 4 (siguiente etapa, en orden), haz `git fetch` y revisa qué trajo `origin/pruebas` (sección 6), y corre las suites antes de cambiar nada (sección 3, «Pruebas locales»).
 
 ---
 
 ## 1. Qué está desplegado
 
-Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local es `adrean_cchc`; el perfil por defecto apunta a otra cuenta. La rama de trabajo es `pruebas`.
+Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local es `adrean_cchc`; el perfil por defecto apunta a otra cuenta (`789925699187`, con otros proyectos: no tocar). La rama de trabajo es `pruebas`.
 
 | Ambiente | Pieza | Dónde | Commit |
 |---|---|---|---|
-| **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `14fa693` |
-| **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net` redirige con 301 a `buildandserve.cl` desde D-34), bucket `buildandserve-frontend` | `14fa693` |
-| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `8dcaa25` |
-| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `8dcaa25` |
-| Ambos | Infra del frontend | Stack `BuildAndServe-frontend`: dos distribuciones, certificado, cabeceras, CSP y rol de publicación | `14fa693` |
+| **Prod** | Backend | Stack `BuildAndServe-prod`, API `https://92flgz68r1.execute-api.us-east-1.amazonaws.com` | `5813205` |
+| **Prod** | Frontend | **https://buildandserve.cl** (`www` redirige a la raíz con 301). Distribución `E265RJ7EAYTXAX` (`d30jksx91fodea.cloudfront.net` redirige con 301 a `buildandserve.cl` desde D-34), bucket `buildandserve-frontend` | `5813205` |
+| **Dev** | Backend | Stack `BuildAndServe-dev`, API `https://n2waslgjca.execute-api.us-east-1.amazonaws.com` | `5813205` |
+| **Dev** | Frontend | **https://d3pve67iu4s0dd.cloudfront.net** (la URL de QA). Distribución `E2XMHI7KDD48MR`, bucket `buildandserve-frontend-dev` | `5813205` |
+| Ambos | Infra del frontend | Stack `BuildAndServe-frontend`: dos distribuciones, certificado, cabeceras, CSP y rol de publicación | `14fa693` (no cambió después) |
 
-**Prod: `14fa693` desde el 7 de noviembre de 2026** (backend, frontend e infra del frontend, con los scripts). Incluye todo lo acumulado: D-26, D-27, H-16, H-17, Actividades 4 y 5 (D-29 a D-32), el resguardo del Expediente y D-34. Prueba de punta a punta en prod: 29 de 29. Verificado después: el stack tiene 470 recursos, el TTL de la auditoría está `ENABLED`, la alarma `evento-sospechoso-prod` en `OK`, `d30jksx91fodea.cloudfront.net` responde 301 a `https://buildandserve.cl/` y la API no acepta ese origen.
+**Prod y dev en `5813205` (paso a prod 2).** Trae todo lo acumulado desde `14fa693`: la firma sin conexión con vales y sobre con KMS (D-35, D-37) y PIN de 4 dígitos con un intento por sincronización y la alarma del ataque lento; la Ley 21.719 (aviso de privacidad, minimización 7.5, actividad de derechos D-36); uploads y surveys en una función cada uno; el límite de tasa de la API; los logs cifrados con la CMK; los recorridos guiados y el manual (rama `tours`, D-33); y las correcciones de la prueba en terreno del 11 de noviembre (un solo aviso sin señal, «No disponible sin conexión» en vez de ceros, «Enviando…» sin botón, alcance de encuestas por personas distintas, globo del recorrido sin tapar).
 
-**Dev desde el 11 de noviembre de 2026:** backend y frontend `8dcaa25`, `pruebas` con la rama `tours` mezclada (recorridos guiados y manual, D-33) sobre todo lo anterior. Verificado por los scripts, ya con la descarga reanudable: backend 111 de 111 archivos y frontend 113 de 113. Prueba de punta a punta 64 de 64; el borrado recorre ahora 23 tablas (se suma la de recorridos). Stack de dev en 454 recursos. Antes, backend y frontend `6fe165a`: el sobre con KMS (D-37), el PIN de vuelta a 4 con un PIN por sincronización y la alarma del ataque lento (D-35), y el aviso de firmas ya no queda tapado. Prueba de punta a punta 64 de 64. Stack de dev en 447 recursos. El script de despliegue se cortó en la verificación del paquete porque la descarga desde S3 iba muy lenta; se verificó a mano con descarga reanudable: mismo `CodeSha256` que la función y 108 de 108 archivos idénticos al commit. Antes, backend y frontend `8d95d6b` (prueba de punta a punta 60 de 60), con la minimización completa de la fila 7.5. Antes, `072d2ec`: la firma sin conexión completa con D-35, el aviso de privacidad, la minimización de personas y bandeja, el límite de tasa de las rutas públicas, uploads y surveys en una función cada uno y los logs con la CMK. Verificado después de desplegar: los 74 grupos de logs con `ClaveDatos`, los 9 grupos de las funciones viejas borrados por CloudFormation, stack en 444 recursos. Prueba de punta a punta 56 de 56.
+**Qué se verificó:**
+- **Dev (13 de noviembre de 2026):** backend con el script, 454 recursos y 111 de 111 archivos del paquete idénticos al commit; frontend 113 de 113; prueba de punta a punta 64 de 64, con el borrado confirmado en 23 tablas y 2 buckets. Antes, en local: backend 1371 de 1371, frontend 110 de 110, Playwright 64 de 64, y 19 de 19 sabotajes atrapados.
+- **Prod (desplegado por Adrean):** backend y frontend `5813205` con los scripts y prueba de punta a punta **65 de 65**. El stack de prod quedó en **454 recursos** (lo informó `desplegar-backend.sh`; venía de 470). **Todos los grupos de logs de prod con `kmsKeyId`**: el comando de abajo salió vacío.
+  ```bash
+  aws logs describe-log-groups --log-group-name-prefix /aws/lambda/BuildAndServe-prod --query "logGroups[?!kmsKeyId].logGroupName" --output text   # vacío
+  ```
+  **Por comprobar:** que CloudFormation haya borrado los grupos de logs de las 9 funciones viejas de uploads y surveys (en dev sí los borró). Este comando lista los grupos de prod sin función viva; tiene que salir vacío:
+  ```bash
+  for g in $(aws logs describe-log-groups --log-group-name-prefix /aws/lambda/BuildAndServe-prod- --query 'logGroups[].logGroupName' --output text); do
+      aws lambda get-function --function-name "${g#/aws/lambda/}" >/dev/null 2>&1 || echo "$g"
+  done
+  ```
 
-**Cómo se verificó lo anterior (30 de octubre y 6 de noviembre de 2026).** Los scripts no dejan el commit escrito en AWS. El backend se identificó comparando el código del paquete de `personasModule` (`aws lambda get-function`) con el árbol `Backend/` de cada commit: prod coincide con `d750646` (paquete del 1 de octubre); dev, con `b7c3e88` (paquete del 15 de octubre a las 17:07, `UpdateStack` de Benjamin; `93b9a00` tiene el mismo código). El frontend, por la fecha de `index.html` en el bucket y por textos que solo existen desde ciertos commits: prod no tiene los de D-27 ni del footer nuevo; dev tiene los de `6aa53d1` y no los de `b3cb99c` (publicado por Benjamin el 23 de octubre, invalidación a las 10:33, 97 segundos después del commit: a confirmar que fue con el script).
+**Historia anterior (resumida).** Prod estuvo en `14fa693` del 7 al ~14 de noviembre (punta a punta 29 de 29, 470 recursos). Dev pasó por `072d2ec`, `8d95d6b`, `6fe165a` y `8dcaa25` entre el 8 y el 11 de noviembre.
+
+**Cómo saber qué commit hay en AWS.** Los scripts no dejan el commit escrito en AWS: para el backend se compara el paquete de una Lambda (`aws lambda get-function`) con el árbol `Backend/` del commit; para el frontend, el script de publicación verifica archivo por archivo contra la URL del ambiente.
 
 **Estado de cada pieza:**
 
@@ -30,8 +45,8 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
 - **CSP:** **activa** en las dos distribuciones desde el 6 de noviembre de 2026 (infra de `4b2db9e`, desplegada a las 21:30 hora de Chile). Probada en dev y prod en el navegador sin errores de CSP en la consola; verificado con `curl` que `buildandserve.cl` y la URL de dev sirven `Content-Security-Policy` con la política completa y ya no la de solo reporte. Las violaciones se siguen reportando a `POST /csp/reporte` (métrica `CspViolaciones`). Volver a solo reporte: `CSP_MODO=solo-reporte infra/desplegar-infra-frontend.sh <commit>`. Un cambio al script en línea de `index.html` o de los informes exige desplegar primero la infra de ese commit: `desplegar-frontend.sh` se niega a publicar un build que la política activa no autoriza.
 - **Correo:** sale de `no-responder@buildandserve.cl` y las respuestas van a `contacto@buildandserve.cl` (reenvío de Cloudflare). Hay un configuration set por ambiente con rebotes y quejas enviados a SNS. **SES está fuera del sandbox**: `aws sesv2 get-account` responde `ProductionAccessEnabled: true` y el caso `179073624400729` en `GRANTED` (verificado el 30 de octubre y el 6 de noviembre de 2026).
 - **Colas:** en dev y en prod están activas las colas de carga masiva y de avisos del EventBus, con su cola de mensajes fallidos y una alarma.
-- **Rol de publicación del frontend:** existe, pero todavía **no se exige** (`ExigirRolPublicador=false`).
-- **Recursos del stack del backend:** 464 de 500. El script de deploy avisa sobre 450 y se niega sobre 490 (D-16).
+- **Rol de publicación del frontend:** existe, pero todavía **no se exige** (`ExigirRolPublicador=false`): los scripts avisan «publicando con tus credenciales (sin MFA)».
+- **Recursos del stack del backend:** 454 de 500, en dev y en prod. El script de deploy avisa sobre 450 y se niega sobre 490 (D-16): hoy siempre avisa. Antes de sumar funciones con ruta HTTP (4 recursos cada una), agrupar en módulos como uploads y surveys.
 
 ---
 
@@ -52,6 +67,10 @@ Todo vive en la cuenta AWS `772706200162`, región `us-east-1`. El perfil local 
    - `npm test` en `Backend/` no puede tocar AWS: `tests/sin-aws.js` lo impide.
    - El frontend tiene que pasar `tsc -b`, porque `npm run build` lo corre y sin eso no se puede publicar.
 9. **Español en todo** (código, textos y documentos) y sin emojis.
+10. **En prod, Claude no ejecuta nada sin que lo pida Adrean en ese momento.** Prepara los comandos en orden con el commit real y Adrean los corre. Los borrados en prod (empresas, restos de proyectos viejos) van siempre con ensayo primero y se ejecutan solo con la confirmación de Adrean después de ver el ensayo. Cuando el pedido es de solo lectura, no se escribe en AWS.
+11. **La cuenta `789925699187` aloja otros proyectos** (gruposoy, soyfuncionario, soyhonorario, soytrabajador): ahí solo se toca lo de HackatonBackend.
+12. **Nunca `npx` con un paquete que no esté en el `package.json`.** Se usan los binarios de `node_modules/.bin`; si falta una herramienta, se avisa en vez de descargarla.
+13. **Informes cortos y en español** al terminar cada pedido; si algo no se verificó, se dice.
 
 ---
 
@@ -94,42 +113,42 @@ infra/desplegar-infra-frontend.sh <commit>
   ```
   Da de alta una empresa desechable con `crear-empresa.js`, con correos a `atorres@thecodecookers.cl`, verificado en SES. Recorre por la API, con el `Origin` del frontend del ambiente, el primer ingreso del administrador y el de una persona trabajadora: contraseña inicial, cambio, sesión nueva, PIN y enrolamiento enseguida. Comprueba además permisos, CORS, `no-store` y cierre de sesión. Al final borra todo lo de la empresa, pase lo que pase: busca por identificador en todas las tablas del ambiente y en los dos buckets, y termina bien solo si un recorrido completo da cero. Sale con código 0 solo si todo pasó **y** el borrado quedó confirmado. Una empresa que no se alcanzó a borrar queda anotada, y la próxima ejecución la borra primero. También borra toda empresa desechable con más de una hora. Para borrar una a mano: `--borrar <tenantId>` (solo acepta desechables).
 
+**Pruebas locales:**
+```bash
+(cd Backend && npm test)        # ~1377 pruebas; incluye la lógica TS del frontend (tests/cargar-ts.js)
+(cd Frontend && npm test)       # ~110; dos de ellas hacen un build de prod (~35 s cada una)
+(cd Frontend && ./node_modules/.bin/tsc -b && npm run build)
+# Playwright (navegador real, API simulada). `Frontend/.env` apunta a la API real de dev:
+# sin esta variable todas las pruebas caen en la pantalla de ingreso.
+(cd Frontend && VITE_API_URL=http://localhost:3001 npm run test:e2e)   # ~64
+```
+Si falta Playwright en `Frontend/node_modules`, `npm ci` en `Frontend/` lo instala (está en el `package.json`).
+
 `docs/DEPLOY.md` está **obsoleto**: describe un esquema anterior de dos servicios. No lo sigas.
 
 ---
 
 ## 4. Pendientes
 
-### Paso 2 a prod: mediados de noviembre de 2026
+### Abierto de esta sesión
 
-| Qué | Detalle |
+| Qué | Estado |
 |---|---|
-| **Firma sin conexión con vales (prioritario)** | Completa en dev (`4ad2b3c`, punta a punta 56 de 56), con D-35. Iteraciones de PBKDF2 fijadas en 600.000 con la medición del 8 de noviembre en un Android 10 de gama baja (182 ms con 300.000; ver D-35), por commitear. **Por commitear:** D-37 (el sobre con KMS, la renovación silenciosa, sin aviso de habilitar ni «Preparar cuadrilla», sincronización cada 20 segundos, sesión sin red, plurales); el stack pasa a 446 recursos, y a 447 con la alarma del ataque lento. **Antes de prod:** repetir la prueba en terreno con D-37 en dev, y ajustar el manual y los recorridos (textos abajo). |
-| Ley 21.719 (vigente el 1 de diciembre de 2026) | **Hecho, por commitear (8 de noviembre).** Revisión del flujo: aviso de privacidad con transferencias internacionales, plazos de conservación y reclamo ante la Agencia, en Mis datos y en el enrolamiento (fila 7.6); minimización de la ficha de personas, la búsqueda por RUT y los destinatarios de la bandeja (7.5); `ValesInvalidos` en el plan de incidentes. Queda fuera del código: validación legal de los plazos internos del plan (7.4) y el contrato de encargo entre cada constructora y Build & Serve. |
-| Agrupar uploads y surveys en una función cada uno | **Hecho, por commitear (8 de noviembre).** Stack de 472 a 444 recursos (verificado con `serverless package`). Los grupos de logs de las 9 funciones viejas los borra CloudFormation al quitar sus recursos: comprobarlo después de desplegar. Plan aprobado el 7 de noviembre de 2026. Las 5 funciones de uploads y las 4 de surveys pasan a una por módulo, con un enrutador por `event.routeKey` y las mismas rutas declaradas en `serverless.yml`. Cada función con ruta HTTP genera 4 recursos (función, permiso, grupo de logs e integración); las rutas se quedan, así que se ahorran 28 recursos (la rama `tours` deja el stack en 477, a 13 del tope de 490 del script). Se borran los grupos de logs de las funciones viejas (aprobado). Pruebas: enrutador por módulo, `identidad-desde-sesion.test.js` con el `routeKey` declarado, y sabotaje quitando una entrada del enrutador. |
-| Límite de tasa en la API | **Hecho, por commitear (8 de noviembre).** Ya había límite por omisión y para el alta y la CSP (la fila 2.8 estaba desactualizada); se agregó límite propio a las rutas públicas de autenticación y a la verificación de firmas. Un 429 o un 5xx ya no descartan firmas sin conexión. |
-| Cifrado de los grupos de logs con la CMK | **Hecho, por commitear (8 de noviembre).** Plugin `Backend/plugins/logs-cifrados.js` y permiso de CloudWatch Logs en la política de `ClaveDatos`. Verificado en el template: los 74 grupos con la llave. Después de desplegar, comprobar `kmsKeyId` en los grupos. |
-| Copias en claro de `RegistroService` (D-10) | **Ya estaba resuelto** desde el 26 de septiembre (`9128bca`, en prod); la documentación no lo decía. Verificado el 8 de noviembre: ningún registro con copia en claro en dev ni en prod. |
-| Filas parciales del checklist | **Revisadas el 8 de noviembre.** 7.5 terminada (documentos, actividades, incidentes y obras), por commitear. 5.6, 5.7, 6.11 (Object Lock activo en los dos ambientes), 7.1 y 7.2 estaban desactualizadas y pasan a implementado; 2.8 y 6.2, implementadas en este paso; 7.6 nueva. Quedan: 7.4 (validación legal), 6.15 (cookie, paso 3) y 6.8 (región, postergada por D-1). |
-| Actividad de derechos (D-36) | **Hecho, por commitear (8 de noviembre).** Oposición persistente al directorio de compañeros (marca `oposiciones` en la ficha, consultada por `GET /personas` y `/inbox/recipients` para quien no tiene `personas.ver`; el titular la retira desde Mis datos) y rectificación con el valor anterior y el nuevo, cifrados en la ejecución. Cambia respuestas que usa el frontend: backend y frontend juntos. Toda oposición nueva exige el tratamiento. |
-| Correcciones de la prueba en terreno del 11 de noviembre (dev) | **Hecho, por commitear.** La firma sin señal, la sincronización sola y el rechazo con nombre funcionaron. Se corrigió: (1) «Trabajadores alcanzados 48 de 0 en la obra»: el backend entrega en `GET /surveys` el `alcance` (personas distintas alcanzadas, de las que hoy están en la empresa; solo a quien gestiona encuestas) y la pantalla dice «de N en la empresa»; (2) sin señal ninguna pantalla con contadores muestra ceros ni «Al día»: dice «No disponible sin conexión» y se carga sola al volver (Inicio, Encuestas, Actividades, Mis firmas, Firma electrónica, Bandeja, Incidentes, Repositorio y la obra); (3) con señal la franja dice «Enviando…» sin botón, y «Enviar ahora» aparece solo si el envío automático lleva más de 2 minutos fallando con señal (el manual de Firmar se ajustó); (4) sin señal hay un solo aviso, neutro, el de la franja del layout, con un estado de señal único para toda la app (`utils/conexion.ts`, que alimenta `apiRequest`), y no se ofrece crear, planificar, completar, reportar, subir ni escribir mensajes; (5) en el teléfono el globo de «Cómo se firma» apunta a la primera tarjeta, no a la lista entera, y el globo anclado no pasa del espacio libre ni se queda en el borde que tapa el elemento. |
-| Borrar la empresa TCC de prod | **Preparado, falta la confirmación de Adrean.** `Backend/scripts/borrar-empresa.js` (ensayo por omisión; borra solo con la huella del ensayo). Ensayo del 8 de noviembre: 40 elementos (37 planes diarios de retención, la licencia, una persona y la ficha de la empresa), ningún archivo, nada de otra empresa. La retención agrega un plan cada día a las 07:30 UTC: ensayo y borrado el mismo día. |
-| Borrar los restos de `hackatonbackend` | **Preparado, falta la confirmación de Adrean.** `infra/limpiar-hackatonbackend.sh` (ensayo por omisión). Ensayo del 8 de noviembre: en esta cuenta, 297 versiones (~2,7 GB) y 267 marcas de borrado bajo los dos prefijos (el bucket tiene versionado: los 30 objetos vigentes eran la punta); en `789925699187`, 3 versiones y 6 marcas, y el stack `HackatonBackend-dev` en `DELETE_FAILED` porque sus dos buckets no estaban vacíos (hoy no existen; sin funciones vivas). **Esa cuenta aloja otros proyectos** (gruposoy, soyfuncionario, soyhonorario, soytrabajador): el script solo toca esos prefijos y ese stack. |
+| Borrar los restos de `hackatonbackend` | **Se cortó a mitad de camino el 15 de noviembre; el script ya está corregido, por commitear.** `--ejecutar` borró completo `serverless/hackatonbackendv2/` en `serverless-framework-deployments-us-east-1-e30a0f06-a273` (cuenta `772706200162`) y se detuvo con un `JSONDecodeError`: con `"Quiet": true` y sin errores, `delete-objects` responde vacío y el script lo leía como JSON. Lo que queda (contado en solo lectura el 15 de noviembre): en `772706200162`, `serverless/hackatonbackendv2-testeo/` con 36 versiones (367 MB) y 21 marcas; en `789925699187`, `serverless/hackatonbackendv2-testeo/` con 3 versiones (29 MB) y `serverless/HackatonBackend/` con 6 marcas; el stack `HackatonBackend-dev` sigue en `DELETE_FAILED` con solo `DocumentsBucket` e `IncidentEvidenceBucket` fallidos. El script nuevo lee vacío como `{}`, se detiene con el detalle si un lote trae errores, verifica con el mismo conteo y sale con error si queda algo; se puede repetir. Prueba: `Backend/tests/limpiar-hackatonbackend.test.js` (con un `aws` simulado; 6 sabotajes atrapados, entre ellos la versión que falló). **Lo corre Adrean** después de commitear: `bash infra/limpiar-hackatonbackend.sh` (ensayo) y luego `--ejecutar`. |
+| Verificación de prod pendiente | Que no queden los grupos de logs de las 9 funciones viejas de uploads y surveys (comando en la sección 1). Los recursos (454) y el cifrado de los grupos de logs ya están verificados. |
 
-#### Textos del manual y de los recorridos que cambian con D-35 (para la sesión de `tours`)
+### Siguiente etapa, en este orden
 
-**El PIN de 4 dígitos en el manual y los recorridos: hecho.** La rama `tours` devolvió a 4 los textos que había pasado a 6 (`35c54fc`) y se mezcló en `pruebas` (`8dcaa25`). Verificado el 11 de noviembre de 2026: no queda «6 dígitos» en el manual ni en los recorridos, y la pregunta del cambio obligatorio ya no está.
-
-Lo nuevo (D-37, sin habilitar como paso; ya no existen «Preparar cuadrilla» ni el aviso al entrar): **sin señal siempre se firma con el PIN**; si esa persona ya escribió su PIN con señal en ese equipo, el error de tipeo se detecta al momento, y si no, se valida al volver la señal. El aviso de **firmas por enviar** (se envían solas; «Enviar ahora» es un respaldo) y el de **firmas que no se validaron** («la firma de X no se validó: tiene que firmar de nuevo»), **Firmas en revisión** (confirmar o rechazar con motivo), el aviso al **cerrar sesión** con firmas por enviar, y el **cambio obligatorio a PIN de 6 dígitos** al entrar con uno de 4.
-
-### Paso 3 a prod: fines de noviembre de 2026
-
-| Qué | Detalle |
-|---|---|
-| `dev.buildandserve.cl` | Certificado, alias de la distribución de dev y DNS en Cloudflare. Requisito de la cookie: dev tiene que probar el mismo mecanismo de sesión que prod (D-20). |
-| Cookie `httpOnly` con `api.buildandserve.cl` | Dominio propio para la API (y `api-dev` para dev), cookie `__Host-` con `SameSite=Strict`, CORS con credenciales, protección CSRF (comprobación de `Origin` y cabecera propia) y el autorizador leyendo la cookie. Cada persona vuelve a entrar una vez (checklist 6.15). |
-| Recorridos guiados (rama `tours`) | Integrar la rama `tours` (D-33). Su copia de `infra/desplegar-infra-frontend.sh` es anterior a la CSP activa: no desplegar la infra desde ese árbol. |
-| Exigir el rol de publicación | Cuando Adrean y Benjamin registren MFA: desplegar la infra del frontend con `ExigirRolPublicador=true` (D-22). Hoy nadie tiene MFA. La siguiente etapa, GitHub Actions por OIDC, queda para después. |
+| # | Qué | Detalle |
+|---|---|---|
+| 1 | **Sesión en cookie segura con `api.buildandserve.cl`** | Dominio propio para la API (y `api-dev.buildandserve.cl` para dev), cookie `__Host-` `httpOnly` con `SameSite=Strict`, CORS con credenciales, protección CSRF (comprobación de `Origin` y cabecera propia) y el autorizador leyendo la cookie. Cada persona vuelve a entrar una vez (checklist 6.15). Cuidar la sesión sin red: hoy `sesionLocal.ts` guarda una copia del usuario y el cierre automático pregunta al servidor antes de cerrar; con cookie, la sesión no puede caerse por falta de señal. Requiere el 2 para probarse en dev con el mismo mecanismo que prod (D-20). |
+| 2 | **Subdominio `dev.buildandserve.cl`** | Certificado, alias de la distribución de dev y DNS en Cloudflare (nube gris, como prod). QA (Daniel) pasa a esa URL; actualizar la regla 5 y el CORS de dev. Conviene hacerlo antes o junto con el 1. |
+| 3 | **«Olvidé mi PIN» con aviso al administrador** | Hoy solo el administrador puede restablecer un PIN (Personas → la persona → Restablecer PIN, con motivo de al menos 10 caracteres). Falta que la persona lo pida desde su sesión y que llegue un aviso al administrador (bandeja y correo). Decisión de producto pendiente: quién puede restablecer y si el pedido expira. |
+| 4 | **«Crear PIN» sin recargar tras restablecer** | Después de un restablecimiento, la persona tiene que recargar la página para que aparezca «Crear PIN de firma» en Configuración (pasó con el admin de dev que tenía PIN de 6 dígitos). El estado del PIN tiene que refrescarse solo (al volver a la pantalla o con el aviso del restablecimiento). |
+| 5 | **`ExigirRolPublicador` con MFA** | Cuando Adrean y Benjamin registren MFA: desplegar la infra del frontend con `ExigirRolPublicador=true` (D-22). Hoy nadie tiene MFA. GitHub Actions por OIDC queda para después. |
+| 6 | **Borrar la empresa TCC de prod** | **Detenido hasta confirmar quién entró el 13 de noviembre.** El ensayo del 13 de noviembre (16:35 UTC) dio 50 elementos (huella `6fe261bcf3ceacd6`): 42 planes diarios de retención, la licencia, una persona y la ficha de la empresa, como antes, más **3 eventos de acceso de ese mismo día (11:25, 16:14 y 16:14 UTC) y 2 sesiones**, que el 8 de noviembre no estaban. Si TCC está en uso, no se borra. Si se confirma que se borra: ensayo y borrado juntos, el mismo día, porque la huella cambia con cada plan diario (07:30 UTC) y con cada acceso: `(cd Backend && node scripts/borrar-empresa.js --stage prod --empresa a5ffc38d-44b7-47f0-bb15-58f37f9f2b4c --nombre "TCC")` y luego lo mismo con `--ejecutar <huella del ensayo recién hecho>`. Lo corre Adrean. |
+| 7 | **Revisión legal** | Plazos internos del plan de respuesta a incidentes (checklist 7.4, `docs/plan-respuesta-incidentes.md`, D-32) y el contrato de encargo entre cada constructora y Build & Serve (Ley 21.719, vigente el 1 de diciembre de 2026). No es código: lo gestiona Adrean con quien corresponda. |
+| 8 | **Lo que queda abierto del checklist** (`docs/gobernanza-y-seguridad-de-datos.md`, sección 2) | 6.15 (cookie: es el 1); 7.4 (validación legal: es el 7); 6.8 (región, postergada por D-1); **H-15**, decisión de producto: el Registro AT/EP y la investigación de accidentes traen datos de salud sin el resguardo de los documentos de salud (el Expediente consolidado ya lo tiene, `f38fb75`). Revisar la sección 2 completa al empezar: lo demás quedó implementado o desactualizado y corregido el 8 de noviembre. |
 
 ### Sin fecha
 
@@ -137,13 +156,17 @@ Lo nuevo (D-37, sin habilitar como paso; ya no existen «Preparar cuadrilla» ni
 |---|---|
 | Crear actividades sin red | Hoy crear una actividad exige red (`ActivityNueva` llama a la API). Quedó fuera del plan de firma sin conexión (7 de noviembre de 2026): una charla armada en terreno sin señal no se puede crear ni, por lo tanto, firmar. Los vales ya quedan atados a persona y obra, no a cada actividad, así que la firma estará lista cuando esto exista. |
 | Timeout de la función de lotes de supresión | `gobernanzaLotes` tiene un timeout de 300 s, pero HTTP API corta a los 30 s: un lote grande se ejecuta, pero quien lo lanza recibe un error. Candidato a pasar a la cola (D-17, D-24). |
-| H-15, decisión de producto | El Registro AT/EP y la investigación de accidentes traen datos de salud sin el resguardo de los documentos de salud. El Expediente consolidado ya lo tiene (`f38fb75`). |
-| Protocolo de notificación de brechas (checklist 7.4) | Ya existe con qué responder qué se expuso (D-19) y el plan de respuesta (D-32). Falta la validación legal de plazos y responsables. |
+| Diseño móvil | Adrean lo verá aparte (lo dijo al pedir las correcciones del 11 de noviembre): no rediseñar pantallas sin que lo pida. |
+| Formularios que siguen diciendo «Sin conexión» | `SurveyResponder` mantiene su nota propia al responder sin señal (la ficha de salud exige señal): es una nota del formulario, no un aviso apilado. Revisar si Adrean la quiere así. |
 
 ### Hecho
 
 | Cuándo | Qué |
 |---|---|
+| ~14 de noviembre de 2026 | **Paso a prod 2**: backend y frontend `5813205`, punta a punta 65 de 65 (Adrean). |
+| 13 de noviembre de 2026 | Correcciones de la prueba en terreno del 11 de noviembre, en dev (`5813205`): un solo aviso sin señal, neutro, con un estado de señal único (`utils/conexion.ts`); «No disponible sin conexión» en vez de ceros o «Al día» (Inicio, Encuestas, Actividades, Mis firmas, Firma electrónica, Bandeja, Incidentes, Repositorio y la obra); sin señal no se ofrece lo que necesita conexión; «Enviando…» sin botón y «Enviar ahora» solo tras 2 minutos fallando con señal; `alcance` de encuestas por personas distintas; el globo de «Cómo se firma» sin tapar. |
+| 11 de noviembre de 2026 | PIN de 4 dígitos en el manual y los recorridos (la rama `tours` mezclada en `pruebas`, `8dcaa25`). |
+| 10 de noviembre de 2026 | Verificación de los despliegues con descarga reanudable (`infra/descarga.sh`). |
 | 8 de noviembre de 2026 | Regla de ciclo de vida en el bucket de despliegue de Serverless (`infra/ciclo-vida-bucket-despliegue.sh`, aplicada): bajo `serverless/BuildAndServe/`, las versiones reemplazadas se borran a los 30 días, junto con las marcas de borrado que ya no tapan nada. Al aplicarla había 389 versiones viejas (~5,6 GB). Lo de `hackatonbackend` queda fuera: lo borra `infra/limpiar-hackatonbackend.sh`, con su confirmación. |
 | 7 de noviembre de 2026 | D-34: la URL de CloudFront fuera del CORS de prod y redirigida con 301. **Service worker:** quien instaló la app desde `d30jksx91fodea.cloudfront.net` la sigue abriendo desde caché en ese origen, sin poder hablar con la API; se resuelve borrando los datos del sitio de ese origen y reinstalando desde `https://buildandserve.cl`. |
 | 6 de noviembre de 2026 | CSP en modo activo, desplegada y probada en dev y prod. |
