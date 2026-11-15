@@ -11,6 +11,7 @@ import { useAlVolverLaSenal } from '../hooks/useSenal';
 import { haySenal } from '../utils/conexion';
 import SinConexion from '../components/SinConexion';
 import { guardarCopia, leerCopia, deCuando } from '../utils/copiaLocal';
+import { descargarComprobanteFirma } from '../utils/comprobanteFirmaPdf';
 import {
     FiCheck,
     FiClock,
@@ -108,6 +109,9 @@ import { ancla } from '../ayuda/registro';
 
 type TabType = 'pendientes' | 'historial';
 
+const etiquetaTipo = (firma: NewSignature) =>
+    REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipoLabel || firma.requestTipo || 'Documento';
+
 const formatLocalDateTime = (timestamp: string) => {
     const d = new Date(timestamp);
     if (isNaN(d.getTime())) return { date: '—', time: '—' };
@@ -147,9 +151,6 @@ const bytesToLabel = (bytes: number) => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-/** Comprobante generado en el cliente: no existe un endpoint que emita un PDF
- *  de constancia, así que se arma un recibo de texto con los mismos datos que
- *  ya se muestran en el detalle — nada que el backend no haya devuelto ya. */
 /** Documentos de una solicitud: abrir la vista previa o escucharlos ahí mismo. */
 function DocPreviewCards({ documentos, onVer }: { documentos: DocumentoAdjunto[]; onVer: (doc: DocumentoAdjunto) => void }) {
     const lectura = useLecturaActiva();
@@ -182,27 +183,6 @@ function DocPreviewCards({ documentos, onVer }: { documentos: DocumentoAdjunto[]
         </div>
     );
 }
-
-const descargarComprobante = (firma: NewSignature, solicitud: SignatureRequest | null) => {
-    const { date, time } = formatLocalDateTime(firma.timestamp || firma.createdAt);
-    const lineas = [
-        'Comprobante de firma digital',
-        '-----------------------------',
-        `Documento: ${firma.requestTitulo || solicitud?.titulo || '—'}`,
-        `Firmante: ${firma.workerNombre} (${firma.workerRut})`,
-        `Fecha y hora: ${date} a las ${time}`,
-        `Solicitado por: ${firma.solicitanteNombre || '—'}`,
-        `Estado: ${firma.estado}`,
-        `Token de verificación: ${firma.token}`,
-    ];
-    const blob = new Blob([lineas.join('\n')], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `comprobante-firma-${firma.signatureId}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-};
 
 export default function MySignatures() {
     const { user } = useAuth();
@@ -419,7 +399,7 @@ export default function MySignatures() {
         signatureHistory.forEach(({ firma }) => {
             if (vistos.has(firma.requestTipo)) return;
             vistos.add(firma.requestTipo);
-            opciones.push({ value: firma.requestTipo, label: REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo || 'Otro' });
+            opciones.push({ value: firma.requestTipo, label: etiquetaTipo(firma) });
         });
         return opciones;
     }, [signatureHistory]);
@@ -713,7 +693,7 @@ export default function MySignatures() {
                                 <div className="msig-history">
                                     {historialVisible.map(({ firma, solicitud }) => {
                                         const { date, time } = formatLocalDateTime(firma.timestamp || firma.createdAt);
-                                        const titulo = firma.requestTitulo || solicitud?.titulo || REQUEST_TYPES[firma.requestTipo]?.label || 'Firma';
+                                        const titulo = firma.requestTitulo || solicitud?.titulo || etiquetaTipo(firma);
                                         const esValida = firma.estado === 'valida';
                                         return (
                                             <button
@@ -810,7 +790,7 @@ export default function MySignatures() {
             <Modal
                 isOpen={!!selectedHistorial}
                 onClose={() => setSelectedHistorial(null)}
-                title={selectedHistorial ? (selectedHistorial.firma.requestTitulo || selectedHistorial.solicitud?.titulo || 'Firma') : ''}
+                title={selectedHistorial ? (selectedHistorial.firma.requestTitulo || selectedHistorial.solicitud?.titulo || etiquetaTipo(selectedHistorial.firma)) : ''}
                 subtitle={selectedHistorial ? `Firmada el ${formatLocalDateTime(selectedHistorial.firma.timestamp || selectedHistorial.firma.createdAt).date} a las ${formatLocalDateTime(selectedHistorial.firma.timestamp || selectedHistorial.firma.createdAt).time}` : undefined}
                 icon={<FiFileText size={22} />}
                 size="lg"
@@ -819,7 +799,13 @@ export default function MySignatures() {
                         <button className="btn btn-secondary" onClick={() => setSelectedHistorial(null)}>Cerrar</button>
                         <button
                             className="btn btn-primary"
-                            onClick={() => selectedHistorial && descargarComprobante(selectedHistorial.firma, selectedHistorial.solicitud)}
+                            onClick={() => selectedHistorial && descargarComprobanteFirma({
+                                firma: selectedHistorial.firma,
+                                titulo: selectedHistorial.firma.requestTitulo || selectedHistorial.solicitud?.titulo || etiquetaTipo(selectedHistorial.firma),
+                                tipo: etiquetaTipo(selectedHistorial.firma),
+                                solicitante: selectedHistorial.firma.solicitanteNombre || selectedHistorial.solicitud?.solicitanteNombre || null,
+                                firmanteRespaldo: [user?.nombre, (user as { apellido?: string } | null)?.apellido].filter(Boolean).join(' ') || null,
+                            })}
                         >
                             <FiDownload size={16} /> Descargar comprobante
                         </button>
@@ -834,8 +820,8 @@ export default function MySignatures() {
                         <div className="msig-modal-grid">
                             <div className="msig-modal-col">
                                 <FichaFirma items={[
-                                    { label: 'Tipo', valor: REQUEST_TYPES[firma.requestTipo]?.label || firma.requestTipo || 'Documento' },
-                                    { label: 'Solicitado por', valor: firma.solicitanteNombre || '—' },
+                                    { label: 'Tipo', valor: etiquetaTipo(firma) },
+                                    { label: 'Solicitado por', valor: firma.solicitanteNombre || solicitud?.solicitanteNombre || '—' },
                                     ...(documentos?.length ? [{ label: 'Documentos', valor: <DocPreviewCards documentos={documentos} onVer={abrirVistaPrevia} />, full: true }] : []),
                                 ]} />
                                 {solicitud && solicitud.trabajadores.length > 1 && (() => {
@@ -857,7 +843,7 @@ export default function MySignatures() {
                                 <div className="msig-verif">
                                     <span className="msig-verif-label"><FiShield size={13} /> Token de verificación</span>
                                     <span className="msig-token">{firma.token}</span>
-                                    <span className="msig-verif-sub">Validado con {firma.metodoValidacion || 'PIN'} · IP {firma.ipAddress || '—'}</span>
+                                    <span className="msig-verif-sub">Validado con {firma.metodoValidacion || 'PIN'}{firma.ipAddress ? ` · IP ${firma.ipAddress}` : ''}</span>
                                 </div>
                             </div>
                         </div>

@@ -3,7 +3,7 @@ const { PutCommand, GetCommand, UpdateCommand, QueryCommand } = require('@aws-sd
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
-const { validateRequired } = require('../../lib/utils/validation');
+const { validateRequired, enmascararRut } = require('../../lib/utils/validation');
 // NEW: Import EventBus for automatic notifications
 const { eventBus } = require('../../lib/events/EventBus');
 
@@ -376,6 +376,90 @@ module.exports.getPendingByWorker = async (event) => {
     }
 };
 
+const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
+const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE || 'Activities';
+const SURVEYS_TABLE = process.env.SURVEYS_TABLE || 'Surveys';
+
+const TABLA_DE_REFERENCIA = {
+    document: { tabla: DOCUMENTS_TABLE, clave: 'documentId' },
+    activity: { tabla: ACTIVITIES_TABLE, clave: 'activityId' },
+    survey: { tabla: SURVEYS_TABLE, clave: 'surveyId' },
+};
+
+const nombreCompleto = (p) => (p ? `${p.nombre || ''} ${p.apellido || ''}`.trim() || null : null);
+
+/**
+ * Título, tipo y solicitante de lo que firmó una firma de FirmaService, leídos
+ * de su referencia (documento, actividad o encuesta). Memoriza por id: un
+ * historial repite la misma referencia (re-firmas) y el mismo creador.
+ */
+function resolutorDeReferencias(sesion) {
+    const referencias = new Map();
+    const personas = new Map();
+
+    const nombreDePersona = (personaId) => {
+        if (!personaId) return Promise.resolve(null);
+        if (!personas.has(personaId)) {
+            personas.set(personaId, personaDeLaEmpresa(personaId, sesion).then(nombreCompleto).catch(() => null));
+        }
+        return personas.get(personaId);
+    };
+
+    const leer = async (firma) => {
+        const destino = TABLA_DE_REFERENCIA[firma.referenciaTipo];
+        if (!destino || !firma.referenciaId) return null;
+        const r = await docClient.send(new GetCommand({ TableName: destino.tabla, Key: { [destino.clave]: firma.referenciaId } }));
+        const item = esDeLaEmpresa(r.Item, sesion) ? r.Item : null;
+        if (!item) return null;
+
+        if (firma.referenciaTipo === 'document') {
+            return {
+                titulo: item.titulo || item.tipoDescripcion || item.archivoNombre || null,
+                tipo: 'DOCUMENTO',
+                tipoLabel: item.tipoDescripcion || 'Documento',
+                solicitanteNombre: item.ultimaPublicacionNombre || item.creatorName || await nombreDePersona(item.createdBy),
+            };
+        }
+        if (firma.referenciaTipo === 'activity') {
+            return {
+                titulo: item.titulo || item.tipoDescripcion || null,
+                tipo: item.tipo || null,
+                tipoLabel: item.tipoDescripcion || 'Actividad',
+                solicitanteNombre: await nombreDePersona(item.createdBy) || item.firmaRelator?.nombre || null,
+            };
+        }
+        return {
+            titulo: item.titulo || firma.metadata?.surveyTitulo || null,
+            tipo: 'ENCUESTA',
+            tipoLabel: 'Encuesta',
+            solicitanteNombre: await nombreDePersona(item.createdBy),
+        };
+    };
+
+    return (firma) => {
+        const id = `${firma.referenciaTipo}:${firma.referenciaId}`;
+        if (!referencias.has(id)) referencias.set(id, leer(firma).catch((err) => {
+            console.error('No se pudo resolver la referencia de la firma', id, err.message);
+            return null;
+        }));
+        return referencias.get(id);
+    };
+}
+
+/**
+ * El nombre y RUT del firmante. FirmaService guarda `personaNombre` (no
+ * `workerNombre`) y deja el RUT fuera del elemento; se toman de la ficha, que
+ * ya se leyó para autorizar. El RUT completo solo a la propia persona.
+ */
+function conNombreDelFirmante(firma, persona, personaId, sesion) {
+    const rut = firma.workerRut || persona?.rut || null;
+    return {
+        ...firma,
+        workerNombre: firma.workerNombre || firma.personaNombre || nombreCompleto(persona),
+        workerRut: rut ? (personaId === sesion.personaId ? rut : enmascararRut(rut)) : null,
+    };
+}
+
 /**
  * GET /signature-requests/history/{workerId} - Historial de firmas de un trabajador
  * Resuelve tanto workerId como userId para asegurar historial completo
@@ -388,7 +472,8 @@ module.exports.getHistoryByWorker = async (event) => {
         const { workerId: inputId } = event.pathParameters || {};
         if (!inputId) return error('ID de persona requerido');
         // Antes devolvía las firmas de cualquier persona de cualquier empresa.
-        if (!await personaConsultable(inputId, sesion)) return error('Persona no encontrada', 404);
+        const persona = await personaConsultable(inputId, sesion);
+        if (!persona) return error('Persona no encontrada', 404);
 
         // Query por GSI personaId-index
         const signaturesResult = await docClient.send(
@@ -405,15 +490,30 @@ module.exports.getHistoryByWorker = async (event) => {
             new Date(b.timestamp) - new Date(a.timestamp)
         );
 
+        const resolver = resolutorDeReferencias(sesion);
+
         const historial = [];
         for (const firma of firmas) {
             if (firma.requestId) {
                 const requestResult = await docClient.send(
                     new GetCommand({ TableName: TABLE_NAME, Key: { requestId: firma.requestId } })
                 );
-                historial.push({ firma, solicitud: esDeLaEmpresa(requestResult.Item, sesion) ? requestResult.Item : null });
+                historial.push({ firma: conNombreDelFirmante(firma, persona, inputId, sesion), solicitud: esDeLaEmpresa(requestResult.Item, sesion) ? requestResult.Item : null });
             } else {
-                historial.push({ firma, solicitud: null });
+                // Firmas de FirmaService (documento, actividad, encuesta): no
+                // guardan título ni solicitante, solo la referencia. Sin esto el
+                // historial mostraba "Firma" y "Solicitado por —".
+                const ref = await resolver(firma);
+                historial.push({
+                    firma: conNombreDelFirmante({
+                        ...firma,
+                        requestTitulo: firma.requestTitulo || ref?.titulo || null,
+                        requestTipo: firma.requestTipo || ref?.tipo || null,
+                        requestTipoLabel: ref?.tipoLabel || null,
+                        solicitanteNombre: firma.solicitanteNombre || ref?.solicitanteNombre || null,
+                    }, persona, inputId, sesion),
+                    solicitud: null,
+                });
             }
         }
 

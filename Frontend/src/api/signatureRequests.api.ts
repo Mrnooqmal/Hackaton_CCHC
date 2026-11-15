@@ -86,6 +86,8 @@ export interface NewSignature {
     requestId: string | null;
     requestTitulo: string;
     requestTipo: string;
+    /** Rótulo legible del tipo cuando no está en REQUEST_TYPES (firmas de documento, actividad o encuesta). */
+    requestTipoLabel?: string | null;
     workerId: string;
     workerRut: string;
     workerNombre: string;
