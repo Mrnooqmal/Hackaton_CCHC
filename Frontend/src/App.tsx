@@ -18,6 +18,7 @@ import SurveyDetalle from './pages/SurveyDetalle';
 import SurveyResponder from './pages/SurveyResponder';
 import Incidents from './pages/Incidents';
 import IncidentReportar from './pages/IncidentReportar';
+import IncidentDetalle from './pages/IncidentDetalle';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 // Legacy UserManagement replaced by PersonasManagement
@@ -229,6 +230,11 @@ function AppContent() {
           puede reportar un hallazgo, y el segmentado "Incidente" queda
           deshabilitado dentro de la página si falta INCIDENTES_REPORTAR. */}
       <Route path="/incidents/reportar" element={<ProtectedRoute><IncidentReportar /></ProtectedRoute>} />
+      {/* Adonde llega quien acaba de reportar. Sin requiredPermission, como
+          /incidents: qué reporte se puede leer lo decide GET /incidents/{id}
+          (sin incidentes.historial, solo los propios). Va después de
+          /incidents/reportar, aunque React Router prioriza la ruta literal. */}
+      <Route path="/incidents/:id" element={<ProtectedRoute><IncidentDetalle /></ProtectedRoute>} />
       <Route path="/activities" element={<ProtectedRoute requiredPermission={PERMISSIONS.ACTIVIDADES_VER}><Activities /></ProtectedRoute>} />
       {/* Antes eran modales de la lista; ahora son pantallas completas, como
           Personas → Nueva persona. */}

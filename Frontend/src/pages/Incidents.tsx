@@ -9,7 +9,7 @@ import {
     FiChevronLeft, FiChevronRight, FiCheckCircle, FiClock, FiCircle
 } from 'react-icons/fi';
 import { incidentsApi, workersApi } from '../api/client';
-import type { Incident, IncidentStats, AnalyticsData } from '../api/client';
+import type { Incident, IncidentStats, AnalyticsData, HallazgoGobernanza, Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
@@ -41,13 +41,27 @@ const buildEvidenceUrl = (s3Key: string) => {
     return '';
 };
 
+// Lo que trae `GET /personas` para elegir responsable: `Worker` más campos que
+// solo algunas fichas tienen.
+type PersonaListada = Worker & { workerId?: string; puesto?: string };
+
+// Una celda del calendario: vacía (antes del día 1) o un día con su resumen.
+interface DiaCalendario {
+    empty: boolean;
+    date?: string;
+    dayNum?: number;
+    hasIncident?: boolean;
+    count?: number;
+    severity?: string | null;
+}
+
 export default function Incidents() {
     const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
     const { selectedObraId } = useObraContext();
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [stats, setStats] = useState<IncidentStats | null>(null);
-    const [_analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+    const [, setAnalytics] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
     // El listado no se pudo cargar por falta de señal: ni lista vacía ni
     // estadísticas en cero. Reportar necesita conexión: sin señal no se ofrece.
@@ -85,17 +99,17 @@ export default function Incidents() {
     const canCalificarAccidente = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
     const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
     const esHallazgo = (inc: Incident) =>
-        (inc as any).clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
+        inc.clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
 
     // Gobernanza de hallazgos (panel supervisor+)
     const [gobIncident, setGobIncident] = useState<Incident | null>(null);
     const [gobForm, setGobForm] = useState({ responsableId: '', plazoRespuestaISO: '', estadoCierre: 'abierto', comentarioCierre: '' });
     const [gobSaving, setGobSaving] = useState(false);
     const [gobError, setGobError] = useState('');
-    const [personasTenant, setPersonasTenant] = useState<any[]>([]);
+    const [personasTenant, setPersonasTenant] = useState<PersonaListada[]>([]);
 
     const openGobernanza = async (inc: Incident) => {
-        const g = (inc as any).gobernanza || {};
+        const g: Partial<HallazgoGobernanza> = inc.gobernanza || {};
         setGobForm({
             responsableId: g.responsableId || '',
             plazoRespuestaISO: g.plazoRespuestaISO ? String(g.plazoRespuestaISO).slice(0, 10) : '',
@@ -106,7 +120,7 @@ export default function Incidents() {
         setGobIncident(inc);
         if (personasTenant.length === 0) {
             const res = await workersApi.list();
-            if (res.success && res.data) setPersonasTenant(res.data as any[]);
+            if (res.success && res.data) setPersonasTenant(res.data as PersonaListada[]);
         }
     };
 
@@ -119,13 +133,13 @@ export default function Incidents() {
         setGobSaving(true);
         setGobError('');
         try {
-            const responsable = personasTenant.find((p: any) => p.personaId === gobForm.responsableId);
+            const responsable = personasTenant.find((p) => p.personaId === gobForm.responsableId);
             const res = await incidentsApi.updateGobernanza(gobIncident.incidentId, {
                 actorId: user.personaId,
                 responsableId: gobForm.responsableId || null,
                 responsableNombre: responsable ? `${responsable.nombre} ${responsable.apellido || ''}`.trim() : null,
                 plazoRespuestaISO: gobForm.plazoRespuestaISO || null,
-                estadoCierre: gobForm.estadoCierre as any,
+                estadoCierre: gobForm.estadoCierre as HallazgoGobernanza['estadoCierre'],
                 comentarioCierre: gobForm.comentarioCierre || null
             });
             if (!res.success) { setGobError(res.error || 'No se pudo guardar la gobernanza.'); return; }
@@ -586,7 +600,7 @@ export default function Incidents() {
                     const maxTrend = Math.max(...trendMonths.map(m => m.hallazgos + m.incidentes + m.accidentes), 1);
 
                     const etapaData = ETAPAS_CONSTRUCTIVAS
-                        .map(e => ({ label: e, count: incidents.filter(i => (i as any).etapaConstructiva === e).length }))
+                        .map(e => ({ label: e, count: incidents.filter(i => i.etapaConstructiva === e).length }))
                         .filter(e => e.count > 0)
                         .sort((a, b) => b.count - a.count);
                     const maxEtapa = Math.max(...etapaData.map(e => e.count), 1);
@@ -772,7 +786,7 @@ export default function Incidents() {
                                             ))}
                                         </div>
                                         <div className="calendar-grid-month" style={{ gap: '4px' }}>
-                                            {generateCalendarData().map((day: any, i: number) => (
+                                            {generateCalendarData().map((day: DiaCalendario, i: number) => (
                                                 day.empty ? (
                                                     <div key={i} className="calendar-cell-empty" style={{ width: '42px', height: '32px' }} />
                                                 ) : (
@@ -814,7 +828,7 @@ export default function Incidents() {
                         if (filtroGravedad && i.gravedad !== filtroGravedad) return false;
                         if (filtroCierre === 'abierto' && incidenteCerrado(i)) return false;
                         if (filtroCierre === 'cerrado' && !incidenteCerrado(i)) return false;
-                        if (filtroEtapa && (i as any).etapaConstructiva !== filtroEtapa) return false;
+                        if (filtroEtapa && i.etapaConstructiva !== filtroEtapa) return false;
                         return true;
                     });
                     const abiertos = base.filter((i) => !incidenteCerrado(i)).length;
@@ -888,7 +902,7 @@ export default function Incidents() {
                                                 <div className="incident-row-body">
                                                     <div className="incident-row-eyebrow">
                                                         {getTipoLabel(incident.tipo)}
-                                                        {(incident as any).etapaConstructiva && <><span className="dot">·</span>{(incident as any).etapaConstructiva}</>}
+                                                        {incident.etapaConstructiva && <><span className="dot">·</span>{incident.etapaConstructiva}</>}
                                                         {isNewIncident(incident) && <span className="badge badge-accent inc-nuevo-pill">Nuevo</span>}
                                                     </div>
                                                     <p className="incident-row-desc">
@@ -897,8 +911,8 @@ export default function Incidents() {
                                                     <div className="incident-row-meta">
                                                         {/* reportadoPor puede venir como ID de persona: se muestra
                                                             solo un nombre legible, o se omite. */}
-                                                        {((incident as any).realizadoPor?.nombre || incident.trabajadorNombre) && (
-                                                            <><span>{(incident as any).realizadoPor?.nombre || incident.trabajadorNombre}</span><span className="dot">·</span></>
+                                                        {(incident.realizadoPor?.nombre || incident.trabajadorNombre) && (
+                                                            <><span>{incident.realizadoPor?.nombre || incident.trabajadorNombre}</span><span className="dot">·</span></>
                                                         )}
                                                         <span>{new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                                         {incident.evidencias?.length > 0 && (
@@ -908,7 +922,7 @@ export default function Incidents() {
                                                 </div>
                                                 <div className="incident-row-status">
                                                     {esHallazgo(incident)
-                                                        ? renderCierreBadge((incident as any).gobernanza?.estadoCierre || 'abierto')
+                                                        ? renderCierreBadge(incident.gobernanza?.estadoCierre || 'abierto')
                                                         : renderEstadoBadge(incident.estado)}
                                                     {renderGravedadBadge(incident.gravedad)}
                                                 </div>
@@ -935,18 +949,30 @@ export default function Incidents() {
                     icon={<FiAlertTriangle size={24} />}
                     size="xl"
                     footer={
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setSelectedIncident(null);
-                                setDetailError('');
-                                setDetailLoading(false);
-                                setLightboxIndex(null);
-                            }}
-                        >
-                            <FiX className="mr-2" />
-                            Cerrar
-                        </button>
+                        <>
+                            {/* La página del reporte (IncidentDetalle) muestra el estado y
+                                "qué sigue"; el modal sigue siendo el de gestión. */}
+                            {selectedIncident && (
+                                <button
+                                    className="btn btn-ghost"
+                                    onClick={() => navigate(`/incidents/${selectedIncident.incidentId}`)}
+                                >
+                                    Abrir página del reporte
+                                </button>
+                            )}
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    setSelectedIncident(null);
+                                    setDetailError('');
+                                    setDetailLoading(false);
+                                    setLightboxIndex(null);
+                                }}
+                            >
+                                <FiX className="mr-2" />
+                                Cerrar
+                            </button>
+                        </>
                     }
                 >
                     {selectedIncident && (
@@ -956,7 +982,7 @@ export default function Incidents() {
                                 tabla de datos — mismo lenguaje que las filas del listado. */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', paddingBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
                                 {esHallazgo(selectedIncident)
-                                    ? renderCierreBadge((selectedIncident as any).gobernanza?.estadoCierre || 'abierto')
+                                    ? renderCierreBadge(selectedIncident.gobernanza?.estadoCierre || 'abierto')
                                     : renderEstadoBadge(selectedIncident.estado)}
                                 {renderGravedadBadge(selectedIncident.gravedad)}
                                 <span style={{ flexGrow: 1 }} />
@@ -967,7 +993,7 @@ export default function Incidents() {
                             </div>
 
                             {/* Flash banner */}
-                            {(selectedIncident as any).reporteFlash?.esFlash && (
+                            {selectedIncident.reporteFlash?.esFlash && (
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--accent-tint)', border: '1px solid rgba(0,110,220,0.25)' }}>
                                     <FiAlertCircle size={14} style={{ color: 'var(--accent-text)', flexShrink: 0, marginTop: '2px' }} />
                                     <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
@@ -1003,12 +1029,21 @@ export default function Incidents() {
                                         </p>
                                     </div>
 
-                                    {((selectedIncident as any).etapaConstructiva || (selectedIncident.diasPerdidos ?? 0) > 0) && (
+                                    {selectedIncident.medidasInmediatas && (
+                                        <div>
+                                            <div className="inc-detail-label">Medidas inmediatas</div>
+                                            <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+                                                {selectedIncident.medidasInmediatas}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {(selectedIncident.etapaConstructiva || (selectedIncident.diasPerdidos ?? 0) > 0) && (
                                         <div style={{ display: 'flex', gap: 'var(--space-6)' }}>
-                                            {(selectedIncident as any).etapaConstructiva && (
+                                            {selectedIncident.etapaConstructiva && (
                                                 <div>
                                                     <div className="inc-detail-label">Etapa</div>
-                                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{(selectedIncident as any).etapaConstructiva}</div>
+                                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.etapaConstructiva}</div>
                                                 </div>
                                             )}
                                             {(selectedIncident.diasPerdidos ?? 0) > 0 && (
@@ -1083,7 +1118,7 @@ export default function Incidents() {
                                         <div>
                                             <div className="inc-detail-label">Gobernanza</div>
                                             {(() => {
-                                                const gob = (selectedIncident as any).gobernanza || {};
+                                                const gob: Partial<HallazgoGobernanza> = selectedIncident.gobernanza || {};
                                                 return (
                                                     <div className="inc-gob-panel">
                                                         <div className="inc-gob-row">
@@ -1191,7 +1226,7 @@ export default function Incidents() {
                                         <div>
                                             <div className="inc-detail-label">Reportado por</div>
                                             <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                                                {(selectedIncident as any).realizadoPor?.nombre || selectedIncident.reportadoPor}
+                                                {selectedIncident.realizadoPor?.nombre || selectedIncident.reportadoPor}
                                             </div>
                                         </div>
                                     )}
@@ -1820,7 +1855,7 @@ export default function Incidents() {
                         <label className="form-label">Responsable de cierre</label>
                         <select className="form-input form-select" value={gobForm.responsableId} onChange={(e) => setGobForm({ ...gobForm, responsableId: e.target.value })}>
                             <option value="">Selecciona…</option>
-                            {personasTenant.map((p: any) => (
+                            {personasTenant.map((p) => (
                                 <option key={p.personaId} value={p.personaId}>{p.nombre} {p.apellido || ''} {p.cargo ? `- ${p.cargo}` : ''}</option>
                             ))}
                         </select>

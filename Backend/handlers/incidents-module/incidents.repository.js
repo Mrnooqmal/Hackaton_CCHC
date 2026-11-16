@@ -7,7 +7,24 @@ const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
 const { hmacRut } = require('../../lib/cifradoCampo');
-const { validateRut } = require('../../lib/utils/validation');
+const { validateRut, normalizeRol } = require('../../lib/utils/validation');
+const { construirMensaje } = require('../../lib/bandeja');
+const { conNeutro, registrarFallo } = require('../../lib/degradacion');
+const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
+
+// Cómo se nombra cada tipo en el aviso a prevención (todos masculinos: "un …").
+const TIPO_EN_AVISO = {
+    condicion_subestandar: 'hallazgo (condición subestándar)',
+    accion_subestandar: 'hallazgo (acción subestándar)',
+    incidente: 'incidente',
+    accidente: 'accidente',
+};
+
+// Tope del campo "medidas inmediatas": un párrafo, no un informe. Lo que pase de
+// ahí se corta, igual que `descripcionBreve` del reporte flash; el formulario no
+// deja escribir más.
+const MAX_MEDIDAS_INMEDIATAS = 1000;
+const textoMedidasInmediatas = (valor) => (typeof valor === 'string' ? valor.trim().slice(0, MAX_MEDIDAS_INMEDIATAS) : '');
 
 class IncidentsRepository {
     constructor() {
@@ -82,86 +99,148 @@ class IncidentsRepository {
         return previews.filter(Boolean);
     }
 
+    /**
+     * Prevencionistas activos de UNA empresa: la partición `TENANT#{tenantId}`
+     * no ve a nadie de otra. El rol se compara normalizado (como el resto de
+     * los permisos), porque hay fichas con "Prevencionista" o con espacios.
+     *
+     * Lanza si la lectura falla: quien llama decide cómo degradar.
+     */
     async getPrevencionistas(tenantId) {
-        try {
-            console.log('[DEBUG] Buscando prevencionistas para tenantId:', tenantId);
+        if (!tenantId) return [];
+        const items = [];
+        let desde;
+        do {
             const result = await this.dynamo.send(new QueryCommand({
                 TableName: this.personasTable,
                 KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-                FilterExpression: 'rol = :rol AND estado = :estado',
+                FilterExpression: 'estado = :estado',
                 ExpressionAttributeValues: {
                     ':pk': `TENANT#${tenantId}`,
                     ':prefix': 'PERSONA#',
-                    ':rol': 'prevencionista',
                     ':estado': 'activo'
-                }
+                },
+                ...(desde ? { ExclusiveStartKey: desde } : {})
             }));
-            console.log('[DEBUG] Prevencionistas encontrados:', result.Items?.length || 0);
-            // Map to common format (recipientId = personaId for inbox)
-            return (result.Items || []).map(item => ({
-                userId: item.personaId,
-                personaId: item.personaId,
-                nombre: item.nombre,
-                apellido: item.apellido || '',
-                rol: item.rol,
-                cargo: item.cargo
-            }));
-        } catch (error) {
-            console.error('[ERROR] Error obteniendo prevencionistas:', error);
-            return [];
+            items.push(...(result.Items || []));
+            desde = result.LastEvaluatedKey;
+        } while (desde);
+        return items
+            .filter((item) => item.personaId && normalizeRol(item.rol) === 'prevencionista')
+            .map((item) => ({ userId: item.personaId, personaId: item.personaId }));
+    }
+
+    /**
+     * Avisa a prevención de riesgos que hay un reporte nuevo: bandeja y SNS.
+     *
+     * Antes leía `incident.trabajador.nombre`, que el incidente guardado no tiene
+     * (el nombre va en `trabajadorNombre` y el resto en la traza): lanzaba
+     * TypeError, el `catch` se lo tragaba y nadie recibía nada. Además mandaba el
+     * relato y el nombre del afectado a la bandeja y a SNS, que no están detrás
+     * del permiso de historial. Ahora el aviso lleva lo justo para abrir el caso
+     * (ver `resumenDelAviso`), no avisa a quien reportó, y cada fallo deja
+     * constancia medible (`FALLO_DEPENDENCIA`) sin botar la creación.
+     *
+     * Nunca lanza.
+     */
+    async avisarPrevencion(incident, context) {
+        try {
+            const resumen = await this.resumenDelAviso(incident);
+
+            const topicArn = this.buildNotificationTopicArn(context);
+            if (topicArn) {
+                await conNeutro('incidente.aviso.sns', () => this.sns.send(new PublishCommand({
+                    TopicArn: topicArn,
+                    // SNS exige un asunto ASCII: va el tipo como identificador.
+                    Subject: `Nuevo reporte: ${incident.tipo}`,
+                    Message: JSON.stringify(resumen.sns, null, 2)
+                })), null, { incidentId: incident.incidentId });
+            }
+
+            const destinatarios = (await conNeutro(
+                'incidente.aviso.destinatarios',
+                () => this.getPrevencionistas(incident.tenantId),
+                [],
+                { incidentId: incident.incidentId }
+            )).filter((p) => p.personaId !== incident.reportadoPor);
+            if (destinatarios.length === 0) {
+                console.log('[AVISO] incidente', incident.incidentId, '| sin prevencionistas a quienes avisar');
+                return;
+            }
+
+            const now = new Date().toISOString();
+            const baseMessageId = uuidv4();
+            let enviados = 0;
+            for (const { personaId } of destinatarios) {
+                const ok = await conNeutro('incidente.aviso.bandeja', async () => {
+                    await this.dynamo.send(new PutCommand({
+                        TableName: this.inboxTable,
+                        Item: construirMensaje({
+                            recipientId: personaId,
+                            baseMessageId,
+                            now,
+                            senderId: 'sistema',
+                            senderName: 'Sistema de Incidentes',
+                            senderRol: 'system',
+                            type: 'alert',
+                            priority: resumen.prioridad,
+                            subject: resumen.asunto,
+                            content: resumen.contenido,
+                            linkedEntity: { type: 'incident', id: incident.incidentId },
+                        }),
+                    }));
+                    return true;
+                }, false, { incidentId: incident.incidentId, destinatario: personaId });
+                if (ok) enviados++;
+            }
+            console.log('[AVISO] incidente', incident.incidentId, '| avisos', enviados, 'de', destinatarios.length);
+        } catch (err) {
+            registrarFallo('incidente.aviso', err, { incidentId: incident?.incidentId });
         }
     }
 
-    async sendIncidentNotification(incident, prevencionistas) {
-        console.log('[DEBUG] sendIncidentNotification llamado');
-        if (!prevencionistas || prevencionistas.length === 0) {
-            console.log('[WARN] No hay prevencionistas para notificar');
-            return;
-        }
+    /**
+     * Qué dice el aviso. Solo tipo, obra, fecha, gravedad (si es incidente) y el
+     * enlace al caso: ni el relato ni quién es el afectado. Quien lo necesite lo
+     * lee al abrir el caso, donde sí se mira el permiso de historial.
+     */
+    async resumenDelAviso(incident) {
+        const tipoTexto = TIPO_EN_AVISO[incident.tipo] || 'reporte';
+        const esIncidente = incident.clasificacion !== 'hallazgo';
+        const obra = incident.obraId
+            ? await obraDeLaEmpresa(incident.obraId, { tenantId: incident.tenantId })
+            : null;
+        const lugar = obra?.nombre || incident.centroTrabajo || 'obra sin especificar';
+        const [a, m, d] = String(incident.fecha || '').split('-');
+        const fecha = a && m && d ? `${d}-${m}-${a}` : String(incident.fecha || '');
+        const hora = incident.hora ? String(incident.hora).slice(0, 5) : '';
+        const gravedad = esIncidente ? (incident.gravedad || 'leve') : null;
 
-        const now = new Date().toISOString();
-        const baseMessageId = uuidv4();
-        let priority = 'normal';
-        if (incident.gravedad === 'fatal') priority = 'urgent';
-        else if (incident.gravedad === 'grave') priority = 'high';
+        const asunto = `Nuevo ${tipoTexto} reportado${gravedad ? ` (${gravedad})` : ''}`;
+        const contenido = `Se reportó un ${tipoTexto} en ${lugar} el ${fecha}${hora ? ` a las ${hora}` : ''}.`
+            + (gravedad ? ` Gravedad: ${gravedad}.` : '')
+            + ' Abre el caso desde este aviso para revisarlo.';
+        let prioridad = 'normal';
+        if (gravedad === 'fatal') prioridad = 'urgent';
+        else if (gravedad === 'grave') prioridad = 'high';
 
-        const subject = `Nuevo ${incident.tipo} reportado - ${incident.gravedad}`;
-        const content = `Se ha reportado un nuevo ${incident.tipo} en ${incident.centroTrabajo}.\n\nTrabajador: ${incident.trabajador.nombre}\nFecha: ${incident.fecha} ${incident.hora}\nGravedad: ${incident.gravedad}\nDescripción: ${incident.descripcion}\n\nPor favor, revise este incidente en el sistema.`;
-
-        for (const prev of prevencionistas) {
-            try {
-                const messageId = `${baseMessageId}-${prev.userId.substring(0, 8)}`;
-                const message = {
-                    recipientId: prev.userId,
-                    messageId,
-                    senderId: 'sistema',
-                    senderName: 'Sistema de Incidentes',
-                    senderRol: 'system',
-                    type: 'alert',
-                    priority,
-                    subject,
-                    content,
-                    read: false,
-                    readAt: null,
-                    archivedByRecipient: false,
-                    archivedBySender: false,
-                    linkedEntity: {
-                        type: 'incident',
-                        id: incident.incidentId
-                    },
-                    createdAt: now,
-                    updatedAt: now
-                };
-
-                await this.dynamo.send(new PutCommand({
-                    TableName: this.inboxTable,
-                    Item: message
-                }));
-                console.log('Notificación de incidente enviada a', prev.userId);
-            } catch (error) {
-                console.error(`Error enviando notificación a ${prev.userId}:`, error);
-            }
-        }
+        return {
+            asunto,
+            contenido,
+            prioridad,
+            sns: {
+                incidentId: incident.incidentId,
+                clasificacion: incident.clasificacion || null,
+                tipo: incident.tipo,
+                tenantId: incident.tenantId,
+                obraId: incident.obraId || null,
+                obra: lugar,
+                fecha: incident.fecha,
+                hora: incident.hora || null,
+                ...(gravedad ? { gravedad } : {}),
+                enlace: `/incidents/${incident.incidentId}`,
+            },
+        };
     }
 
     // CREATE
@@ -207,6 +286,10 @@ class IncidentsRepository {
             fecha: data.fecha || now.split('T')[0],
             hora: data.hora || now.split('T')[1].split('.')[0],
             descripcion: data.descripcion,
+            // Qué se hizo en el momento para contener el riesgo (fase 1 del
+            // rediseño). Es texto libre sobre la obra, no sobre personas: va en el
+            // elemento listado y no en la traza, como `descripcion`.
+            medidasInmediatas: textoMedidasInmediatas(data.medidasInmediatas),
             gravedad: data.gravedad || 'leve',
             diasPerdidos: data.diasPerdidos || 0,
             evidencias: data.evidencias || [],
@@ -260,38 +343,8 @@ class IncidentsRepository {
             Item: incident
         }));
 
-        // SNS Notification
-        try {
-            const topicArn = this.buildNotificationTopicArn(context);
-            if (!topicArn) {
-                console.warn('No se pudo determinar el ARN del tópico SNS');
-            } else {
-                const message = {
-                    incidentId,
-                    tipo: incident.tipo,
-                    centroTrabajo: incident.centroTrabajo,
-                    trabajador: incident.trabajador.nombre,
-                    fecha: incident.fecha,
-                    gravedad: incident.gravedad,
-                    descripcion: incident.descripcion
-                };
-                await this.sns.send(new PublishCommand({
-                    TopicArn: topicArn,
-                    Subject: `Nuevo ${incident.tipo} reportado - ${incident.gravedad}`,
-                    Message: JSON.stringify(message, null, 2)
-                }));
-            }
-        } catch (snsError) {
-            console.error('Error enviando notificación SNS:', snsError);
-        }
-
-        // Inbox Notification
-        try {
-            const prevencionistas = await this.getPrevencionistas(incident.tenantId);
-            await this.sendIncidentNotification(incident, prevencionistas);
-        } catch (notifError) {
-            console.error('[ERROR] Error enviando notificaciones inbox:', notifError);
-        }
+        // Nunca lanza: el reporte ya está guardado y un aviso caído no lo deshace.
+        await this.avisarPrevencion(incident, context);
 
         return {
             incident,
@@ -585,6 +638,10 @@ class IncidentsRepository {
             updateExpression += ', evidencias = :evidencias';
             expressionAttributeValues[':evidencias'] = data.evidencias;
         }
+        if (data.medidasInmediatas !== undefined) {
+            updateExpression += ', medidasInmediatas = :medidasInmediatas';
+            expressionAttributeValues[':medidasInmediatas'] = textoMedidasInmediatas(data.medidasInmediatas);
+        }
         if (data.fechaCierre !== undefined) {
             updateExpression += ', fechaCierre = :fechaCierre';
             expressionAttributeValues[':fechaCierre'] = data.fechaCierre;
@@ -606,6 +663,45 @@ class IncidentsRepository {
             incident: result.Attributes,
             message: 'Incidente actualizado exitosamente'
         };
+    }
+
+    /**
+     * Agrega claves de evidencia ya validadas por el handler (empresa, incidente,
+     * forma y tope). Agrega, nunca reemplaza: `update` con `evidencias` pisa la
+     * lista entera, y quien reporta no debe poder borrar lo que adjuntó otro.
+     *
+     * Se escribe la lista completa con la condición de que el incidente no haya
+     * cambiado desde que el handler lo leyó: así el tope de cantidad que contó
+     * sigue siendo cierto al guardar, aunque lleguen dos envíos a la vez.
+     */
+    async agregarEvidencias(incidentId, nuevas, updatedAtLeido) {
+        console.log('[EVIDENCIAS] incidente', incidentId, '| agregadas', nuevas.length);
+        const res = await this.dynamo.send(new GetCommand({
+            TableName: this.incidentsTable,
+            Key: { incidentId }
+        }));
+        if (!res.Item) throw new Error('Incidente no encontrado');
+        const previas = Array.isArray(res.Item.evidencias) ? res.Item.evidencias : [];
+        if (nuevas.length === 0) return { evidencias: previas };
+        const evidencias = [...previas, ...nuevas.filter((k) => !previas.includes(k))];
+        try {
+            const result = await this.dynamo.send(new UpdateCommand({
+                TableName: this.incidentsTable,
+                Key: { incidentId },
+                UpdateExpression: 'SET evidencias = :e, updatedAt = :u',
+                ConditionExpression: 'updatedAt = :leido',
+                ExpressionAttributeValues: { ':e': evidencias, ':u': new Date().toISOString(), ':leido': updatedAtLeido },
+                ReturnValues: 'ALL_NEW'
+            }));
+            return { evidencias: result.Attributes?.evidencias || evidencias };
+        } catch (err) {
+            if (err?.name === 'ConditionalCheckFailedException') {
+                const conflicto = new Error('El reporte cambió mientras se adjuntaban las fotos. Intenta de nuevo.');
+                conflicto.statusCode = 409;
+                throw conflicto;
+            }
+            throw err;
+        }
     }
 
     // UPLOAD EVIDENCE
@@ -938,32 +1034,9 @@ class IncidentsRepository {
             Item: incident
         }));
 
-        try {
-            const topicArn = this.buildNotificationTopicArn();
-            if (topicArn) {
-                const message = {
-                    incidentId,
-                    tipo: incident.tipo,
-                    centroTrabajo: incident.centroTrabajo,
-                    descripcion: incident.descripcion,
-                    origenReporte: 'qr_publico'
-                };
-                await this.sns.send(new PublishCommand({
-                    TopicArn: topicArn,
-                    Subject: `Nuevo reporte QR: ${incident.tipo}`,
-                    Message: JSON.stringify(message, null, 2)
-                }));
-            }
-        } catch (snsError) {
-            console.error('Error enviando notificación SNS:', snsError);
-        }
-
-        try {
-            const prevencionistas = await this.getPrevencionistas(incident.tenantId);
-            await this.sendIncidentNotification(incident, prevencionistas);
-        } catch (notifError) {
-            console.error('Error enviando notificaciones inbox:', notifError);
-        }
+        // El mismo aviso que `create`: antes este mandaba el relato completo a la
+        // bandeja y a SNS.
+        await this.avisarPrevencion(incident);
 
         return {
             incidentId,

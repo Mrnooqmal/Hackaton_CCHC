@@ -4,9 +4,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
     FiUpload, FiCamera, FiX, FiMic, FiRefreshCw, FiCheck,
 } from 'react-icons/fi';
-import { incidentsApi, workersApi, aiApi, SIN_CONSENTIMIENTO_DICTADO } from '../api/client';
+import { incidentsApi, workersApi, aiApi, SIN_CONSENTIMIENTO_DICTADO, MAX_MEDIDAS_INMEDIATAS } from '../api/client';
 import { privacidadApi } from '../api/gobernanza.api';
-import type { CreateIncidentData } from '../api/client';
+import type { CreateIncidentData, Worker } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useToast } from '../context/ToastContext';
@@ -26,7 +26,16 @@ const INITIAL_FORM: CreateIncidentData = {
     clasificacion: 'hallazgo',
     tipoHallazgo: 'condicion',
     etapaConstructiva: '',
+    medidasInmediatas: '',
 };
+
+// El backend acepta hasta 10 archivos por envío (POST /incidents/{id}/evidencias):
+// más que eso fallaría entero al adjuntar, así que se corta al elegir.
+const MAX_FOTOS = 10;
+
+// Lo que trae `GET /personas` para el buscador: además de `Worker`, el
+// identificador anterior y campos que solo algunas fichas tienen.
+type PersonaListada = Worker & { workerId?: string; genero?: string; puesto?: string };
 
 // Antes era el mismo modal de Incidents.tsx, que cambiaba de campos según
 // `clasificacion`; ahora es pantalla completa, como Actividades → Nueva
@@ -42,7 +51,7 @@ export default function IncidentReportar() {
     const canCreateIncidente = hasPermission(PERMISSIONS.INCIDENTES_REPORTAR);
 
     const [formData, setFormData] = useState<CreateIncidentData>(() => {
-        const prefill = (location.state as any)?.clasificacion;
+        const prefill = (location.state as { clasificacion?: string } | null)?.clasificacion;
         return { ...INITIAL_FORM, clasificacion: prefill === 'incidente' ? 'incidente' : 'hallazgo' };
     });
     const esHallazgoForm = formData.clasificacion === 'hallazgo';
@@ -56,10 +65,10 @@ export default function IncidentReportar() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [canCreateIncidente]);
 
-    const [personasTenant, setPersonasTenant] = useState<any[]>([]);
+    const [personasTenant, setPersonasTenant] = useState<PersonaListada[]>([]);
     useEffect(() => {
         workersApi.list().then((res) => {
-            if (res.success && res.data) setPersonasTenant(res.data as any[]);
+            if (res.success && res.data) setPersonasTenant(res.data as PersonaListada[]);
         });
     }, []);
 
@@ -120,7 +129,7 @@ export default function IncidentReportar() {
         canvas.toBlob((blob) => {
             if (blob) {
                 const file = new File([blob], `incidente_${Date.now()}.jpg`, { type: 'image/jpeg' });
-                setUploadedFiles((prev) => [...prev, file]);
+                setUploadedFiles((prev) => [...prev, file].slice(0, MAX_FOTOS));
                 stopCamera();
             }
         }, 'image/jpeg', 0.8);
@@ -150,7 +159,7 @@ export default function IncidentReportar() {
 
     // Ir a dar el consentimiento saca de esta pantalla, que no guarda borrador.
     const irAConsentimientos = () => {
-        const tieneDatos = Boolean(formData.descripcion?.trim() || formData.centroTrabajo || uploadedFiles.length
+        const tieneDatos = Boolean(formData.descripcion?.trim() || formData.medidasInmediatas?.trim() || formData.centroTrabajo || uploadedFiles.length
             || afectados.some((a) => a.nombre));
         if (tieneDatos && !window.confirm('Se descartará lo que llevas de este reporte. ¿Ir a Mis datos y privacidad?')) return;
         navigate('/mis-datos?seccion=consentimientos');
@@ -246,24 +255,33 @@ export default function IncidentReportar() {
     }, []);
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+        if (!e.target.files) return;
+        const elegidas = Array.from(e.target.files);
+        setUploadedFiles((prev) => {
+            if (prev.length + elegidas.length > MAX_FOTOS) setFormError(`Puedes adjuntar hasta ${MAX_FOTOS} fotos por reporte.`);
+            return [...prev, ...elegidas].slice(0, MAX_FOTOS);
+        });
     };
     const removeFile = (index: number) => setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
 
-    const uploadFiles = async (incidentId: string): Promise<string[]> => {
-        const s3Keys: string[] = [];
+    // Cuenta lo que no subió: `fetch` no lanza con un 4xx/5xx de S3, así que
+    // antes una foto rechazada se adjuntaba igual como si existiera.
+    const uploadFiles = async (incidentId: string): Promise<{ claves: string[]; fallidas: number }> => {
+        const claves: string[] = [];
+        let fallidas = 0;
         for (const file of uploadedFiles) {
             try {
                 const urlResponse = await incidentsApi.uploadEvidence({ archivo: file, fileName: file.name, fileType: file.type, incidentId });
-                if (urlResponse.success && urlResponse.data) {
-                    await fetch(urlResponse.data.uploadUrl, { method: 'PUT', body: file, headers: urlResponse.data.uploadHeaders });
-                    s3Keys.push(urlResponse.data.s3Key);
-                }
+                if (!urlResponse.success || !urlResponse.data) { fallidas++; continue; }
+                const subida = await fetch(urlResponse.data.uploadUrl, { method: 'PUT', body: file, headers: urlResponse.data.uploadHeaders });
+                if (subida.ok) claves.push(urlResponse.data.s3Key);
+                else fallidas++;
             } catch (error) {
                 console.error('Error subiendo archivo:', error);
+                fallidas++;
             }
         }
-        return s3Keys;
+        return { claves, fallidas };
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -288,8 +306,8 @@ export default function IncidentReportar() {
                     nombre: nombreCompleto || '',
                     cargo: '',
                 },
-                tenantId: (user as any)?.tenantId,
-                empresaId: (user as any)?.tenantId,
+                tenantId: user?.tenantId,
+                empresaId: user?.tenantId,
                 centroTrabajo: formData.centroTrabajo || '',
                 ...(esHallazgoForm && !formData.trabajador.nombre
                     ? { trabajador: { nombre: '', rut: '', genero: '', cargo: '' } }
@@ -301,12 +319,30 @@ export default function IncidentReportar() {
 
             const response = await incidentsApi.create(payload);
             if (response.success && response.data) {
+                const incidentId = response.data.incidentId;
+                // El reporte ya existe aunque las fotos fallen: no se vuelve a
+                // enviar (quedaría duplicado), se avisa cuántas no quedaron.
+                let fotosSinAdjuntar = 0;
                 if (uploadedFiles.length > 0) {
-                    const s3Keys = await uploadFiles(response.data.incidentId);
-                    if (s3Keys.length > 0) await incidentsApi.update(response.data.incidentId, { evidencias: s3Keys });
+                    const { claves, fallidas } = await uploadFiles(incidentId);
+                    fotosSinAdjuntar = fallidas;
+                    if (claves.length > 0) {
+                        try {
+                            const adjunto = await incidentsApi.agregarEvidencias(incidentId, claves);
+                            if (!adjunto.success) fotosSinAdjuntar += claves.length;
+                        } catch {
+                            fotosSinAdjuntar += claves.length;
+                        }
+                    }
                 }
-                toast.success(esHallazgoForm ? 'Hallazgo reportado correctamente' : 'Incidente reportado correctamente');
-                navigate('/incidents');
+                const tipoTexto = esHallazgoForm ? 'Hallazgo' : 'Incidente';
+                if (fotosSinAdjuntar > 0) {
+                    toast.warning(`${tipoTexto} reportado, pero ${plural(fotosSinAdjuntar, 'foto no se adjuntó', 'fotos no se adjuntaron')}.`);
+                } else {
+                    toast.success(`${tipoTexto} reportado correctamente`);
+                }
+                // Al detalle, para que quien reporta vea su caso y qué sigue.
+                navigate(`/incidents/${incidentId}`, { state: { recienReportado: true, fotosSinAdjuntar } });
             } else {
                 setFormError(response.error || 'Error al reportar.');
             }
@@ -355,7 +391,7 @@ export default function IncidentReportar() {
                         ariaLabel="Tipo de reporte"
                         fullWidth={false}
                         value={formData.clasificacion || 'hallazgo'}
-                        onChange={(v) => setFormData((prev) => ({ ...prev, clasificacion: v as any }))}
+                        onChange={(v) => setFormData((prev) => ({ ...prev, clasificacion: v as CreateIncidentData['clasificacion'] }))}
                         options={[
                             { value: 'hallazgo', label: 'Hallazgo' },
                             ...(canCreateIncidente ? [{ value: 'incidente', label: 'Incidente' }] : []),
@@ -388,7 +424,7 @@ export default function IncidentReportar() {
                             <Select
                                 ariaLabel="Tipo de hallazgo"
                                 value={formData.tipoHallazgo}
-                                onChange={(v) => setFormData((prev) => ({ ...prev, tipoHallazgo: v as any }))}
+                                onChange={(v) => setFormData((prev) => ({ ...prev, tipoHallazgo: v as CreateIncidentData['tipoHallazgo'] }))}
                                 options={[
                                     { value: 'condicion', label: 'Condición subestándar' },
                                     { value: 'accion', label: 'Acción subestándar' },
@@ -414,7 +450,7 @@ export default function IncidentReportar() {
                             <Select
                                 ariaLabel="Gravedad"
                                 value={formData.gravedad}
-                                onChange={(v) => setFormData((prev) => ({ ...prev, gravedad: v as any }))}
+                                onChange={(v) => setFormData((prev) => ({ ...prev, gravedad: v as CreateIncidentData['gravedad'] }))}
                                 options={[
                                     { value: 'leve', label: 'Leve' },
                                     { value: 'grave', label: 'Grave' },
@@ -450,7 +486,7 @@ export default function IncidentReportar() {
                                         <div className="inc-autocomplete">
                                             {filtered.length === 0 ? (
                                                 <div className="inc-autocomplete-empty">No se encontraron trabajadores</div>
-                                            ) : filtered.map((p: any) => (
+                                            ) : filtered.map((p) => (
                                                 <button
                                                     key={p.personaId || p.workerId}
                                                     type="button"
@@ -510,7 +546,7 @@ export default function IncidentReportar() {
                                                     <div className="inc-autocomplete">
                                                         {filtered.length === 0 ? (
                                                             <div className="inc-autocomplete-empty">No se encontraron trabajadores</div>
-                                                        ) : filtered.map((p: any) => (
+                                                        ) : filtered.map((p) => (
                                                             <button
                                                                 key={p.personaId || p.workerId}
                                                                 type="button"
@@ -613,6 +649,24 @@ export default function IncidentReportar() {
                         />
                         <span className="form-hint">
                             {esHallazgoForm ? 'Incluye toda la información que permita verificar y gestionar el hallazgo.' : 'Sé lo más específico posible para facilitar la investigación.'}
+                        </span>
+                    </div>
+                </FieldSection>
+
+                <FieldSection title="Medidas inmediatas" inline description="Opcional">
+                    <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        <label className="form-label" htmlFor="inc-medidas-inmediatas">¿Qué se hizo en el momento para contener el riesgo?</label>
+                        <textarea
+                            id="inc-medidas-inmediatas"
+                            className="form-input"
+                            rows={3}
+                            maxLength={MAX_MEDIDAS_INMEDIATAS}
+                            placeholder="Por ejemplo: se acordonó la zona, se detuvo la faena, se avisó al capataz…"
+                            value={formData.medidasInmediatas || ''}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, medidasInmediatas: e.target.value }))}
+                        />
+                        <span className="form-hint">
+                            Describe acciones, no personas. {(formData.medidasInmediatas || '').length}/{MAX_MEDIDAS_INMEDIATAS}
                         </span>
                     </div>
                 </FieldSection>

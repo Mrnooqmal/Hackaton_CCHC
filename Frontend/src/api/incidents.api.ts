@@ -69,6 +69,9 @@ export interface Incident {
     fecha: string;
     hora: string;
     descripcion: string;
+    // Qué se hizo en el momento para contener el riesgo. Vacío en los reportes
+    // anteriores al campo (fase 1 del rediseño).
+    medidasInmediatas?: string;
     gravedad: 'leve' | 'grave' | 'fatal';
     diasPerdidos?: number;
     evidencias: string[];
@@ -120,6 +123,8 @@ export interface CreateIncidentData {
     fecha?: string;
     hora?: string;
     descripcion: string;
+    // Opcional, hasta MAX_MEDIDAS_INMEDIATAS caracteres (el backend corta lo demás).
+    medidasInmediatas?: string;
     gravedad?: 'leve' | 'grave' | 'fatal';
     diasPerdidos?: number;
     evidencias?: string[];
@@ -143,8 +148,12 @@ export interface UpdateIncidentData {
         diep?: string;
     };
     evidencias?: string[];
+    medidasInmediatas?: string;
     ubicacion?: IncidentLocation;
 }
+
+/** El mismo tope que aplica el backend (incidents.repository.js). */
+export const MAX_MEDIDAS_INMEDIATAS = 1000;
 
 export interface AddInvestigationData {
     tipo: 'prevencionista' | 'jefe_directo' | 'comite_paritario';
@@ -293,6 +302,15 @@ export const incidentsApi = {
             body: JSON.stringify(data),
         }),
 
+    // Adjunta fotos ya subidas a S3. Solo agrega claves, y la puede usar quien
+    // reportó el caso aunque no tenga `incidentes.reportar` (el PUT de arriba
+    // sí lo exige, y por eso las fotos de un trabajador se perdían).
+    agregarEvidencias: (id: string, evidencias: string[]) =>
+        apiRequest<{ evidencias: string[] }>(`/incidents/${id}/evidencias`, {
+            method: 'POST',
+            body: JSON.stringify({ evidencias }),
+        }),
+
     uploadEvidence: async ({ archivo, ...data }: UploadEvidenceData) => {
         const checksumSha256 = await huellaSha256(archivo);
         const res = await apiRequest<Omit<UploadEvidenceResponse, 'uploadHeaders'>>('/incidents/upload-evidence', {
@@ -304,7 +322,7 @@ export const incidentsApi = {
     },
 
     getStats: (params?: IncidentStatsParams) => {
-        const query = params ? new URLSearchParams(params as any).toString() : '';
+        const query = params ? new URLSearchParams(params as unknown as Record<string, string>).toString() : '';
         return apiRequest<IncidentStats>(`/incidents/stats${query ? `?${query}` : ''}`);
     },
 
@@ -349,7 +367,7 @@ export const incidentsApi = {
     // Seguimiento del estado de una medida correctiva (Art. 71): pendiente ->
     // en_proceso -> completada -> verificada. Insumo de la Fase ACT.
     updateMedidaEstado: (incidentId: string, numero: string | number, estado: 'pendiente' | 'en_proceso' | 'completada' | 'verificada') =>
-        apiRequest<{ incident: Incident; medidas: any[] }>(`/incidents/${incidentId}/medidas/${encodeURIComponent(String(numero))}`, {
+        apiRequest<{ incident: Incident; medidas: unknown[] }>(`/incidents/${incidentId}/medidas/${encodeURIComponent(String(numero))}`, {
             method: 'PUT',
             body: JSON.stringify({ estado }),
         }),

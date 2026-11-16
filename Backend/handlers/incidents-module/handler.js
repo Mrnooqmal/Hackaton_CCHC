@@ -54,6 +54,26 @@ const puedeLeer = (incidente, sesion) => Boolean(incidente) && (veHistorial(sesi
 const noEncontrado = () => jsonResponse({ success: false, error: 'Incidente no encontrado' }, 404);
 const sinPermiso = (mensaje) => jsonResponse({ success: false, error: mensaje }, 403);
 
+/**
+ * Quién puede subir y adjuntar evidencia a un incidente: quien lo reportó o
+ * quien gestiona incidentes (`incidentes.reportar`). Devuelve la respuesta de
+ * rechazo, o null si puede.
+ *
+ * La usan `POST /incidents/upload-evidence` (firmar la subida) y
+ * `POST /incidents/{id}/evidencias` (adjuntar la clave), para que las dos
+ * rutas no se desalineen: antes la primera le firmaba a cualquiera de la
+ * empresa una subida a la carpeta de cualquier incidente.
+ *
+ * Lo que no puede leer, ni sabe que existe: el mismo 404 que `get`. Lo que
+ * puede leer (con historial) pero no gestionar: 403.
+ */
+const rechazoParaEvidencia = (incidente, sesion) => {
+    if (!incidente) return noEncontrado();
+    if (incidente.reportadoPor === sesion.personaId || sesionPuede(sesion, PERMISSIONS.INCIDENTES_REPORTAR)) return null;
+    if (!puedeLeer(incidente, sesion)) return noEncontrado();
+    return sinPermiso('Solo quien reportó el caso puede adjuntarle evidencia.');
+};
+
 // CORS Options Handler
 router.options('*', () => {
     return {
@@ -78,6 +98,7 @@ router
     .post('/incidents/quick-report', quickReport)
     .get('/incidents/:id', get)
     .put('/incidents/:id', update)
+    .post('/incidents/:id/evidencias', agregarEvidencias)
     .put('/incidents/:id/calificar-accidente', calificarAccidente)
     .post('/incidents/:id/viewed', markViewed)
     .post('/incidents/:id/investigations', addInvestigation)
@@ -297,6 +318,64 @@ async function update(request) {
     }
 }
 
+// Topes de evidencia: los mismos para quien reporta y para quien gestiona. Diez
+// por envío cubre una ráfaga de fotos en terreno; veinte en total evita que un
+// incidente se vuelva un depósito de archivos.
+const MAX_EVIDENCIAS_POR_ENVIO = 10;
+const MAX_EVIDENCIAS_TOTAL = 20;
+// Lo que arma `uploadEvidence` después del prefijo: `{uuid}.{extensión}`. Deja
+// fuera los documentos del caso (`diat-{uuid}.pdf`), que no son evidencia, y
+// cualquier intento de salir del prefijo con `/` o `..`.
+const NOMBRE_EVIDENCIA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[^/\\]{1,40}$/i;
+
+/**
+ * Adjunta fotos a un incidente (fase 1 del rediseño, hueco 1).
+ *
+ * El formulario creaba el reporte y adjuntaba las fotos con `PUT /incidents/{id}`,
+ * que exige `incidentes.reportar`. Un trabajador que reporta un hallazgo no lo
+ * tiene: recibía 403, las fotos quedaban subidas a S3 pero fuera del reporte, y
+ * la pantalla decía "reportado correctamente". Abrir el `PUT` a quien reportó le
+ * habría dado también el estado, las investigaciones y los documentos; esta ruta
+ * solo AGREGA claves de evidencia, y solo de este incidente y esta empresa.
+ */
+async function agregarEvidencias(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaEvidencia(incidente, sesion);
+        if (rechazo) return rechazo;
+
+        const body = parseBody(request.event);
+        const claves = Array.isArray(body.evidencias) ? [...new Set(body.evidencias)] : [];
+        if (claves.length === 0) {
+            return jsonResponse({ success: false, error: 'Faltan las claves de evidencia' }, 400);
+        }
+        if (claves.length > MAX_EVIDENCIAS_POR_ENVIO) {
+            return jsonResponse({ success: false, error: `Máximo ${MAX_EVIDENCIAS_POR_ENVIO} archivos por envío` }, 400);
+        }
+        // La clave tiene que ser de ESTA empresa y de ESTE incidente: con la clave
+        // de otro se le daría a quien reporta una URL firmada de un archivo ajeno
+        // (`get` firma todo lo que haya en `evidencias`).
+        const prefijo = `tenants/${sesion.tenantId}/incidentes/${incidente.incidentId}/`;
+        const valida = (c) => typeof c === 'string' && c.startsWith(prefijo) && NOMBRE_EVIDENCIA.test(c.slice(prefijo.length));
+        if (!claves.every(valida)) {
+            return jsonResponse({ success: false, error: 'Clave de evidencia inválida para este incidente' }, 400);
+        }
+
+        const previas = Array.isArray(incidente.evidencias) ? incidente.evidencias : [];
+        const nuevas = claves.filter((c) => !previas.includes(c));
+        if (previas.length + nuevas.length > MAX_EVIDENCIAS_TOTAL) {
+            return jsonResponse({ success: false, error: `El caso admite hasta ${MAX_EVIDENCIAS_TOTAL} archivos de evidencia` }, 400);
+        }
+        const result = await incidentsRepo.agregarEvidencias(incidente.incidentId, nuevas, incidente.updatedAt);
+        return jsonResponse({ success: true, data: { evidencias: result.evidencias } });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
 async function calificarAccidente(request) {
     try {
         const ses = sesionDe(request);
@@ -320,9 +399,18 @@ async function uploadEvidence(request) {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
         const body = parseBody(request.event);
-        // La evidencia se adjunta a un incidente de la propia empresa; sin id se
-        // sube al prefijo temporal, que no expone nada de nadie.
-        if (body.incidentId && !await incidenteDelTenant(body.incidentId, ses.sesion)) return noEncontrado();
+        // Con id, la subida va a la carpeta de ese incidente: solo para quien
+        // puede adjuntarle evidencia (la misma regla que al adjuntar). Sin id se
+        // sube al prefijo temporal `sin-incidente`, que no expone nada de nadie y
+        // que `agregarEvidencias` no acepta; el formulario actual siempre manda
+        // el id, porque sube las fotos después de crear el reporte.
+        if (body.incidentId !== undefined && body.incidentId !== null && body.incidentId !== '') {
+            if (typeof body.incidentId !== 'string') {
+                return jsonResponse({ success: false, error: 'incidentId inválido' }, 400);
+            }
+            const rechazo = rechazoParaEvidencia(await incidenteDelTenant(body.incidentId, ses.sesion), ses.sesion);
+            if (rechazo) return rechazo;
+        }
         // La empresa sale de la sesión: es la que arma el prefijo de la clave.
         const result = await incidentsRepo.uploadEvidence({ ...body, tenantId: ses.sesion.tenantId });
         return jsonResponse(result);
