@@ -28,6 +28,7 @@ const { ObraService } = require('../lib/services/ObraService');
 const { eventBus } = require('../lib/events/EventBus');
 const incidentes = require('../handlers/incidents-module/handler');
 const { IncidentsRepository } = require('../handlers/incidents-module/incidents.repository');
+const { DEFAULT_ROLE_PRESETS } = require('../lib/permissions');
 
 let doble; let emitir; let consola; let snsSend; let publicados; let errores;
 let A; let B; let obraA; let trabajadora; let prevA; let prevInactiva; let prevB; let supervisora;
@@ -128,12 +129,90 @@ test('el aviso de un incidente no lleva el nombre ni el RUT del afectado ni el r
     assert.ok(sns.includes(id));
 });
 
-test('getPrevencionistas: solo los activos de la empresa pedida, nunca de otra', async () => {
+test('destinatariosDelAviso: solo los activos de la empresa pedida, nunca de otra', async () => {
     const repo = new IncidentsRepository();
-    const deA = (await repo.getPrevencionistas(A)).map((p) => p.personaId);
+    const deA = (await repo.destinatariosDelAviso(A)).map((p) => p.personaId);
     assert.deepEqual(deA, [prevA]);
     assert.ok(!deA.includes(prevB) && !deA.includes(prevInactiva) && !deA.includes(supervisora));
-    assert.deepEqual((await repo.getPrevencionistas(B)).map((p) => p.personaId), [prevB]);
+    assert.deepEqual((await repo.destinatariosDelAviso(B)).map((p) => p.personaId), [prevB]);
+});
+
+// ─── Destinatarios por PERMISO (incidentes.calificar_accidente), no por rol ──
+
+/** RUT válido a partir del número, para crear personas sin repetir. */
+const rutCon = (n) => {
+    let suma = 0; let mult = 2;
+    for (const d of String(n).split('').reverse()) { suma += Number(d) * mult; mult = mult === 7 ? 2 : mult + 1; }
+    const r = 11 - (suma % 11);
+    return `${n}-${r === 11 ? '0' : r === 10 ? 'K' : r}`;
+};
+let siguienteRut = 17000000;
+const crearActiva = async (tenantId, rol, nombre) => {
+    const id = (await new PersonaService().crear(tenantId, { rut: rutCon(siguienteRut++), nombre, rol })).persona.personaId;
+    activar(id);
+    return id;
+};
+const destinatarios = async (tenantId) => (await new IncidentsRepository().destinatariosDelAviso(tenantId)).map((p) => p.personaId).sort();
+
+test('roles por defecto: reciben el aviso prevencionista, jefe de obra y admin; no supervisor ni trabajador', async () => {
+    const jefe = await crearActiva(A, 'jefe_obra', 'Jaime');
+    const admin = await crearActiva(A, 'admin', 'Ana');
+    const trabajadorActivo = await crearActiva(A, 'trabajador', 'Tomás');
+    const ids = await destinatarios(A);
+    assert.deepEqual(ids, [prevA, jefe, admin].sort());
+    assert.ok(!ids.includes(supervisora) && !ids.includes(trabajadorActivo));
+
+    // Y de punta a punta: un reporte de la trabajadora les llega a los tres.
+    const res = await pedir(trabajadora, 'actividades.ver', 'POST', '/incidents', {
+        clasificacion: 'hallazgo', tipo: 'condicion_subestandar', descripcion: RELATO, obraId: obraA,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    for (const quien of [prevA, jefe, admin]) assert.equal(bandejaDe(quien).length, 1);
+    for (const quien of [supervisora, trabajadorActivo]) assert.equal(bandejaDe(quien).length, 0);
+});
+
+test('un rol personalizado con incidentes.calificar_accidente recibe el aviso; uno sin ese permiso, no', async () => {
+    await new TenantService().updateConfig(A, { roles: [
+        { nombre: 'Encargado SST', permisos: ['incidentes.calificar_accidente', 'incidentes.historial'] },
+        { nombre: 'Bodeguero', permisos: ['actividades.ver', 'incidentes.historial'] },
+    ] });
+    const encargado = await crearActiva(A, 'encargado_sst', 'Elena');
+    const bodeguero = await crearActiva(A, 'bodeguero', 'Bruno');
+    const ids = await destinatarios(A);
+    assert.ok(ids.includes(encargado), `el Encargado SST no está: ${ids}`);
+    assert.ok(!ids.includes(bodeguero));
+});
+
+test('una empresa que le quitó el permiso a su rol "prevencionista": ese prevencionista NO recibe el aviso', async () => {
+    // Consecuencia buscada de avisar por permiso: lo que manda es la definición
+    // de roles de la empresa, no el nombre del rol.
+    const sinCalificar = DEFAULT_ROLE_PRESETS.prevencionista.filter((p) => p !== 'incidentes.calificar_accidente');
+    await new TenantService().updateConfig(A, { roles: [
+        { id: 'prevencionista', tipo: 'prevencionista', nombre: 'Prevencionista', permisos: sinCalificar },
+    ] });
+    assert.ok(!(await destinatarios(A)).includes(prevA));
+    // La otra empresa conserva sus roles: su prevencionista sí.
+    assert.deepEqual(await destinatarios(B), [prevB]);
+});
+
+test('si la definición de roles no se puede leer, se avisa con los roles por defecto y queda constancia', async () => {
+    await new TenantService().updateConfig(A, { roles: [
+        { id: 'prevencionista', tipo: 'prevencionista', nombre: 'Prevencionista', permisos: [] },
+    ] });
+    const original = DynamoDBDocumentClient.prototype.send;
+    DynamoDBDocumentClient.prototype.send = async function (cmd) {
+        if (cmd.input?.TableName === 'TENANTS_TABLE') throw new Error('tenants caído');
+        return original.call(this, cmd);
+    };
+    let ids;
+    try {
+        ids = await destinatarios(A);
+    } finally {
+        DynamoDBDocumentClient.prototype.send = original;
+    }
+    // Con los presets, el prevencionista vuelve a tener el permiso.
+    assert.deepEqual(ids, [prevA]);
+    assert.ok(errores.some((e) => e.includes('FALLO_DEPENDENCIA') && e.includes('incidente.aviso.roles')), errores.join(' | '));
 });
 
 test('ni a otra empresa ni a quien reportó: el prevencionista que reporta no se avisa a sí mismo', async () => {

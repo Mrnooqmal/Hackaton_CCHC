@@ -7,10 +7,18 @@ const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
 const { hmacRut } = require('../../lib/cifradoCampo');
-const { validateRut, normalizeRol } = require('../../lib/utils/validation');
+const { validateRut } = require('../../lib/utils/validation');
 const { construirMensaje } = require('../../lib/bandeja');
 const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
+const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
+const { TenantService } = require('../../lib/services/TenantService');
+
+// Quién recibe el aviso de un reporte nuevo: quien puede clasificarlo, que es
+// justo lo que el aviso le pide hacer. Con los roles por defecto son
+// prevencionista, jefe de obra y admin; no supervisor ni trabajador. Cambiar a
+// quién se avisa es cambiar esta línea.
+const PERMISO_AVISO_REPORTE = PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE;
 
 // Cómo se nombra cada tipo en el aviso a prevención (todos masculinos: "un …").
 const TIPO_EN_AVISO = {
@@ -100,14 +108,32 @@ class IncidentsRepository {
     }
 
     /**
-     * Prevencionistas activos de UNA empresa: la partición `TENANT#{tenantId}`
-     * no ve a nadie de otra. El rol se compara normalizado (como el resto de
-     * los permisos), porque hay fichas con "Prevencionista" o con espacios.
+     * A quiénes avisar de un reporte nuevo: las personas ACTIVAS de UNA empresa
+     * (la partición `TENANT#{tenantId}` no ve a nadie de otra) que tienen el
+     * permiso efectivo `PERMISO_AVISO_REPORTE`.
      *
-     * Lanza si la lectura falla: quien llama decide cómo degradar.
+     * Se busca por permiso y no por nombre de rol: una empresa que creó su rol
+     * "Encargado SST" con permisos de prevención tiene que recibir el aviso, y
+     * una que le quitó ese permiso a su "Prevencionista" no. Los permisos se
+     * resuelven igual que en el autorizador: `TenantService.getById` →
+     * `toSafeFormat()` → `personaPuede`, con una sola lectura del tenant por aviso.
+     *
+     * Si el tenant no se puede leer, se degrada a los roles por defecto
+     * (`personaPuede` con tenant `null` usa los presets) en vez de a nadie: un
+     * aviso que llega a los roles estándar es mejor que un reporte que nadie ve.
+     * Queda constancia (`FALLO_DEPENDENCIA`, `incidente.aviso.roles`).
+     *
+     * Lanza si falla la lectura de personas: quien llama decide cómo degradar.
      */
-    async getPrevencionistas(tenantId) {
+    async destinatariosDelAviso(tenantId) {
         if (!tenantId) return [];
+        const tenant = await conNeutro(
+            'incidente.aviso.roles',
+            () => new TenantService().getById(tenantId),
+            null,
+            { tenantId }
+        );
+        const tenantSafe = tenant ? tenant.toSafeFormat() : null;
         const items = [];
         let desde;
         do {
@@ -126,7 +152,7 @@ class IncidentsRepository {
             desde = result.LastEvaluatedKey;
         } while (desde);
         return items
-            .filter((item) => item.personaId && normalizeRol(item.rol) === 'prevencionista')
+            .filter((item) => item.personaId && personaPuede(item, tenantSafe, PERMISO_AVISO_REPORTE))
             .map((item) => ({ userId: item.personaId, personaId: item.personaId }));
     }
 
@@ -159,12 +185,12 @@ class IncidentsRepository {
 
             const destinatarios = (await conNeutro(
                 'incidente.aviso.destinatarios',
-                () => this.getPrevencionistas(incident.tenantId),
+                () => this.destinatariosDelAviso(incident.tenantId),
                 [],
                 { incidentId: incident.incidentId }
             )).filter((p) => p.personaId !== incident.reportadoPor);
             if (destinatarios.length === 0) {
-                console.log('[AVISO] incidente', incident.incidentId, '| sin prevencionistas a quienes avisar');
+                console.log('[AVISO] incidente', incident.incidentId, '| sin destinatarios a quienes avisar');
                 return;
             }
 

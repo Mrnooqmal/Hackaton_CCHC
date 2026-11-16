@@ -87,11 +87,15 @@ Corregidos en la fase 1: los huecos 1, 2, 6, 7 y 8.
 
 Decisión sobre el aviso a prevención: lleva solo el tipo, la obra, la fecha, la gravedad y el enlace al caso. No lleva el nombre ni el RUT del afectado, ni el relato. No se avisa a quien reportó.
 
-Quedan abiertos, sin decidir:
+Decididos el 15 de noviembre:
 
-9. **Un prevencionista sin enrolar no recibe el aviso.** El aviso va solo a personas con rol prevencionista y estado `activo`.
-10. **Un rol personalizado con permisos de prevención tampoco lo recibe.** El aviso busca por nombre de rol, no por permiso.
-11. **El reporte rápido guarda el `personaId` de quien reporta en el campo del nombre del trabajador.**
+9. **El aviso va solo a personas en estado `activo`.** Quien no terminó de enrolarse no lo recibe. Se queda así.
+10. **A quién se avisa lo decide un permiso, no el nombre del rol.** Recibe el aviso quien tiene `incidentes.calificar_accidente`, el permiso de quien clasifica el caso (constante `PERMISO_AVISO_REPORTE` en `incidents.repository.js`).
+    - Con los roles por defecto lo reciben prevencionista, jefe de obra y admin. No lo reciben supervisor ni trabajador.
+    - Un rol personalizado con ese permiso lo recibe. Si una empresa le quita el permiso a su rol de prevencionista, ese rol deja de recibirlo.
+    - El admin lo recibe siempre, aunque la empresa haya editado sus permisos.
+    - Si no se pueden leer los roles de la empresa, se usan los permisos por defecto de cada rol.
+11. **El reporte rápido guarda el `personaId` de quien reporta en el campo del nombre del trabajador.** No se toca.
 
 ## 7. Fases
 
@@ -123,7 +127,7 @@ Cada fase termina con sus pruebas pasando.
 
 | Fase | Estado |
 |---|---|
-| 1. Reportar de punta a punta | Implementada el 15 de noviembre (1456 pruebas pasan, build y lint sin errores). Falta probarla en el navegador |
+| 1. Reportar de punta a punta | Implementada el 15 de noviembre (1460 pruebas pasan, build y lint sin errores). Falta probarla en el navegador |
 | 2. Carpeta del caso | Pendiente |
 | 3. Clasificación, medidas y cierre | Pendiente |
 | 4. FUF y repositorio | Pendiente |
