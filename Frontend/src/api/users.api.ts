@@ -67,14 +67,6 @@ export const usersApi = {
         return personasApi.update(tenantId, id, data as any);
     },
 
-    resetPassword: (id: string) => {
-        const tenantId = localStorage.getItem('tenant_id') || '';
-        // NOTA: resetPassword endpoint podría requerir mapeo especial, por ahora lo pasamos a un update genérico o endpoint si existe
-        return apiRequest<{ message: string; passwordTemporal: string }>(`/personas/${id}/reset-password?tenantId=${tenantId}`, {
-            method: 'POST',
-        });
-    },
-
     setPin: (id: string, pin: string) => {
         const tenantId = localStorage.getItem('tenant_id') || '';
         return personasApi.setPin(tenantId, id, pin);

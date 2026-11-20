@@ -442,7 +442,7 @@ test('sin permiso no se resetea la contraseña de nadie', async () => {
         {},
     ));
 
-    assert.equal(res.statusCode, 403);
+    assert.equal(res.statusCode, 404, 'la ruta ya no existe');
     assert.equal(store.escrituras.length, 0, 'no se generó ninguna contraseña temporal');
 });
 

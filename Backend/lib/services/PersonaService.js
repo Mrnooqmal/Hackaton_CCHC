@@ -42,7 +42,6 @@ const errorPin = (mensaje, codigo) => Object.assign(new Error(mensaje), { codigo
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const cifradoCampo = require('../cifradoCampo');
-const { revocarSesionesDe } = require('../auth/sesion');
 const { problemaEdadMinima } = require('../gobernanza/consentimiento');
 
 /** Lanza un 400 si la fecha de nacimiento es de un menor de edad o no sirve. */
@@ -373,18 +372,24 @@ class PersonaService {
     }
 
     /**
-     * Propaga una contraseña recién cambiada a las demás fichas (otros tenants)
-     * de la misma persona, para que la contraseña siga siendo "una sola" para
-     * toda la identidad. Recibe la ficha ya actualizada (origen) + la
-     * contraseña en texto plano (necesaria para recalcular el hash con la sal
-     * propia de cada ficha hermana).
+     * Propaga una contraseña recién cambiada a las fichas hermanas (otros
+     * tenants) que `cuales` acepta. Recibe la ficha origen (con el RUT
+     * descifrado) + la contraseña en texto plano (necesaria para recalcular el
+     * hash con la sal propia de cada ficha hermana).
      *
+     * @param {(hermana: Persona) => Promise<boolean>|boolean} opciones.cuales -
+     *   obligatorio: en qué fichas demostró control quien cambia la contraseña.
      * @returns {Promise<string[]>} los `personaId` de las fichas hermanas que
      *   cambió: sus sesiones abiertas también hay que revocarlas (D-26).
      */
-    async propagarPassword(personaOrigen, passwordPlano, { passwordTemporal = false } = {}) {
+    async propagarPassword(personaOrigen, passwordPlano, { passwordTemporal = false, cuales } = {}) {
+        if (typeof cuales !== 'function') throw new Error('propagarPassword: falta el criterio de las fichas hermanas');
+        if (!personaOrigen?.rut) throw new Error('propagarPassword: la ficha origen no trae el RUT');
         const todas = await this.getAllByRutGlobal(personaOrigen.rut);
-        const hermanas = todas.filter((p) => p.personaId !== personaOrigen.personaId && p.tieneAccesoWeb);
+        const hermanas = [];
+        for (const p of todas) {
+            if (p.personaId !== personaOrigen.personaId && p.tieneAccesoWeb && await cuales(p)) hermanas.push(p);
+        }
         const now = new Date().toISOString();
 
         // Los hashes se calculan en fila, no en paralelo: scrypt reserva 32 MB
@@ -999,43 +1004,6 @@ class PersonaService {
             }
         };
     }
-    /**
-     * Resetear contraseña — genera nueva password temporal y la propaga a las
-     * demás fichas (otras empresas) de la misma persona.
-     */
-    async resetPassword(tenantId, personaId) {
-        const persona = await this.getById(personaId);
-        if (!persona) throw new Error('Persona no encontrada');
-
-        const passwordTemporal = generateTempPassword(10);
-        const passwordHash = await hashPassword(passwordTemporal, personaId);
-        const now = new Date().toISOString();
-
-        await this.dynamo.send(new UpdateCommand({
-            TableName: this.table,
-            Key: {
-                PK: `TENANT#${tenantId}`,
-                SK: `PERSONA#${personaId}`
-            },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-                ':passwordHash': passwordHash,
-                ':passwordTemporal': true,
-                ':updatedAt': now
-            }
-        }));
-        const hermanas = await this.propagarPassword(persona, passwordTemporal, { passwordTemporal: true });
-        // Quien pidió el restablecimiento no puede entrar; quien tenga una sesión
-        // abierta con la contraseña anterior, tampoco (D-26).
-        await revocarSesionesDe([personaId, ...hermanas]);
-
-        return {
-            message: 'Contraseña reseteada exitosamente',
-            passwordTemporal,
-            personaId
-        };
-    }
-
     /**
      * Desvincular una persona de la empresa (soft delete).
      * Marca estado='desvinculado' y registra quién y cuándo desvinculó.
