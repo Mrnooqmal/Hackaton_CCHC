@@ -24,10 +24,7 @@ custom:
     prod: 90
     dev: 14
 
-  # A dónde llegan las alarmas de operación. Es una casilla personal mientras el
-  # equipo no tenga una de grupo; cambiarla acá y desplegar basta, pero la nueva
-  # dirección debe confirmar la suscripción por correo antes de recibir nada.
-  destinatarioAlertas: ${env:ALERTAS_EMAIL, 'atorres@thecodecookers.cl'}
+  destinatarioAlertas: soporte@buildandserve.cl
 
   # Cada backend acepta el frontend de su ambiente (D-20). El de dev sale de la
   # salida del stack del frontend, así que ese stack se despliega primero. Dev ya
