@@ -19,7 +19,6 @@ import Incidents from './pages/Incidents';
 import IncidentReportar from './pages/IncidentReportar';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
-// Legacy UserManagement replaced by PersonasManagement
 import ChangePassword from './pages/ChangePassword';
 import SincronizadorFirmas from './components/firmas/SincronizadorFirmas';
 import FirmasEnRevision from './pages/FirmasEnRevision';

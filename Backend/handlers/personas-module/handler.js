@@ -2160,19 +2160,6 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             }
         }
 
-        // POST /personas/{id}/reset-password — Resetear contraseña.
-        // Devuelve la contraseña temporal en la respuesta: sin permiso era una toma
-        // de cuenta de un solo paso sobre cualquier persona conocida.
-        if (method === 'POST' && personaId && action === 'reset-password') {
-            if (!sesion) return sesionRes.respuesta;
-            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
-                return error('No tienes permiso para resetear contraseñas', 403);
-            }
-            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
-            const result = await personaService.resetPassword(tenantId, personaId);
-            return success(result);
-        }
-
         return error('Ruta no encontrada', 404);
     } catch (err) {
         console.error('Error in personas handler:', err);
