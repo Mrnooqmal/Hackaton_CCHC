@@ -27,8 +27,6 @@ export type { LoadingSpinnerProps } from './LoadingSpinner';
 export { default as AlertBanner } from './AlertBanner';
 export type { AlertBannerProps, AlertVariant } from './AlertBanner';
 
-export { default as CredentialCard } from './CredentialCard';
-export type { CredentialCardProps } from './CredentialCard';
 
 export { default as PageHeader } from './PageHeader';
 export type { PageHeaderProps } from './PageHeader';

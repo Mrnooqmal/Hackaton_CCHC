@@ -5,8 +5,9 @@ El **trabajador** es la persona en terreno. Lo suyo es **firmar** lo que le corr
 
 ## Lo que te toca
 
-1. **Entrar por primera vez**: tu RUT y, como contraseña inicial, los cuatro primeros dígitos de
-   tu RUT. Después creas tu contraseña y tu **PIN de firma**. Ver [Cómo ingresar](/empezar/ingresar).
+1. **Entrar por primera vez**: en la obra, tu empresa activa tu acceso y te da una **contraseña
+   temporal**; o, si tienes correo, te llega un enlace para elegir tu contraseña. Después creas tu
+   contraseña y tu **PIN de firma**. Ver [Cómo ingresar](/empezar/ingresar).
 2. **Revisar tu Inicio**: ahí está todo lo que tienes pendiente. Si te faltan firmas
    **obligatorias para entrar a la obra**, aparece primero un aviso: resuélvelo antes que nada.
    Ver [Tu pantalla de Inicio](/empezar/elegir-obra#tu-pantalla-de-inicio).

@@ -43,6 +43,7 @@ import { useObraContext } from '../context/ObraContext';
 import { Modal, Select, IdentityPanel } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
 import PinDeFirma, { type PinRestablecido } from '../components/PinDeFirma';
+import AccesoPlataforma from '../components/AccesoPlataforma';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
@@ -105,6 +106,7 @@ export default function WorkerDetail() {
     const canVigilancia = hasPermission(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
     const canDesvincular = hasPermission(PERMISSIONS.PERSONA_DESVINCULAR);
     const canRestablecerPin = hasPermission(PERMISSIONS.PERSONA_RESTABLECER_PIN);
+    const canActivarAcceso = hasPermission(PERMISSIONS.PERSONA_ACTIVAR_ACCESO);
     // Editar datos sensibles de la persona (cargo, teléfono, etc.): mismo permiso
     // que gestionar/añadir personas.
     const canEditarDatos = hasPermission(PERMISSIONS.PERSONAS_CREAR);
@@ -1064,6 +1066,14 @@ Generado por PrevencionApp
                                     </div>
                                 )}
                             </section>
+
+                            <AccesoPlataforma
+                                tenantId={authTenantId}
+                                persona={worker}
+                                puedeActivar={canActivarAcceso}
+                                esLaMisma={worker.personaId === user?.personaId}
+                                onCambio={loadWorkerData}
+                            />
 
                             <PinDeFirma
                                 tenantId={authTenantId}

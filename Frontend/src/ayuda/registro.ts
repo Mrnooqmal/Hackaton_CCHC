@@ -25,6 +25,7 @@ export const PANTALLAS = {
     personas: { ruta: '/personas', descripcion: 'Personas', manual: 'empresa/personas' },
     'persona-nueva': { ruta: '/personas/nueva', descripcion: 'Agregar persona', manual: 'empresa/personas' },
     'personas-carga-masiva': { ruta: '/personas/carga-masiva', descripcion: 'Carga masiva de personas', manual: 'empresa/personas' },
+    'personas-activacion': { ruta: '/personas/activacion', descripcion: 'Activar el acceso de personas nuevas', manual: 'empresa/personas' },
     'persona-detalle': { ruta: '/personas/:rut', descripcion: 'Ficha de una persona', manual: 'empresa/personas' },
     // Ruta antigua de la ficha, todavía en App.tsx (los enlaces viejos llegan aquí).
     'persona-detalle-legado': { ruta: '/workers/:rut', descripcion: 'Ficha de una persona (ruta antigua)', manual: 'empresa/personas' },
