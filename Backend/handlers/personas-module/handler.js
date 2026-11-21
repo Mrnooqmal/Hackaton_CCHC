@@ -119,7 +119,7 @@ const TEMPLATE_INSTRUCTIONS = [
     '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
     '4. obra: elige la obra del desplegable (muestra "Nombre (CODIGO)"). Tambien puedes escribir el codigo (ej. OBRA-001). Para asignar a varias obras, separalas por coma. Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. supervisor: RUT del supervisor de la cuadrilla. Puede venir en este mismo Excel con rol "Supervisor". Si se deja vacio, la persona queda sin cuadrilla y se le asigna un supervisor despues.',
-    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
+    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional. La columna viene en formato texto para que Excel no la convierta en fecha: escribela tal cual, con guiones.',
     '7. El email es opcional. Las personas quedan pendientes de activacion: el acceso se activa en terreno desde su ficha o desde la lista de pendientes. Si tiene email y se marca la opcion al cargar, se le envia un enlace para que elija su contrasena.',
     '8. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '9. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
@@ -903,7 +903,7 @@ const RELACION_EMERGENCIA_OPCIONES = [
 ];
 
 // Columnas (1-based) de la hoja Personas que llevan desplegable.
-const COL = { rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
+const COL = { fechaNacimiento: 5, rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
 const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
 
 // Etiqueta de obra para el desplegable de la plantilla y su resolución: "Nombre
@@ -942,6 +942,7 @@ const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
     // Encabezado en negrita.
     ws.getRow(1).font = { bold: true };
     ws.columns.forEach((col) => { col.width = 20; });
+    ws.getColumn(COL.fechaNacimiento).numFmt = '@';
 
     // Rangos de cada lista en la hoja oculta.
     const rango = (letra, n) => `Listas!$${letra}$1:$${letra}$${Math.max(n, 1)}`;
@@ -1176,6 +1177,7 @@ const dependenciasCarga = () => ({
 });
 
 module.exports.dependenciasCarga = dependenciasCarga;
+module.exports.createTemplateBuffer = createTemplateBuffer;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
