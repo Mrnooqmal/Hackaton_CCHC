@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { onboardingApi } from '../api/onboarding.api';
-import type { LicenciaValida } from '../api/onboarding.api';
+import type { LicenciaValida, DisponibilidadEmpresa } from '../api/onboarding.api';
 import {
     FiArrowRight, FiArrowLeft, FiCheck, FiCheckCircle, FiLock, FiEye, FiEyeOff, FiMail,
     FiPlus,
@@ -130,6 +130,13 @@ export default function Onboarding() {
     const logo = logos.claro;
     const logoOscuro = logos.mismo ? null : logos.oscuro;
 
+    // Disponibilidad del nombre y el RUT de la empresa, consultada mientras se
+    // escriben. Se guarda con la clave de lo consultado: una respuesta vieja no
+    // vale para lo que hay escrito ahora.
+    const empresaNombre = empresa.nombre.trim();
+    const claveEmpresa = `${empresaNombre}|${empresa.rutEmpresa}`;
+    const [disponibilidad, setDisponibilidad] = useState<{ clave: string } & DisponibilidadEmpresa | null>(null);
+
     useEffect(() => {
         let vigente = true;
         if (!token) { setValidando(false); setEnlaceInvalido(true); return; }
@@ -157,11 +164,29 @@ export default function Onboarding() {
         return () => { vigente = false; };
     }, [token]);
 
+    useEffect(() => {
+        if (!licencia || empresaNombre.length < 3 || !rutValido(empresa.rutEmpresa)) return;
+        let vigente = true;
+        const espera = setTimeout(async () => {
+            try {
+                const res = await onboardingApi.disponibilidad(token, { nombre: empresaNombre, rutEmpresa: empresa.rutEmpresa });
+                if (!vigente) return;
+                setDisponibilidad({ clave: claveEmpresa, ...(res.success && res.data ? res.data : { nombre: null, rutEmpresa: null }) });
+            } catch {
+                // Si no se pudo comprobar, no se bloquea: el alta lo vuelve a revisar al final.
+                if (vigente) setDisponibilidad({ clave: claveEmpresa, nombre: null, rutEmpresa: null });
+            }
+        }, 450);
+        return () => { vigente = false; clearTimeout(espera); };
+    }, [licencia, token, empresaNombre, empresa.rutEmpresa, claveEmpresa]);
+
     const datosOk = admin.nombre.trim().length >= 2
         && admin.apellidoPaterno.trim().length >= 2
         && rutValido(admin.rut)
         && fechaOk(admin.fechaNacimiento);
-    const empresaOk = empresa.nombre.trim().length >= 3 && rutValido(empresa.rutEmpresa);
+    const disponibilidadActual = disponibilidad?.clave === claveEmpresa ? disponibilidad : null;
+    const empresaOk = empresaNombre.length >= 3 && rutValido(empresa.rutEmpresa)
+        && !!disponibilidadActual && !disponibilidadActual.nombre && !disponibilidadActual.rutEmpresa;
     const colorOk = COLOR_HEX.test(color);
     const requisitos = [
         { label: `${MIN_PASSWORD} caracteres o más`, ok: admin.password.length >= MIN_PASSWORD },
@@ -398,8 +423,11 @@ export default function Onboarding() {
                                     value={empresa.nombre}
                                     onChange={(e) => setEmpresa({ ...empresa, nombre: e.target.value })}
                                     placeholder="Constructora Ejemplo SpA" />
-                                {empresa.nombre && empresa.nombre.trim().length < 3 && (
+                                {empresa.nombre && empresaNombre.length < 3 && (
                                     <span className="onb-field-hint">Escribe el nombre completo de la empresa</span>
+                                )}
+                                {disponibilidadActual?.nombre && (
+                                    <span className="onb-field-hint onb-field-hint--error" role="alert">{disponibilidadActual.nombre}</span>
                                 )}
                             </div>
                             <div className="lp-field">
@@ -410,6 +438,9 @@ export default function Onboarding() {
                                     placeholder="76.111.999-0" />
                                 {empresa.rutEmpresa && !rutValido(empresa.rutEmpresa) && (
                                     <span className="onb-field-hint onb-field-hint--error">El RUT no es válido</span>
+                                )}
+                                {disponibilidadActual?.rutEmpresa && (
+                                    <span className="onb-field-hint onb-field-hint--error" role="alert">{disponibilidadActual.rutEmpresa}</span>
                                 )}
                             </div>
                             <button type="submit" className="lp-submit" disabled={!empresaOk}>

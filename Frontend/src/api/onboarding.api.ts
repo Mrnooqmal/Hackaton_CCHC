@@ -44,6 +44,12 @@ export interface OnboardingData {
     };
 }
 
+/** El conflicto de cada campo, o null si está libre (o no se consultó). */
+export interface DisponibilidadEmpresa {
+    nombre: string | null;
+    rutEmpresa: string | null;
+}
+
 export interface OnboardingResultado {
     message: string;
     empresa: { nombre: string; rutEmpresa: string };
@@ -54,6 +60,16 @@ export const onboardingApi = {
     /** Devuelve solo lo necesario para dibujar el formulario. */
     validarLicencia: (token: string) =>
         apiRequest<LicenciaValida>(`/onboarding/licencia/${encodeURIComponent(token)}`),
+
+    /**
+     * ¿El nombre o el RUT de la empresa ya están tomados? Para avisarlo mientras
+     * se escribe. Es una ayuda: `completar` lo vuelve a comprobar todo.
+     */
+    disponibilidad: (token: string, empresa: { nombre: string; rutEmpresa: string }) =>
+        apiRequest<DisponibilidadEmpresa>('/onboarding/disponibilidad', {
+            method: 'POST',
+            body: JSON.stringify({ token, ...empresa }),
+        }),
 
     /**
      * Crea la empresa y su administrador, y consume la licencia.

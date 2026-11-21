@@ -20,7 +20,7 @@ const bloque = yml.slice(yml.indexOf('    HttpApiStage:'), yml.indexOf('\n  Reso
 const PUBLICAS = [
     'POST /auth/login', 'POST /auth/select-tenant', 'POST /auth/forgot-password', 'POST /auth/reset-password',
     'POST /auth/validate-token', 'GET /signatures/verify/{token}', 'GET /onboarding/licencia/{token}',
-    'POST /onboarding/completar', 'POST /csp/reporte',
+    'POST /onboarding/completar', 'POST /onboarding/disponibilidad', 'POST /csp/reporte',
 ];
 
 /** El nombre lógico que Serverless le da a la ruta (`HttpApiRoutePostAuthSelectDashtenant`). */

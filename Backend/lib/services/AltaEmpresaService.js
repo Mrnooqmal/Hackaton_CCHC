@@ -61,6 +61,34 @@ const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 class AltaEmpresaService {
     /**
+     * ¿Está libre la empresa? Solo el nombre y el RUT, para el paso "Empresa"
+     * del onboarding: que el conflicto se vea al escribirlo y no al final.
+     *
+     * Lo que no viene o no es válido no se consulta (queda en null): el formato
+     * ya lo avisa la interfaz, y una consulta por un RUT a medio escribir no
+     * sirve de nada. Igual que en `revisar`, una lectura que falla propaga.
+     *
+     * @returns {Promise<{nombre: string|null, rutEmpresa: string|null}>} el
+     *          conflicto de cada campo, o null si está libre o no se consultó.
+     */
+    static async disponibilidadEmpresa({ nombre, rutEmpresa }) {
+        const tenantService = new TenantService();
+        const empresa = validateRut(rutEmpresa);
+        const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : '';
+        const slug = nombreLimpio.length >= 3 ? tenantService._generarSlug(nombreLimpio) : null;
+
+        const [porSlug, porRut] = await Promise.all([
+            slug ? tenantService.getBySlug(slug) : null,
+            empresa.valid ? tenantService.getByRutEmpresa(empresa.formatted) : null,
+        ]);
+
+        return {
+            nombre: porSlug ? `Ya existe una empresa con el nombre "${nombreLimpio}"` : null,
+            rutEmpresa: porRut ? `Ya existe una empresa con el RUT ${empresa.formatted}` : null,
+        };
+    }
+
+    /**
      * Valida los datos y comprueba conflictos, SIN escribir.
      *
      * Se usa dos veces: en el ensayo del script del operador y antes de consumir
