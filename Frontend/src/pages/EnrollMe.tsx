@@ -8,7 +8,7 @@ import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
 import { LARGO_PIN } from '../utils/pin';
 import {
     FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
-    FiKey, FiLogOut, FiPhone, FiShield, FiX,
+    FiChevronRight, FiKey, FiLogOut, FiPhone, FiShield, FiX,
 } from 'react-icons/fi';
 import '../css/AuthCard.css';
 import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
@@ -24,7 +24,7 @@ import { monograma } from '../utils/identidadEmpresa';
  * la bienvenida y el perfil.
  */
 
-type EnrollmentStep = 'welcome' | 'current-pin' | 'create-pin' | 'confirm-pin' | 'profile' | 'success';
+type EnrollmentStep = 'welcome' | 'aviso' | 'current-pin' | 'create-pin' | 'confirm-pin' | 'profile' | 'success';
 
 const ROL_LABEL: Record<string, string> = {
     admin: 'Administrador',
@@ -57,11 +57,11 @@ function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
 }
 
 /** La tarjeta del login. Fuera del componente para no remontarla en cada tecla. */
-function Tarjeta({ children }: { children: React.ReactNode }) {
+function Tarjeta({ children, fija = false }: { children: React.ReactNode; fija?: boolean }) {
     return (
         <div className="lp-root">
             <div className="lp-bg" aria-hidden="true" />
-            <main className="lp-card">
+            <main className={`lp-card${fija ? ' lp-card--fija enr-card-aviso' : ''}`}>
                 <div className="lp-head">
                     <div className="lp-logo" aria-label="Build and Serve">
                         <span className="lp-logo-build">Build</span>
@@ -120,6 +120,7 @@ export default function EnrollMe() {
         setNoCoincide(false);
         setVerPin(false);
         setCurrentStep(paso);
+        window.scrollTo(0, 0);
     };
 
     const handleTelefonoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -324,9 +325,9 @@ export default function EnrollMe() {
     }
 
     return (
-        <Tarjeta>
+        <Tarjeta fija={currentStep === 'aviso'}>
             <div className="lp-body">
-                {Stepper}
+                {currentStep !== 'aviso' && Stepper}
 
                 {/* ── Bienvenida: la credencial que se va a crear ── */}
                 {currentStep === 'welcome' && (
@@ -370,14 +371,26 @@ export default function EnrollMe() {
                         </ul>
 
                         {/* Deber de información (Ley 21.719): antes de crear la firma. */}
-                        <details className="aviso-privacidad-desplegable">
-                            <summary>Cómo se tratan tus datos</summary>
-                            <AvisoPrivacidad compacto />
-                        </details>
+                        <button type="button" className="enr-aviso-enlace" onClick={() => irA('aviso')}>
+                            <FiShield size={15} />
+                            <span>Cómo se tratan tus datos</span>
+                            <FiChevronRight size={15} />
+                        </button>
 
                         <button type="button" className="lp-submit enr-accion" onClick={() => irA('create-pin')}>
                             <span>Comenzar</span><FiArrowRight size={15} />
                         </button>
+                    </>
+                )}
+
+                {/* ── Aviso de privacidad completo; vuelve a la bienvenida ── */}
+                {currentStep === 'aviso' && (
+                    <>
+                        <h1 className="lp-title">Cómo se tratan tus datos</h1>
+                        <p className="lp-hint">Lo que tu empresa hace con tus datos personales y cuáles son tus derechos.</p>
+                        <div className="enr-aviso" role="region" aria-label="Aviso de privacidad" tabIndex={0}>
+                            <AvisoPrivacidad />
+                        </div>
                     </>
                 )}
 
@@ -501,6 +514,11 @@ export default function EnrollMe() {
                         <FiLogOut size={14} /> Cerrar sesión
                     </button>
                 } />
+            )}
+            {currentStep === 'aviso' && (
+                <div className="lp-foot">
+                    <Volver onClick={() => irA('welcome')} />
+                </div>
             )}
             {currentStep === 'current-pin' && (
                 <Pie izquierda={<Volver texto="Cancelar" onClick={() => navigate('/configuracion')} />} />
