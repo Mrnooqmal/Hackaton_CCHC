@@ -39,3 +39,17 @@ test('una fecha escrita en la columna llega como AAAA-MM-DD al leer la carga', a
     const filas = XLSX.utils.sheet_to_json(libro.Sheets.Personas, { header: 1, defval: '' });
     assert.equal(String(filas[3][4]), '1988-03-09');
 });
+
+test('los teléfonos vienen en formato texto, para que Excel no les quite el + ni los convierta en número', async () => {
+    const wb = await abrir();
+    const ws = wb.getWorksheet('Personas');
+    for (const [col, nombre] of [[7, 'telefono'], [14, 'contactoEmergenciaTelefono']]) {
+        assert.equal(ws.getRow(1).getCell(col).value, nombre);
+        assert.equal(ws.getColumn(col).numFmt, '@', nombre);
+        assert.equal(ws.getCell(300, col).numFmt, '@', nombre);
+    }
+    ws.getCell(4, 7).value = '+56912345678';
+    const libro = XLSX.read(Buffer.from(await wb.xlsx.writeBuffer()), { type: 'buffer' });
+    const filas = XLSX.utils.sheet_to_json(libro.Sheets.Personas, { header: 1, defval: '' });
+    assert.equal(String(filas[3][6]), '+56912345678');
+});

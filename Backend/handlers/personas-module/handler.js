@@ -903,7 +903,7 @@ const RELACION_EMERGENCIA_OPCIONES = [
 ];
 
 // Columnas (1-based) de la hoja Personas que llevan desplegable.
-const COL = { fechaNacimiento: 5, rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
+const COL = { fechaNacimiento: 5, telefono: 7, rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, telefonoEmergencia: 14, relacion: 15 };
 const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
 
 // Etiqueta de obra para el desplegable de la plantilla y su resolución: "Nombre
@@ -942,7 +942,7 @@ const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
     // Encabezado en negrita.
     ws.getRow(1).font = { bold: true };
     ws.columns.forEach((col) => { col.width = 20; });
-    ws.getColumn(COL.fechaNacimiento).numFmt = '@';
+    for (const c of [COL.fechaNacimiento, COL.telefono, COL.telefonoEmergencia]) ws.getColumn(c).numFmt = '@';
 
     // Rangos de cada lista en la hoja oculta.
     const rango = (letra, n) => `Listas!$${letra}$1:$${letra}$${Math.max(n, 1)}`;
