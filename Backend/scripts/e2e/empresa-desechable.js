@@ -125,7 +125,7 @@ function quitarPendiente(stage, tenantId) {
  * crearse (y lo deja anotado), para que el borrado no dependa de que todo haya
  * salido bien.
  *
- * @returns {{ tenantId, adminPersonaId, adminRut, nombre }}
+ * @returns {{ tenantId, adminPersonaId, adminRut, adminPassword, nombre }}
  */
 async function crearEmpresa(stage) {
     const ahora = new Date().toISOString().replace(/[:.]/g, '-');
@@ -152,7 +152,7 @@ async function crearEmpresa(stage) {
         let fallo = null;
         try {
             const r = await ejecutar(process.execPath,
-                [path.join(__dirname, '..', 'crear-empresa.js'), '--stage', stage, '--datos', archivo, '--confirmar'],
+                [path.join(__dirname, '..', 'crear-empresa.js'), '--stage', stage, '--datos', archivo, '--confirmar', '--temporal-en-terminal'],
                 { cwd: path.join(__dirname, '..', '..'), env: process.env, maxBuffer: 1024 * 1024 });
             salida = r.stdout + r.stderr;
         } catch (err) {
@@ -164,10 +164,11 @@ async function crearEmpresa(stage) {
 
         const tenantId = salida.match(/Empresa creada:\s+(\S+)/)?.[1] || null;
         const adminPersonaId = salida.match(/Administrador creado:\s+(\S+)/)?.[1] || null;
+        const adminPassword = salida.match(/Contraseña temporal:\s+(\S+)/)?.[1] || null;
         if (tenantId) anotarPendiente(stage, tenantId);
 
-        if (!fallo && tenantId && adminPersonaId) {
-            return { tenantId, adminPersonaId, adminRut, nombre };
+        if (!fallo && tenantId && adminPersonaId && adminPassword) {
+            return { tenantId, adminPersonaId, adminRut, adminPassword, nombre };
         }
         // Un RUT ocupado se detecta antes de escribir: se reintenta con otro.
         if (!tenantId && /ya est[aá] registrado|Ya existe una empresa con el RUT/.test(salida)) continue;

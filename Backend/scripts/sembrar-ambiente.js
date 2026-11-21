@@ -145,7 +145,7 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
 
     // 3. Administrador.
     let persona = adminExistente;
-    let passwordTemporal = null;
+    let nueva = false;
     if (!persona) {
         const alta = await personaService.crear(tenant.tenantId, {
             rut: rutAdmin.formatted,
@@ -157,7 +157,7 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
             tieneAccesoWeb: true,
         });
         persona = alta.persona;
-        passwordTemporal = alta.passwordTemporal;
+        nueva = true;
         console.log(`  Administrador creado: ${persona.personaId}`);
     }
 
@@ -165,29 +165,34 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
     await tenantService.activar(tenant.tenantId);
     console.log('  Empresa activada');
 
-    // 4. Credenciales por correo; en pantalla solo si el envío falla.
-    let enviado = false;
-    if (passwordTemporal) {
-        try {
-            const { sendWelcomeEmail } = require('../handlers/notifications/handler');
-            const resultado = await sendWelcomeEmail(persona.email, nombreAdmin, persona.rut, passwordTemporal);
-            enviado = Boolean(resultado?.sent);
-        } catch (err) {
-            console.error(`  Aviso: el correo de bienvenida falló (${err.message})`);
-        }
-    }
-
     console.log('\n  Ambiente sembrado.');
-    if (passwordTemporal && enviado) {
-        console.log(`  La contraseña temporal viajó a ${persona.email} y se cambia en el primer ingreso.\n`);
-    } else if (passwordTemporal) {
-        console.log('\n  El correo NO se envió. Entrega estas credenciales por un canal seguro y bórralas de tu terminal:');
-        console.log(`    RUT:                 ${persona.rut}`);
-        console.log(`    Contraseña temporal: ${passwordTemporal}`);
-        console.log('  Se cambia obligatoriamente en el primer ingreso.\n');
-    } else {
+    if (!nueva) {
         console.log('  El administrador ya existía: conserva su contraseña.\n');
+        return;
     }
+    const actor = { id: require('./entorno').operadorActual(), tipo: 'operador', nombre: 'Soporte de Build & Serve' };
+    const origen = { canal: 'operador' };
+    const enlace = await personaService.enviarEnlaceActivacion(tenant.tenantId, persona.personaId, { actor, origen });
+    if (enlace.correo === 'enviado') {
+        console.log(`  Enlace de activación enviado a ${persona.email} (vence ${enlace.vence}).\n`);
+        return;
+    }
+    const r = await personaService.emitirTemporal(tenant.tenantId, persona.personaId, {
+        horas: 2,
+        actor,
+        operacion: 'credencial.acceso_activado',
+        exigir: 'pendiente',
+        origen,
+        aviso: {
+            asunto: 'Tu acceso a Build & Serve fue activado',
+            contenido: 'Soporte de Build & Serve activó tu acceso al crear tu empresa. Si no lo pediste, escribe a contacto@buildandserve.cl.',
+        },
+    });
+    console.log(`\n  El enlace NO se envió (${enlace.correo}). Entrega esta contraseña temporal por un canal seguro y bórrala de tu terminal:`);
+    console.log(`    RUT:                 ${persona.rut}`);
+    console.log(`    Contraseña temporal: ${r.password}`);
+    console.log(`    Vence:               ${r.vence}`);
+    console.log('  Se cambia obligatoriamente en el primer ingreso.\n');
 })().catch((err) => {
     console.error(`\n  Falló la siembra: ${err.message}\n`);
     process.exit(1);

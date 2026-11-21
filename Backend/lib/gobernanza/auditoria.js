@@ -74,6 +74,8 @@ const CATEGORIAS = {
 const OPERACIONES = {
     'auth.ingreso': CATEGORIAS.SEGURIDAD,
     'auth.ingreso_fallido': CATEGORIAS.SEGURIDAD,
+    'credencial.acceso_activado': CATEGORIAS.SEGURIDAD,
+    'credencial.enlace_activacion': CATEGORIAS.SEGURIDAD,
     'identidad.verificada': CATEGORIAS.SEGURIDAD,
     'identidad.verificacion_fallida': CATEGORIAS.SEGURIDAD,
     'consentimiento.otorgado': CATEGORIAS.CONSENTIMIENTO,

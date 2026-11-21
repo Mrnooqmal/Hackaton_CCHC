@@ -28,4 +28,8 @@ function cargarEntornoDe(stage, funcion = 'personasModule') {
     return variables;
 }
 
-module.exports = { cargarEntornoDe };
+function operadorActual() {
+    return execFileSync('aws', ['sts', 'get-caller-identity', '--query', 'Arn', '--output', 'text'], { encoding: 'utf8' }).trim();
+}
+
+module.exports = { cargarEntornoDe, operadorActual };

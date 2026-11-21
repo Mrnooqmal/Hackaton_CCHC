@@ -9,23 +9,23 @@ const ExcelJS = require('exceljs');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, QueryCommand, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
-const { PersonaService, passwordInicialDeRut } = require('../../lib/services/PersonaService');
+const { PersonaService } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
 const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { normalizeRol, validateRut } = require('../../lib/utils/validation');
-const { PERMISSIONS } = require('../../lib/permissions');
+const { PERMISSIONS, resolvePersonaPermisos } = require('../../lib/permissions');
+const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const auditoria = require('../../lib/gobernanza/auditoria');
 const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { seOpone } = require('../../lib/gobernanza/derechos');
-const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 const cargas = require('../../lib/cargas');
 const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvidenciaReutilizable } = require('../../lib/ds44');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
-const { conNeutro } = require('../../lib/degradacion');
+const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
 const { conAuditoriaSalud, anotarAccesoSalud, tieneDatosDeSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
@@ -46,6 +46,9 @@ const ESTADO_POR_ERROR_DE_PIN = {
     PIN_CAMBIO_CONCURRENTE: 409,
     PIN_NO_CONFIGURADO: 409,
     PIN_BLOQUEADO: 423,
+    TEMPORAL_CONFLICTO: 409,
+    SIN_ACCESO_WEB: 409,
+    SIN_CORREO: 409,
 };
 
 const personaService = new PersonaService();
@@ -116,8 +119,8 @@ const TEMPLATE_INSTRUCTIONS = [
     '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
     '4. obra: elige la obra del desplegable (muestra "Nombre (CODIGO)"). Tambien puedes escribir el codigo (ej. OBRA-001). Para asignar a varias obras, separalas por coma. Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. supervisor: RUT del supervisor de la cuadrilla. Puede venir en este mismo Excel con rol "Supervisor". Si se deja vacio, la persona queda sin cuadrilla y se le asigna un supervisor despues.',
-    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
-    '7. El email es opcional. Con o sin email, la contraseña temporal para el acceso web son los primeros 4 digitos del RUT; la persona debera cambiarla en su primer ingreso. Si tiene email, ademas se le envia por correo.',
+    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional. La columna viene en formato texto para que Excel no la convierta en fecha: escribela tal cual, con guiones.',
+    '7. El email es opcional. Las personas quedan pendientes de activacion: el acceso se activa en terreno desde su ficha o desde la lista de pendientes. Si tiene email y se marca la opcion al cargar, se le envia un enlace para que elija su contrasena.',
     '8. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '9. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
     '10. Reemplaza los datos de ejemplo por los de tus trabajadores antes de importar.',
@@ -900,7 +903,7 @@ const RELACION_EMERGENCIA_OPCIONES = [
 ];
 
 // Columnas (1-based) de la hoja Personas que llevan desplegable.
-const COL = { rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
+const COL = { fechaNacimiento: 5, rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
 const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
 
 // Etiqueta de obra para el desplegable de la plantilla y su resolución: "Nombre
@@ -939,6 +942,7 @@ const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
     // Encabezado en negrita.
     ws.getRow(1).font = { bold: true };
     ws.columns.forEach((col) => { col.width = 20; });
+    ws.getColumn(COL.fechaNacimiento).numFmt = '@';
 
     // Rangos de cada lista en la hoja oculta.
     const rango = (letra, n) => `Listas!$${letra}$1:$${letra}$${Math.max(n, 1)}`;
@@ -1159,7 +1163,10 @@ const dependenciasCarga = () => ({
             await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
         }
     },
-    enviarBienvenida: (persona, password) => sendWelcomeEmail(persona.email, persona.nombre, persona.rut, password || passwordInicialDeRut(persona.rut)),
+    enviarActivacion: (persona, meta) => personaService.enviarEnlaceActivacion(persona.tenantId, persona.personaId, {
+        actor: { id: meta.iniciadaPor?.personaId || 'carga-masiva', tipo: 'persona', nombre: meta.iniciadaPor?.nombre || 'Tu empresa' },
+        origen: { canal: 'carga_masiva' },
+    }),
     supervisoresExistentes: async (tenantId) => (await buildBulkContext(tenantId)).supervisoresPorRut,
     // Preserva los cargos ya asignados en la obra; solo fija el supervisor.
     asignarSupervisor: async ({ tenantId, personaId: id, obraId, supervisorId }) => {
@@ -1170,6 +1177,7 @@ const dependenciasCarga = () => ({
 });
 
 module.exports.dependenciasCarga = dependenciasCarga;
+module.exports.createTemplateBuffer = createTemplateBuffer;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
@@ -1563,7 +1571,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             // Quién crea sale de la sesión, no del cuerpo.
             const creadorId = sesion.personaId;
 
-            const { persona, passwordTemporal } = await personaService.crear(tenantId, {
+            const { persona } = await personaService.crear(tenantId, {
                 ...body,
                 creadoPor: creadorId,
             });
@@ -1592,25 +1600,24 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 }
             }
 
-            // Enviar email de bienvenida si tiene acceso web
-            let emailSent = false;
-            if (persona.email && passwordTemporal) {
+            let enlaceActivacion = 'sin-correo';
+            if (persona.email && persona.tieneAccesoWeb) {
+                const nombre = await nombreDeSesion();
                 try {
-                    const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
-                    const emailResult = await sendWelcomeEmail(
-                        persona.email, nombreCompleto, persona.rut, passwordTemporal
-                    );
-                    emailSent = emailResult?.sent || false;
-                } catch (emailErr) {
-                    console.error('Error sending welcome email:', emailErr);
+                    enlaceActivacion = (await personaService.enviarEnlaceActivacion(tenantId, persona.personaId, {
+                        actor: { id: creadorId, tipo: 'persona', nombre: nombre || 'Tu empresa', rol: sesion.rol },
+                        origen: auditoria.origenDe(event),
+                    })).correo;
+                } catch (enlaceErr) {
+                    registrarFallo('persona.alta.enlace_activacion', enlaceErr, { personaId: persona.personaId });
+                    enlaceActivacion = 'fallido';
                 }
             }
 
             return created({
                 message: 'Persona creada exitosamente',
                 persona: fichaVisible(persona),
-                passwordTemporal: passwordTemporal || undefined,
-                emailNotificado: emailSent
+                enlaceActivacion,
             });
         }
 
@@ -2156,6 +2163,48 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 return success(result);
             } catch (err) {
                 if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
+                throw err;
+            }
+        }
+
+        if (method === 'POST' && personaId && (action === 'activar-acceso' || action === 'enviar-activacion')) {
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONA_ACTIVAR_ACCESO)) {
+                return error('No tienes permiso para activar el acceso de otras personas', 403);
+            }
+            const objetivo = await personaDelTenant(personaId);
+            if (!objetivo) return error('Persona no encontrada', 404);
+            if (objetivo.personaId === sesion.personaId) return error('No puedes activar tu propio acceso', 403);
+            const tenant = await tenantService.getById(tenantId);
+            if (!resolvePersonaPermisos(objetivo, tenant).every((p) => puede(p))) {
+                return error('No puedes activar el acceso de alguien que tiene permisos que tú no tienes', 403);
+            }
+            const nombre = await nombreDeSesion();
+            if (!nombre) return error('No se pudo identificar a quien activa. Intenta de nuevo.', 503);
+            const actor = { id: sesion.personaId, tipo: 'persona', nombre, rol: sesion.rol };
+            const origen = auditoria.origenDe(event);
+
+            try {
+                if (action === 'enviar-activacion') {
+                    return success(await personaService.enviarEnlaceActivacion(tenantId, personaId, { actor, origen }));
+                }
+                const { fecha, horario } = fechaHoraChile(new Date());
+                const r = await personaService.emitirTemporal(tenantId, personaId, {
+                    horas: 2,
+                    actor,
+                    operacion: 'credencial.acceso_activado',
+                    exigir: 'pendiente',
+                    origen,
+                    aviso: {
+                        asunto: 'Tu acceso a Build & Serve fue activado',
+                        contenido: `${nombre} activó tu acceso el ${fecha} a las ${horario}. `
+                            + 'Si no estabas presente cuando ocurrió, avisa a tu empresa o al prevencionista de tu obra.',
+                    },
+                });
+                return success({ password: r.password, vence: r.vence, sesionesCerradas: r.sesionesCerradas });
+            } catch (err) {
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
                 throw err;
             }
         }

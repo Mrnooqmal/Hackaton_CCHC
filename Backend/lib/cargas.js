@@ -115,7 +115,7 @@ async function crearCarga({ tenantId, iniciadaPor, filas, enviarCorreo }) {
 
 /**
  * @param {{cargaId: string, sk: string}} msg
- * @param {object} deps - { personaService, crearFicha, despuesDeCrear, enviarBienvenida, tenantsTable }
+ * @param {object} deps - { personaService, crearFicha, despuesDeCrear, enviarActivacion, tenantsTable }
  * @param {{intento: number}} entrega - número de entrega de SQS (ApproximateReceiveCount).
  */
 async function procesarFila({ cargaId, sk }, deps, { intento = 1 } = {}) {
@@ -143,13 +143,12 @@ async function procesarFila({ cargaId, sk }, deps, { intento = 1 } = {}) {
 
     const personaId = personaIdDe(cargaId, fila.rutKey);
     let persona;
-    let passwordTemporal = null;
     let aviso = null;
     try {
         persona = await deps.fichaPorId(meta.tenantId, personaId);
         if (!persona) {
             try {
-                ({ persona, passwordTemporal } = await deps.crearFicha(meta.tenantId, fila.datos, { personaId, obraIds: fila.obraIds }));
+                ({ persona } = await deps.crearFicha(meta.tenantId, fila.datos, { personaId, obraIds: fila.obraIds }));
             } catch (err) {
                 // ¿La creó un intento anterior de esta misma carga?
                 persona = await deps.fichaPorId(meta.tenantId, personaId);
@@ -190,12 +189,11 @@ async function procesarFila({ cargaId, sk }, deps, { intento = 1 } = {}) {
         throw err;
     }
     if (contada && meta.enviarCorreo && persona.email) {
-        // Después de contar: un reintento no manda dos bienvenidas. Si la
-        // contraseña vino de un intento anterior, es la inicial de D-13.
-        const r = await deps.enviarBienvenida(persona, passwordTemporal).catch((e) => ({ sent: false, error: e.message }));
+        // Después de contar: un reintento no manda dos enlaces.
+        const r = await deps.enviarActivacion(persona, meta).catch(() => ({ correo: 'fallido' }));
         await docClient.send(new UpdateCommand({
             TableName: TABLA(), Key: { cargaId, sk },
-            UpdateExpression: 'SET correo = :c', ExpressionAttributeValues: { ':c': r?.sent ? 'enviado' : (r?.code === 'DIRECCION_SUPRIMIDA' ? 'suprimido' : 'fallido') },
+            UpdateExpression: 'SET correo = :c', ExpressionAttributeValues: { ':c': r?.correo === 'enviado' || r?.correo === 'suprimido' ? r.correo : 'fallido' },
         })).catch(() => null);
     }
 }

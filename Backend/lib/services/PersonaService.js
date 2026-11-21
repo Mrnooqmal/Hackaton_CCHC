@@ -6,12 +6,15 @@
  * Un solo ID, un solo pinHash, queries por PK TENANT#{tenantId}.
  */
 
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, GetCommand, QueryCommand, UpdateCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../clients/dynamodb');
 const { verificarConLimiteOLanzar } = require('../limitePin');
 const { construirMensaje, INBOX_TABLE } = require('../bandeja');
 const { registrarFallo } = require('../degradacion');
+const { revocarSesionesDe } = require('../auth/sesion');
+const credenciales = require('../credenciales');
 const { ValeFirmaService, MOTIVO_DESVINCULACION } = require('./ValeFirmaService');
 
 /** Largo mínimo del motivo de un restablecimiento: una palabra suelta ("olvido")
@@ -52,22 +55,10 @@ const exigirEdadMinima = (fechaNacimiento) => {
 const { llaveDeTenant, PROPOSITOS } = require('../llaveTenant');
 const {
     validateRut, validateRequired, hashPin, verifyPin,
-    validatePin, generateSignatureToken, hashPassword, generateTempPassword, normalizeRol,
+    validatePin, generateSignatureToken, hashPassword, normalizeRol,
 } = require('../utils/validation');
 
 const PERSONAS_TABLE = process.env.PERSONAS_TABLE || 'Personas';
-
-/**
- * Contraseña inicial de una persona con acceso web (D-13): los cuatro primeros
- * dígitos de su RUT. Una sola definición: la usan el alta y la carga masiva,
- * que la necesita para el correo de bienvenida de una fila creada en un intento
- * anterior. Devuelve null si el RUT no da cuatro dígitos.
- */
-function passwordInicialDeRut(rutFormateado) {
-    const rutDigits = String(rutFormateado || '').replace(/[^0-9]/g, '').slice(0, -1); // quita DV
-    const first4 = rutDigits.slice(0, 4);
-    return first4.length === 4 ? first4 : null;
-}
 
 class PersonaService {
     constructor() {
@@ -177,7 +168,6 @@ class PersonaService {
         // Se normaliza para admitir nombres con mayúsculas o espacios ("Jefe de Obra", "Prevencionista").
         const rolConfig = ROLES[normalizeRol(data.rol)];
         const tieneAccesoWeb = data.tieneAccesoWeb !== undefined ? data.tieneAccesoWeb : Boolean(rolConfig);
-        let passwordTemporal = null;
 
         const apellidoPaterno = data.apellidoPaterno || '';
         const apellidoMaterno = data.apellidoMaterno || '';
@@ -216,28 +206,19 @@ class PersonaService {
             updatedAt: now
         };
 
-        // Generar password temporal si tiene acceso web.
-        // Convención: los primeros 4 dígitos del RUT (sin puntos ni dígito verificador).
-        // El usuario debe cambiarla en el primer ingreso (passwordTemporal = true).
-        //
-        // CON o SIN correo. La convención existe precisamente porque en terreno
-        // mucha gente no tiene correo: la contraseña se le dice en persona. Hasta
-        // el 27 de septiembre de 2026 solo se generaba si había correo, así que
-        // quien no lo tenía quedaba sin forma de entrar.
         if (tieneAccesoWeb && data.password) {
             // Contraseña elegida por la propia persona (onboarding por interfaz):
             // no es temporal y no hay nada que cambiar en el primer ingreso.
             personaData.passwordHash = await hashPassword(data.password, resolvedPersonaId);
             personaData.passwordTemporal = false;
         } else if (tieneAccesoWeb) {
-            passwordTemporal = passwordInicialDeRut(rutValidation.formatted) || generateTempPassword(10);
-            personaData.passwordHash = await hashPassword(passwordTemporal, resolvedPersonaId);
-            personaData.passwordTemporal = true;
+            personaData.activacionPendiente = true;
+            personaData.passwordTemporal = false;
         }
 
         await this._cifrarCamposSensibles(tenantId, personaData);
 
-        return { personaData, passwordTemporal };
+        return { personaData };
     }
 
     /**
@@ -263,7 +244,7 @@ class PersonaService {
         const existente = await this.getByRut(tenantId, rutValidation.formatted);
         if (existente) throw new Error('Ya existe una persona con este RUT en este tenant');
 
-        const { personaData, passwordTemporal } = await this._datosBaseAlta(tenantId, data, { personaId });
+        const { personaData } = await this._datosBaseAlta(tenantId, data, { personaId });
         const persona = new Persona(personaData);
 
         await this.dynamo.send(new PutCommand({
@@ -272,7 +253,7 @@ class PersonaService {
             ...(personaId ? { ConditionExpression: 'attribute_not_exists(SK)' } : {}),
         }));
 
-        return { persona, passwordTemporal };
+        return { persona };
     }
 
     /**
@@ -402,7 +383,7 @@ class PersonaService {
         await Promise.all(hermanas.map((h, i) => this.dynamo.send(new UpdateCommand({
             TableName: this.table,
             Key: { PK: `TENANT#${h.tenantId}`, SK: `PERSONA#${h.personaId}` },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente',
             ExpressionAttributeValues: {
                 ':passwordHash': hashes[i],
                 ':passwordTemporal': passwordTemporal,
@@ -953,6 +934,165 @@ class PersonaService {
         };
     }
 
+    async emitirTemporal(tenantId, personaId, { horas, actor, operacion, exigir, aviso, origen = null, detalle = {} }) {
+        if (!actor?.id || !actor?.nombre) throw errorPin('Falta quién emite la contraseña temporal', 'TEMPORAL_SIN_ACTOR');
+        if (!(horas > 0)) throw errorPin('Falta la vigencia de la contraseña temporal', 'TEMPORAL_SIN_VIGENCIA');
+        const auditoria = require('../gobernanza/auditoria');
+
+        const item = await this.getItemById(personaId);
+        if (!item || item.tenantId !== tenantId) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
+        if (!item.tieneAccesoWeb) throw errorPin('Esta persona no tiene acceso web.', 'SIN_ACCESO_WEB');
+        if (exigir === 'pendiente' && !credenciales.pendienteDeActivacion(item)) {
+            throw errorPin('Esta persona ya eligió su contraseña: su acceso está activado.', 'TEMPORAL_CONFLICTO');
+        }
+
+        const ahora = new Date();
+        const en = ahora.toISOString();
+        const vence = new Date(ahora.getTime() + horas * 3600 * 1000).toISOString();
+        const password = credenciales.generarTemporal();
+        const passwordHash = await hashPassword(password, personaId);
+        const evento = { evento: operacion, por: actor.id, tipo: actor.tipo || 'persona', nombre: actor.nombre, en, vence };
+
+        const mensaje = construirMensaje({
+            recipientId: personaId,
+            baseMessageId: uuidv4(),
+            now: en,
+            senderId: actor.id,
+            senderName: actor.nombre,
+            senderRol: 'system',
+            type: 'alert',
+            priority: 'high',
+            subject: aviso.asunto,
+            content: aviso.contenido,
+            linkedEntity: { type: 'persona', id: personaId },
+        });
+
+        const registro = await auditoria.sellar(auditoria.construir({
+            tenantId,
+            operacion,
+            actor: { id: actor.id, tipo: actor.tipo || 'persona', ...(actor.rol ? { rol: actor.rol } : {}) },
+            recurso: { tipo: 'persona', id: personaId },
+            titulares: [personaId],
+            origen,
+            detalle: { vigenciaHoras: horas, ...detalle },
+        }, { ahora }));
+
+        const condiciones = [item.passwordHash ? 'passwordHash = :anterior' : '(attribute_not_exists(passwordHash) OR passwordHash = :nulo)'];
+        if (exigir === 'pendiente') condiciones.push(credenciales.CONDICION_PENDIENTE);
+        try {
+            await this.dynamo.send(new TransactWriteCommand({
+                TransactItems: [
+                    {
+                        Update: {
+                            TableName: this.table,
+                            Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                            UpdateExpression: 'SET passwordHash = :hash, passwordTemporal = :si, passwordTemporalVence = :vence, updatedAt = :en,'
+                                + (exigir === 'pendiente' ? ' activacionPendiente = :si,' : '')
+                                + ' credencialHistorial = list_append(if_not_exists(credencialHistorial, :vacia), :evento)'
+                                + ' REMOVE resetTokenHash, resetTokenExpiry',
+                            ConditionExpression: condiciones.join(' AND '),
+                            ExpressionAttributeValues: {
+                                ':hash': passwordHash,
+                                ':si': true,
+                                ':vence': vence,
+                                ':en': en,
+                                ':vacia': [],
+                                ':evento': [evento],
+                                ...(item.passwordHash ? { ':anterior': item.passwordHash } : { ':nulo': null }),
+                            },
+                        },
+                    },
+                    { Put: { TableName: INBOX_TABLE, Item: mensaje, ConditionExpression: 'attribute_not_exists(messageId)' } },
+                    { Put: { TableName: process.env.AUDITORIA_ACCESOS_TABLE, Item: registro, ConditionExpression: 'attribute_not_exists(sk)' } },
+                ],
+            }));
+        } catch (err) {
+            const razones = err.CancellationReasons || [];
+            if (err.name === 'TransactionCanceledException' && razones[0]?.Code === 'ConditionalCheckFailed') {
+                throw errorPin('La cuenta de esta persona cambió mientras se procesaba la solicitud. Revisa su estado y vuelve a intentar.', 'TEMPORAL_CONFLICTO');
+            }
+            throw err;
+        }
+
+        try {
+            await auditoria.detectar(registro, { ahora });
+        } catch (err) {
+            registrarFallo('auditoria.deteccion', err, { operacion });
+        }
+
+        let sesionesCerradas = true;
+        try {
+            await revocarSesionesDe([personaId]);
+        } catch (err) {
+            sesionesCerradas = false;
+            registrarFallo('credencial.temporal.revocar_sesiones', err, { personaId });
+        }
+
+        return { password, vence, sesionesCerradas };
+    }
+
+    async enviarEnlaceActivacion(tenantId, personaId, { actor, origen = null, horas = 72 }) {
+        if (!actor?.id || !actor?.nombre) throw errorPin('Falta quién envía el enlace de activación', 'TEMPORAL_SIN_ACTOR');
+        const auditoria = require('../gobernanza/auditoria');
+
+        const item = await this.getItemById(personaId);
+        if (!item || item.tenantId !== tenantId) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
+        if (!item.tieneAccesoWeb) throw errorPin('Esta persona no tiene acceso web.', 'SIN_ACCESO_WEB');
+        if (!item.email) throw errorPin('Esta persona no tiene correo registrado: activa su acceso en terreno.', 'SIN_CORREO');
+        if (!credenciales.pendienteDeActivacion(item)) {
+            throw errorPin('Esta persona ya eligió su contraseña: su acceso está activado.', 'TEMPORAL_CONFLICTO');
+        }
+
+        const ahora = new Date();
+        const vence = new Date(ahora.getTime() + horas * 3600 * 1000).toISOString();
+        const token = crypto.randomBytes(32).toString('hex');
+        const registro = await auditoria.sellar(auditoria.construir({
+            tenantId,
+            operacion: 'credencial.enlace_activacion',
+            actor: { id: actor.id, tipo: actor.tipo || 'persona', ...(actor.rol ? { rol: actor.rol } : {}) },
+            recurso: { tipo: 'persona', id: personaId },
+            titulares: [personaId],
+            origen,
+            detalle: { vigenciaHoras: horas },
+        }, { ahora }));
+
+        try {
+            await this.dynamo.send(new TransactWriteCommand({
+                TransactItems: [
+                    {
+                        Update: {
+                            TableName: this.table,
+                            Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                            UpdateExpression: 'SET resetTokenHash = :h, resetTokenExpiry = :v, updatedAt = :en',
+                            ConditionExpression: `${credenciales.CONDICION_PENDIENTE} AND email = :email`,
+                            ExpressionAttributeValues: {
+                                ':h': credenciales.hashTokenEnlace(token),
+                                ':v': vence,
+                                ':en': ahora.toISOString(),
+                                ':si': true,
+                                ':email': item.email,
+                            },
+                        },
+                    },
+                    { Put: { TableName: process.env.AUDITORIA_ACCESOS_TABLE, Item: registro, ConditionExpression: 'attribute_not_exists(sk)' } },
+                ],
+            }));
+        } catch (err) {
+            const razones = err.CancellationReasons || [];
+            if (err.name === 'TransactionCanceledException' && razones[0]?.Code === 'ConditionalCheckFailed') {
+                throw errorPin('La cuenta de esta persona cambió mientras se procesaba la solicitud. Revisa su estado y vuelve a intentar.', 'TEMPORAL_CONFLICTO');
+            }
+            throw err;
+        }
+
+        const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const enlace = `${frontend}/restablecer-clave?pid=${personaId}&token=${token}&activar=1`;
+        const { sendActivacionEmail } = require('../../handlers/notifications/handler');
+        const r = await sendActivacionEmail(item.email, item.nombre, enlace, horas).catch((err) => ({ sent: false, err }));
+        if (!r.sent) registrarFallo('correo.activacion', r.err || new Error(r.error || 'no enviado'), { personaId });
+        return { correo: r.sent ? 'enviado' : (r.code === 'DIRECCION_SUPRIMIDA' ? 'suprimido' : 'fallido'), vence };
+    }
+
     /**
      * Completar enrolamiento — un solo update (no dos como antes)
      */
@@ -1053,4 +1193,4 @@ class PersonaService {
     }
 }
 
-module.exports = { PersonaService, passwordInicialDeRut };
+module.exports = { PersonaService };
