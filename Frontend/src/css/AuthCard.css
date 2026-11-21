@@ -1231,3 +1231,14 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
 @media (max-width: 360px) {
     .pin-casilla { width: 54px; height: 66px; }
 }
+
+/* La tarjeta de onboarding es siempre clara: el selector de logo (LogoModos)
+   usa los tokens del tema, que en modo oscuro dejan el texto en blanco. */
+.lp-card .lm {
+    --text-primary: #0f172a;
+    --text-secondary: #424b5a;
+    --text-muted: #64748b;
+    --surface-border: #e2e8f0;
+    --surface-elevated: #ffffff;
+    --surface-hover: #f1f5f9;
+}
