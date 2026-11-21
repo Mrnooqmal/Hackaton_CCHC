@@ -7,7 +7,7 @@ import { useObraContext } from '../context/ObraContext';
 import { AlertBanner, PageHeader, CollectionView, DataTable, Badge } from '../components/ui';
 import type { CollectionMode, DataTableColumn } from '../components/ui';
 import { PERMISSIONS } from '../permissions';
-import { FiUserPlus, FiUsers, FiUpload, FiMoreVertical } from 'react-icons/fi';
+import { FiUserPlus, FiUsers, FiUpload, FiMoreVertical, FiKey } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { Select } from '../components/ui';
@@ -59,6 +59,12 @@ export default function PersonasManagement() {
     const canCreatePersonas = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const canBulkUpload = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const canVerDetalle = hasPermission(PERMISSIONS.PERSONAS_DETALLE);
+    const canActivarAccesos = hasPermission(PERMISSIONS.PERSONA_ACTIVAR_ACCESO);
+    const botonActivar = canActivarAccesos && (
+        <button className="btn btn-secondary" onClick={() => navigate('/personas/activacion')}>
+            <FiKey /> Activar accesos
+        </button>
+    );
 
     const [personas, setPersonas] = useState<PersonaResponse[]>([]);
     const [loading, setLoading] = useState(true);
@@ -255,7 +261,7 @@ export default function PersonasManagement() {
     if (isObraScoped && selectedObraId) {
         return (
             <div className="page-content">
-                <PageHeader banner title={pageTitle} description={pageDescription} />
+                <PageHeader banner title={pageTitle} description={pageDescription} actions={botonActivar || undefined} />
                 <ObraEquipoPanel obraId={selectedObraId} />
             </div>
         );
@@ -270,6 +276,7 @@ export default function PersonasManagement() {
                     description={pageDescription}
                     actions={
                         <>
+                            {botonActivar}
                             {canBulkUpload && (
                                 <button
                                     className="btn btn-secondary"

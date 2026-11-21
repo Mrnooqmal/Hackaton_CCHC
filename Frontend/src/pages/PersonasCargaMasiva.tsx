@@ -398,7 +398,7 @@ export default function PersonasCargaMasiva() {
                                 <span style={{ flex: 1 }} />
                                 <label className="cm-check">
                                     <input type="checkbox" checked={sendWelcomeEmail} onChange={e => setSendWelcomeEmail(e.target.checked)} />
-                                    Enviar credenciales por email
+                                    Enviar enlace de activación a quienes tienen correo
                                 </label>
                                 <button
                                     type="button"
@@ -542,10 +542,10 @@ export default function PersonasCargaMasiva() {
                                     <div className={`cm-stat ${carga.fallidas ? 'cm-stat-err' : 'cm-stat-ok'}`}>{carga.fallidas ? <FiAlertTriangle size={26} /> : <FiCheckCircle size={26} />}<div className="cm-stat-n">{carga.fallidas}</div><div className="cm-stat-l">Fallidas</div></div>
                                 </div>
                                 {carga.creadas > 0 && (
-                                    // Quien no tiene correo no recibe nada: la contraseña se la dice en persona quien la registra.
                                     <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text-secondary)', maxWidth: '72ch' }}>
-                                        Cada persona entra con su RUT y, como contraseña inicial, los cuatro primeros dígitos de su RUT;
-                                        se le pide cambiarla al entrar. Quien no tiene correo no recibe aviso: díselo en persona.
+                                        Las personas quedan pendientes de activación: nadie puede entrar con su RUT hasta que se active.
+                                        Actívalas en terreno, con cada una presente, desde <strong>Activar accesos</strong> en Personas.
+                                        Quien tiene correo también puede activarse con el enlace, si lo marcaste.
                                     </p>
                                 )}
                                 {carga.filasFallidas.length > 0 && (
@@ -567,7 +567,7 @@ export default function PersonasCargaMasiva() {
                                 {(carga.avisos.length > 0 || carga.correosFallidos.length > 0) && (
                                     <div style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                                         {carga.avisos.map((a) => <span key={`a${a.fila}`}>Fila {a.fila}: {a.aviso}</span>)}
-                                        {carga.correosFallidos.map((c) => <span key={`c${c.fila}`}>Fila {c.fila}: {c.correo === 'suprimido' ? 'su correo rebotó antes; no se le escribió' : 'no se pudo enviar el correo de bienvenida'}.</span>)}
+                                        {carga.correosFallidos.map((c) => <span key={`c${c.fila}`}>Fila {c.fila}: {c.correo === 'suprimido' ? 'su correo rebotó antes; no se le escribió' : 'no se pudo enviar el enlace de activación; actívala en terreno'}.</span>)}
                                     </div>
                                 )}
                                 {carga.fallidas > reintentables && (

@@ -6,6 +6,7 @@ import InicioEmpresa from './pages/InicioEmpresa';
 import PersonasManagement from './pages/PersonasManagement';
 import PersonaNueva from './pages/PersonaNueva';
 import PersonasCargaMasiva from './pages/PersonasCargaMasiva';
+import ActivarAccesos from './pages/ActivarAccesos';
 import WorkerDetail from './pages/WorkerDetail';
 import WorkerEnroll from './pages/WorkerEnroll';
 import DocumentsRepository from './pages/DocumentsRepository';
@@ -185,6 +186,7 @@ function AppContent() {
       <Route path="/personas" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_VER}><PersonasManagement /></ProtectedRoute>} />
       <Route path="/personas/nueva" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><PersonaNueva /></ProtectedRoute>} />
       <Route path="/personas/carga-masiva" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_CREAR}><PersonasCargaMasiva /></ProtectedRoute>} />
+      <Route path="/personas/activacion" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONA_ACTIVAR_ACCESO}><ActivarAccesos /></ProtectedRoute>} />
       <Route path="/personas/:rut" element={<ProtectedRoute requiredPermission={PERMISSIONS.PERSONAS_DETALLE}><WorkerDetail /></ProtectedRoute>} />
 
       {/* Legacy routes redirect to unified personas */}
