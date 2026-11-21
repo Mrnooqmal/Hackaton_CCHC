@@ -134,7 +134,7 @@ async function primerIngreso(c, { quien, rut, personaId }) {
     return token;
 }
 
-async function recorrer(c, empresa, personasCreadas) {
+async function recorrer(c, empresa, personasCreadas, empresasExtra) {
     console.log('\n  Administrador');
     const tokenAdmin = await primerIngreso(c, { quien: 'admin', rut: empresa.adminRut, personaId: empresa.adminPersonaId });
 
@@ -222,7 +222,55 @@ async function recorrer(c, empresa, personasCreadas) {
     const despues = await c.pedir('GET', '/auth/me', { token: tokenTrabajadora });
     comprobar('la sesión cerrada ya no vale', despues.status === 401, resumen(despues));
 
+    await contrasenaEntreEmpresas(c, stage, tokenAdmin, personasCreadas, empresasExtra);
+
     await firmaSinConexion(c, empresa, tokenAdmin, personaId);
+}
+
+async function contrasenaEntreEmpresas(c, stageActual, tokenAdmin, personasCreadas, empresasExtra) {
+    console.log('\n  Contraseña entre empresas');
+    const otra = await desechable.crearEmpresa(stageActual);
+    empresasExtra.push({ tenantId: otra.tenantId, ids: [otra.adminPersonaId] });
+
+    const inicialOtra = desechable.passwordInicial(otra.adminRut);
+    const entrada = await c.pedir('POST', '/auth/login', { cuerpo: { rut: otra.adminRut, password: inicialOtra } });
+    comprobar('otra empresa: su administrador entra con la contraseña inicial', entrada.status === 200 && entrada.cuerpo?.data?.token, resumen(entrada), { detener: true });
+    const propia = `Propia-${Math.random().toString(36).slice(2, 10)}`;
+    const cambio = await c.pedir('POST', '/auth/change-password', {
+        token: entrada.cuerpo.data.token,
+        cuerpo: { passwordNuevo: propia, confirmarPassword: propia },
+    });
+    comprobar('otra empresa: su administrador elige su contraseña', cambio.status === 200, resumen(cambio), { detener: true });
+
+    const alta = await c.pedir('POST', '/personas', {
+        token: tokenAdmin,
+        cuerpo: { rut: otra.adminRut, nombre: 'Misma', apellidoPaterno: 'Persona', rol: 'trabajador', tieneAccesoWeb: true },
+    });
+    const enEsta = alta.cuerpo?.data?.persona?.personaId;
+    if (enEsta) personasCreadas.push(enEsta);
+    comprobar('admin: registra a una persona que ya está en otra empresa', alta.status === 201 && enEsta, resumen(alta), { detener: true });
+
+    const empresaDe = async (password) => {
+        const r = await c.pedir('POST', '/auth/login', { cuerpo: { rut: otra.adminRut, password } });
+        if (r.status !== 200) return { r, empresas: [] };
+        if (r.cuerpo?.data?.requiereSeleccionTenant) return { r, empresas: r.cuerpo.data.opciones.map((o) => o.tenantId) };
+        const me = await c.pedir('GET', '/auth/me', { token: r.cuerpo.data.token });
+        return { r, empresas: [me.cuerpo?.data?.user?.tenantId || me.cuerpo?.data?.tenantId] };
+    };
+
+    const conInicial = await empresaDe(inicialOtra);
+    comprobar('la contraseña inicial de la ficha nueva abre solo esta empresa',
+        conInicial.empresas.length === 1 && conInicial.empresas[0] !== otra.tenantId, `${resumen(conInicial.r)} empresas: ${conInicial.empresas}`);
+    const conPropia = await empresaDe(propia);
+    comprobar('la contraseña de la otra empresa abre solo la otra empresa',
+        conPropia.empresas.length === 1 && conPropia.empresas[0] === otra.tenantId, `${resumen(conPropia.r)} empresas: ${conPropia.empresas}`);
+
+    const viejo = await c.pedir('POST', `/personas/${enEsta}/reset-password`, { token: tokenAdmin, cuerpo: {} });
+    comprobar('reset-password ya no existe (404) y no devuelve una contraseña',
+        viejo.status === 404 && !/passwordTemporal/.test(JSON.stringify(viejo.cuerpo)), resumen(viejo));
+    const despues = await empresaDe(propia);
+    comprobar('...y la contraseña de la otra empresa sigue igual',
+        despues.empresas.length === 1 && despues.empresas[0] === otra.tenantId, resumen(despues.r));
 }
 
 /**
@@ -366,6 +414,7 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
     let empresa = null;
     let tenantId = null;
     const personasCreadas = [];
+    const empresasExtra = [];
     let errorPrueba = null;
     let errorBorrado = null;
 
@@ -385,7 +434,7 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
         tenantId = empresa.tenantId;
         personasCreadas.push(empresa.adminPersonaId);
         console.log(`  Empresa desechable: ${empresa.nombre} (${tenantId})`);
-        await recorrer(c, empresa, personasCreadas);
+        await recorrer(c, empresa, personasCreadas, empresasExtra);
     } catch (err) {
         errorPrueba = err;
         tenantId = tenantId || err.tenantId || null;
@@ -396,6 +445,13 @@ async function firmaSinConexion(c, empresa, token, trabajadora) {
                 await desechable.borrarEmpresa(stage, tenantId, personasCreadas);
             } catch (err) {
                 errorBorrado = err;
+            }
+        }
+        for (const extra of empresasExtra) {
+            try {
+                await desechable.borrarEmpresa(stage, extra.tenantId, extra.ids);
+            } catch (err) {
+                errorBorrado = errorBorrado || err;
             }
         }
     }
