@@ -63,6 +63,9 @@ export interface PersonaResponse {
     cargo: string;
     estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido' | 'desvinculado';
     tieneAccesoWeb: boolean;
+    activacionPendiente?: boolean;
+    passwordTemporal?: boolean;
+    passwordTemporalVence?: string | null;
     habilitado: boolean;
     pinConfigurado: boolean;
     enrolado: boolean;

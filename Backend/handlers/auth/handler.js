@@ -198,11 +198,10 @@ const rehashearPassword = async (persona, passwordPlano) => {
  * POST /auth/login - Iniciar sesión
  *
  * Body: { rut, password }
- * Una persona puede pertenecer a varias empresas (mismo RUT, contraseña
- * compartida — ver PersonaService.propagarPassword). La credencial se valida
- * UNA vez contra cualquier ficha con acceso web que coincida; si la identidad
- * pertenece a una sola empresa con acceso activo, entra directo. Si pertenece
- * a varias, se devuelve un token corto para elegir empresa (ver selectTenant).
+ * Una persona puede pertenecer a varias empresas (mismo RUT). La credencial se
+ * valida contra cada ficha con acceso web, y solo se ofrecen las empresas cuya
+ * ficha coincide; si es una sola con acceso activo, entra directo. Si son
+ * varias, se devuelve un token corto para elegir empresa (ver selectTenant).
  */
 module.exports.login = async (event) => {
     try {
@@ -227,25 +226,25 @@ module.exports.login = async (event) => {
         // distinguir "contraseña incorrecta" de "sin empresas activas").
         const candidatas = todas.filter((p) => p.tieneAccesoWeb && p._passwordHash);
 
-        // Secuencial y con corte al primer acierto: cada verificación es scrypt,
-        // que cuesta unos 100 ms y 32 MB a propósito. Una persona pertenece a una
-        // o dos empresas, así que el caso normal es una sola. Hacerlas en paralelo
-        // multiplicaría la memoria del proceso por la cantidad de fichas.
-        let ficha = null;
+        // Secuencial: cada verificación es scrypt, que cuesta unos 100 ms y 32 MB
+        // a propósito. Una persona pertenece a una o dos empresas. Hacerlas en
+        // paralelo multiplicaría la memoria del proceso por la cantidad de fichas.
+        const coinciden = [];
+        let temporalesVencidas = 0;
         for (const p of candidatas) {
             const { valido, obsoleto } = await credenciales.verificar(password, p._passwordHash, p.personaId);
-            if (valido) {
-                ficha = p;
+            if (valido && credenciales.temporalVencida(p)) {
+                temporalesVencidas += 1;
+            } else if (valido) {
+                coinciden.push(p);
                 // El ingreso es el único momento en que la contraseña en claro
                 // está a mano. Si el hash venía del esquema viejo —o de un costo
                 // que ya subimos—, se reemplaza acá y la migración termina sola,
-                // sin pedirle nada a nadie. Las fichas hermanas se actualizan
-                // cuando esa persona entre por ellas.
+                // sin pedirle nada a nadie.
                 if (obsoleto) await rehashearPassword(p, password);
-                break;
             }
         }
-        if (!ficha) {
+        if (!coinciden.length) {
             // Auditoría y detección (lib/gobernanza/deteccion.js): el actor es la
             // cuenta atacada, por el HMAC de su RUT (nunca el RUT en claro). Cinco
             // intentos en quince minutos contra la misma cuenta generan una alerta.
@@ -258,14 +257,16 @@ module.exports.login = async (event) => {
             for (const tenantId of (empresas.length ? empresas : [null])) {
                 await auditoria.registrar({
                     tenantId, operacion: 'auth.ingreso_fallido', resultado: 'denegado', actor: actorFallido,
-                    origen: auditoria.origenDe(event), detalle: { fichasConAcceso: candidatas.length },
+                    origen: auditoria.origenDe(event), detalle: { fichasConAcceso: candidatas.length, ...(temporalesVencidas ? { temporalVencida: true } : {}) },
                 }).catch((err) => registrarFallo('auditoria.ingreso_fallido', err));
+            }
+            if (temporalesVencidas) {
+                return error('Tu contraseña temporal venció. Pide que activen tu acceso de nuevo.', 401);
             }
             return error('Credenciales inválidas', 401);
         }
 
-        const seleccionables = todas.filter((p) =>
-            p.tieneAccesoWeb && !['desvinculado', 'suspendido', 'inactivo'].includes(p.estado));
+        const seleccionables = coinciden.filter((p) => !['desvinculado', 'suspendido', 'inactivo'].includes(p.estado));
         if (seleccionables.length === 0) {
             return error('No tienes acceso web activo en ninguna empresa. Contacta a tu administrador.', 403);
         }
@@ -407,16 +408,18 @@ module.exports.changePassword = async (event) => {
                 PK: `TENANT#${persona.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente',
             ExpressionAttributeValues: {
                 ':passwordHash': newPasswordHash,
                 ':passwordTemporal': false,
                 ':updatedAt': now
             }
         }));
-        // Mantiene la contraseña "única" para toda la identidad (mismo RUT en
-        // otras empresas).
-        const hermanas = await personaService.propagarPassword(persona, passwordNuevo, { passwordTemporal: false });
+        const hermanas = persona.passwordTemporal ? [] : await personaService.propagarPassword(persona, passwordNuevo, {
+            passwordTemporal: false,
+            cuales: async (h) => Boolean(h._passwordHash)
+                && (await credenciales.verificar(passwordActual, h._passwordHash, h.personaId)).valido,
+        });
 
         // Ninguna sesión abierta con la contraseña anterior sigue valiendo, la
         // propia incluida, y en todas las empresas de la persona (D-26). Antes de
@@ -451,7 +454,7 @@ module.exports.changePassword = async (event) => {
 };
 
 // Hash de un token de reset (no se guarda el token en claro, solo su hash).
-const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const hashResetToken = credenciales.hashTokenEnlace;
 
 // Busca una persona por RUT sin conocer el tenant (mismo patrón que el login).
 //
@@ -588,16 +591,19 @@ module.exports.resetPassword = async (event) => {
                 PK: `TENANT#${personaItem.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry',
+            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry, passwordTemporalVence, activacionPendiente',
             ExpressionAttributeValues: {
                 ':ph': newPasswordHash,
                 ':pt': false,
                 ':u': now
             }
         }));
-        // Mantiene la contraseña "única" para toda la identidad (mismo RUT en
-        // otras empresas).
-        const hermanas = await personaService.propagarPassword(personaItem, passwordNuevo, { passwordTemporal: false });
+        const correo = String(personaItem.email || '').trim().toLowerCase();
+        const origen = correo ? await personaService.getById(personaId) : null;
+        const hermanas = origen ? await personaService.propagarPassword(origen, passwordNuevo, {
+            passwordTemporal: false,
+            cuales: (h) => String(h.email || '').trim().toLowerCase() === correo,
+        }) : [];
 
         // Quien recupera su cuenta la recupera entera: una sesión abierta con la
         // contraseña anterior no sigue valiendo (D-26).

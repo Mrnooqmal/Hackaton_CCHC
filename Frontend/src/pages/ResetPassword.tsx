@@ -8,6 +8,7 @@ export default function ResetPassword() {
     const navigate = useNavigate();
     const personaId = searchParams.get('pid') || '';
     const token = searchParams.get('token') || '';
+    const activar = searchParams.get('activar') === '1';
     const linkValido = !!personaId && !!token;
 
     const [form, setForm] = useState({ passwordNuevo: '', confirmarPassword: '' });
@@ -57,7 +58,9 @@ export default function ResetPassword() {
                         <FiAlertCircle size={40} style={{ color: 'var(--danger-500, #ef4444)', marginBottom: 12 }} />
                         <h1 className="auth-simple-title">Enlace inválido</h1>
                         <p className="auth-simple-sub">
-                            El enlace de recuperación está incompleto o es inválido. Solicita uno nuevo.
+                            {activar
+                                ? 'El enlace de activación está incompleto o es inválido. Pide a tu empresa que active tu acceso.'
+                                : 'El enlace de recuperación está incompleto o es inválido. Solicita uno nuevo.'}
                         </p>
                         <Link to="/recuperar-clave" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
                             Solicitar nuevo enlace
@@ -66,13 +69,17 @@ export default function ResetPassword() {
                 ) : done ? (
                     <div className="auth-simple-success">
                         <FiCheckCircle size={40} className="auth-simple-success-icon" />
-                        <h1 className="auth-simple-title">¡Contraseña restablecida!</h1>
+                        <h1 className="auth-simple-title">{activar ? '¡Cuenta activada!' : '¡Contraseña restablecida!'}</h1>
                         <p className="auth-simple-sub">Redirigiendo al inicio de sesión…</p>
                     </div>
                 ) : (
                     <>
-                        <h1 className="auth-simple-title">Nueva contraseña</h1>
-                        <p className="auth-simple-sub">Crea una contraseña nueva y segura para tu cuenta.</p>
+                        <h1 className="auth-simple-title">{activar ? 'Activa tu cuenta' : 'Nueva contraseña'}</h1>
+                        <p className="auth-simple-sub">
+                            {activar
+                                ? 'Elige tu contraseña. Después entras con tu RUT y esta contraseña.'
+                                : 'Crea una contraseña nueva y segura para tu cuenta.'}
+                        </p>
                         <form onSubmit={handleSubmit} noValidate>
                             <div className="form-group">
                                 <label className="form-label">Nueva contraseña</label>
@@ -125,7 +132,7 @@ export default function ResetPassword() {
 
                             <button type="submit" className="btn btn-primary" disabled={loading || !canSubmit}
                                 style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}>
-                                {loading ? 'Guardando…' : 'Restablecer contraseña'}
+                                {loading ? 'Guardando…' : activar ? 'Activar mi cuenta' : 'Restablecer contraseña'}
                             </button>
                         </form>
                     </>

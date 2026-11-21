@@ -205,7 +205,7 @@ test('sabotaje: los correos de SES escapan nombres, empresas y mensajes', async 
         const n = require('../handlers/notifications/handler');
         const correos = async (t) => {
             enviados.length = 0;
-            await n.sendWelcomeEmail('a@ejemplo.cl', t, t, t);
+            await n.sendActivacionEmail('a@ejemplo.cl', t, `https://x/?t=${t}`, 72);
             await n.sendPasswordResetEmail('a@ejemplo.cl', t, `https://x/?t=${t}`, 30);
             await n.sendOnboardingLicenseEmail('a@ejemplo.cl', `https://x/?t=${t}`, 7, t);
             await n.sendPinRestablecidoEmail('a@ejemplo.cl', t, { porNombre: t, fecha: t, horario: t, motivo: t });

@@ -4,7 +4,7 @@ import { personasApi } from '../api/personas.api';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
-import { FormPage, FieldSection, Select, CredentialCard, PageHeader } from '../components/ui';
+import { FormPage, FieldSection, Select, PageHeader } from '../components/ui';
 import { FiCheckCircle } from 'react-icons/fi';
 import { getCargoLabel } from '../utils/ds44';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
@@ -143,7 +143,7 @@ export default function PersonaNueva() {
     const [rutError, setRutError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
-    const [success, setSuccess] = useState<{ rut: string; nombre: string; password?: string } | null>(null);
+    const [success, setSuccess] = useState<{ rut: string; nombre: string; enlace: 'enviado' | 'fallido' | 'suprimido' | 'sin-correo' } | null>(null);
 
     useEffect(() => {
         if (!tenantId) return;
@@ -248,7 +248,7 @@ export default function PersonaNueva() {
             setSuccess({
                 rut: res.data.persona.rut,
                 nombre: `${form.nombre} ${form.apellidoPaterno}`.trim(),
-                password: res.data.passwordTemporal,
+                enlace: res.data.enlaceActivacion,
             });
         } catch {
             setFormError('Error de conexión. Intenta nuevamente.');
@@ -280,14 +280,26 @@ export default function PersonaNueva() {
                                 {success.nombre} ha sido registrado/a correctamente en la empresa.
                             </p>
                         </div>
-                        {success.password && (
-                            <CredentialCard rut={success.rut} password={success.password} />
-                        )}
+                        <div className="alta-activacion" role="status">
+                            <p><strong>Su acceso queda pendiente de activación.</strong> Nadie puede entrar con su RUT hasta que se active.</p>
+                            {success.enlace === 'enviado' && (
+                                <p>Le enviamos a su correo un enlace para que elija su contraseña. Vence en 72 horas.</p>
+                            )}
+                            {(success.enlace === 'fallido' || success.enlace === 'suprimido') && (
+                                <p>No se pudo enviar el enlace a su correo. Activa su acceso en terreno.</p>
+                            )}
+                            <p>En terreno, con la persona presente: abre su ficha y toca <strong>Activar acceso</strong>, o usa <strong>Activar accesos</strong> en Personas para activar a varias seguidas.</p>
+                        </div>
+                        <style>{`
+                            .alta-activacion { width: 100%; text-align: left; padding: 14px 16px; border: 1px solid var(--surface-border); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+                            .alta-activacion p { margin: 0; font-size: 0.88rem; line-height: 1.55; color: var(--text-secondary); }
+                            .alta-activacion strong { color: var(--text-primary); }
+                        `}</style>
                         <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                             <button className="btn btn-secondary" onClick={() => { setSuccess(null); setForm(INITIAL_FORM); setSelectedObraIds(selectedObraId ? [selectedObraId] : []); setObraSupervisores({}); }}>
                                 Crear otra persona
                             </button>
-                            <button className="btn btn-primary" onClick={() => navigate('/personas', { state: { created: true, rut: success.rut, password: success.password } })}>
+                            <button className="btn btn-primary" onClick={() => navigate('/personas', { state: { created: true, rut: success.rut } })}>
                                 Ir a personas
                             </button>
                         </div>

@@ -249,17 +249,15 @@ function exigir(ok, que, respuesta) {
 }
 
 /**
- * Primer ingreso completo: contraseña inicial (D-13), cambio, PIN y
+ * Primer ingreso completo: contraseña temporal, cambio, PIN y
  * enrolamiento. Es el mismo camino que recorre una persona desde el frontend, y
  * el mismo que comprueba la prueba de punta a punta.
  *
  * El PIN se deja puesto porque sin él no se puede firmar nada, y una actividad
  * sin firmas no sirve para probar el panel.
  */
-async function primerIngreso(c, { rut, personaId }) {
-    const inicial = desechable.passwordInicial(rut);
-
-    const login = await c.pedir('POST', '/auth/login', { cuerpo: { rut, password: inicial } });
+async function primerIngreso(c, { rut, personaId, password }) {
+    const login = await c.pedir('POST', '/auth/login', { cuerpo: { rut, password } });
     exigir(login.status === 200 && login.cuerpo?.data?.token, `No se pudo entrar con el RUT ${rut}`, login);
     const tokenInicial = login.cuerpo.data.token;
 
@@ -350,7 +348,7 @@ async function sembrar(stage) {
     log(`tenantId: ${empresa.tenantId}`);
 
     const creadas = [empresa.adminPersonaId];
-    const tokenAdmin = await primerIngreso(c, { rut: empresa.adminRut, personaId: empresa.adminPersonaId });
+    const tokenAdmin = await primerIngreso(c, { rut: empresa.adminRut, personaId: empresa.adminPersonaId, password: empresa.adminPassword });
     log(`Administrador listo: ${empresa.adminRut}`);
 
     paso(`Obras (${OBRAS.length})`);
@@ -395,7 +393,6 @@ async function sembrar(stage) {
                     nombre: miembro.nombre,
                     apellidoPaterno: miembro.apellidoPaterno,
                     apellidoMaterno: miembro.apellidoMaterno,
-                    email: desechable.CORREO_PRUEBAS,
                     rol: miembro.rol,
                     tieneAccesoWeb: true,
                 },
@@ -420,7 +417,9 @@ async function sembrar(stage) {
             });
             exigir(asig.status === 200 || asig.status === 201, `No se pudo asignar a ${miembro.nombre} a ${o.nombre}`, asig);
 
-            const token = await primerIngreso(c, { rut, personaId });
+            const activacion = await c.pedir('POST', `/personas/${personaId}/activar-acceso`, { token: tokenAdmin, cuerpo: {} });
+            exigir(activacion.status === 200 && activacion.cuerpo?.data?.password, `No se pudo activar a ${miembro.nombre}`, activacion);
+            const token = await primerIngreso(c, { rut, personaId, password: activacion.cuerpo.data.password });
             personasPorObra[o.clave].push({ personaId, rut, token, rol: miembro.rol });
         }
         log(`${o.nombre}: ${personasPorObra[o.clave].length} personas`);
