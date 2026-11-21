@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
 import PinCasillas from '../components/PinCasillas';
 import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
+import { privacidadApi, type FinalidadConsentimiento } from '../api/gobernanza.api';
 import { LARGO_PIN } from '../utils/pin';
 import {
     FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
@@ -115,6 +116,21 @@ export default function EnrollMe() {
     const [profileSaving, setProfileSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // La foto de perfil depende del consentimiento `foto_perfil` (Ley 21.719):
+    // sin él, el servidor rechaza la foto. Se trae el texto vigente para
+    // mostrarlo aquí mismo; la casilla parte sin marcar (el silencio no es
+    // consentimiento).
+    const [consentFoto, setConsentFoto] = useState<FinalidadConsentimiento | null>(null);
+    const [autorizaFoto, setAutorizaFoto] = useState(false);
+    useEffect(() => {
+        if (currentStep !== 'profile' || consentFoto) return;
+        privacidadApi.consentimientos().then((r) => {
+            const f = r.success ? r.data?.finalidades.find((x) => x.finalidad === 'foto_perfil') : undefined;
+            if (f) setConsentFoto(f);
+        }).catch(() => { /* se reintenta al guardar */ });
+    }, [currentStep, consentFoto]);
+    const fotoRequiereConsentimiento = !!fotoPerfil && !consentFoto?.vigente;
+
     const irA = (paso: EnrollmentStep) => {
         setError('');
         setNoCoincide(false);
@@ -205,29 +221,54 @@ export default function EnrollMe() {
     };
 
     const saveProfileAndContinue = async (skip = false) => {
+        if (skip) { irA('success'); return; }
+
+        const targetId = (user as any)?.personaId || user?.userId;
+        const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
+        if (!targetId || !targetTenant) { irA('success'); return; }
+
+        if (fotoRequiereConsentimiento && !autorizaFoto) {
+            setError('Para guardar tu foto, marca la autorización. Si prefieres no darla, quita la foto.');
+            return;
+        }
+
+        setError('');
         setProfileSaving(true);
         try {
-            const targetId = (user as any)?.personaId || user?.userId;
-            const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
-
-            if (targetId && targetTenant && !skip) {
-                const updates: Record<string, any> = {};
-                if (fotoPerfil) updates.fotoPerfil = fotoPerfil;
-                const telefonoFull = telefono.replace(/\D/g, '').length >= 9
-                    ? `+56 ${telefono}`
-                    : '';
-                if (telefonoFull) updates.telefono = telefonoFull;
-
-                if (Object.keys(updates).length > 0) {
-                    await personasApi.update(targetTenant, targetId, updates);
-                    updateUser({ fotoPerfil: fotoPerfil || undefined, telefono: telefonoFull || undefined });
+            // 1. Consentimiento antes que la foto: el servidor exige que esté vigente.
+            if (fotoRequiereConsentimiento) {
+                let f = consentFoto;
+                if (!f) {
+                    const r = await privacidadApi.consentimientos();
+                    f = (r.success && r.data?.finalidades.find((x) => x.finalidad === 'foto_perfil')) || null;
+                    if (!f) throw new Error(r.error || 'No se pudo cargar el texto de autorización de la foto.');
+                    setConsentFoto(f);
+                }
+                if (!f.vigente) {
+                    const r = await privacidadApi.otorgar('foto_perfil', f.version);
+                    if (!r.success || !r.data) throw new Error(r.error || 'No se pudo guardar tu autorización para la foto.');
+                    setConsentFoto(r.data);
                 }
             }
-        } catch {
-            // non-blocking — profile update failure shouldn't block enrollment
+
+            // 2. Perfil.
+            const updates: Record<string, any> = {};
+            if (fotoPerfil) updates.fotoPerfil = fotoPerfil;
+            const telefonoFull = telefono.replace(/\D/g, '').length >= 9 ? `+56 ${telefono}` : '';
+            if (telefonoFull) updates.telefono = telefonoFull;
+
+            if (Object.keys(updates).length > 0) {
+                const r = await personasApi.update(targetTenant, targetId, updates);
+                if (!r.success) throw new Error(r.error || 'No se pudo guardar tu perfil.');
+                updateUser({ fotoPerfil: fotoPerfil || undefined, telefono: telefonoFull || undefined });
+            }
+            irA('success');
+        } catch (err) {
+            // Se queda en el paso: puede reintentar u omitir. Antes el error se
+            // ocultaba y el perfil quedaba sin guardar sin que la persona lo supiera.
+            setError(mensajeDeError(err, 'No se pudo guardar tu perfil.'));
         } finally {
             setProfileSaving(false);
-            irA('success');
         }
     };
 
@@ -478,7 +519,7 @@ export default function EnrollMe() {
                                     {fotoPerfil ? 'Cambiar foto' : 'Subir una foto'}
                                 </button>
                                 {fotoPerfil ? (
-                                    <button type="button" className="enr-foto-quitar" onClick={() => setFotoPerfil(null)}>
+                                    <button type="button" className="enr-foto-quitar" onClick={() => { setFotoPerfil(null); setAutorizaFoto(false); setError(''); }}>
                                         <FiX size={13} /> Quitar
                                     </button>
                                 ) : (
@@ -488,6 +529,21 @@ export default function EnrollMe() {
                             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageChange} />
                         </div>
 
+                        {fotoRequiereConsentimiento && (
+                            <div className="enr-consent">
+                                <p className="enr-consent-texto">
+                                    {consentFoto?.texto ?? 'Cargando el texto de autorización…'}
+                                </p>
+                                <label className="enr-consent-check">
+                                    <input type="checkbox" className="checkbox-input custom-checkbox"
+                                        checked={autorizaFoto} disabled={!consentFoto}
+                                        onChange={(e) => { setAutorizaFoto(e.target.checked); setError(''); }} />
+                                    <span>Leí el texto y autorizo que se muestre mi foto de perfil</span>
+                                </label>
+                                <p className="enr-consent-nota">Puedes revocarlo cuando quieras en Mis datos y privacidad.</p>
+                            </div>
+                        )}
+
                         <div className="lp-field enr-telefono">
                             <label className="lp-label" htmlFor="enr-telefono">Teléfono móvil</label>
                             <div className="enr-telefono-campo">
@@ -496,6 +552,8 @@ export default function EnrollMe() {
                                     placeholder="9 1234 5678" value={telefono} onChange={handleTelefonoChange} />
                             </div>
                         </div>
+
+                        {ErrorServidor}
 
                         <button type="submit" className="lp-submit enr-accion" disabled={profileSaving}>
                             {profileSaving ? <div className="lp-spinner" /> : <><span>Guardar y terminar</span><FiCheck size={15} /></>}
