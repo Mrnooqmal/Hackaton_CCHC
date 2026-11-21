@@ -6,6 +6,7 @@ import { FiLock, FiKey, FiEdit2, FiShield } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
 import { IdentityPanel, AlertBanner } from '../components/ui';
 import { getCargoLabel } from '../utils/ds44';
+import { privacidadApi } from '../api/gobernanza.api';
 import '../css/ficha.css';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -92,6 +93,20 @@ export default function Settings() {
 
     const [showPinConfirm, setShowPinConfirm] = useState(false);
 
+    // La foto depende del consentimiento `foto_perfil`. Se consulta de antemano
+    // para avisar con un acceso directo en vez de intentar y fallar. `null` = no
+    // se supo (sin señal, error): se intenta igual y decide el servidor.
+    const [consienteFoto, setConsienteFoto] = useState<boolean | null>(null);
+    const [avisoConsentimientoFoto, setAvisoConsentimientoFoto] = useState(false);
+    const consultarConsentimientoFoto = async (): Promise<boolean | null> => {
+        const r = await privacidadApi.consentimientos().catch(() => null);
+        const f = r?.success ? r.data?.finalidades.find((x) => x.finalidad === 'foto_perfil') : undefined;
+        const vigente = f ? f.vigente : null;
+        setConsienteFoto(vigente);
+        return vigente;
+    };
+    useEffect(() => { consultarConsentimientoFoto(); }, []);
+
     useEffect(() => {
         const tenantId = user?.tenantId || (user as any)?.empresaId;
         const rut = user?.rut;
@@ -117,13 +132,25 @@ export default function Settings() {
         setPhotoSaving(true);
         setPhotoSuccess(false);
         setPhotoError('');
+        setAvisoConsentimientoFoto(false);
+        if (consienteFoto === false) {
+            setPhotoSaving(false);
+            setAvisoConsentimientoFoto(true);
+            return;
+        }
         try {
             const base64 = await resizeImageToBase64(file, 320);
             if (personaId && tenantId) {
                 // La foto depende de tu consentimiento (Mis datos y privacidad):
-                // sin él, el servidor no la guarda y se explica por qué.
+                // sin él, el servidor no la guarda.
                 const res = await personasApi.update(tenantId, personaId, { fotoPerfil: base64 });
-                if (!res.success) { setPhotoError(res.error || 'No se pudo guardar la foto.'); return; }
+                if (!res.success) {
+                    // Si el estado no se sabía (o cambió en otra pestaña), se vuelve
+                    // a consultar para ofrecer el acceso directo en vez del texto.
+                    if (await consultarConsentimientoFoto() === false) setAvisoConsentimientoFoto(true);
+                    else setPhotoError(res.error || 'No se pudo guardar la foto.');
+                    return;
+                }
             }
             updateUser({ fotoPerfil: base64 });
             setPhotoSuccess(true);
@@ -231,6 +258,18 @@ export default function Settings() {
 
                 {photoError && (
                     <AlertBanner variant="warning" message={photoError} onDismiss={() => setPhotoError('')} />
+                )}
+                {avisoConsentimientoFoto && (
+                    <AlertBanner
+                        variant="warning"
+                        autoDismissMs={0}
+                        onDismiss={() => setAvisoConsentimientoFoto(false)}
+                        message="Para subir una foto de perfil, primero otorga tu consentimiento en Mis datos y privacidad. Sin foto, el sistema funciona igual."
+                    >
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => navigate('/mis-datos?seccion=consentimientos')}>
+                            Ir a Mis datos y privacidad
+                        </button>
+                    </AlertBanner>
                 )}
 
                 <div
