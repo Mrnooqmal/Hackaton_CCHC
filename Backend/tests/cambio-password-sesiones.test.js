@@ -34,7 +34,7 @@ const { sesionDesdeToken } = require('../lib/auth/sesion');
 const auth = require('../handlers/auth/handler');
 
 const RUT = '12.345.678-5';
-const INICIAL = '1234';
+let INICIAL;
 
 let doble;
 let tenantA;
@@ -49,6 +49,10 @@ beforeEach(async () => {
         rut: RUT, nombre: 'Juan', rol: 'trabajador', email: 'juan@ejemplo.cl', tieneAccesoWeb: true,
     });
     personaA = persona.personaId;
+    INICIAL = (await new PersonaService().emitirTemporal(tenantA, personaA, {
+        horas: 2, actor: { id: 'p-prueba', tipo: 'persona', nombre: 'Prueba' }, operacion: 'credencial.acceso_activado',
+        exigir: 'pendiente', aviso: { asunto: 'Acceso activado', contenido: 'Prueba activó tu acceso.' },
+    })).password;
 });
 afterEach(() => doble.restaurar());
 

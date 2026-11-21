@@ -127,11 +127,11 @@ class AltaEmpresaService {
      *
      * @param {object} datos
      * @param {string|null} datos.password - si viene, el administrador queda con
-     *        SU contraseña y sin paso de cambio obligatorio. Si no, se genera una
-     *        temporal (camino del script del operador).
+     *        SU contraseña y sin paso de cambio obligatorio. Si no, queda
+     *        pendiente de activación.
      * @param {object|null} datos.identidad - `{ colorPrimario, logoBase64, logoOscuroBase64 }`
      *        elegidos en el onboarding; los mismos campos que edita Mi Empresa.
-     * @returns {Promise<{tenant, persona, passwordTemporal: string|null}>}
+     * @returns {Promise<{tenant, persona}>}
      */
     static async crear({ nombre, rutEmpresa, admin, password = null, identidad = null, creadoPor = null }) {
         const revision = await this.revisar({ nombre, rutEmpresa, admin, password, identidad });
@@ -180,7 +180,7 @@ class AltaEmpresaService {
         }
 
         // 3. Administrador.
-        const { persona, passwordTemporal } = await personaService.crear(tenant.tenantId, {
+        const { persona } = await personaService.crear(tenant.tenantId, {
             rut: revision.rutAdmin,
             nombre: admin.nombre,
             apellidoPaterno: admin.apellidoPaterno || '',
@@ -198,7 +198,7 @@ class AltaEmpresaService {
         await tenantService.updateConfig(tenant.tenantId, { adminPersonaId: persona.personaId });
         const activo = await tenantService.activar(tenant.tenantId);
 
-        return { tenant: activo || tenant, persona, passwordTemporal };
+        return { tenant: activo || tenant, persona };
     }
 }
 

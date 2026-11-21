@@ -66,10 +66,22 @@ const cambiar = (personaId, tenantId, passwordNuevo, passwordActual) => auth.cha
     body: JSON.stringify({ passwordActual, passwordNuevo, confirmarPassword: passwordNuevo }),
 });
 
+const activar = async (tenantId, personaId) => (await new PersonaService().emitirTemporal(tenantId, personaId, {
+    horas: 2, actor: { id: 'p-prueba', tipo: 'persona', nombre: 'Prueba' }, operacion: 'credencial.acceso_activado',
+    exigir: 'pendiente', aviso: { asunto: 'Acceso activado', contenido: 'Prueba activó tu acceso.' },
+})).password;
+
 const definir = async (personaId, tenantId, password) => {
+    await activar(tenantId, personaId);
     const res = await cambiar(personaId, tenantId, password);
     assert.equal(res.statusCode, 200, res.body);
 };
+
+const fijar = async (personaId, tenantId, password, extra = {}) => docClient.send(new UpdateCommand({
+    TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+    UpdateExpression: `SET passwordHash = :h, passwordTemporal = :t${extra.vence ? ', passwordTemporalVence = :v' : ''} REMOVE activacionPendiente`,
+    ExpressionAttributeValues: { ':h': await credenciales.hashear(password, personaId), ':t': Boolean(extra.temporal), ...(extra.vence ? { ':v': extra.vence } : {}) },
+}));
 
 const coincide = async (personaId, password) => {
     const p = await new PersonaService().getById(personaId);
@@ -102,28 +114,30 @@ const restablecerPorCorreo = async (personaId, tenantId, passwordNuevo) => {
     assert.equal(res.statusCode, 200, res.body);
 };
 
-test('H-B: la contraseña inicial de una ficha nueva no abre la empresa donde la persona ya estaba', async () => {
+test('H-B: la temporal de una ficha nueva no abre la empresa donde la persona ya estaba', async () => {
     const b = await empresa('Constructora B');
     const enB = await ficha(b);
     await definir(enB, b, 'Propia-de-B-1');
 
     const a = await empresa('Constructora A');
-    await ficha(a);
+    const enA = await ficha(a);
+    const temporal = await activar(a, enA);
 
-    assert.deepEqual(await empresasQueAbre(INICIAL), [a]);
+    assert.deepEqual(await empresasQueAbre(temporal), [a]);
     assert.deepEqual(await empresasQueAbre('Propia-de-B-1'), [b]);
+    assert.deepEqual(await empresasQueAbre(INICIAL), [], 'los cuatro dígitos no abren nada');
 });
 
 test('una contraseña que coincide en dos empresas sigue ofreciendo las dos', async () => {
     const a = await empresa('Constructora A');
     const b = await empresa('Constructora B');
-    await ficha(a);
-    await ficha(b);
+    await fijar(await ficha(a), a, 'Comun-1');
+    await fijar(await ficha(b), b, 'Comun-1');
 
-    assert.deepEqual(await empresasQueAbre(INICIAL), [a, b].sort());
+    assert.deepEqual(await empresasQueAbre('Comun-1'), [a, b].sort());
 });
 
-test('el cambio desde la contraseña inicial no se copia a otra empresa ni cierra sus sesiones', async () => {
+test('el cambio desde la temporal no se copia a otra empresa ni cierra sus sesiones', async () => {
     const b = await empresa('Constructora B');
     const enB = await ficha(b);
     await definir(enB, b, 'Propia-de-B-1');
@@ -139,16 +153,18 @@ test('el cambio desde la contraseña inicial no se copia a otra empresa ni cierr
     assert.deepEqual(await empresasQueAbre('Puesta-en-A-1'), [a]);
 });
 
-test('el cambio desde la inicial no se copia aunque la otra empresa tenga la misma inicial y se envíe como actual', async () => {
+test('el cambio desde la temporal no se copia aunque la otra empresa tenga la misma y se envíe como actual', async () => {
     const a = await empresa('Constructora A');
     const b = await empresa('Constructora B');
     const enA = await ficha(a);
     const enB = await ficha(b);
+    const temporal = await activar(a, enA);
+    await fijar(enB, b, temporal, { temporal: true, vence: new Date(Date.now() + 3600e3).toISOString() });
 
-    const res = await cambiar(enA, a, 'Elegida-en-A-1', INICIAL);
+    const res = await cambiar(enA, a, 'Elegida-en-A-1', temporal);
     assert.equal(res.statusCode, 200, res.body);
 
-    assert.equal(await coincide(enB, INICIAL), true);
+    assert.equal(await coincide(enB, temporal), true);
     assert.equal(await coincide(enB, 'Elegida-en-A-1'), false);
     assert.deepEqual(await empresasQueAbre('Elegida-en-A-1'), [a]);
 });
@@ -161,11 +177,7 @@ test('el cambio con la contraseña actual se copia solo a las fichas donde esa c
     const enB = await ficha(b);
     const enC = await ficha(c);
     await definir(enA, a, 'Compartida-1');
-    await docClient.send(new UpdateCommand({
-        TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${b}`, SK: `PERSONA#${enB}` },
-        UpdateExpression: 'SET passwordHash = :h, passwordTemporal = :f',
-        ExpressionAttributeValues: { ':h': await credenciales.hashear('Compartida-1', enB), ':f': false },
-    }));
+    await fijar(enB, b, 'Compartida-1');
     await definir(enC, c, 'Otra-de-C-1');
     const tokenB = await sesionAbierta(enB, b);
     const tokenC = await sesionAbierta(enC, c);

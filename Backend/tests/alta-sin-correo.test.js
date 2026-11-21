@@ -31,7 +31,6 @@ let doble;
 let tenantId;
 let adminId;
 let correos;
-let originalBienvenida;
 let originalRecuperacion;
 
 // RUT válidos, con los cuatro primeros dígitos conocidos.
@@ -42,7 +41,6 @@ const RUT_CON_CORREO = '22.222.222-2';
 beforeEach(async () => {
     doble = crearDobleTablas(docClient, esquemas);
     correos = [];
-    originalBienvenida = notificaciones.sendWelcomeEmail;
     originalRecuperacion = notificaciones.sendPasswordResetEmail;
     notificaciones.sendPasswordResetEmail = async (email) => { correos.push({ tipo: 'recuperacion', email }); return { sent: true }; };
     const tenant = await new TenantService().setup({ nombre: 'Constructora Prueba', rutEmpresa: '76.543.210-3' });
@@ -54,20 +52,20 @@ beforeEach(async () => {
 });
 afterEach(() => {
     doble.restaurar();
-    notificaciones.sendWelcomeEmail = originalBienvenida;
     notificaciones.sendPasswordResetEmail = originalRecuperacion;
 });
 
 const itemDe = (personaId) => doble.items('PERSONAS_TABLE').find((i) => i.personaId === personaId);
 
-const pedir = (metodo, ruta, cuerpo) => personas.personasHandler({
+const pedirComo = (actorId, metodo, ruta, cuerpo, permisos = require('../lib/permissions').ALL_PERMISSION_KEYS.join(',')) => personas.personasHandler({
     requestContext: {
         http: { method: metodo },
-        authorizer: { lambda: { sessionId: 's-1', personaId: adminId, tenantId, rol: 'admin', permisos: 'personas.crear,personas.ver' } },
+        authorizer: { lambda: { sessionId: 's-1', personaId: actorId, tenantId, rol: 'admin', permisos } },
     },
     rawPath: ruta,
     body: JSON.stringify(cuerpo),
 });
+const pedir = (metodo, ruta, cuerpo) => pedirComo(adminId, metodo, ruta, cuerpo);
 
 // ─── El doble rechaza lo mismo que DynamoDB ─────────────────────────────────
 
@@ -100,12 +98,11 @@ test('con correo vacío o solo espacios, igual: sin atributo', async () => {
     assert.ok(!('email' in itemDe(b.personaId)));
 });
 
-test('sin correo, la contraseña inicial igual son los cuatro primeros dígitos del RUT', async () => {
-    const { persona, passwordTemporal } = await new PersonaService().crear(tenantId, { rut: RUT_SIN_CORREO, nombre: 'Juan', rol: 'trabajador' });
-    assert.equal(passwordTemporal, '1234');
+test('sin correo, la persona queda pendiente de activación y sin contraseña', async () => {
+    const { persona } = await new PersonaService().crear(tenantId, { rut: RUT_SIN_CORREO, nombre: 'Juan', rol: 'trabajador' });
     const item = itemDe(persona.personaId);
-    assert.ok(item.passwordHash, 'tiene contraseña');
-    assert.equal(item.passwordTemporal, true, 'y debe cambiarla al entrar');
+    assert.ok(!item.passwordHash, 'no hay contraseña que alguien pueda adivinar');
+    assert.equal(item.activacionPendiente, true);
 });
 
 test('con correo, se guarda sin espacios alrededor', async () => {
@@ -131,12 +128,15 @@ test('borrar el correo como único cambio también funciona', async () => {
 
 // ─── Alta manual y carga masiva, por la ruta ────────────────────────────────
 
-test('alta manual sin correo: 201, y la contraseña inicial vuelve a quien la registra', async () => {
+test('alta manual sin correo: 201, sin contraseña en la respuesta y sin enlace', async () => {
     const res = await pedir('POST', '/personas', { rut: RUT_SIN_CORREO, nombre: 'Juan', apellidoPaterno: 'Soto', rol: 'trabajador' });
     assert.equal(res.statusCode, 201, res.body);
     const cuerpo = JSON.parse(res.body).data;
-    assert.equal(cuerpo.passwordTemporal, '1234', 'es lo que quien registra le dice en persona');
-    assert.equal(cuerpo.emailNotificado, false);
+    assert.equal(cuerpo.passwordTemporal, undefined, 'ninguna contraseña vuelve a quien registra');
+    assert.equal(cuerpo.password, undefined);
+    assert.ok(!JSON.stringify(cuerpo).includes('"1234"'));
+    assert.equal(cuerpo.enlaceActivacion, 'sin-correo');
+    assert.equal(cuerpo.persona.activacionPendiente, true);
 });
 
 test('carga masiva con filas sin correo: se crean todas', async () => {
@@ -165,9 +165,14 @@ test('carga masiva con filas sin correo: se crean todas', async () => {
 
 // ─── Entrar y recuperar ──────────────────────────────────────────────────────
 
-test('alguien sin correo entra con su RUT y los cuatro dígitos, y se le pide cambiarla', async () => {
-    await new PersonaService().crear(tenantId, { rut: RUT_SIN_CORREO, nombre: 'Juan', rol: 'trabajador' });
-    const res = await auth.login({ body: JSON.stringify({ rut: RUT_SIN_CORREO, password: '1234' }), requestContext: { http: { sourceIp: '127.0.0.1' } } });
+test('alguien sin correo no entra con los cuatro dígitos; activado en terreno, entra con la temporal y se le pide cambiarla', async () => {
+    const { persona } = await new PersonaService().crear(tenantId, { rut: RUT_SIN_CORREO, nombre: 'Juan', rol: 'trabajador' });
+    const antes = await auth.login({ body: JSON.stringify({ rut: RUT_SIN_CORREO, password: '1234' }), requestContext: { http: { sourceIp: '127.0.0.1' } } });
+    assert.equal(antes.statusCode, 401);
+    const activacion = await pedirComo(adminId, 'POST', `/personas/${persona.personaId}/activar-acceso`, {});
+    assert.equal(activacion.statusCode, 200, activacion.body);
+    const { password } = JSON.parse(activacion.body).data;
+    const res = await auth.login({ body: JSON.stringify({ rut: RUT_SIN_CORREO, password }), requestContext: { http: { sourceIp: '127.0.0.1' } } });
     assert.equal(res.statusCode, 200, res.body);
     const d = JSON.parse(res.body).data;
     assert.ok(d.token, 'tiene sesión');

@@ -151,6 +151,8 @@ class Persona {
         // retira desde Mis datos (nunca `crear` ni `actualizar`).
         this.oposiciones = data.oposiciones ? [...data.oposiciones] : [];
         this.passwordTemporal = data.passwordTemporal || false;
+        this.passwordTemporalVence = data.passwordTemporalVence || null;
+        this.activacionPendiente = data.activacionPendiente || false;
 
         // Enrolamiento
         this.habilitado = data.habilitado || false;
@@ -374,6 +376,8 @@ class Persona {
             pinRestablecido: this.pinRestablecido,
             pinHistorial: this.pinHistorial,
             passwordTemporal: this.passwordTemporal,
+            ...(this.passwordTemporalVence ? { passwordTemporalVence: this.passwordTemporalVence } : {}),
+            ...(this.activacionPendiente ? { activacionPendiente: true } : {}),
             habilitado: this.habilitado,
             firmaEnrolamiento: this.firmaEnrolamiento,
             onboardingDS44: this.onboardingDS44,
@@ -449,6 +453,8 @@ class Persona {
             tratamientoBloqueado: this.solicitudesBloqueo.length > 0,
             estado: this.estado,
             passwordTemporal: this.passwordTemporal,
+            passwordTemporalVence: this.passwordTemporalVence,
+            activacionPendiente: this.activacionPendiente,
             onboardingDS44: this.onboardingDS44,
             ...(incluirSalud ? {
                 vigilanciaSalud: this.vigilanciaSalud,

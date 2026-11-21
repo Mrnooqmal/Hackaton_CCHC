@@ -230,9 +230,12 @@ module.exports.login = async (event) => {
         // a propósito. Una persona pertenece a una o dos empresas. Hacerlas en
         // paralelo multiplicaría la memoria del proceso por la cantidad de fichas.
         const coinciden = [];
+        let temporalesVencidas = 0;
         for (const p of candidatas) {
             const { valido, obsoleto } = await credenciales.verificar(password, p._passwordHash, p.personaId);
-            if (valido) {
+            if (valido && credenciales.temporalVencida(p)) {
+                temporalesVencidas += 1;
+            } else if (valido) {
                 coinciden.push(p);
                 // El ingreso es el único momento en que la contraseña en claro
                 // está a mano. Si el hash venía del esquema viejo —o de un costo
@@ -254,8 +257,11 @@ module.exports.login = async (event) => {
             for (const tenantId of (empresas.length ? empresas : [null])) {
                 await auditoria.registrar({
                     tenantId, operacion: 'auth.ingreso_fallido', resultado: 'denegado', actor: actorFallido,
-                    origen: auditoria.origenDe(event), detalle: { fichasConAcceso: candidatas.length },
+                    origen: auditoria.origenDe(event), detalle: { fichasConAcceso: candidatas.length, ...(temporalesVencidas ? { temporalVencida: true } : {}) },
                 }).catch((err) => registrarFallo('auditoria.ingreso_fallido', err));
+            }
+            if (temporalesVencidas) {
+                return error('Tu contraseña temporal venció. Pide que activen tu acceso de nuevo.', 401);
             }
             return error('Credenciales inválidas', 401);
         }
@@ -402,7 +408,7 @@ module.exports.changePassword = async (event) => {
                 PK: `TENANT#${persona.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente',
             ExpressionAttributeValues: {
                 ':passwordHash': newPasswordHash,
                 ':passwordTemporal': false,
@@ -448,7 +454,7 @@ module.exports.changePassword = async (event) => {
 };
 
 // Hash de un token de reset (no se guarda el token en claro, solo su hash).
-const hashResetToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const hashResetToken = credenciales.hashTokenEnlace;
 
 // Busca una persona por RUT sin conocer el tenant (mismo patrón que el login).
 //
@@ -585,7 +591,7 @@ module.exports.resetPassword = async (event) => {
                 PK: `TENANT#${personaItem.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry',
+            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry, passwordTemporalVence, activacionPendiente',
             ExpressionAttributeValues: {
                 ':ph': newPasswordHash,
                 ':pt': false,
