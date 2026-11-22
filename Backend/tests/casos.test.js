@@ -129,3 +129,133 @@ test('el espejo del frontend (utils/casos.ts) da lo mismo que lib/casos.js, caso
         assert.equal(E.esTipoPapel(t), C.esTipoPapel(t), String(t));
     }
 });
+
+// ── Fase 3: siguiente paso, cierre y medidas ─────────────────────────────────
+
+const { PERMISSIONS } = require('../lib/permissions');
+
+const CLASIFICADO = { tipo: 'condicion_subestandar' };
+const paso = (inc) => C.siguientePaso(inc).paso;
+const med = (estado, numero = 1) => ({ numero, medida: 'Instalar baranda', estado });
+
+// Un caso por tipo y etapa. El nombre dice dónde está el caso.
+const ETAPAS = {
+    sinClasificarHallazgo: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', evidencias: ['k'] },
+    sinClasificarIncidente: { clasificacion: 'incidente', tipo: 'incidente' },
+    sinClasificarAccidente: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'grave' },
+    // Hallazgo clasificado: falta responsable y plazo (no es un archivo, pero cerrar lo exige).
+    hallazgoSinResponsable: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { responsableId: null, plazoRespuestaISO: null, estadoCierre: 'en_proceso' } },
+    hallazgoSinFoto: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: [], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso' } },
+    // El comentario de cierre solo se cumple al cerrar: no puede trabar el paso de cerrar.
+    hallazgoListoParaCerrar: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso', comentarioCierre: null } },
+    hallazgoConMedidaPendiente: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso' }, medidasCorrectivas: [med('completada'), med('en_proceso', 2)] },
+    hallazgoCerrado: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { estadoCierre: 'cerrado', comentarioCierre: 'Listo' } },
+    incidenteListoParaCerrar: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, altoPotencial: false, estado: 'en_investigacion' },
+    incidenteAltoPotencialSinInforme: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, altoPotencial: true, estado: 'en_investigacion' },
+    incidenteAltoPotencialCompleto: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, altoPotencial: true, estado: 'en_investigacion', papeles: [papel('informe_investigacion')] },
+    incidenteCerrado: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, estado: 'cerrado' },
+    accidenteSinDiat: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion' },
+    accidenteSinMedidas: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')] },
+    accidenteMedidaSinTerminar: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('pendiente')] },
+    accidenteListoParaCerrar: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('completada'), med('verificada', 2)] },
+    graveSinConstancia: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'grave', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('completada')] },
+    accidenteCerrado: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'cerrado' },
+    // Un hallazgo con `estado` cerrado también cuenta como cerrado.
+    hallazgoCerradoPorEstado: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, estado: 'cerrado' },
+};
+
+test('siguientePaso: clasificar, papeles, medidas, cerrar y cerrado, para cada tipo de caso', () => {
+    const esperado = {
+        sinClasificarHallazgo: 'clasificar', sinClasificarIncidente: 'clasificar', sinClasificarAccidente: 'clasificar',
+        hallazgoSinResponsable: 'papeles', hallazgoSinFoto: 'papeles', hallazgoListoParaCerrar: 'cerrar',
+        hallazgoConMedidaPendiente: 'medidas', hallazgoCerrado: 'cerrado', hallazgoCerradoPorEstado: 'cerrado',
+        incidenteListoParaCerrar: 'cerrar', incidenteAltoPotencialSinInforme: 'papeles', incidenteAltoPotencialCompleto: 'cerrar', incidenteCerrado: 'cerrado',
+        accidenteSinDiat: 'papeles', accidenteSinMedidas: 'medidas', accidenteMedidaSinTerminar: 'medidas', accidenteListoParaCerrar: 'cerrar',
+        graveSinConstancia: 'papeles', accidenteCerrado: 'cerrado',
+    };
+    for (const [nombre, p] of Object.entries(esperado)) assert.equal(paso(ETAPAS[nombre]), p, nombre);
+    assert.deepEqual(Object.keys(esperado).sort(), Object.keys(ETAPAS).sort(), 'cada etapa de la tabla tiene su caso');
+});
+
+test('siguientePaso: devuelve paso, título, detalle y el permiso de quien lo hace', () => {
+    for (const [nombre, inc] of Object.entries(ETAPAS)) {
+        const s = C.siguientePaso(inc);
+        assert.deepEqual(Object.keys(s).sort(), ['detalle', 'paso', 'permiso', 'titulo'], nombre);
+        assert.ok(s.titulo.length > 3 && s.detalle.length > 3, nombre);
+        const permiso = { clasificar: 'incidentes.calificar_accidente', papeles: 'incidentes.reportar', medidas: 'incidentes.reportar', cerrar: 'incidentes.calificar_accidente', cerrado: null }[s.paso];
+        assert.equal(s.permiso, permiso, nombre);
+    }
+    assert.match(C.siguientePaso(ETAPAS.sinClasificarHallazgo).detalle, /hallazgo/i);
+    assert.match(C.siguientePaso(ETAPAS.graveSinConstancia).detalle, /Constancia del aviso/);
+    assert.match(C.siguientePaso(ETAPAS.hallazgoSinResponsable).detalle, /Responsable y plazo/);
+    assert.match(C.siguientePaso(ETAPAS.accidenteMedidaSinTerminar).detalle, /1 medida sin completar/);
+    assert.match(C.siguientePaso(ETAPAS.hallazgoConMedidaPendiente).detalle, /1 medida sin completar/);
+    assert.match(C.siguientePaso({ ...ETAPAS.accidenteListoParaCerrar, medidasCorrectivas: [med('pendiente'), med('pendiente', 2)] }).detalle, /2 medidas sin completar/);
+    // Sin datos: no se cae.
+    assert.equal(paso(null), 'clasificar');
+    assert.equal(paso({}), 'clasificar');
+});
+
+test('siguientePaso: el comentario de cierre de un hallazgo no bloquea el paso de cerrar', () => {
+    // Sin comentario es un papel requerido incumplido, pero solo se cumple al cerrar.
+    assert.equal(cumplido(ETAPAS.hallazgoListoParaCerrar, 'comentario_cierre'), false);
+    assert.equal(paso(ETAPAS.hallazgoListoParaCerrar), 'cerrar');
+});
+
+test('pendientesDeCierre: lista legible de lo que falta; el comentario de la petición cuenta en un hallazgo', () => {
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.accidenteListoParaCerrar, 'Cierre'), []);
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.hallazgoListoParaCerrar, 'Se reparó'), []);
+    // Sin comentario, el hallazgo lo echa de menos.
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.hallazgoListoParaCerrar, ''), ['Falta: Comentario de cierre.']);
+    const faltas = C.pendientesDeCierre(ETAPAS.sinClasificarAccidente, 'x');
+    assert.ok(faltas.includes('Clasificar el reporte (tipo y gravedad).'));
+    assert.ok(faltas.includes('Falta: DIAT.'));
+    assert.ok(faltas.includes('Falta: Al menos una medida correctiva.'));
+    assert.ok(faltas.some((f) => /Constancia del aviso/.test(f)));
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.accidenteMedidaSinTerminar, 'x'), ['Una medida sigue sin completar: Instalar baranda.']);
+    // Las medidas anteriores a la fase (sin estado) cuentan como pendientes.
+    assert.deepEqual(C.pendientesDeCierre({ ...ETAPAS.accidenteListoParaCerrar, medidasCorrectivas: [{ numero: 1, medida: 'Antigua' }] }, 'x'), ['Una medida sigue sin completar: Antigua.']);
+});
+
+test('estaCerrado: el hallazgo por su gobernanza (o su estado), el incidente por su estado', () => {
+    assert.equal(C.estaCerrado(ETAPAS.hallazgoCerrado), true);
+    assert.equal(C.estaCerrado(ETAPAS.hallazgoCerradoPorEstado), true);
+    assert.equal(C.estaCerrado(ETAPAS.incidenteCerrado), true);
+    assert.equal(C.estaCerrado(ETAPAS.hallazgoListoParaCerrar), false);
+    assert.equal(C.estaCerrado(ETAPAS.incidenteListoParaCerrar), false);
+    // La gobernanza de un incidente no lo cierra.
+    assert.equal(C.estaCerrado({ clasificacion: 'incidente', gobernanza: { estadoCierre: 'cerrado' } }), false);
+    assert.equal(C.estaCerrado(null), false);
+});
+
+test('los permisos del siguiente paso son los de PERMISSIONS, y el catálogo de medidas es el esperado', () => {
+    assert.equal(C.PERMISO_CLASIFICAR, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
+    assert.equal(C.PERMISO_GESTIONAR, PERMISSIONS.INCIDENTES_REPORTAR);
+    assert.deepEqual(C.JERARQUIA_CONTROL, ['eliminacion', 'sustitucion', 'ingenieria', 'administrativa', 'epp']);
+    assert.deepEqual(C.ESTADOS_MEDIDA, ['pendiente', 'en_proceso', 'completada', 'verificada']);
+    assert.equal(C.medidaTerminada({ estado: 'completada' }), true);
+    assert.equal(C.medidaTerminada({ estado: 'verificada' }), true);
+    assert.equal(C.medidaTerminada({ estado: 'en_proceso' }), false);
+    assert.equal(C.medidaTerminada({}), false);
+});
+
+test('el espejo del frontend da lo mismo en siguientePaso, pendientesDeCierre y estaCerrado, etapa por etapa', () => {
+    const E = cargarTs('casos.ts');
+    for (const [nombre, inc] of Object.entries(ETAPAS)) {
+        assert.deepEqual(E.siguientePaso(inc), C.siguientePaso(inc), nombre);
+        assert.deepEqual(E.pendientesDeCierre(inc, 'Comentario'), C.pendientesDeCierre(inc, 'Comentario'), nombre);
+        assert.deepEqual(E.pendientesDeCierre(inc, ''), C.pendientesDeCierre(inc, ''), nombre);
+        assert.equal(E.estaCerrado(inc), C.estaCerrado(inc), nombre);
+    }
+    for (const inc of [null, undefined, {}]) {
+        assert.deepEqual(E.siguientePaso(inc), C.siguientePaso(inc));
+        assert.deepEqual(E.pendientesDeCierre(inc, 'x'), C.pendientesDeCierre(inc, 'x'));
+    }
+    assert.equal(E.PERMISO_CLASIFICAR, C.PERMISO_CLASIFICAR);
+    assert.equal(E.PERMISO_GESTIONAR, C.PERMISO_GESTIONAR);
+    assert.deepEqual(E.JERARQUIA_CONTROL, C.JERARQUIA_CONTROL);
+    assert.deepEqual(E.ESTADOS_MEDIDA, C.ESTADOS_MEDIDA);
+    assert.equal(E.MAX_MEDIDAS_POR_CASO, C.MAX_MEDIDAS_POR_CASO);
+    assert.equal(E.MAX_TEXTO_MEDIDA, C.MAX_TEXTO_MEDIDA);
+    for (const e of [...C.ESTADOS_MEDIDA, 'zzz', undefined]) assert.equal(E.medidaTerminada({ estado: e }), C.medidaTerminada({ estado: e }), String(e));
+});

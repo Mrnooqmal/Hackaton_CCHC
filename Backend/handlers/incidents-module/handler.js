@@ -9,6 +9,8 @@ const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = requ
 const {
     ORDEN_TIPOS_PAPEL, esTipoPapel, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     papelesRequeridos, avanceDelCaso,
+    PERMISO_CLASIFICAR, PERMISO_GESTIONAR, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
+    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
 } = require('../../lib/casos');
 
 const incidentsRepo = new IncidentsRepository();
@@ -79,6 +81,35 @@ const rechazoParaEvidencia = (incidente, sesion) => {
     return sinPermiso('Solo quien reportó el caso puede adjuntarle evidencia.');
 };
 
+/**
+ * Rechazo para quien quiere gestionar un caso con `permiso`, o null si puede.
+ * Lo que no puede leer ni sabe que existe: el mismo 404 que `get`. Lo que puede
+ * leer pero no gestionar: 403. (Como `rechazoParaSubirPapel`.)
+ */
+const rechazoParaGestionar = (incidente, sesion, permiso, mensaje) => {
+    if (!puedeLeer(incidente, sesion)) return noEncontrado();
+    if (!sesionPuede(sesion, permiso)) return sinPermiso(mensaje);
+    return null;
+};
+
+/**
+ * Un caso cerrado no acepta cambios (clasificación, medidas nuevas, papeles,
+ * fotos, investigaciones, gobernanza): el cierre es lo que se mostraría ante una
+ * fiscalización, y no puede moverse por una ruta lateral. Para volver a trabajarlo
+ * está `PUT /incidents/{id}/reabrir`, que exige un motivo y queda registrado.
+ * Devuelve el 409, o null si el caso está abierto.
+ */
+const rechazoSiCerrado = (incidente) => (estaCerrado(incidente)
+    ? jsonResponse({ success: false, error: 'El caso está cerrado y no admite cambios. Reábrelo con un motivo si hay que corregirlo.' }, 409)
+    : null);
+
+/** 409 con lo que falta para cerrar, en frases listas para mostrar tal cual. */
+const respuestaPendientes = (pendientes) => jsonResponse({
+    success: false,
+    error: `Todavía no se puede cerrar el caso. ${pendientes.join(' ')}`,
+    pendientes,
+}, 409);
+
 // CORS Options Handler
 router.options('*', () => {
     return {
@@ -110,6 +141,12 @@ router
     .put('/incidents/:id/gobernanza', updateGobernanza)
     .put('/incidents/:id/flash-completar', completarFlash)
     .put('/incidents/:id/medidas/:numero', updateMedidaEstado)
+    // Clasificación, medidas y cierre del caso (fase 3).
+    .put('/incidents/:id/triaje', clasificar)
+    .post('/incidents/:id/medidas', crearMedida)
+    .put('/incidents/:id/medidas/:numero/datos', editarMedida)
+    .put('/incidents/:id/cerrar', cerrar)
+    .put('/incidents/:id/reabrir', reabrir)
     // Papeles del caso (fase 2): subir en dos pasos y listar con descarga firmada.
     .post('/incidents/:id/documents', pedirSubidaDocumento)
     .post('/incidents/:id/documents/confirmar', confirmarDocumento)
@@ -193,6 +230,10 @@ async function create(request) {
         // La empresa y quien reporta salen de la sesión.
         body.tenantId = sesion.tenantId;
         body.reportadoPor = sesion.personaId;
+        // Las fotos se adjuntan después con `POST /incidents/{id}/evidencias`, que
+        // valida cada clave. Las que vengan acá no se guardan: con una clave de otra
+        // empresa, `get` firmaría la descarga de un archivo ajeno.
+        delete body.evidencias;
 
         const clasificacion = body.clasificacion || derivarClasificacion(body.tipo);
         body.clasificacion = clasificacion;
@@ -245,7 +286,7 @@ async function create(request) {
                 afectados: body.afectados || [],
                 descripcionBreve: String(body.descripcionBreve || '').slice(0, 500),
                 severidad: body.gravedad || 'leve',
-                evidencias: body.evidencias || [],
+                evidencias: [],
                 ubicacionReferencia: body.ubicacionReferencia || '',
                 creadoEn: new Date().toISOString(),
                 editadoEn: null
@@ -299,7 +340,9 @@ async function get(request) {
         // El mismo 404 que si no existiera: sin permiso, ni saber que está.
         if (!puedeLeer(await incidenteDelTenant(request.params.id, ses.sesion), ses.sesion)) return noEncontrado();
         const result = await incidentsRepo.get(request.params.id);
-        return jsonResponse(result);
+        // El siguiente paso se calcula acá, con los papeles reales: el cliente no los
+        // recibe (`sinPapeles`) y no podría calcularlo él.
+        return jsonResponse({ ...result, siguientePaso: siguientePaso(result), avance: avanceDelCaso(result) });
     } catch (err) {
         return errorResponse(err);
     }
@@ -322,11 +365,19 @@ async function update(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!incidente) return noEncontrado();
         if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
             return sinPermiso('No tienes permiso para editar incidentes.');
         }
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
         const body = parseBody(request.event);
+        // El cierre tiene sus reglas (clasificado, papeles y medidas completos, con
+        // comentario): por acá no se cierra.
+        if (body.estado === 'cerrado') {
+            return jsonResponse({ success: false, error: 'Para cerrar el caso usa el cierre del caso: exige papeles y medidas completos.' }, 400);
+        }
         // `tenantId` no se reasigna por esta vía: mover un incidente de empresa no
         // es una edición, es una fuga.
         delete body.tenantId;
@@ -370,6 +421,8 @@ async function agregarEvidencias(request) {
         const incidente = await incidenteDelTenant(request.params.id, sesion);
         const rechazo = rechazoParaEvidencia(incidente, sesion);
         if (rechazo) return rechazo;
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
 
         const body = parseBody(request.event);
         const claves = Array.isArray(body.evidencias) ? [...new Set(body.evidencias)] : [];
@@ -404,10 +457,13 @@ async function calificarAccidente(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!incidente) return noEncontrado();
         if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE)) {
             return sinPermiso('No tienes permiso para calificar como accidente.');
         }
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
         const result = await incidentsRepo.update(request.params.id, {
             tipo: 'accidente',
             clasificacion: 'incidente',
@@ -459,10 +515,14 @@ async function addInvestigation(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!incidente) return noEncontrado();
         if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
             return sinPermiso('No tienes permiso para registrar investigaciones.');
         }
+        // Registrar una investigación pone el caso "en investigación": en uno cerrado lo reabriría sin motivo.
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
         const body = parseBody(request.event);
         const result = await incidentsRepo.addInvestigation(request.params.id, body);
         return jsonResponse(result);
@@ -480,16 +540,32 @@ async function updateGobernanza(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!incidente) return noEncontrado();
         if (!esSupervisorOSuperior(ses.sesion)) {
             return sinPermiso('Solo supervisores y roles superiores pueden gestionar la gobernanza de hallazgos.');
         }
+        // Un hallazgo cerrado no se reabre ni se edita por acá (sería una puerta
+        // lateral al cierre): `PUT /incidents/{id}/reabrir`.
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
         const body = parseBody(request.event);
         // Quién verifica y cuándo no lo dice el cliente: el repositorio no los
         // acepta del cuerpo. Antes solo se pisaba `verificadoPor` al cerrar; con
         // cualquier otro estado se guardaba el del cuerpo tal cual.
         if (body.responsableId && !await personaDeLaEmpresa(body.responsableId, ses.sesion)) {
             return jsonResponse({ success: false, error: 'Persona no encontrada' }, 404);
+        }
+        // Cerrar un hallazgo por acá exige lo mismo que el cierre del caso: clasificado,
+        // con sus papeles y medidas completos. El comentario y el responsable y plazo
+        // que vienen en esta petición cuentan, porque se guardan junto con el cierre.
+        if (body.estadoCierre === 'cerrado' && incidente.clasificacion === 'hallazgo') {
+            const propuesta = { ...incidente, gobernanza: { ...(incidente.gobernanza || {}) } };
+            for (const campo of ['responsableId', 'plazoRespuestaISO', 'comentarioCierre']) {
+                if (body[campo] !== undefined) propuesta.gobernanza[campo] = body[campo];
+            }
+            const pendientes = pendientesDeCierre(propuesta, propuesta.gobernanza.comentarioCierre);
+            if (pendientes.length > 0) return respuestaPendientes(pendientes);
         }
         const result = await incidentsRepo.updateGobernanza(request.params.id, body, {
             verificadoPor: body.estadoCierre === 'cerrado' ? ses.sesion.personaId : null,
@@ -504,10 +580,13 @@ async function completarFlash(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!incidente) return noEncontrado();
         if (!esSupervisorOSuperior(ses.sesion)) {
             return sinPermiso('Solo supervisores y roles superiores pueden completar el reporte flash.');
         }
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
         const body = parseBody(request.event);
         const result = await incidentsRepo.completarFlash(request.params.id, body);
         return jsonResponse(result);
@@ -520,17 +599,301 @@ async function updateMedidaEstado(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!incidente) return noEncontrado();
         if (!esSupervisorOSuperior(ses.sesion)) {
             return sinPermiso('No tienes permiso para actualizar las medidas correctivas.');
         }
         const body = parseBody(request.event);
+        // En un caso cerrado solo se puede seguir confirmando lo hecho (completada ->
+        // verificada); devolver una medida a pendiente dejaría un cierre falso.
+        if (estaCerrado(incidente) && !medidaTerminada({ estado: body.estado })) {
+            return jsonResponse({ success: false, error: 'El caso está cerrado: sus medidas solo pueden quedar completadas o verificadas.' }, 409);
+        }
         const result = await incidentsRepo.updateMedidaEstado(
             request.params.id,
             decodeURIComponent(request.params.numero),
             body.estado
         );
         return jsonResponse(result);
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+// ─── Clasificación, medidas y cierre (fase 3 del rediseño) ───────────────────
+//
+// Clasificar y cerrar son de quien tiene `incidentes.calificar_accidente` (el
+// prevencionista); medidas, de quien gestiona incidentes (`incidentes.reportar`).
+// Lo que no puede leer ni sabe que existe: el mismo 404 que `get`. Lo que puede
+// leer pero no gestionar: 403. Un caso cerrado no acepta nada de esto (409) salvo
+// reabrirlo.
+
+const TIPOS_CLASIFICABLES = [...TIPOS_HALLAZGO, ...TIPOS_INCIDENTE];
+const GRAVEDADES = ['leve', 'grave', 'fatal'];
+const MAX_COMENTARIO_CIERRE = 1000;
+const MAX_MOTIVO_REAPERTURA = 500;
+
+/** AAAA-MM-DD de un día real. */
+const diaValido = (valor) => {
+    if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+    const d = new Date(`${valor}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === valor;
+};
+/** Ayer (UTC) en AAAA-MM-DD: el margen de un día por la zona horaria, como en la fecha de un documento. */
+const ayerISO = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+/**
+ * La persona responsable tiene que ser de la empresa (404 si no: el mismo mensaje
+ * que para cualquier identificador ajeno) y estar ACTIVA: quien no terminó de
+ * enrolarse o ya no está en la empresa no puede quedar a cargo de una medida.
+ */
+const responsableActivo = async (personaId, sesion) => {
+    const persona = await personaDeLaEmpresa(personaId, sesion);
+    if (!persona) return { respuesta: jsonResponse({ success: false, error: 'Persona no encontrada' }, 404) };
+    if (persona.estado !== 'activo') {
+        return { respuesta: jsonResponse({ success: false, error: 'La persona responsable tiene que estar activa.' }, 400) };
+    }
+    return { persona, nombre: `${persona.nombre || ''} ${persona.apellido || ''}`.trim() };
+};
+
+const solicitudInvalida = (error) => jsonResponse({ success: false, error }, 400);
+
+/**
+ * Triaje: el prevencionista confirma el tipo y, en incidentes y accidentes, la
+ * gravedad. Para un incidente responde las dos preguntas de la guía de Mutual
+ * (`danoMayor`, `granSusto`): si alguna es sí, es de alto potencial y exige informe
+ * de investigación. En un hallazgo puede además dejar quién lo corrige y en qué
+ * plazo. Se puede reclasificar mientras el caso esté abierto; lo anterior queda en
+ * `triaje.anteriores`.
+ */
+async function clasificar(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_CLASIFICAR, 'Solo quien clasifica incidentes puede clasificar el caso.');
+        if (rechazo) return rechazo;
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
+
+        const body = parseBody(request.event);
+        if (!TIPOS_CLASIFICABLES.includes(body.tipo)) {
+            return solicitudInvalida(`Tipo inválido. Valores válidos: ${TIPOS_CLASIFICABLES.join(', ')}`);
+        }
+        const datos = { tipo: body.tipo };
+        if (TIPOS_HALLAZGO.includes(body.tipo)) {
+            // La gravedad y las preguntas de alto potencial no aplican a un hallazgo: se ignoran.
+            if (body.responsableId) {
+                const r = await responsableActivo(body.responsableId, sesion);
+                if (r.respuesta) return r.respuesta;
+                datos.responsableId = body.responsableId;
+                datos.responsableNombre = r.nombre;
+            }
+            if (body.plazoRespuestaISO) {
+                if (!diaValido(body.plazoRespuestaISO)) return solicitudInvalida('El plazo debe ser una fecha válida (AAAA-MM-DD).');
+                datos.plazoRespuestaISO = body.plazoRespuestaISO;
+            }
+        } else {
+            if (body.gravedad !== undefined && !GRAVEDADES.includes(body.gravedad)) {
+                return solicitudInvalida(`Gravedad inválida. Valores válidos: ${GRAVEDADES.join(', ')}`);
+            }
+            datos.gravedad = body.gravedad ?? (GRAVEDADES.includes(incidente.gravedad) ? incidente.gravedad : 'leve');
+            if (body.tipo === 'incidente') {
+                if (typeof body.danoMayor !== 'boolean' || typeof body.granSusto !== 'boolean') {
+                    return solicitudInvalida('Responde las dos preguntas del incidente (daño mayor y gran susto) con sí o no.');
+                }
+                datos.danoMayor = body.danoMayor;
+                datos.granSusto = body.granSusto;
+            }
+        }
+
+        const incident = await incidentsRepo.clasificar(incidente, datos, sesion.personaId);
+        return jsonResponse({ success: true, data: { incident, siguientePaso: siguientePaso(incident) }, message: 'Caso clasificado.' });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+/**
+ * Valida los datos de una medida. Al crear (`actual` null) son obligatorios la
+ * medida y el plazo; al editar solo se mira lo que viene. Devuelve `{ error }` o `{ datos }`.
+ * El responsable se valida aparte (hay que ir a buscarlo).
+ */
+const validarDatosMedida = (body, actual) => {
+    const datos = {};
+    for (const [campo, etiqueta, obligatoria] of [['medida', 'La medida', true], ['causaRaiz', 'La causa raíz', false]]) {
+        const v = body[campo];
+        if (v === undefined) {
+            if (obligatoria && !actual) return { error: `${etiqueta} es obligatoria.` };
+            continue;
+        }
+        if (typeof v !== 'string') return { error: `${etiqueta} no es válida.` };
+        const t = v.trim();
+        if (!t && obligatoria) return { error: `${etiqueta} es obligatoria.` };
+        if (t.length > MAX_TEXTO_MEDIDA) return { error: `${etiqueta} admite hasta ${MAX_TEXTO_MEDIDA} caracteres.` };
+        datos[campo] = t;
+    }
+    const plazo = body.fechaMaxEjecucion;
+    if (plazo === undefined) {
+        if (!actual) return { error: 'El plazo es obligatorio.' };
+    } else {
+        if (!diaValido(plazo)) return { error: 'El plazo debe ser una fecha válida (AAAA-MM-DD).' };
+        // Un plazo ya vencido al crearla (o al cambiarlo) suele ser un error de tipeo.
+        if ((!actual || plazo !== actual.fechaMaxEjecucion) && plazo < ayerISO()) return { error: 'El plazo no puede ser anterior a hoy.' };
+        datos.fechaMaxEjecucion = plazo;
+    }
+    if (body.jerarquia !== undefined) {
+        if (body.jerarquia === null || body.jerarquia === '') {
+            if (actual) datos.jerarquia = null;
+        } else if (!JERARQUIA_CONTROL.includes(body.jerarquia)) {
+            return { error: `Nivel de control inválido. Valores válidos: ${JERARQUIA_CONTROL.join(', ')}` };
+        } else {
+            datos.jerarquia = body.jerarquia;
+        }
+    }
+    return { datos };
+};
+
+const medidaSinResponsable = () => solicitudInvalida('Elige la persona responsable de la medida.');
+
+// Crea una medida correctiva y avisa a su responsable.
+async function crearMedida(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_GESTIONAR, 'Solo quien gestiona incidentes puede definir medidas.');
+        if (rechazo) return rechazo;
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
+
+        const body = parseBody(request.event);
+        const validado = validarDatosMedida(body, null);
+        if (validado.error) return solicitudInvalida(validado.error);
+        if (typeof body.responsableId !== 'string' || !body.responsableId) return medidaSinResponsable();
+        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
+        if (previas.length >= MAX_MEDIDAS_POR_CASO) {
+            return solicitudInvalida(`El caso admite hasta ${MAX_MEDIDAS_POR_CASO} medidas.`);
+        }
+        // El nombre de la persona responsable lo pone el servidor, desde su ficha.
+        const r = await responsableActivo(body.responsableId, sesion);
+        if (r.respuesta) return r.respuesta;
+
+        const { medida, medidas } = await incidentsRepo.agregarMedida(
+            incidente,
+            { ...validado.datos, responsableId: body.responsableId, responsableNombre: r.nombre },
+            sesion.personaId
+        );
+        await incidentsRepo.avisarResponsableMedida(incidente, medida, sesion.personaId);
+        return jsonResponse({ success: true, data: { medida, medidas }, message: 'Medida creada.' }, 201);
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+// Edita texto, responsable, plazo o nivel de control mientras la medida no esté completada.
+async function editarMedida(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_GESTIONAR, 'Solo quien gestiona incidentes puede editar medidas.');
+        if (rechazo) return rechazo;
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
+
+        const numero = decodeURIComponent(request.params.numero);
+        const actual = (Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [])
+            .find((m) => String(m.numero) === String(numero));
+        if (!actual) return jsonResponse({ success: false, error: 'Medida no encontrada' }, 404);
+        if (medidaTerminada(actual)) {
+            return jsonResponse({ success: false, error: 'Una medida completada no se edita. Vuelve a ponerla en proceso si hay que corregirla.' }, 409);
+        }
+
+        const body = parseBody(request.event);
+        const validado = validarDatosMedida(body, actual);
+        if (validado.error) return solicitudInvalida(validado.error);
+        const cambios = { ...validado.datos };
+        let cambioResponsable = false;
+        if (body.responsableId !== undefined) {
+            if (typeof body.responsableId !== 'string' || !body.responsableId) return medidaSinResponsable();
+            if (body.responsableId !== actual.responsableId) {
+                const r = await responsableActivo(body.responsableId, sesion);
+                if (r.respuesta) return r.respuesta;
+                cambios.responsableId = body.responsableId;
+                cambios.responsableNombre = r.nombre;
+                cambioResponsable = true;
+            }
+        }
+        if (Object.keys(cambios).length === 0) return solicitudInvalida('No hay cambios que guardar.');
+
+        const { medida, medidas } = await incidentsRepo.editarMedida(incidente, numero, cambios, sesion.personaId);
+        // A quien recibe la medida se le avisa; a quien conserva la suya, no.
+        if (cambioResponsable) await incidentsRepo.avisarResponsableMedida(incidente, medida, sesion.personaId);
+        return jsonResponse({ success: true, data: { medida, medidas }, message: 'Medida actualizada.' });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+/**
+ * Cierra el caso. Exige el comentario de cierre, que el caso esté clasificado, que
+ * los papeles estén completos (contando el comentario de esta petición, que en un
+ * hallazgo es uno de ellos) y que todas las medidas estén completadas o verificadas.
+ * Si falta algo, 409 con la lista, en frases listas para mostrar.
+ */
+async function cerrar(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_CLASIFICAR, 'Solo quien clasifica incidentes puede cerrar el caso.');
+        if (rechazo) return rechazo;
+        if (estaCerrado(incidente)) {
+            return jsonResponse({ success: false, error: 'El caso ya está cerrado.' }, 409);
+        }
+
+        const body = parseBody(request.event);
+        const comentario = typeof body.comentarioCierre === 'string' ? body.comentarioCierre.trim() : '';
+        if (!comentario) return solicitudInvalida('El comentario de cierre es obligatorio.');
+        if (comentario.length > MAX_COMENTARIO_CIERRE) {
+            return solicitudInvalida(`El comentario de cierre admite hasta ${MAX_COMENTARIO_CIERRE} caracteres.`);
+        }
+        const pendientes = pendientesDeCierre(incidente, comentario);
+        if (pendientes.length > 0) return respuestaPendientes(pendientes);
+
+        const incident = await incidentsRepo.cerrar(incidente, comentario, sesion.personaId);
+        return jsonResponse({ success: true, data: { incident, siguientePaso: siguientePaso(incident) }, message: 'Caso cerrado.' });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+// Reabre un caso cerrado, con un motivo obligatorio. El cierre anterior queda en `reaperturas`.
+async function reabrir(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_CLASIFICAR, 'Solo quien clasifica incidentes puede reabrir el caso.');
+        if (rechazo) return rechazo;
+        if (!estaCerrado(incidente)) {
+            return jsonResponse({ success: false, error: 'El caso no está cerrado.' }, 409);
+        }
+        const body = parseBody(request.event);
+        const motivo = typeof body.motivo === 'string' ? body.motivo.trim() : '';
+        if (!motivo) return solicitudInvalida('El motivo para reabrir el caso es obligatorio.');
+        if (motivo.length > MAX_MOTIVO_REAPERTURA) {
+            return solicitudInvalida(`El motivo admite hasta ${MAX_MOTIVO_REAPERTURA} caracteres.`);
+        }
+        const incident = await incidentsRepo.reabrir(incidente, motivo, sesion.personaId);
+        return jsonResponse({ success: true, data: { incident, siguientePaso: siguientePaso(incident) }, message: 'Caso reabierto.' });
     } catch (err) {
         return errorResponse(err);
     }
@@ -584,6 +947,8 @@ async function pedirSubidaDocumento(request) {
         const incidente = await incidenteDelTenant(request.params.id, sesion);
         const rechazo = rechazoParaSubirPapel(incidente, sesion);
         if (rechazo) return rechazo;
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
 
         const body = parseBody(request.event);
         if (!esTipoPapel(body.tipo)) {
@@ -623,6 +988,8 @@ async function confirmarDocumento(request) {
         const incidente = await incidenteDelTenant(request.params.id, sesion);
         const rechazo = rechazoParaSubirPapel(incidente, sesion);
         if (rechazo) return rechazo;
+        const cerrado = rechazoSiCerrado(incidente);
+        if (cerrado) return cerrado;
 
         const body = parseBody(request.event);
         // La clave tiene que ser de ESTA empresa, de ESTE incidente y de la carpeta

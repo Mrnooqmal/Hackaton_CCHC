@@ -146,8 +146,133 @@ function avanceDelCaso(incidente) {
     return { cumplidos, total, porcentaje: total === 0 ? 100 : Math.round((cumplidos / total) * 100) };
 }
 
+// ── Clasificación, medidas y cierre (fase 3) ─────────────────────────────────
+
+/** Quien clasifica y cierra el caso (el prevencionista). Es el valor de `PERMISSIONS`; una prueba lo comprueba. */
+const PERMISO_CLASIFICAR = 'incidentes.calificar_accidente';
+/** Quien reúne papeles y define medidas. */
+const PERMISO_GESTIONAR = 'incidentes.reportar';
+
+/** Estados de una medida. Una medida "terminada" es una completada o verificada. */
+const ESTADOS_MEDIDA = ['pendiente', 'en_proceso', 'completada', 'verificada'];
+const medidaTerminada = (m) => m?.estado === 'completada' || m?.estado === 'verificada';
+
+/** Niveles de la jerarquía de controles, del más eficaz al menos eficaz. */
+const JERARQUIA_CONTROL = ['eliminacion', 'sustitucion', 'ingenieria', 'administrativa', 'epp'];
+const MAX_MEDIDAS_POR_CASO = 30;
+const MAX_TEXTO_MEDIDA = 500;
+
+const listaDeMedidas = (inc) => (Array.isArray(inc?.medidasCorrectivas) ? inc.medidasCorrectivas : []);
+const medidasSinTerminar = (inc) => listaDeMedidas(inc).filter((m) => !medidaTerminada(m));
+
+/**
+ * ¿Está cerrado el caso? Un hallazgo se cierra por su gobernanza y un incidente por
+ * su estado: el mismo criterio de `utils/incidentes.ts` (`incidenteCerrado`), que
+ * usan los contadores.
+ */
+const estaCerrado = (inc) => (esHallazgo(inc)
+    ? inc?.gobernanza?.estadoCierre === 'cerrado' || inc?.estado === 'cerrado'
+    : inc?.estado === 'cerrado');
+
+const resumenMedida = (m) => {
+    const texto = String(m?.medida || '').trim();
+    return texto.length > 60 ? `${texto.slice(0, 57)}…` : texto;
+};
+
+/**
+ * Lo que falta para poder cerrar el caso, en frases listas para mostrar tal cual.
+ * Vacío = se puede cerrar.
+ *
+ * `comentarioCierre` es el que viene en la misma petición de cierre: en un hallazgo
+ * el comentario de cierre es un "papel requerido" que solo existe al cerrar, así que
+ * el caso se evalúa como si ya lo tuviera (si no, nunca se podría cerrar).
+ */
+function pendientesDeCierre(incidente, comentarioCierre) {
+    const inc = incidente || {};
+    const evaluado = esHallazgo(inc) && hayTexto(comentarioCierre)
+        ? { ...inc, gobernanza: { ...(inc.gobernanza || {}), comentarioCierre } }
+        : inc;
+    const faltas = [];
+    if (!inc.triaje) faltas.push('Clasificar el reporte (tipo y gravedad).');
+    for (const p of papelesRequeridos(evaluado)) {
+        if (!p.cumplido) faltas.push(`Falta: ${p.etiqueta}.`);
+    }
+    for (const m of medidasSinTerminar(inc)) {
+        const resumen = resumenMedida(m);
+        faltas.push(`Una medida sigue sin completar${resumen ? `: ${resumen}` : ''}.`);
+    }
+    return faltas;
+}
+
+/**
+ * Qué toca hacer ahora con el caso y a quién le toca.
+ * Devuelve `{ paso, titulo, detalle, permiso }`; `permiso` es el que necesita
+ * quien lo hace (null cuando ya no hay nada que hacer).
+ *
+ * Orden: clasificar → papeles → medidas → cerrar. Dos ajustes frente al orden
+ * "papeles requeridos primero":
+ *  - El comentario de cierre de un hallazgo no cuenta en el paso de papeles: solo se
+ *    cumple al cerrar, y si bloqueara, el paso `cerrar` no llegaría nunca.
+ *  - La medida correctiva que exige un accidente tampoco: es el paso de medidas.
+ * Lo demás que el caso exige y no es un archivo (la foto y el responsable con plazo
+ * de un hallazgo) queda en el paso de papeles, porque cerrar exige el 100 % y si no
+ * el caso se trabaría sin que ningún paso lo dijera.
+ */
+function siguientePaso(incidente) {
+    const inc = incidente || {};
+    if (estaCerrado(inc)) {
+        return { paso: 'cerrado', titulo: 'Caso cerrado', detalle: 'El caso está cerrado y ya no admite cambios.', permiso: null };
+    }
+    const hallazgo = esHallazgo(inc);
+    if (!inc.triaje) {
+        return {
+            paso: 'clasificar',
+            titulo: 'Clasificar el reporte',
+            detalle: hallazgo
+                ? 'Confirmar que es un hallazgo y si es una condición o una acción subestándar.'
+                : 'Confirmar el tipo de caso, la gravedad y si pudo haber sido más grave.',
+            permiso: PERMISO_CLASIFICAR,
+        };
+    }
+    const faltantes = papelesRequeridos(inc).filter((p) => !p.cumplido && p.clave !== 'comentario_cierre' && p.clave !== 'medida_correctiva');
+    if (faltantes.length > 0) {
+        return {
+            paso: 'papeles',
+            titulo: 'Juntar los papeles del caso',
+            detalle: `Falta: ${faltantes.map((p) => p.etiqueta).join('; ')}.`,
+            permiso: PERMISO_GESTIONAR,
+        };
+    }
+    const exigeMedida = papelesRequeridos(inc).some((p) => p.clave === 'medida_correctiva' && !p.cumplido);
+    if (exigeMedida) {
+        return {
+            paso: 'medidas',
+            titulo: 'Definir las medidas correctivas',
+            detalle: 'Agregar al menos una medida con responsable y plazo.',
+            permiso: PERMISO_GESTIONAR,
+        };
+    }
+    const sinTerminar = medidasSinTerminar(inc).length;
+    if (sinTerminar > 0) {
+        return {
+            paso: 'medidas',
+            titulo: 'Completar las medidas',
+            detalle: sinTerminar === 1 ? 'Queda 1 medida sin completar.' : `Quedan ${sinTerminar} medidas sin completar.`,
+            permiso: PERMISO_GESTIONAR,
+        };
+    }
+    return {
+        paso: 'cerrar',
+        titulo: 'Cerrar el caso',
+        detalle: hallazgo ? 'Todo está al día. Falta cerrarlo con un comentario de cierre.' : 'Papeles y medidas completos. Falta cerrarlo con un comentario de cierre.',
+        permiso: PERMISO_CLASIFICAR,
+    };
+}
+
 module.exports = {
     TIPOS_PAPEL, ORDEN_TIPOS_PAPEL, esTipoPapel, etiquetaTipoPapel, tipoPapelConSalud,
     EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     esHallazgo, papelesRequeridos, avanceDelCaso,
+    PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
+    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
 };

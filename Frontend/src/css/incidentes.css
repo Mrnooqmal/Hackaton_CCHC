@@ -401,3 +401,32 @@
   .inc-papeles-fila { flex-wrap: wrap; }
   .inc-ficha-datos { gap: var(--space-4); }
 }
+
+/* Clasificación, medidas y cierre del caso (components/ClasificacionDelCaso.tsx,
+   MedidasDelCaso.tsx y CierreDelCaso.tsx). Reusan la lista y el formulario de los papeles. */
+
+.inc-medidas-estado {
+  min-width: 150px;
+}
+
+.inc-medidas-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.inc-cierre-pendientes {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+}
+
+.inc-clasificar-form {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Lo que le toca a quien está viendo el caso, bajo el "Qué sigue" en palabras de terreno. */
+.inc-ficha-sigue .inc-ficha-sigue-turno {
+  margin-top: var(--space-2);
+  font-weight: 600;
+}

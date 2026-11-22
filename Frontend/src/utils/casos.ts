@@ -129,3 +129,128 @@ export function avanceDelCaso(incidente?: CasoParaPapeles | null): AvanceDelCaso
     const cumplidos = requeridos.filter((p) => p.cumplido).length;
     return { cumplidos, total, porcentaje: total === 0 ? 100 : Math.round((cumplidos / total) * 100) };
 }
+
+// ── Clasificación, medidas y cierre (fase 3) ──
+
+/** Quien clasifica y cierra el caso. Es el valor de `PERMISSIONS`; una prueba del backend lo comprueba. */
+export const PERMISO_CLASIFICAR = 'incidentes.calificar_accidente';
+/** Quien reúne papeles y define medidas. */
+export const PERMISO_GESTIONAR = 'incidentes.reportar';
+
+export type EstadoMedida = 'pendiente' | 'en_proceso' | 'completada' | 'verificada';
+export const ESTADOS_MEDIDA: EstadoMedida[] = ['pendiente', 'en_proceso', 'completada', 'verificada'];
+export const medidaTerminada = (m?: { estado?: string } | null): boolean => m?.estado === 'completada' || m?.estado === 'verificada';
+
+export type JerarquiaControl = 'eliminacion' | 'sustitucion' | 'ingenieria' | 'administrativa' | 'epp';
+/** Niveles de la jerarquía de controles, del más eficaz al menos eficaz. */
+export const JERARQUIA_CONTROL: JerarquiaControl[] = ['eliminacion', 'sustitucion', 'ingenieria', 'administrativa', 'epp'];
+export const MAX_MEDIDAS_POR_CASO = 30;
+export const MAX_TEXTO_MEDIDA = 500;
+
+export type PasoDelCaso = 'clasificar' | 'papeles' | 'medidas' | 'cerrar' | 'cerrado';
+
+export interface SiguientePaso {
+    paso: PasoDelCaso;
+    titulo: string;
+    detalle: string;
+    /** Permiso que necesita quien lo hace; null cuando ya no hay nada que hacer. */
+    permiso: string | null;
+}
+
+/** Lo que las reglas de clasificación, medidas y cierre leen del incidente (además de `CasoParaPapeles`). */
+export interface CasoParaPasos extends Omit<CasoParaPapeles, 'medidasCorrectivas'> {
+    estado?: string;
+    triaje?: unknown;
+    medidasCorrectivas?: { numero?: number | string; medida?: string; estado?: string }[];
+    gobernanza?: { responsableId?: string | null; plazoRespuestaISO?: string | null; comentarioCierre?: string | null; estadoCierre?: string | null } | null;
+}
+
+const medidasDe = (inc: CasoParaPasos) => (Array.isArray(inc?.medidasCorrectivas) ? inc.medidasCorrectivas : []);
+const medidasSinTerminar = (inc: CasoParaPasos) => medidasDe(inc).filter((m) => !medidaTerminada(m));
+
+/** Un hallazgo se cierra por su gobernanza y un incidente por su estado (como `utils/incidentes.ts`). */
+export const estaCerrado = (inc?: CasoParaPasos | null): boolean => (esHallazgo(inc)
+    ? inc?.gobernanza?.estadoCierre === 'cerrado' || inc?.estado === 'cerrado'
+    : inc?.estado === 'cerrado');
+
+const resumenMedida = (m?: { medida?: string } | null) => {
+    const texto = String(m?.medida || '').trim();
+    return texto.length > 60 ? `${texto.slice(0, 57)}…` : texto;
+};
+
+/**
+ * Lo que falta para poder cerrar el caso, en frases listas para mostrar. Vacío = se
+ * puede cerrar. `comentarioCierre` es el de la misma petición de cierre: en un
+ * hallazgo cuenta como el papel "comentario de cierre", que solo existe al cerrar.
+ */
+export function pendientesDeCierre(incidente?: CasoParaPasos | null, comentarioCierre?: string | null): string[] {
+    const inc: CasoParaPasos = incidente || {};
+    const evaluado: CasoParaPasos = esHallazgo(inc) && hayTexto(comentarioCierre)
+        ? { ...inc, gobernanza: { ...(inc.gobernanza || {}), comentarioCierre } }
+        : inc;
+    const faltas: string[] = [];
+    if (!inc.triaje) faltas.push('Clasificar el reporte (tipo y gravedad).');
+    for (const p of papelesRequeridos(evaluado as CasoParaPapeles)) {
+        if (!p.cumplido) faltas.push(`Falta: ${p.etiqueta}.`);
+    }
+    for (const m of medidasSinTerminar(inc)) {
+        const resumen = resumenMedida(m);
+        faltas.push(`Una medida sigue sin completar${resumen ? `: ${resumen}` : ''}.`);
+    }
+    return faltas;
+}
+
+/**
+ * Qué toca hacer ahora con el caso y a quién le toca: clasificar → papeles →
+ * medidas → cerrar. Las razones del orden están en el original (lib/casos.js).
+ */
+export function siguientePaso(incidente?: CasoParaPasos | null): SiguientePaso {
+    const inc: CasoParaPasos = incidente || {};
+    if (estaCerrado(inc)) {
+        return { paso: 'cerrado', titulo: 'Caso cerrado', detalle: 'El caso está cerrado y ya no admite cambios.', permiso: null };
+    }
+    const hallazgo = esHallazgo(inc);
+    if (!inc.triaje) {
+        return {
+            paso: 'clasificar',
+            titulo: 'Clasificar el reporte',
+            detalle: hallazgo
+                ? 'Confirmar que es un hallazgo y si es una condición o una acción subestándar.'
+                : 'Confirmar el tipo de caso, la gravedad y si pudo haber sido más grave.',
+            permiso: PERMISO_CLASIFICAR,
+        };
+    }
+    const requeridos = papelesRequeridos(inc as CasoParaPapeles);
+    const faltantes = requeridos.filter((p) => !p.cumplido && p.clave !== 'comentario_cierre' && p.clave !== 'medida_correctiva');
+    if (faltantes.length > 0) {
+        return {
+            paso: 'papeles',
+            titulo: 'Juntar los papeles del caso',
+            detalle: `Falta: ${faltantes.map((p) => p.etiqueta).join('; ')}.`,
+            permiso: PERMISO_GESTIONAR,
+        };
+    }
+    if (requeridos.some((p) => p.clave === 'medida_correctiva' && !p.cumplido)) {
+        return {
+            paso: 'medidas',
+            titulo: 'Definir las medidas correctivas',
+            detalle: 'Agregar al menos una medida con responsable y plazo.',
+            permiso: PERMISO_GESTIONAR,
+        };
+    }
+    const sinTerminar = medidasSinTerminar(inc).length;
+    if (sinTerminar > 0) {
+        return {
+            paso: 'medidas',
+            titulo: 'Completar las medidas',
+            detalle: sinTerminar === 1 ? 'Queda 1 medida sin completar.' : `Quedan ${sinTerminar} medidas sin completar.`,
+            permiso: PERMISO_GESTIONAR,
+        };
+    }
+    return {
+        paso: 'cerrar',
+        titulo: 'Cerrar el caso',
+        detalle: hallazgo ? 'Todo está al día. Falta cerrarlo con un comentario de cierre.' : 'Papeles y medidas completos. Falta cerrarlo con un comentario de cierre.',
+        permiso: PERMISO_CLASIFICAR,
+    };
+}

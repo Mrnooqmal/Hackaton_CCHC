@@ -39,6 +39,8 @@ interface ApiResponse<T> {
     sinRed?: boolean;
     /** Motivo del rechazo para que la pantalla actúe, p. ej. `SIN_CONSENTIMIENTO`. */
     codigo?: string;
+    /** Lo que falta para cerrar un caso (409 de `PUT /incidents/{id}/cerrar`), en frases listas para mostrar. */
+    pendientes?: string[];
 }
 
 /** Lo que se le dice a una persona cuando no hay señal. */

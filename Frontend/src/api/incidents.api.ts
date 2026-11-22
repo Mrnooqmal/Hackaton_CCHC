@@ -1,6 +1,6 @@
 import { apiRequest } from './client';
 import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
-import type { AvanceDelCaso, PapelRequerido, TipoPapel } from '../utils/casos';
+import type { AvanceDelCaso, EstadoMedida, JerarquiaControl, PapelRequerido, SiguientePaso, TipoPapel } from '../utils/casos';
 
 export interface IncidentLocation {
     lat: number;
@@ -40,6 +40,32 @@ export interface ReporteFlash {
     editadoEn: string | null;
 }
 
+/** Una medida correctiva del caso (Art. 71). Las anteriores a la fase 3 pueden no traer `jerarquia`. */
+export interface MedidaCorrectiva {
+    numero: number | string;
+    causaRaiz: string;
+    medida: string;
+    responsableId: string | null;
+    responsableNombre: string;
+    fechaMaxEjecucion: string | null;
+    estado: EstadoMedida;
+    jerarquia?: JerarquiaControl | null;
+}
+
+/** La clasificación del caso: lo que confirmó quien la hizo, y las anteriores. */
+export interface TriajeDelCaso {
+    tipo: Incident['tipo'];
+    clasificacion: 'hallazgo' | 'incidente';
+    /** Solo en incidentes y accidentes. */
+    gravedad: 'leve' | 'grave' | 'fatal' | null;
+    /** Solo en incidentes. */
+    danoMayor: boolean | null;
+    granSusto: boolean | null;
+    clasificadoPor: string;
+    clasificadoEn: string;
+    anteriores: Array<Partial<TriajeDelCaso> & { origen?: 'reporte' }>;
+}
+
 export interface Incident {
     incidentId: string;
     obraId?: string;
@@ -77,9 +103,15 @@ export interface Incident {
     diasPerdidos?: number;
     evidencias: string[];
     // Medidas del caso (Art. 71); cuenta como papel en `utils/casos`.
-    medidasCorrectivas?: unknown[];
-    // Lo agrega la fase 3 (triaje); mientras no exista, el incidente no exige informe.
+    medidasCorrectivas?: MedidaCorrectiva[];
+    // Lo agrega el triaje: un incidente de alto potencial exige informe de investigación.
     altoPotencial?: boolean;
+    // Ausente mientras el caso no se clasifica.
+    triaje?: TriajeDelCaso | null;
+    cierre?: { comentario: string; cerradoPor: string; cerradoEn: string } | null;
+    // Solo en `GET /incidents/{id}`: lo calcula el servidor con los papeles reales (el cliente no los recibe).
+    siguientePaso?: SiguientePaso;
+    avance?: AvanceDelCaso;
     investigaciones: {
         prevencionista?: Investigation;
         jefeDirecto?: Investigation;
@@ -192,6 +224,30 @@ export interface SubirPapelData {
     tipo: TipoPapel;
     /** AAAA-MM-DD, opcional. */
     fechaDocumento?: string;
+}
+
+/** Lo que confirma el prevencionista al clasificar. */
+export interface ClasificarData {
+    tipo: Incident['tipo'];
+    /** Solo incidentes y accidentes. */
+    gravedad?: 'leve' | 'grave' | 'fatal';
+    /** Solo incidentes: ¿pudo causar un daño mayor o la muerte? */
+    danoMayor?: boolean;
+    /** Solo incidentes: ¿generó un gran susto en los testigos? */
+    granSusto?: boolean;
+    /** Solo hallazgos: quién lo corrige y en qué plazo (AAAA-MM-DD). */
+    responsableId?: string;
+    plazoRespuestaISO?: string;
+}
+
+/** Lo que se pide para una medida. El nombre del responsable lo pone el servidor. */
+export interface DatosMedida {
+    medida: string;
+    causaRaiz?: string;
+    responsableId: string;
+    /** AAAA-MM-DD */
+    fechaMaxEjecucion: string;
+    jerarquia?: JerarquiaControl | null;
 }
 
 export interface QuickReportData {
@@ -401,6 +457,38 @@ export const incidentsApi = {
         apiRequest<QRReportResponse>('/incidents/quick-report', {
             method: 'POST',
             body: JSON.stringify(data),
+        }),
+
+    // Fase 3: clasificar, definir medidas y cerrar el caso.
+    clasificar: (id: string, data: ClasificarData) =>
+        apiRequest<{ incident: Incident; siguientePaso: SiguientePaso }>(`/incidents/${id}/triaje`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    crearMedida: (id: string, data: DatosMedida) =>
+        apiRequest<{ medida: MedidaCorrectiva; medidas: MedidaCorrectiva[] }>(`/incidents/${id}/medidas`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    editarMedida: (id: string, numero: string | number, data: Partial<DatosMedida>) =>
+        apiRequest<{ medida: MedidaCorrectiva; medidas: MedidaCorrectiva[] }>(`/incidents/${id}/medidas/${encodeURIComponent(String(numero))}/datos`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+
+    /** Si falta algo, responde 409 con `error` y `pendientes` listos para mostrar. */
+    cerrarCaso: (id: string, comentarioCierre: string) =>
+        apiRequest<{ incident: Incident; siguientePaso: SiguientePaso }>(`/incidents/${id}/cerrar`, {
+            method: 'PUT',
+            body: JSON.stringify({ comentarioCierre }),
+        }),
+
+    reabrirCaso: (id: string, motivo: string) =>
+        apiRequest<{ incident: Incident; siguientePaso: SiguientePaso }>(`/incidents/${id}/reabrir`, {
+            method: 'PUT',
+            body: JSON.stringify({ motivo }),
         }),
 
     markAsViewed: (id: string, userId: string) =>

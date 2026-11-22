@@ -22,8 +22,10 @@ const fechaCorta = (aaaammdd: string) => {
 
 interface Props {
     incidente: Incident;
-    /** `incidentes.reportar`: quien gestiona incidentes puede subir papeles. */
+    /** `incidentes.reportar`: quien gestiona incidentes puede subir papeles (y el caso no está cerrado). */
     puedeSubir: boolean;
+    /** Se llama después de subir un papel: lo que sigue en el caso puede haber cambiado. */
+    onCambio?: () => void;
 }
 
 /**
@@ -37,7 +39,7 @@ interface Props {
  *
  * Las reglas de qué se exige vienen de `utils/casos`, espejo de `lib/casos.js`.
  */
-export default function PapelesDelCaso({ incidente, puedeSubir }: Props) {
+export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Props) {
     const { toast } = useToast();
     const id = incidente.incidentId;
 
@@ -102,6 +104,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir }: Props) {
             setFechaDocumento('');
             if (inputArchivo.current) inputArchivo.current.value = '';
             setRecarga((n) => n + 1);
+            onCambio?.();
         } catch {
             setErrorSubida('Error de conexión al subir el archivo. Intenta de nuevo.');
         } finally {

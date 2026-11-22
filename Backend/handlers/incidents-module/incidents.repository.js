@@ -4,7 +4,7 @@ const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = requ
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3');
 const almacenamiento = require('../../lib/almacenamiento');
-const { EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, tipoPapelConSalud } = require('../../lib/casos');
+const { EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, tipoPapelConSalud, esHallazgo } = require('../../lib/casos');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
@@ -30,6 +30,9 @@ const PERMISO_AVISO_REPORTE = PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE;
 // constante con este nombre: es el `tipo`/`id` protegido de `Tenant`, que no
 // cambia aunque la empresa renombre el rol.
 const ROL_AVISO_SIEMPRE = 'prevencionista';
+
+// Los dos tipos de hallazgo; el resto de los tipos son incidentes (mismo criterio que el handler).
+const TIPOS_HALLAZGO = ['condicion_subestandar', 'accion_subestandar'];
 
 // Cómo se nombra cada tipo en el aviso a prevención (todos masculinos: "un …").
 const TIPO_EN_AVISO = {
@@ -339,7 +342,10 @@ class IncidentsRepository {
             medidasInmediatas: textoMedidasInmediatas(data.medidasInmediatas),
             gravedad: data.gravedad || 'leve',
             diasPerdidos: data.diasPerdidos || 0,
-            evidencias: data.evidencias || [],
+            // Las fotos NO vienen del cliente: se adjuntan con `agregarEvidencias`, que
+            // valida que la clave sea de esta empresa y de este incidente. Con una clave
+            // ajena, `get` firmaría la descarga de un archivo de otro.
+            evidencias: [],
             // Los papeles del caso NO vienen del cliente: se agregan con
             // `registrarPapel`, con el archivo ya comprobado. `documentos` es el campo
             // anterior (un archivo por tipo), que ya no se escribe.
@@ -891,6 +897,244 @@ class IncidentsRepository {
         };
     }
 
+    // ─── CLASIFICACIÓN, MEDIDAS Y CIERRE (fase 3 del rediseño) ───────────────────
+    //
+    // Todas escriben con la condición de que el incidente no haya cambiado desde
+    // que el handler lo leyó (`updatedAt`), como `agregarEvidencias` y
+    // `registrarPapel`: las reglas que el handler comprobó (tope de medidas, número
+    // correlativo, caso abierto, nada pendiente al cerrar) siguen siendo ciertas al
+    // guardar aunque lleguen dos peticiones a la vez. Si cambió, 409.
+
+    /** Escribe `campos` en el incidente leído, o 409 si cambió desde la lectura. Devuelve el elemento guardado. */
+    async actualizarCaso(incidente, campos) {
+        const nombres = {};
+        const valores = { ':u': new Date().toISOString(), ':leido': incidente.updatedAt };
+        const sets = ['updatedAt = :u'];
+        Object.entries(campos).forEach(([campo, valor], i) => {
+            nombres[`#c${i}`] = campo;
+            valores[`:v${i}`] = valor;
+            sets.push(`#c${i} = :v${i}`);
+        });
+        try {
+            const result = await this.dynamo.send(new UpdateCommand({
+                TableName: this.incidentsTable,
+                Key: { incidentId: incidente.incidentId },
+                UpdateExpression: `SET ${sets.join(', ')}`,
+                ConditionExpression: 'updatedAt = :leido',
+                ExpressionAttributeNames: nombres,
+                ExpressionAttributeValues: valores,
+                ReturnValues: 'ALL_NEW'
+            }));
+            return result.Attributes;
+        } catch (err) {
+            if (err?.name === 'ConditionalCheckFailedException') {
+                throw Object.assign(new Error('El caso cambió mientras lo editabas. Recarga e intenta de nuevo.'), { statusCode: 409 });
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * Clasifica el caso (triaje). Reclasificar reemplaza `tipo`, `clasificacion`,
+     * `gravedad` y `altoPotencial` —los campos que lee todo lo demás— y deja en
+     * `triaje.anteriores` lo que había: la clasificación anterior, o, la primera vez,
+     * lo que declaró quien reportó. La lista se corta en las últimas 20.
+     *
+     * `datos`: `{ tipo, gravedad, danoMayor, granSusto }` ya validados. Para un
+     * hallazgo pueden venir además `responsableId`, `responsableNombre` y
+     * `plazoRespuestaISO` (la persona que lo va a corregir).
+     */
+    async clasificar(incidente, datos, personaId) {
+        const ahora = new Date().toISOString();
+        const clasificacion = TIPOS_HALLAZGO.includes(datos.tipo) ? 'hallazgo' : 'incidente';
+        const esHallazgoNuevo = clasificacion === 'hallazgo';
+        const esIncidentePeligroso = datos.tipo === 'incidente';
+
+        const { anteriores: _historial, ...triajePrevio } = incidente.triaje || {};
+        const anterior = incidente.triaje
+            ? triajePrevio
+            : {
+                tipo: incidente.tipo,
+                clasificacion: incidente.clasificacion || null,
+                gravedad: esHallazgo(incidente) ? null : (incidente.gravedad || null),
+                danoMayor: null,
+                granSusto: null,
+                clasificadoPor: incidente.reportadoPor || null,
+                clasificadoEn: incidente.createdAt || null,
+                origen: 'reporte',
+            };
+        const triaje = {
+            tipo: datos.tipo,
+            clasificacion,
+            gravedad: esHallazgoNuevo ? null : datos.gravedad,
+            danoMayor: esIncidentePeligroso ? datos.danoMayor : null,
+            granSusto: esIncidentePeligroso ? datos.granSusto : null,
+            clasificadoPor: personaId,
+            clasificadoEn: ahora,
+            anteriores: [...(incidente.triaje?.anteriores || []), anterior].slice(-20),
+        };
+
+        const campos = {
+            tipo: datos.tipo,
+            clasificacion,
+            // Es lo que lee `papelesRequeridos`: solo un incidente puede ser de alto potencial.
+            altoPotencial: esIncidentePeligroso && (datos.danoMayor === true || datos.granSusto === true),
+            triaje,
+        };
+        if (!esHallazgoNuevo) campos.gravedad = datos.gravedad;
+        // Un reporte recién llegado pasa a investigación al clasificarlo; el hallazgo
+        // lo hace por su gobernanza (no se inventan estados nuevos).
+        if (!esHallazgoNuevo && incidente.estado === 'reportado') campos.estado = 'en_investigacion';
+        if (esHallazgoNuevo) {
+            const gobernanza = { ...(incidente.gobernanza || {
+                responsableId: null, responsableNombre: null, plazoRespuestaISO: null,
+                estadoCierre: 'abierto', verificadoPor: null, fechaVerificacion: null, comentarioCierre: null,
+            }) };
+            if (gobernanza.estadoCierre === 'abierto') gobernanza.estadoCierre = 'en_proceso';
+            if (datos.responsableId) {
+                gobernanza.responsableId = datos.responsableId;
+                gobernanza.responsableNombre = datos.responsableNombre || null;
+            }
+            if (datos.plazoRespuestaISO) gobernanza.plazoRespuestaISO = datos.plazoRespuestaISO;
+            campos.gobernanza = gobernanza;
+        }
+
+        console.log('[TRIAJE] incidente', incidente.incidentId, '| tipo', datos.tipo, '| altoPotencial', campos.altoPotencial);
+        return this.actualizarCaso(incidente, campos);
+    }
+
+    /**
+     * Agrega una medida correctiva con el siguiente número correlativo. El número
+     * lo asigna el servidor sobre las medidas que ya tiene el caso (también las
+     * anteriores a esta fase, cuyo número puede ser texto).
+     */
+    async agregarMedida(incidente, datos, personaId) {
+        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
+        const numero = previas.reduce((mayor, m) => Math.max(mayor, Number(m?.numero) || 0), 0) + 1;
+        const medida = {
+            numero,
+            causaRaiz: datos.causaRaiz || '',
+            medida: datos.medida,
+            responsableId: datos.responsableId,
+            responsableNombre: datos.responsableNombre,
+            fechaMaxEjecucion: datos.fechaMaxEjecucion,
+            estado: 'pendiente',
+            ...(datos.jerarquia ? { jerarquia: datos.jerarquia } : {}),
+            creadaPor: personaId,
+            creadaEn: new Date().toISOString(),
+        };
+        const medidas = [...previas, medida];
+        await this.actualizarCaso(incidente, { medidasCorrectivas: medidas, medidasVerificadas: false });
+        console.log('[MEDIDAS] incidente', incidente.incidentId, '| medida', numero, 'creada');
+        return { medida, medidas };
+    }
+
+    /** Cambia texto, responsable, plazo o jerarquía de una medida. `cambios` ya viene validado. */
+    async editarMedida(incidente, numero, cambios, personaId) {
+        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
+        let editada = null;
+        const medidas = previas.map((m) => {
+            if (String(m.numero) !== String(numero)) return m;
+            editada = { ...m, ...cambios, editadaPor: personaId, editadaEn: new Date().toISOString() };
+            return editada;
+        });
+        await this.actualizarCaso(incidente, { medidasCorrectivas: medidas });
+        console.log('[MEDIDAS] incidente', incidente.incidentId, '| medida', numero, 'editada | campos:', Object.keys(cambios).join(','));
+        return { medida: editada, medidas };
+    }
+
+    /**
+     * Avisa a la persona responsable que se le asignó una medida (bandeja). Solo lo
+     * justo para abrir el caso: qué medida, de qué obra, el plazo y el enlace. Nunca
+     * el relato ni quién es el afectado: la bandeja no está detrás del permiso de
+     * historial. No avisa a quien se la asigna a sí misma. Nunca lanza: la medida ya
+     * está guardada y un aviso caído no la deshace.
+     */
+    async avisarResponsableMedida(incidente, medida, asignadaPor) {
+        try {
+            if (!medida?.responsableId || medida.responsableId === asignadaPor) return false;
+            const obra = incidente.obraId
+                ? await obraDeLaEmpresa(incidente.obraId, { tenantId: incidente.tenantId })
+                : null;
+            const lugar = obra?.nombre || incidente.centroTrabajo || 'obra sin especificar';
+            const [a, m, d] = String(medida.fechaMaxEjecucion || '').split('-');
+            const plazo = a && m && d ? `${d}-${m}-${a}` : String(medida.fechaMaxEjecucion || '');
+            const texto = String(medida.medida || '').trim();
+            const resumen = texto.length > 140 ? `${texto.slice(0, 137)}…` : texto;
+            const ahora = new Date().toISOString();
+            return await conNeutro('incidente.medida.aviso', async () => {
+                await this.dynamo.send(new PutCommand({
+                    TableName: this.inboxTable,
+                    Item: construirMensaje({
+                        recipientId: medida.responsableId,
+                        baseMessageId: uuidv4(),
+                        now: ahora,
+                        senderId: 'sistema',
+                        senderName: 'Sistema de Incidentes',
+                        senderRol: 'system',
+                        type: 'task',
+                        priority: 'normal',
+                        subject: 'Se te asignó una medida correctiva',
+                        content: `Tienes una medida correctiva en ${lugar}: "${resumen}". Plazo: ${plazo}. Abre el caso desde este aviso para verla.`,
+                        linkedEntity: { type: 'incident', id: incidente.incidentId },
+                    }),
+                }));
+                return true;
+            }, false, { incidentId: incidente.incidentId, destinatario: medida.responsableId });
+        } catch (err) {
+            registrarFallo('incidente.medida.aviso', err, { incidentId: incidente?.incidentId });
+            return false;
+        }
+    }
+
+    /**
+     * Cierra el caso. El handler ya comprobó que no falta nada. Un incidente o
+     * accidente pasa a `estado = 'cerrado'`; un hallazgo, a `gobernanza.estadoCierre
+     * = 'cerrado'` con el comentario, quién verificó y cuándo (como `updateGobernanza`).
+     * En los dos queda `cierre` con el comentario, quién cerró y cuándo.
+     */
+    async cerrar(incidente, comentarioCierre, personaId) {
+        const ahora = new Date().toISOString();
+        const campos = { cierre: { comentario: comentarioCierre, cerradoPor: personaId, cerradoEn: ahora } };
+        if (esHallazgo(incidente)) {
+            campos.gobernanza = {
+                ...(incidente.gobernanza || {}),
+                estadoCierre: 'cerrado',
+                comentarioCierre,
+                verificadoPor: personaId,
+                fechaVerificacion: ahora,
+            };
+        } else {
+            campos.estado = 'cerrado';
+        }
+        console.log('[CIERRE] incidente', incidente.incidentId, '| cerrado por', personaId);
+        return this.actualizarCaso(incidente, campos);
+    }
+
+    /**
+     * Reabre un caso cerrado, con el motivo. El cierre anterior no se pierde: queda
+     * en `reaperturas` (motivo, quién, cuándo y el cierre que se deshizo).
+     */
+    async reabrir(incidente, motivo, personaId) {
+        const ahora = new Date().toISOString();
+        const reapertura = { motivo, reabiertoPor: personaId, reabiertoEn: ahora, cierreAnterior: incidente.cierre || null };
+        const campos = { reaperturas: [...(incidente.reaperturas || []), reapertura].slice(-20), cierre: null };
+        if (esHallazgo(incidente)) {
+            campos.gobernanza = {
+                ...(incidente.gobernanza || {}),
+                estadoCierre: 'en_proceso',
+                verificadoPor: null,
+                fechaVerificacion: null,
+            };
+            // Un hallazgo cerrado por otra vía pudo dejar `estado = 'cerrado'`.
+            if (incidente.estado === 'cerrado') campos.estado = 'en_investigacion';
+        } else {
+            campos.estado = 'en_investigacion';
+        }
+        console.log('[REAPERTURA] incidente', incidente.incidentId, '| por', personaId);
+        return this.actualizarCaso(incidente, campos);
+    }
+
     // ─── PAPELES DEL CASO (fase 2 del rediseño) ──────────────────────────────────
     //
     // Los papeles de un caso son evidencia de cumplimiento (Arts. 71-72): viven en
@@ -1114,7 +1358,8 @@ class IncidentsRepository {
             descripcion: data.descripcion,
             gravedad: data.gravedad || 'leve',
             diasPerdidos: 0,
-            evidencias: data.evidencias || [],
+            // Igual que en `create`: las claves de evidencia no las manda el cliente.
+            evidencias: [],
             documentos: {},
             investigaciones: {
                 prevencionista: null,

@@ -130,7 +130,7 @@ Cada fase termina con sus pruebas pasando.
 |---|---|
 | 1. Reportar de punta a punta | Implementada el 15 de noviembre (1520 pruebas pasan después de traer `pruebas` del 21 de noviembre; build y lint sin errores). Falta probarla en el navegador |
 | 2. Carpeta del caso | Implementada el 22 de noviembre (1552 pruebas pasan). Falta probarla en el navegador y contra S3 real |
-| 3. Clasificación, medidas y cierre | Pendiente |
+| 3. Clasificación, medidas y cierre | Implementada el 22 de noviembre (1597 pruebas pasan). Falta probarla en el navegador |
 | 4. FUF y repositorio | Pendiente |
 
 ### Decisiones de la fase 2 (22 de noviembre)
@@ -146,6 +146,22 @@ Riesgos conocidos de la fase 2, sin resolver:
 
 - Un archivo que se sube y no se confirma queda en el bucket de evidencia, que no permite borrar durante 5 años. Lo mismo pasa con un archivo de más de 15 MB subido por un cliente que mienta sobre el tamaño. Una alternativa es subir primero al bucket de trabajo y copiar al de evidencia al confirmar.
 - El nombre del archivo se guarda en claro en el incidente y puede traer el nombre de una persona. Se borra al anonimizar, pero no está cifrado.
+
+### Decisiones de la fase 3 (22 de noviembre)
+
+- **Alto potencial:** se decide con las dos preguntas de la guía de Mutual: ¿pudo causar un daño mayor o la muerte? y ¿generó un gran susto en los testigos? Basta un sí.
+- **Plazos internos:** no se imponen. Cada medida lleva el plazo que define quien la crea.
+- **Siguiente paso:** clasificar → papeles → medidas → cerrar. Lo calcula `siguientePaso` en `lib/casos.js`. El detalle del reporte dice a quién le toca.
+- **Clasificar y cerrar** exigen `incidentes.calificar_accidente`. **Crear y editar medidas** exige `incidentes.reportar`. El responsable de una medida debe ser una persona activa de la empresa, y recibe un aviso sin datos del afectado.
+- **Cerrar** exige el caso clasificado, los papeles completos y todas las medidas completadas o verificadas. La gobernanza de hallazgos aplica las mismas reglas. Un caso cerrado no acepta cambios, salvo terminar sus medidas.
+- **Reabrir** existe, con motivo obligatorio.
+- **Sin estados nuevos:** se siguen usando `reportado | en_investigacion | cerrado` y `abierto | en_proceso | cerrado`.
+
+Pendientes chicos que dejó la fase 3:
+
+- La ruta antigua `calificar-accidente` no actualiza la clasificación guardada en `triaje`.
+- `PUT /incidents/{id}` con `evidencias` reemplaza la lista sin validar las claves.
+- El plazo de una medida se compara en UTC, no en hora de Chile.
 
 ## 10. Pendientes de decisión
 

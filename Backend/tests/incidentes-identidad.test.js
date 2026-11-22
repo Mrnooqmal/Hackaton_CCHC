@@ -72,7 +72,13 @@ test('quién verifica no lo dice el cliente: con cualquier estado, y al cerrar e
     assert.notEqual(g.verificadoPor, ajena);
     assert.notEqual(g.fechaVerificacion, '2020-01-01T00:00:00Z');
 
-    const cierre = await pedir('PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparada', verificadoPor: ajena });
+    // Cerrar por gobernanza exige lo mismo que el cierre del caso (fase 3): clasificado,
+    // con foto y con responsable y plazo. Se deja el caso listo para que esta prueba
+    // siga mirando lo suyo, quién verifica.
+    const guardado = doble.items('INCIDENTS_TABLE').find((i) => i.incidentId === id);
+    guardado.triaje = { tipo: 'condicion_subestandar' };
+    guardado.evidencias = ['tenants/t/incidentes/i/foto.jpg'];
+    const cierre = await pedir('PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparada', plazoRespuestaISO: '2026-12-01', verificadoPor: ajena });
     assert.equal(cierre.statusCode, 200, cierre.body);
     g = doble.items('INCIDENTS_TABLE').find((i) => i.incidentId === id).gobernanza;
     assert.equal(g.verificadoPor, supervisora);

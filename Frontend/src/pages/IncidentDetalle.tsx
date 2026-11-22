@@ -7,6 +7,10 @@ import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../permissions';
 import { PageHeader, AlertBanner, LoadingSpinner } from '../components/ui';
 import PapelesDelCaso from '../components/PapelesDelCaso';
+import ClasificacionDelCaso from '../components/ClasificacionDelCaso';
+import MedidasDelCaso from '../components/MedidasDelCaso';
+import CierreDelCaso from '../components/CierreDelCaso';
+import { PERMISO_CLASIFICAR, PERMISO_GESTIONAR, siguientePaso as calcularSiguientePaso, type PasoDelCaso } from '../utils/casos';
 import { incidenteCerrado } from '../utils/incidentes';
 import { plural } from '../utils/plural';
 
@@ -46,18 +50,30 @@ const ETIQUETA_ETAPA: Record<'hallazgo' | 'incidente', Record<Etapa, string>> = 
 };
 
 // "Qué sigue" en palabras de terreno: quien reporta no necesita saber qué es la
-// gobernanza ni el ciclo de investigación, solo qué pasa con lo que avisó.
-const QUE_SIGUE: Record<'hallazgo' | 'incidente', Record<Etapa, string>> = {
+// gobernanza, el triaje ni el ciclo de investigación, solo qué pasa con lo que avisó.
+// El paso lo calcula `siguientePaso` (utils/casos, espejo de lib/casos.js); acá solo
+// se le pone el texto para quien no gestiona el caso.
+const QUE_SIGUE: Record<'hallazgo' | 'incidente', Record<PasoDelCaso, string>> = {
     hallazgo: {
-        recibido: 'Tu reporte fue recibido. Prevención de riesgos lo va a revisar y asignar a alguien para corregirlo.',
-        en_curso: 'Ya hay una persona a cargo de corregir lo que reportaste.',
+        clasificar: 'Tu reporte está siendo revisado por prevención de riesgos.',
+        papeles: 'Prevención de riesgos está reuniendo lo necesario para resolverlo.',
+        medidas: 'Se está corrigiendo lo que reportaste.',
+        cerrar: 'Ya está corregido. Falta que prevención de riesgos cierre el caso.',
         cerrado: 'Lo que reportaste fue corregido y revisado. Gracias por avisar.',
     },
     incidente: {
-        recibido: 'Tu reporte fue recibido. Prevención de riesgos lo va a revisar y va a iniciar la investigación.',
-        en_curso: 'Prevención de riesgos está investigando lo ocurrido para definir medidas que eviten que se repita.',
+        clasificar: 'Tu reporte está siendo revisado por prevención de riesgos.',
+        papeles: 'Prevención de riesgos está reuniendo los documentos del caso.',
+        medidas: 'Se están definiendo las medidas para que no vuelva a ocurrir.',
+        cerrar: 'Ya está todo listo. Falta que prevención de riesgos cierre el caso.',
         cerrado: 'La investigación terminó y el caso está cerrado.',
     },
+};
+
+/** A quién le toca cada permiso, para quien mira el caso y no es quien lo hace. */
+const QUIEN_HACE: Record<string, string> = {
+    [PERMISO_CLASIFICAR]: 'prevención de riesgos',
+    [PERMISO_GESTIONAR]: 'quien gestiona el caso',
 };
 
 const IconoEtapa = ({ etapa }: { etapa: Etapa }) => {
@@ -99,11 +115,18 @@ export default function IncidentDetalle() {
     // `incidentes.reportar`. El servidor aplica las mismas reglas.
     const verPapeles = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
     const puedeSubirPapeles = hasPermission(PERMISSIONS.INCIDENTES_REPORTAR);
+    // Clasificar y cerrar son de quien tiene `incidentes.calificar_accidente`; medidas y
+    // papeles, de quien gestiona (`incidentes.reportar`). El servidor aplica las mismas reglas.
+    const puedeClasificar = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
 
     // Lo cargado queda junto al id que se pidió: "cargando" es que todavía no
     // llegó la respuesta de ESTE id, sin un setState síncrono dentro del efecto.
     const [cargado, setCargado] = useState<{ id: string; incidente: Incident | null; error: string } | null>(null);
     const [avisoFotos, setAvisoFotos] = useState((navegacion.fotosSinAdjuntar ?? 0) > 0);
+    // Cada acción sobre el caso (clasificar, medidas, cierre, papeles) cambia lo que
+    // sigue: se vuelve a pedir el caso. Mientras llega, se sigue mostrando el anterior.
+    const [recarga, setRecarga] = useState(0);
+    const recargar = () => setRecarga((n) => n + 1);
 
     useEffect(() => {
         let cancelado = false;
@@ -115,7 +138,7 @@ export default function IncidentDetalle() {
             if (!cancelado) setCargado({ id, incidente: null, error: 'Error de conexión al cargar el reporte.' });
         });
         return () => { cancelado = true; };
-    }, [id]);
+    }, [id, recarga]);
 
     const actual = cargado && cargado.id === id ? cargado : null;
     const loading = actual === null;
@@ -153,6 +176,12 @@ export default function IncidentDetalle() {
         ? incidente.evidencePreviews
         : (incidente.evidencias || []).map((key) => ({ key, url: undefined as string | undefined }));
     const comentarioCierre = clase === 'hallazgo' && etapa === 'cerrado' ? incidente.gobernanza?.comentarioCierre : null;
+    // El servidor lo calcula con los papeles reales; sin ellos (una respuesta antigua)
+    // se cae al cálculo local, que con los papeles que no tiene da el mismo paso salvo
+    // el de los papeles.
+    const siguiente = incidente.siguientePaso ?? calcularSiguientePaso(incidente);
+    const cerrado = siguiente.paso === 'cerrado';
+    const meToca = siguiente.permiso && hasPermission(siguiente.permiso);
 
     return (
         <div className="page-content">
@@ -183,7 +212,10 @@ export default function IncidentDetalle() {
                     <span className="inc-ficha-sigue-icono"><FiArrowRight size={16} /></span>
                     <div>
                         <div className="inc-ficha-label">Qué sigue</div>
-                        <p>{QUE_SIGUE[clase][etapa]}</p>
+                        <p>{QUE_SIGUE[clase][siguiente.paso]}</p>
+                        {siguiente.permiso && (meToca
+                            ? <p className="inc-ficha-sigue-turno">Te toca: {siguiente.titulo}. {siguiente.detalle}</p>
+                            : verPapeles && <p className="inc-ficha-sigue-nota">Le toca a {QUIEN_HACE[siguiente.permiso] ?? 'otra persona'}: {siguiente.titulo.charAt(0).toLowerCase()}{siguiente.titulo.slice(1)}.</p>)}
                         {comentarioCierre && <p className="inc-ficha-sigue-nota">Comentario de cierre: {comentarioCierre}</p>}
                     </div>
                 </section>
@@ -254,7 +286,19 @@ export default function IncidentDetalle() {
                     </div>
                 </section>
 
-                {verPapeles && <PapelesDelCaso incidente={incidente} puedeSubir={puedeSubirPapeles} />}
+                {verPapeles && puedeClasificar && !cerrado && (
+                    <ClasificacionDelCaso key={`clasificacion-${incidente.updatedAt}`} incidente={incidente} onCambio={recargar} />
+                )}
+
+                {verPapeles && <PapelesDelCaso incidente={incidente} puedeSubir={puedeSubirPapeles && !cerrado} onCambio={recargar} />}
+
+                {verPapeles && (
+                    <MedidasDelCaso incidente={incidente} puedeGestionar={puedeSubirPapeles} cerrado={cerrado} onCambio={recargar} />
+                )}
+
+                {verPapeles && puedeClasificar && (cerrado || siguiente.paso !== 'clasificar') && (
+                    <CierreDelCaso key={`cierre-${incidente.updatedAt}`} incidente={incidente} cerrado={cerrado} onCambio={recargar} />
+                )}
             </div>
         </div>
     );
