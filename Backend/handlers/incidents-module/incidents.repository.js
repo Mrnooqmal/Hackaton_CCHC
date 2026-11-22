@@ -7,7 +7,6 @@ const almacenamiento = require('../../lib/almacenamiento');
 const {
     EXTENSION_POR_MIME, EXTENSION_POR_MIME_FOTO, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_MEDIDAS_INMEDIATAS,
     tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso, conMedidasNumeradas,
-    TIPOS_HALLAZGO, GRAVEDADES,
 } = require('../../lib/casos');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
@@ -1339,86 +1338,6 @@ class IncidentsRepository {
             tendencias,
             porCentroTrabajo,
             totalIncidentes: items.length
-        };
-    }
-
-    // QUICK REPORT
-    async quickReport(data) {
-        const incidentId = uuidv4();
-        const now = new Date().toISOString();
-        if (!data.tipo || !data.centroTrabajo || !data.descripcion) {
-            throw new Error('Campos requeridos: tipo, centroTrabajo, descripcion');
-        }
-        // El reporte rápido por QR lo puede hacer cualquier persona con sesión, sin
-        // `incidentes.reportar`: por eso solo crea HALLAZGOS. Un incidente o un accidente
-        // exige ese permiso (`POST /incidents`), y esta ruta no lo comprobaba.
-        if (!TIPOS_HALLAZGO.includes(data.tipo)) {
-            throw Object.assign(new Error(`El reporte rápido solo crea hallazgos. Tipos válidos: ${TIPOS_HALLAZGO.join(', ')}`), { statusCode: 400 });
-        }
-        if (data.gravedad !== undefined && !GRAVEDADES.includes(data.gravedad)) {
-            throw Object.assign(new Error(`Gravedad inválida. Valores válidos: ${GRAVEDADES.join(', ')}`), { statusCode: 400 });
-        }
-        // Fecha y hora de Chile, no del reloj UTC de Lambda (pasadas las 21:00 de Chile el día UTC ya es el siguiente).
-        const { fecha, horario } = fechaHoraChile(now);
-
-        const incident = {
-            incidentId,
-            tipo: data.tipo,
-            clasificacion: 'hallazgo',
-            tipoHallazgo: data.tipoHallazgo || 'condicion',
-            etapaConstructiva: data.etapaConstructiva || '',
-            centroTrabajo: data.centroTrabajo,
-            // Quién reporta va a la traza, como en `create`: nunca en el elemento listado.
-            trabajadorNombre: '',
-            fecha,
-            hora: horario,
-            descripcion: data.descripcion,
-            gravedad: data.gravedad || 'leve',
-            diasPerdidos: 0,
-            // Igual que en `create`: las claves de evidencia no las manda el cliente.
-            evidencias: [],
-            documentos: {},
-            investigaciones: {
-                prevencionista: null,
-                jefeDirecto: null,
-                comiteParitario: null
-            },
-            estado: 'reportado',
-            reportadoPor: data.reportadoPor || 'QR-Publico',
-            qrToken: data.qrToken || null,
-            firmaConfirmacion: data.firmaConfirmacion || null,
-            tenantId: data.tenantId || data.empresaId || 'default',
-            obraId: data.obraId || null,
-            origenReporte: 'qr_publico',
-            viewedBy: [],
-            createdAt: now,
-            updatedAt: now
-        };
-
-        // Según la decisión de la fase 1, el reporte rápido guarda en el nombre del
-        // trabajador a quien reporta (`reportadoPor`, que el handler fija con su personaId).
-        await guardarTraza(this.incidentsTable, 'incidentId', incidentId, {
-            trabajador: {
-                nombre: data.reportadoPor || 'Reporte Anónimo',
-                rut: '',
-                genero: '',
-                cargo: ''
-            },
-            reporteFlash: null,
-        });
-
-        await this.dynamo.send(new PutCommand({
-            TableName: this.incidentsTable,
-            Item: incident
-        }));
-
-        // El mismo aviso que `create`: antes este mandaba el relato completo a la
-        // bandeja y a SNS.
-        await this.avisarPrevencion(incident);
-
-        return {
-            incidentId,
-            message: 'Reporte creado exitosamente'
         };
     }
 

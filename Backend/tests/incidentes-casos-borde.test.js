@@ -1,6 +1,6 @@
 // Casos borde que encontró la segunda revisión independiente del módulo de incidentes.
 //
-//   1  clasificación inventada al crear, y reporte rápido (solo hallazgos, traza, fecha de Chile)
+//   1  clasificación inventada al crear, y la fecha de Chile
 //   2  flash-completar (gravedad validada, caso clasificado, trabajador en la traza, 409)
 //   3  papeles con la clave de diciembre de 2025 (`{id}/documents/…`) y su lugar en el inventario
 //   5  escrituras antiguas con control de versión (update, investigaciones) y `estado` rechazado
@@ -174,48 +174,15 @@ test('crear: la clasificación se deriva del tipo, y la del cliente, si coincide
     assert.equal(guardado(await crearAccidente()).clasificacion, 'incidente');
 });
 
-// ─── 1. Reporte rápido ───────────────────────────────────────────────────────
+// ─── 1. Fecha de Chile ───────────────────────────────────────────────────────
 
-const rapido = (quien, extra = {}) => pedir(quien, 'POST', '/incidents/quick-report', {
-    tipo: 'condicion_subestandar', centroTrabajo: 'Torre A', descripcion: 'Escalera sin pasamanos', obraId: obraA, qrToken: 'qr-1', ...extra,
-});
-
-test('reporte rápido: solo crea hallazgos; un incidente o un accidente se rechaza con 400 aunque no haya permiso que mirar', async () => {
-    for (const tipo of ['accidente', 'incidente', 'inventado']) {
-        const res = await rapido(dePersona(), { tipo, clasificacion: 'incidente' });
-        assert.equal(res.statusCode, 400, tipo);
-    }
-    assert.equal((await rapido(dePersona(), { gravedad: 'catastrofica' })).statusCode, 400);
-    assert.equal((await rapido(dePersona(), { tipo: undefined })).statusCode, 400);
-    assert.equal(incidentesGuardados().length, 0);
-    const ok = await rapido(dePersona(), { clasificacion: 'incidente' });
-    assert.equal(ok.statusCode, 201, ok.body);
-    // La clasificación del cuerpo no cuenta: es un hallazgo.
-    assert.equal(guardado(datos(ok).incidentId).clasificacion, 'hallazgo');
-});
-
-test('reporte rápido: quien reporta va a la traza, no al elemento listado', async () => {
-    const id = datos(await rapido(dePersona())).incidentId;
-    const item = guardado(id);
-    assert.equal(item.trabajador, undefined, 'el elemento listado no lleva el trabajador');
-    assert.equal(item.trabajadorNombre, '');
-    assert.ok(doble.items('INCIDENTS_TABLE').some((i) => i.incidentId === `${id}#traza`), 'hay traza');
-    // El detalle une las dos partes.
-    const detalle = datos(await pedir(prev(), 'GET', `/incidents/${id}`));
-    assert.equal(detalle.trabajador.nombre, trabajadora, 'se conserva el personaId de quien reporta (decisión 11)');
-    assert.equal(detalle.trabajador.rut, '');
-});
-
-test('reporte rápido: la fecha y la hora son las de Chile, no las del reloj UTC', async () => {
+test('create: la fecha y la hora son las de Chile, no las del reloj UTC', async () => {
     // 01:30 UTC del 23 de noviembre de 2026 = 22:30 del 22 en Chile (verano, UTC-3).
     mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-23T01:30:00.000Z') });
-    const id = datos(await rapido(dePersona())).incidentId;
+    const id = await crearHallazgo();
     assert.equal(guardado(id).fecha, '2026-11-22');
     assert.equal(guardado(id).hora, '22:30:00');
     assert.equal(guardado(id).createdAt, '2026-11-23T01:30:00.000Z', 'createdAt sigue siendo el instante UTC');
-    // Y `create`, sin fecha del cliente, igual.
-    const c = await crearHallazgo();
-    assert.equal(guardado(c).fecha, '2026-11-22');
 });
 
 // ─── 2. flash-completar ──────────────────────────────────────────────────────

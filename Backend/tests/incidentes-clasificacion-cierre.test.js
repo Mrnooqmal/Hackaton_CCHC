@@ -739,13 +739,3 @@ test('create ignora las evidencias que manda el cliente (también en el reporte 
     assert.equal(adj.statusCode, 200, adj.body);
     assert.deepEqual(guardado(hallazgo).evidencias, [clave]);
 });
-
-test('el reporte rápido tampoco guarda evidencias del cliente', async () => {
-    const res = await pedir(como(trabajadora, TRABAJADOR), 'POST', '/incidents/quick-report', {
-        tipo: 'condicion_subestandar', centroTrabajo: 'Torre A', descripcion: 'Baranda suelta',
-        evidencias: [`tenants/${B}/incidentes/otro/0b6f1c2e-3d4a-4b5c-8d9e-0f1a2b3c4d5e.jpg`],
-    });
-    assert.equal(res.statusCode, 201, res.body);
-    const guardadoRapido = doble.items('INCIDENTS_TABLE').find((i) => i.origenReporte === 'qr_publico');
-    assert.deepEqual(guardadoRapido.evidencias, []);
-});

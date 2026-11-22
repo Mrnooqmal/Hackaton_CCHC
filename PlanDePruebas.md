@@ -842,7 +842,7 @@ Hoy no tienen interfaz. Se prueban con `curl` o Postman, con un token válido.
   - [ ] Al disputarla, el estado pasa a "disputada" y en Mis firmas se ve en ámbar como "Firma disputada".
   - [ ] Al resolverla, el estado final se refleja; `GET /signatures/disputes` la lista.
 
-- [ ] **21.3** Como desarrollador quiero probar los endpoints de investigación de incidentes (`addInvestigation`, `completarFlash`, `quickReport`, `uploadDocument`, `getDocuments`), para validar que responden y respetan los permisos.
+- [ ] **21.3** Como desarrollador quiero probar los endpoints de investigación de incidentes (`addInvestigation`, `completarFlash`, `pedirSubidaDocumento`, `confirmarDocumento`, `getDocuments`), para validar que responden y respetan los permisos.
 
 - [ ] **21.4** Como desarrollador quiero reagendar una reunión de un órgano, para validar `reagendarReunion`.
 

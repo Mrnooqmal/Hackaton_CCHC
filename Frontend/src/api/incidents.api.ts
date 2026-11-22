@@ -276,30 +276,6 @@ export interface DatosMedida {
     jerarquia?: JerarquiaControl | null;
 }
 
-export interface QuickReportData {
-    qrToken: string;
-    tipo: 'accidente' | 'incidente' | 'condicion_subestandar';
-    clasificacion: 'hallazgo' | 'incidente';
-    tipoHallazgo: 'accion' | 'condicion';
-    etapaConstructiva: string;
-    centroTrabajo: string;
-    descripcion: string;
-    reportadoPor: string;
-    evidencias?: File[];
-    firmaConfirmacion: {
-        nombre: string;
-        timestamp: string;
-    };
-    ubicacion?: IncidentLocation;
-}
-
-export interface QRReportResponse {
-    success: boolean;
-    incidentId?: string;
-    message?: string;
-    error?: string;
-}
-
 export interface AnalyticsData {
     periodo: string;
     distribucionPorTipo: {
@@ -481,12 +457,6 @@ export const incidentsApi = {
         apiRequest<{ incident: Incident; medidas: unknown[] }>(`/incidents/${incidentId}/medidas/${encodeURIComponent(String(numero))}`, {
             method: 'PUT',
             body: JSON.stringify({ estado }),
-        }),
-
-    quickReport: (data: QuickReportData) =>
-        apiRequest<QRReportResponse>('/incidents/quick-report', {
-            method: 'POST',
-            body: JSON.stringify(data),
         }),
 
     // Fase 3: clasificar, definir medidas y cerrar el caso.

@@ -1,7 +1,7 @@
 // Correcciones de la revisión independiente del rediseño de incidentes.
 //
 // Cada prueba fija un hallazgo de la revisión:
-//   - un hallazgo creado por QR (sin foto) se puede cerrar después de agregarle una foto;
+//   - un hallazgo creado sin foto se puede cerrar después de agregarle una foto;
 //   - cerrar un hallazgo por la gobernanza exige el permiso de cierre y escribe `cierre`;
 //   - `PUT /incidents/{id}` ya no cambia el tipo ni la clasificación;
 //   - `create` no acepta medidas correctivas ni gobernanza del cliente;
@@ -137,13 +137,9 @@ const conCarrera = async (id, fn) => {
 
 // ─── Hallazgo 1: un hallazgo sin foto se cierra después de agregarle una ──────
 
-test('un hallazgo creado por QR llega sin foto: no cierra, y cierra después de agregarle una foto desde el detalle', async () => {
-    const res = await pedir(dePersona(), 'POST', '/incidents/quick-report', {
-        tipo: 'condicion_subestandar', centroTrabajo: 'Torre A', descripcion: 'Baranda suelta', obraId: obraA, qrToken: 'qr-1',
-    });
-    assert.equal(res.statusCode, 201, res.body);
-    const id = datos(res).incidentId;
-    assert.deepEqual(guardado(id).evidencias, [], 'el reporte rápido nunca trae fotos');
+test('un hallazgo creado sin foto: no cierra, y cierra después de agregarle una foto desde el detalle', async () => {
+    const id = await crearHallazgo();
+    assert.deepEqual(guardado(id).evidencias, [], 'sin foto al reportar');
 
     // El prevencionista lo clasifica y deja responsable y plazo.
     const t = await triaje(id, { tipo: 'condicion_subestandar', responsableId: responsable, plazoRespuestaISO: hoyMas(5) });

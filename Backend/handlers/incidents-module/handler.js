@@ -138,7 +138,6 @@ router
     // Antes de `/incidents/:id`, o `casos-resumen` se leería como un id.
     .get('/incidents/casos-resumen', getCasosResumen)
     .post('/incidents/upload-evidence', uploadEvidence)
-    .post('/incidents/quick-report', quickReport)
     .get('/incidents/:id', get)
     .put('/incidents/:id', update)
     .post('/incidents/:id/evidencias', agregarEvidencias)
@@ -1298,20 +1297,6 @@ async function getAnalytics(request) {
         const { obraId, fechaInicio, fechaFin } = request.query || {};
         const result = await incidentsRepo.getAnalytics({ tenantId: ses.sesion.tenantId, obraId, fechaInicio, fechaFin });
         return jsonResponse(result);
-    } catch (err) {
-        return errorResponse(err);
-    }
-}
-
-async function quickReport(request) {
-    try {
-        const ses = sesionDe(request);
-        if (!ses.ok) return ses.respuesta;
-        const body = parseBody(request.event);
-        body.tenantId = ses.sesion.tenantId;
-        body.reportadoPor = ses.sesion.personaId;
-        const result = await incidentsRepo.quickReport(body);
-        return jsonResponse(result, 201);
     } catch (err) {
         return errorResponse(err);
     }

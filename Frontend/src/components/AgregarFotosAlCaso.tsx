@@ -16,8 +16,8 @@ interface Props {
 /**
  * Agregar fotos a un caso ya creado.
  *
- * La foto es opcional al reportar (y un reporte rápido por QR llega siempre sin ellas),
- * pero un hallazgo no se puede cerrar sin al menos una: sin esta pantalla, ese caso quedaba
+ * La foto es opcional al reportar, pero un hallazgo no se puede cerrar sin al menos una:
+ * sin esta pantalla, ese caso quedaba
  * sin salida. Usa las mismas rutas del formulario de reporte (`POST /incidents/upload-evidence`
  * y `POST /incidents/{id}/evidencias`), con sus reglas: lo puede hacer quien reportó el caso
  * o quien gestiona incidentes, y el servidor lo rechaza en un caso cerrado (el padre ni

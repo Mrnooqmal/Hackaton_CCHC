@@ -44,7 +44,11 @@ const AL_VENCER = { SUPRIMIR: 'suprimir', ANONIMIZAR: 'anonimizar', GRUPAL: 'gru
 
 const ids = (lista, campo = 'personaId') => (Array.isArray(lista) ? lista.map((x) => x?.[campo]).filter(Boolean) : []);
 const uno = (v) => (v ? [v] : []);
-/** Un identificador de persona, y no un valor de sistema como 'sistema' o 'QR-Publico'. */
+/**
+ * Un identificador de persona, y no un valor de sistema como 'sistema' o 'QR-Publico'.
+ * 'QR-Publico' ya no se escribe (el reporte rápido por QR se eliminó), pero puede haber
+ * casos antiguos guardados con ese valor en `reportadoPor`: se sigue descartando.
+ */
 const esPersona = (v) => typeof v === 'string' && v !== '' && v !== 'sistema' && v !== 'QR-Publico';
 
 /**
@@ -157,7 +161,7 @@ const FUENTES = [
         // ficha), que el proceso resuelve a personaId con `ctx.personaPorRutHmac`.
         // Además, las personas que actuaron sobre el caso: quien lo reportó
         // (`reportadoPor` guarda su personaId desde que la identidad sale de la sesión; un
-        // valor de sistema como 'QR-Publico' se descarta, o el caso no vencería nunca), quien
+        // valor de sistema como 'sistema', o 'QR-Publico' en casos antiguos, se descarta, o el caso no vencería nunca), quien
         // lo clasificó (y quienes lo clasificaron antes), quien lo cerró y quienes lo
         // reabrieron, quien verificó el cierre, el responsable del hallazgo y los de las
         // medidas, quien creó o editó cada medida y quien subió cada papel. Un caso vence

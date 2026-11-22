@@ -182,7 +182,7 @@ export default function IncidentDetalle() {
     const cerrado = siguiente.paso === 'cerrado';
     // Agregar fotos: quien reportó el caso o quien gestiona incidentes, mientras el caso esté
     // abierto (el servidor lo exige igual). Es la salida de un hallazgo que llegó sin foto
-    // (un reporte rápido por QR nunca las trae) y no se puede cerrar sin una.
+    // y no se puede cerrar sin una.
     const puedeAgregarFotos = !cerrado && (incidente.reportadoPor === user?.personaId || puedeSubirPapeles);
     // "Te toca" solo para quien puede hacer el paso DESDE ESTA PANTALLA: los pasos (clasificar,
     // papeles, medidas, cerrar) se hacen en secciones que solo ve quien tiene el historial

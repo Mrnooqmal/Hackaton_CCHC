@@ -96,6 +96,8 @@ test('al reportar un hallazgo, el prevencionista de la empresa recibe el aviso e
     assert.deepEqual(aviso.linkedEntity, { type: 'incident', id });
     assert.match(aviso.subject, /hallazgo/i);
     assert.match(aviso.content, /Edificio Los Robles/);
+    assert.ok(!JSON.stringify(aviso).includes('Baranda'), 'el relato no va a la bandeja');
+    assert.ok(!JSON.stringify(publicados).includes('Baranda'), 'ni a SNS');
     assert.ok(!errores.some((e) => e.includes('TypeError')), errores.join(' | '));
 });
 
@@ -302,16 +304,4 @@ test('si avisar falla, el reporte se crea igual y queda constancia medible (FALL
     }
     assert.ok(errores.some((e) => e.includes('FALLO_DEPENDENCIA') && e.includes('incidente.aviso')), errores.join(' | '));
     assert.ok(!errores.some((e) => e.includes('Baranda')), 'el relato no va al log');
-});
-
-test('quickReport avisa con la misma forma: sin relato', async () => {
-    const res = await pedir(trabajadora, 'actividades.ver', 'POST', '/incidents/quick-report', {
-        tipo: 'condicion_subestandar', centroTrabajo: 'Losa 3', descripcion: RELATO, obraId: obraA,
-    });
-    assert.equal(res.statusCode, 201, res.body);
-    const [aviso] = bandejaDe(prevA);
-    assert.ok(aviso, `sin aviso. Errores: ${errores.join(' | ')}`);
-    assert.ok(!JSON.stringify(aviso).includes('Baranda'));
-    assert.equal(aviso.linkedEntity.type, 'incident');
-    assert.ok(!JSON.stringify(publicados).includes('Baranda'));
 });

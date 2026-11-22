@@ -73,7 +73,7 @@ const CONSERVADOS = {
 /** Campos donde aparecen personas que NO cuentan para el plazo de retención del caso. */
 const PERSONAS_NO_INVOLUCRADAS = {
     viewedBy: 'quién abrió el caso: se quita al anonimizar, y sumarlos haría depender el plazo de cada lector',
-    trabajador: 'reporte rápido: guarda en el nombre el personaId de quien reporta (decisión 11 del documento); esa persona ya cuenta por `reportadoPor`, y el campo es texto libre en otros flujos',
+    trabajador: 'reporte antiguo: guarda en el nombre el personaId de quien reporta (decisión 11 del documento); esa persona ya cuenta por `reportadoPor`, y el campo es texto libre en otros flujos',
 };
 
 let doble; let emitir; let consola; let enviarS3; let objetos;
@@ -191,11 +191,6 @@ async function crearCasos() {
     }));
     ok(await pedir(prev(), 'PUT', `/incidents/${f}/calificar-accidente`, {}));
 
-    // 4. Un reporte rápido por QR.
-    ok(await pedir(trab(), 'POST', '/incidents/quick-report', {
-        tipo: 'condicion_subestandar', centroTrabajo: 'Torre A', descripcion: 'Escalera sin pasamanos', obraId: obraA, qrToken: 'qr-1',
-        firmaConfirmacion: { nombre: 'Rosa', timestamp: '2026-11-22T10:00:00.000Z' },
-    }));
     return { a, h, f };
 }
 
@@ -212,7 +207,7 @@ test('el repositorio no escribe ningún campo del incidente que el inventario no
         + 'agrégalos a CONSERVADOS en esta prueba con su razón.');
     // Los campos que el caso completo debe haber escrito: si la prueba deja de ejercitar una ruta, se nota.
     for (const esperado of ['medidasInmediatas', 'medidasCorrectivas', 'gobernanza', 'triaje', 'cierre', 'reaperturas', 'papeles', 'evidencias',
-        'viewedBy', 'investigaciones', 'firmaConfirmacion', 'altoPotencial', 'medidasVerificadas']) {
+        'viewedBy', 'investigaciones', 'altoPotencial', 'medidasVerificadas']) {
         assert.ok(vistos.has(esperado), `la prueba no ejercitó la ruta que escribe \`${esperado}\``);
     }
     // Nada de lo personal puede quedar listado como conservado, ni al revés.

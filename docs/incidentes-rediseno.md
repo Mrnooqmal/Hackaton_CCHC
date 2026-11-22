@@ -177,7 +177,7 @@ Pendientes que dejó la fase 4, por decidir:
 
 Un revisor independiente encontró 17 hallazgos en la rama, y se corrigieron todos. Los que cambian reglas:
 
-- **Fotos:** el cierre de un hallazgo sigue exigiendo una foto, y ahora se pueden agregar desde el detalle del caso (quien reportó y quien gestiona), mientras no esté cerrado. Antes, un hallazgo sin foto (por ejemplo, uno del reporte rápido por QR) no se podía cerrar nunca.
+- **Fotos:** el cierre de un hallazgo sigue exigiendo una foto, y ahora se pueden agregar desde el detalle del caso (quien reportó y quien gestiona), mientras no esté cerrado. Antes, un hallazgo sin foto no se podía cerrar nunca.
 - **Tipo y clasificación:** `PUT /incidents/{id}` ya no los cambia. Se cambian solo con la clasificación (`PUT /incidents/{id}/triaje`).
 - **Responsable de una medida:** tiene que ser una persona activa con `incidentes.historial`, para que pueda abrir el caso al que lo lleva su aviso. El selector solo ofrece a esas personas (`GET /personas?conPermiso=incidentes.historial`).
 - **Responsable y plazo** se validan igual en todas las rutas: persona activa de la empresa, nombre leído de su ficha y plazo con fecha real.
@@ -191,7 +191,7 @@ Un revisor independiente encontró 17 hallazgos en la rama, y se corrigieron tod
 Encontrado y sin corregir:
 
 - `PUT /incidents/{id}/flash-completar` nunca funciona: lee `reporteFlash` del elemento listado, pero se guarda en la traza. Viene de antes del rediseño.
-- El reporte rápido por QR no exige permiso para crear un accidente.
+- El reporte rápido por QR no exigía permiso para crear un accidente. Se eliminó (ver más abajo).
 - El responsable de un hallazgo no recibe aviso, y si no tiene `incidentes.historial` no puede ver el hallazgo que se le asignó.
 - `afectadoRutHmac` se conserva al anonimizar, porque es el vínculo que usa la retención.
 
@@ -200,7 +200,8 @@ Encontrado y sin corregir:
 Una segunda revisión independiente buscó casos borde y encontró 14; se corrigieron todos. Los que cambian reglas:
 
 - **La clasificación de un reporte se deriva siempre de su tipo.** Una clasificación que no coincide con el tipo se rechaza, y el tipo y la gravedad se validan contra sus listas.
-- **El reporte rápido (QR) solo crea hallazgos.** Guarda los datos del trabajador en la traza cifrada y la fecha en hora de Chile.
+- **El reporte rápido por QR (`POST /incidents/quick-report`) se eliminó.** Ninguna pantalla lo usaba. El inventario sigue descartando el valor `QR-Publico` de `reportadoPor`, por los casos antiguos que lo traigan.
+- **Al crear un reporte,** la fecha y la hora se guardan en hora de Chile.
 - **Completar un reporte flash** ahora funciona: lee la traza, valida la gravedad y no la cambia si el caso ya está clasificado (para eso está la clasificación).
 - **`PUT /incidents/{id}` ya no cambia el estado.** El estado cambia solo al clasificar, cerrar o reabrir.
 - **Las rutas antiguas** (editar, calificar accidente, gobernanza, flash, estado de medida, investigación, marcar visto) exigen poder leer el caso, igual que las nuevas, y escriben con bloqueo optimista.
