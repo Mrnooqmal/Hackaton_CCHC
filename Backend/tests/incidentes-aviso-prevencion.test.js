@@ -183,16 +183,74 @@ test('un rol personalizado con incidentes.calificar_accidente recibe el aviso; u
     assert.ok(!ids.includes(bodeguero));
 });
 
-test('una empresa que le quitó el permiso a su rol "prevencionista": ese prevencionista NO recibe el aviso', async () => {
-    // Consecuencia buscada de avisar por permiso: lo que manda es la definición
-    // de roles de la empresa, no el nombre del rol.
-    const sinCalificar = DEFAULT_ROLE_PRESETS.prevencionista.filter((p) => p !== 'incidentes.calificar_accidente');
-    await new TenantService().updateConfig(A, { roles: [
-        { id: 'prevencionista', tipo: 'prevencionista', nombre: 'Prevencionista', permisos: sinCalificar },
-    ] });
-    assert.ok(!(await destinatarios(A)).includes(prevA));
-    // La otra empresa conserva sus roles: su prevencionista sí.
+const sinCalificar = DEFAULT_ROLE_PRESETS.prevencionista.filter((p) => p !== 'incidentes.calificar_accidente');
+const quitarPermisoAlPrevencionista = (tenantId) => new TenantService().updateConfig(tenantId, { roles: [
+    { id: 'prevencionista', tipo: 'prevencionista', nombre: 'Prevencionista', permisos: sinCalificar },
+] });
+
+test('una empresa que le quitó el permiso a su rol "prevencionista": ese prevencionista SÍ recibe el aviso', async () => {
+    // Decisión del usuario del 22 de noviembre de 2026: el prevencionista es el
+    // responsable de prevención y siempre recibe el aviso, aunque la empresa le
+    // quite el permiso a su rol. Antes esta prueba afirmaba lo contrario.
+    await quitarPermisoAlPrevencionista(A);
+    assert.deepEqual(await destinatarios(A), [prevA]);
+    // La otra empresa no se toca: su prevencionista lo recibe como siempre.
     assert.deepEqual(await destinatarios(B), [prevB]);
+});
+
+test('el prevencionista sin el permiso recibe un solo aviso; y con el permiso, también uno solo', async () => {
+    // Sin el permiso: le llega por ser prevencionista, una vez.
+    await quitarPermisoAlPrevencionista(A);
+    const reportar = () => pedir(trabajadora, 'actividades.ver', 'POST', '/incidents', {
+        clasificacion: 'hallazgo', tipo: 'condicion_subestandar', descripcion: RELATO, obraId: obraA,
+    });
+    assert.equal((await reportar()).statusCode, 201);
+    assert.equal(bandejaDe(prevA).length, 1);
+    assert.equal((await destinatarios(A)).filter((id) => id === prevA).length, 1);
+
+    // Con el permiso (roles por defecto): cumple las dos condiciones y sigue
+    // siendo un aviso por reporte, no dos.
+    await new TenantService().updateConfig(A, { roles: [
+        { id: 'prevencionista', tipo: 'prevencionista', nombre: 'Prevencionista', permisos: DEFAULT_ROLE_PRESETS.prevencionista },
+    ] });
+    assert.equal((await destinatarios(A)).filter((id) => id === prevA).length, 1);
+    assert.equal((await reportar()).statusCode, 201);
+    assert.equal(bandejaDe(prevA).length, 2, 'un aviso por cada uno de los dos reportes');
+});
+
+test('el rol prevencionista escrito "Prevencionista" o con espacios también cuenta', async () => {
+    await quitarPermisoAlPrevencionista(A);
+    // Se escribe a mano en la tabla: así quedan los datos antiguos o importados.
+    const conMayuscula = await crearActiva(A, 'prevencionista', 'Paula');
+    doble.items('PERSONAS_TABLE').find((x) => x.personaId === conMayuscula).rol = '  Prevencionista ';
+    assert.ok((await destinatarios(A)).includes(conMayuscula));
+});
+
+test('un prevencionista inactivo no recibe el aviso, aunque el rol lo traiga siempre', async () => {
+    await quitarPermisoAlPrevencionista(A);
+    const ids = await destinatarios(A);
+    assert.ok(!ids.includes(prevInactiva));
+    const res = await pedir(trabajadora, 'actividades.ver', 'POST', '/incidents', {
+        clasificacion: 'hallazgo', tipo: 'condicion_subestandar', descripcion: RELATO, obraId: obraA,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(bandejaDe(prevInactiva).length, 0);
+});
+
+test('el prevencionista sin el permiso que reporta no se avisa a sí mismo', async () => {
+    await quitarPermisoAlPrevencionista(A);
+    const res = await pedir(prevA, 'incidentes.reportar', 'POST', '/incidents', {
+        clasificacion: 'hallazgo', tipo: 'condicion_subestandar', descripcion: RELATO, obraId: obraA,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(bandejaDe(prevA).length, 0);
+});
+
+test('supervisor y trabajador siguen sin recibir el aviso aunque el prevencionista no tenga el permiso', async () => {
+    await quitarPermisoAlPrevencionista(A);
+    const trabajadorActivo = await crearActiva(A, 'trabajador', 'Tomás');
+    const ids = await destinatarios(A);
+    assert.ok(!ids.includes(supervisora) && !ids.includes(trabajadorActivo));
 });
 
 test('si la definición de roles no se puede leer, se avisa con los roles por defecto y queda constancia', async () => {

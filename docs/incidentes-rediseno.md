@@ -90,9 +90,10 @@ Decisión sobre el aviso a prevención: lleva solo el tipo, la obra, la fecha, l
 Decididos el 15 de noviembre:
 
 9. **El aviso va solo a personas en estado `activo`.** Quien no terminó de enrolarse no lo recibe. Se queda así.
-10. **A quién se avisa lo decide un permiso, no el nombre del rol.** Recibe el aviso quien tiene `incidentes.calificar_accidente`, el permiso de quien clasifica el caso (constante `PERMISO_AVISO_REPORTE` en `incidents.repository.js`).
+10. **A quién se avisa: el prevencionista siempre, y además quien tenga el permiso.** Recibe el aviso quien tiene el rol prevencionista o el permiso `incidentes.calificar_accidente`, el de quien clasifica el caso (constantes `ROL_AVISO_SIEMPRE` y `PERMISO_AVISO_REPORTE` en `incidents.repository.js`).
+    - El prevencionista lo recibe aunque su empresa le haya quitado ese permiso (decisión del 22 de noviembre). Antes, quitarle el permiso lo dejaba sin aviso.
     - Con los roles por defecto lo reciben prevencionista, jefe de obra y admin. No lo reciben supervisor ni trabajador.
-    - Un rol personalizado con ese permiso lo recibe. Si una empresa le quita el permiso a su rol de prevencionista, ese rol deja de recibirlo.
+    - Un rol personalizado con ese permiso lo recibe. Uno con otro nombre (por ejemplo "prevencionista_senior") no cuenta como prevencionista: solo lo recibe si tiene el permiso.
     - El admin lo recibe siempre, aunque la empresa haya editado sus permisos.
     - Si no se pueden leer los roles de la empresa, se usan los permisos por defecto de cada rol.
 11. **El reporte rápido guarda el `personaId` de quien reporta en el campo del nombre del trabajador.** No se toca.
@@ -127,7 +128,7 @@ Cada fase termina con sus pruebas pasando.
 
 | Fase | Estado |
 |---|---|
-| 1. Reportar de punta a punta | Implementada el 15 de noviembre (1460 pruebas pasan, build y lint sin errores). Falta probarla en el navegador |
+| 1. Reportar de punta a punta | Implementada el 15 de noviembre (1520 pruebas pasan después de traer `pruebas` del 21 de noviembre; build y lint sin errores). Falta probarla en el navegador |
 | 2. Carpeta del caso | Pendiente |
 | 3. Clasificación, medidas y cierre | Pendiente |
 | 4. FUF y repositorio | Pendiente |

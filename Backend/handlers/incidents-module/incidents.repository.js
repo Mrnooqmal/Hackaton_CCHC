@@ -7,7 +7,7 @@ const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
 const { hmacRut } = require('../../lib/cifradoCampo');
-const { validateRut } = require('../../lib/utils/validation');
+const { validateRut, normalizeRol } = require('../../lib/utils/validation');
 const { construirMensaje } = require('../../lib/bandeja');
 const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
@@ -15,10 +15,19 @@ const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
 const { TenantService } = require('../../lib/services/TenantService');
 
 // Quién recibe el aviso de un reporte nuevo: quien puede clasificarlo, que es
-// justo lo que el aviso le pide hacer. Con los roles por defecto son
-// prevencionista, jefe de obra y admin; no supervisor ni trabajador. Cambiar a
-// quién se avisa es cambiar esta línea.
+// justo lo que el aviso le pide hacer, y además SIEMPRE el prevencionista
+// (`ROL_AVISO_SIEMPRE`), tenga o no ese permiso. Con los roles por defecto son
+// prevencionista, jefe de obra y admin; no supervisor ni trabajador.
 const PERMISO_AVISO_REPORTE = PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE;
+
+// El prevencionista es el responsable de prevención de la empresa: no puede
+// quedar sin enterarse de un reporte porque alguien editó los permisos de su
+// rol en Mi Empresa (decisión del usuario, 22-11-2026). Se compara contra el rol
+// normalizado de la persona (`normalizeRol(persona.rol)`), el mismo dato con que
+// `resolvePersonaPermisos` elige su rol. `lib/permissions.js` no expone una
+// constante con este nombre: es el `tipo`/`id` protegido de `Tenant`, que no
+// cambia aunque la empresa renombre el rol.
+const ROL_AVISO_SIEMPRE = 'prevencionista';
 
 // Cómo se nombra cada tipo en el aviso a prevención (todos masculinos: "un …").
 const TIPO_EN_AVISO = {
@@ -110,13 +119,20 @@ class IncidentsRepository {
     /**
      * A quiénes avisar de un reporte nuevo: las personas ACTIVAS de UNA empresa
      * (la partición `TENANT#{tenantId}` no ve a nadie de otra) que tienen el
-     * permiso efectivo `PERMISO_AVISO_REPORTE`.
+     * permiso efectivo `PERMISO_AVISO_REPORTE` o cuyo rol es prevencionista
+     * (`ROL_AVISO_SIEMPRE`). Cada persona aparece una sola vez aunque cumpla las
+     * dos cosas: el filtro recorre personas, no las suma.
      *
-     * Se busca por permiso y no por nombre de rol: una empresa que creó su rol
-     * "Encargado SST" con permisos de prevención tiene que recibir el aviso, y
-     * una que le quitó ese permiso a su "Prevencionista" no. Los permisos se
-     * resuelven igual que en el autorizador: `TenantService.getById` →
-     * `toSafeFormat()` → `personaPuede`, con una sola lectura del tenant por aviso.
+     * Se busca por permiso para que una empresa que creó su rol "Encargado SST"
+     * con permisos de prevención reciba el aviso. El prevencionista lo recibe
+     * igual aunque su empresa le haya quitado el permiso: es el responsable de
+     * prevención y no debe quedar sin aviso por una edición de permisos. Cuenta
+     * como prevencionista quien tiene `persona.rol` normalizado a ese valor, el
+     * mismo criterio con que `resolvePersonaPermisos` decide su rol: un rol
+     * personalizado de otro id ("prevencionista_senior") no cuenta por nombre,
+     * solo por permiso. Los permisos se resuelven igual que en el autorizador:
+     * `TenantService.getById` → `toSafeFormat()` → `personaPuede`, con una sola
+     * lectura del tenant por aviso.
      *
      * Si el tenant no se puede leer, se degrada a los roles por defecto
      * (`personaPuede` con tenant `null` usa los presets) en vez de a nadie: un
@@ -152,7 +168,10 @@ class IncidentsRepository {
             desde = result.LastEvaluatedKey;
         } while (desde);
         return items
-            .filter((item) => item.personaId && personaPuede(item, tenantSafe, PERMISO_AVISO_REPORTE))
+            .filter((item) => item.personaId && (
+                normalizeRol(item.rol) === ROL_AVISO_SIEMPRE
+                || personaPuede(item, tenantSafe, PERMISO_AVISO_REPORTE)
+            ))
             .map((item) => ({ userId: item.personaId, personaId: item.personaId }));
     }
 
