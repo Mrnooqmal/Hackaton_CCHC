@@ -341,15 +341,31 @@ class PersonaService {
      */
     async getAllByRutGlobal(rut) {
         const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        // Sin RUT no hay a quién buscar. Antes, un RUT vacío dejaba `:rut` en
+        // `undefined`; el cliente lo quita (removeUndefinedValues) y DynamoDB
+        // rechaza el Scan con "An expression attribute value used in
+        // expression is not defined; attribute value: :rut". Pasó al
+        // restablecer la contraseña de una ficha sin RUT: la clave ya estaba
+        // cambiada y la pantalla mostraba el error igual.
+        if (!rut || !String(rut).trim()) return [];
         const rutValidation = validateRut(rut);
-        const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
+        const rutFormatted = rutValidation.valid ? rutValidation.formatted : String(rut).trim();
         const rutHmac = await cifradoCampo.hmacRut(rutFormatted);
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.table,
-            FilterExpression: '(rutHmac = :h OR rut = :rut) AND begins_with(SK, :prefix)',
-            ExpressionAttributeValues: { ':h': rutHmac, ':rut': rutFormatted, ':prefix': 'PERSONA#' }
-        }));
-        return this._hidratar((result.Items || []).map((item) => Persona.fromDynamoItem(item)));
+        // Scan paginado: un Scan devuelve como mucho 1 MB por página, y la
+        // ficha buscada puede estar en cualquiera.
+        const items = [];
+        let desde;
+        do {
+            const result = await this.dynamo.send(new ScanCommand({
+                TableName: this.table,
+                FilterExpression: '(rutHmac = :h OR rut = :rut) AND begins_with(SK, :prefix)',
+                ExpressionAttributeValues: { ':h': rutHmac, ':rut': rutFormatted, ':prefix': 'PERSONA#' },
+                ExclusiveStartKey: desde,
+            }));
+            items.push(...(result.Items || []));
+            desde = result.LastEvaluatedKey;
+        } while (desde);
+        return this._hidratar(items.map((item) => Persona.fromDynamoItem(item)));
     }
 
     /**
@@ -365,7 +381,10 @@ class PersonaService {
      */
     async propagarPassword(personaOrigen, passwordPlano, { passwordTemporal = false, cuales } = {}) {
         if (typeof cuales !== 'function') throw new Error('propagarPassword: falta el criterio de las fichas hermanas');
-        if (!personaOrigen?.rut) throw new Error('propagarPassword: la ficha origen no trae el RUT');
+        // Sin RUT no se pueden encontrar fichas hermanas: no hay nada que
+        // propagar. Lanzar aquí convertía en error un cambio de contraseña que
+        // ya se había guardado.
+        if (!personaOrigen?.rut) return [];
         const todas = await this.getAllByRutGlobal(personaOrigen.rut);
         const hermanas = [];
         for (const p of todas) {

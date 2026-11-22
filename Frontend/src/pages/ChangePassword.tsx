@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { FieldSection, FormPage, PageHeader } from '../components/ui';
 import '../css/AuthCard.css';
+import TarjetaAcceso from '../components/TarjetaAcceso';
 import '../css/cambio-password.css';
 import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 
@@ -142,17 +143,7 @@ export default function ChangePassword() {
   // ── Primer ingreso: tarjeta de acceso a pantalla completa ──────────────────
   if (isFirstEntry) {
     return (
-      <div className="lp-root">
-        <div className="lp-bg" aria-hidden="true" />
-        <main className="lp-card">
-          <div className="lp-head">
-            <div className="lp-logo" aria-label="Build and Serve">
-              <span className="lp-logo-build">Build</span>
-              <span className="lp-logo-amp">&amp;</span>
-              <span className="lp-logo-serve">Serve</span>
-            </div>
-            <div className="lp-divider" aria-hidden="true" />
-          </div>
+      <TarjetaAcceso>
 
           <div className="lp-body">
             <ol className="onb-steps" style={{ gridTemplateColumns: `repeat(${PASOS_PRIMER_INGRESO.length}, minmax(0, 1fr))` }}
@@ -216,8 +207,7 @@ export default function ChangePassword() {
             </button>
             <span className="lp-foot-meta">Paso 1 de {PASOS_PRIMER_INGRESO.length}</span>
           </div>
-        </main>
-      </div>
+      </TarjetaAcceso>
     );
   }
 

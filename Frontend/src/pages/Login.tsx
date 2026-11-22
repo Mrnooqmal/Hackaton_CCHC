@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth, type TenantOpcion } from '../context/AuthContext';
-import '../css/AuthCard.css';
+import TarjetaAcceso from '../components/TarjetaAcceso';
 import { monograma, colorMonograma } from '../utils/identidadEmpresa';
 import { FiArrowRight, FiArrowLeft, FiUser, FiLock, FiEye, FiEyeOff, FiChevronRight } from 'react-icons/fi';
 
@@ -86,22 +86,10 @@ export default function Login() {
     };
 
     return (
-        <div className="lp-root">
-            {/* Fondo fotografía */}
-            <div className="lp-bg" aria-hidden="true" />
-
-            {/* Tarjeta: mismo ancho en todos los pasos. El ingreso mide lo que su
-                formulario; elegir empresa usa el alto fijo del flujo (lp-card--fija)
-                y, si hay muchas, es la lista la que hace scroll. */}
-            <main className={`lp-card${seleccion ? ' lp-card--fija' : ''}`}>
-                <div className="lp-head">
-                    <div className="lp-logo" aria-label="Build and Serve">
-                        <span className="lp-logo-build">Build</span>
-                        <span className="lp-logo-amp">&amp;</span>
-                        <span className="lp-logo-serve">Serve</span>
-                    </div>
-                    <div className="lp-divider" aria-hidden="true" />
-                </div>
+        // Tarjeta: mismo ancho en todos los pasos. El ingreso mide lo que su
+        // formulario; elegir empresa usa el alto fijo del flujo y, si hay muchas,
+        // es la lista la que hace scroll.
+        <TarjetaAcceso fija={Boolean(seleccion)}>
 
                 {seleccion ? (
                     <>
@@ -208,8 +196,6 @@ export default function Login() {
                         </div>
                     </>
                 )}
-            </main>
-
-        </div>
+        </TarjetaAcceso>
     );
 }

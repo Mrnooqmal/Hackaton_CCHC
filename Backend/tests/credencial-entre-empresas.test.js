@@ -251,3 +251,40 @@ test('H-A: ya no existe el restablecimiento con contraseña devuelta en la respu
     assert.equal((await new PersonaService().getItemById(enA)).passwordHash, antes);
     assert.equal(typeof PersonaService.prototype.resetPassword, 'undefined');
 });
+
+// Regresión: una ficha sin RUT (sin rutCifrado ni rutHmac) dejaba `:rut` en
+// `undefined` al buscar fichas hermanas, DynamoDB rechazaba el Scan ("attribute
+// value: :rut") y la pantalla mostraba ese error aunque la contraseña ya se
+// había cambiado.
+const sinRut = (personaId, tenantId) => docClient.send(new UpdateCommand({
+    TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+    UpdateExpression: 'REMOVE rutCifrado, rutHmac, rut',
+}));
+
+test('restablecer por correo una ficha sin RUT responde 200 y deja la contraseña nueva', async () => {
+    const a = await empresa('Constructora A');
+    const p = await ficha(a, { email: 'juan@ejemplo.cl' });
+    await fijar(p, a, 'Anterior-1');
+    await sinRut(p, a);
+
+    await restablecerPorCorreo(p, a, 'Nueva-clave-1');
+    assert.ok(await coincide(p, 'Nueva-clave-1'));
+});
+
+test('cambiar la contraseña de una ficha sin RUT responde 200', async () => {
+    const a = await empresa('Constructora A');
+    const p = await ficha(a);
+    await fijar(p, a, 'Anterior-1');
+    await sinRut(p, a);
+
+    const res = await cambiar(p, a, 'Nueva-clave-1', 'Anterior-1');
+    assert.equal(res.statusCode, 200, res.body);
+    assert.ok(await coincide(p, 'Nueva-clave-1'));
+});
+
+test('buscar por RUT vacío no consulta DynamoDB y no encuentra a nadie', async () => {
+    const svc = new PersonaService();
+    assert.deepEqual(await svc.getAllByRutGlobal(undefined), []);
+    assert.deepEqual(await svc.getAllByRutGlobal(''), []);
+    assert.equal(await svc.getByRutGlobal(null), null);
+});

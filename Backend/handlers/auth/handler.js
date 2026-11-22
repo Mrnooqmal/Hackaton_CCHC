@@ -415,11 +415,20 @@ module.exports.changePassword = async (event) => {
                 ':updatedAt': now
             }
         }));
-        const hermanas = persona.passwordTemporal ? [] : await personaService.propagarPassword(persona, passwordNuevo, {
-            passwordTemporal: false,
-            cuales: async (h) => Boolean(h._passwordHash)
-                && (await credenciales.verificar(passwordActual, h._passwordHash, h.personaId)).valido,
-        });
+        // La contraseña de esta ficha ya quedó guardada; copiarla a las fichas
+        // hermanas es secundario (ver resetPassword).
+        let hermanas = [];
+        if (!persona.passwordTemporal) {
+            try {
+                hermanas = await personaService.propagarPassword(persona, passwordNuevo, {
+                    passwordTemporal: false,
+                    cuales: async (h) => Boolean(h._passwordHash)
+                        && (await credenciales.verificar(passwordActual, h._passwordHash, h.personaId)).valido,
+                });
+            } catch (propErr) {
+                registrarFallo('auth.changePassword.propagar', propErr);
+            }
+        }
 
         // Ninguna sesión abierta con la contraseña anterior sigue valiendo, la
         // propia incluida, y en todas las empresas de la persona (D-26). Antes de
@@ -598,12 +607,20 @@ module.exports.resetPassword = async (event) => {
                 ':u': now
             }
         }));
+        // La contraseña de esta ficha ya quedó guardada. Copiarla a las fichas
+        // hermanas es secundario: si falla, cada una conserva la suya (lo
+        // seguro) y no se le informa a la persona un error que no lo es.
         const correo = String(personaItem.email || '').trim().toLowerCase();
-        const origen = correo ? await personaService.getById(personaId) : null;
-        const hermanas = origen ? await personaService.propagarPassword(origen, passwordNuevo, {
-            passwordTemporal: false,
-            cuales: (h) => String(h.email || '').trim().toLowerCase() === correo,
-        }) : [];
+        let hermanas = [];
+        try {
+            const origen = correo ? await personaService.getById(personaId) : null;
+            hermanas = origen ? await personaService.propagarPassword(origen, passwordNuevo, {
+                passwordTemporal: false,
+                cuales: (h) => String(h.email || '').trim().toLowerCase() === correo,
+            }) : [];
+        } catch (propErr) {
+            registrarFallo('auth.resetPassword.propagar', propErr);
+        }
 
         // Quien recupera su cuenta la recupera entera: una sesión abierta con la
         // contraseña anterior no sigue valiendo (D-26).

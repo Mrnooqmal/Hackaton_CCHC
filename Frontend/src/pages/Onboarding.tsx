@@ -10,6 +10,7 @@ import { LuLink2Off } from 'react-icons/lu';
 import '../css/AuthCard.css';
 import { SUGGESTED_COLORS, monograma } from '../utils/identidadEmpresa';
 import LogoModos from '../components/LogoModos';
+import TarjetaAcceso from '../components/TarjetaAcceso';
 import type { LogosValor } from '../components/LogoModos';
 import { DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
 
@@ -83,27 +84,6 @@ const PASOS: { id: Paso; label: string }[] = [
     { id: 'identidad', label: 'Identidad' },
     { id: 'acceso', label: 'Acceso' },
 ];
-
-/** La tarjeta del login, con su logo. Fuera del componente: si se declarara
- *  adentro, React la montaría de nuevo en cada tecla y los campos perderían el foco. */
-function Tarjeta({ children }: { children: React.ReactNode }) {
-    return (
-        <div className="lp-root">
-            <div className="lp-bg" aria-hidden="true" />
-            <main className="lp-card">
-                <div className="lp-head">
-                    <div className="lp-logo" aria-label="Build and Serve">
-                        <span className="lp-logo-build">Build</span>
-                        <span className="lp-logo-amp">&amp;</span>
-                        <span className="lp-logo-serve">Serve</span>
-                    </div>
-                    <div className="lp-divider" aria-hidden="true" />
-                </div>
-                {children}
-            </main>
-        </div>
-    );
-}
 
 export default function Onboarding() {
     const [searchParams] = useSearchParams();
@@ -239,18 +219,18 @@ export default function Onboarding() {
     // ── Estados sin formulario ────────────────────────────────────────────────
     if (validando) {
         return (
-            <Tarjeta>
+            <TarjetaAcceso>
                 <div className="lp-body onb-estado" role="status">
                     <div className="onb-spinner" />
                     <p className="lp-hint">Validando el enlace de activación…</p>
                 </div>
-            </Tarjeta>
+            </TarjetaAcceso>
         );
     }
 
     if (enlaceInvalido || !licencia) {
         return (
-            <Tarjeta>
+            <TarjetaAcceso>
                 <div className="lp-body onb-resultado">
                     <span className="onb-resultado-icono onb-resultado-icono--error"><LuLink2Off size={28} /></span>
                     <h1 className="lp-title">Enlace inválido o vencido</h1>
@@ -262,13 +242,13 @@ export default function Onboarding() {
                     </ul>
                 </div>
                 <Link to="/login" className="onb-btn-secundario">Ir al inicio de sesión</Link>
-            </Tarjeta>
+            </TarjetaAcceso>
         );
     }
 
     if (listo) {
         return (
-            <Tarjeta>
+            <TarjetaAcceso>
                 <div className="lp-body onb-resultado">
                     <span className="onb-resultado-icono onb-resultado-icono--ok"><FiCheckCircle size={28} /></span>
                     <h1 className="lp-title">Empresa creada</h1>
@@ -292,7 +272,7 @@ export default function Onboarding() {
                     <FiArrowRight size={15} />
                 </Link>
                 <p className="onb-nota">Te llevamos al inicio de sesión en unos segundos…</p>
-            </Tarjeta>
+            </TarjetaAcceso>
         );
     }
 
@@ -333,7 +313,7 @@ export default function Onboarding() {
     const nombreEmpresa = empresa.nombre.trim() || 'Tu empresa';
 
     return (
-        <Tarjeta>
+        <TarjetaAcceso>
             <div className="lp-body">
                 {Stepper}
 
@@ -597,7 +577,7 @@ export default function Onboarding() {
                 )}
             </div>
             {Pie}
-        </Tarjeta>
+        </TarjetaAcceso>
     );
 }
 
