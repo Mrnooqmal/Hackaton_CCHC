@@ -321,6 +321,62 @@ function evaluarItem53(ctx) {
         };
 }
 
+// ─── Ítem 66: investigación de accidentes ────────────────────────────────────
+
+/**
+ * Art. 71. Además del procedimiento, mira los accidentes de la obra: cada uno
+ * exige su informe de investigación (papel `informe_investigacion` del caso, ver
+ * `lib/casos.js`). `ctx.casos` es el resumen de los casos de la obra
+ * (`resumenDelCaso`), sin datos personales ni archivos.
+ *
+ *  - Sin procedimiento: Pendiente, como siempre; los accidentes no cambian eso.
+ *  - Con accidentes sin informe: Parcial, con cuántos faltan. El procedimiento
+ *    está, pero hay investigaciones que el Art. 71 exige y no constan.
+ *  - Con todos los informes, o sin accidentes: Cumplido.
+ *  - `ctx.casos === null`: los casos no se pudieron leer. No se afirma que no hay
+ *    accidentes sin informe (un fallo de lectura no puede salir en verde): Parcial.
+ *  - `ctx.casos` ausente: el contexto es de quien no conoce los casos (una prueba o
+ *    un armado anterior); se evalúa como antes.
+ *
+ * Los documentos INVESTIGACION_ACCIDENTE del repositorio de la obra siguen
+ * contando, como antes, en el detalle: no se vinculan a un caso concreto, así que no
+ * descuentan un accidente sin informe.
+ */
+function evaluarItem66(ctx) {
+    const proc = vigenteDeTipo(ctx, 'PROCEDIMIENTO_INVESTIGACION');
+    const documentos = docsDeTipo(ctx, 'INVESTIGACION_ACCIDENTE').filter(conArchivo);
+    if (!proc) {
+        return { estado: E.PENDIENTE, detalle: 'Sin procedimiento de investigación de accidentes (Art. 71).' };
+    }
+    const registradas = documentos.length === 0
+        ? ''
+        : ` y ${plural(documentos.length, 'investigación registrada', 'investigaciones registradas')}`;
+
+    if (ctx.casos === null) {
+        return { estado: E.PARCIAL, detalle: `Procedimiento cargado${registradas}. No se pudieron revisar los accidentes de la obra: vuelve a intentarlo.` };
+    }
+    const accidentes = (ctx.casos || []).filter((c) => c?.tipo === 'accidente');
+    const sinInforme = accidentes.filter((c) => !c.informeInvestigacion);
+    if (sinInforme.length > 0) {
+        return {
+            estado: E.PARCIAL,
+            detalle: `Procedimiento cargado${registradas}. ${plural(sinInforme.length, 'accidente sin informe de investigación', 'accidentes sin informe de investigación')}.`,
+        };
+    }
+    if (accidentes.length > 0) {
+        return {
+            estado: E.CUMPLIDO,
+            detalle: `Procedimiento cargado y ${plural(accidentes.length, 'accidente con su informe de investigación', 'accidentes con su informe de investigación')}.`,
+        };
+    }
+    return {
+        estado: E.CUMPLIDO,
+        detalle: documentos.length === 0
+            ? 'Procedimiento cargado. Sin accidentes investigados en el período.'
+            : `Procedimiento cargado y ${plural(documentos.length, 'investigación registrada', 'investigaciones registradas')}.`,
+    };
+}
+
 // ─── Definiciones ────────────────────────────────────────────────────────────
 
 const DEFINICIONES_OPERACION = [
@@ -540,19 +596,7 @@ const DEFINICIONES_OPERACION = [
         tipos: ['PROCEDIMIENTO_INVESTIGACION', 'INVESTIGACION_ACCIDENTE'],
         // El procedimiento es exigible siempre; las investigaciones dependen de
         // que haya ocurrido algo, y no tenerlas no es un incumplimiento.
-        evaluar: (ctx) => {
-            const proc = vigenteDeTipo(ctx, 'PROCEDIMIENTO_INVESTIGACION');
-            const casos = docsDeTipo(ctx, 'INVESTIGACION_ACCIDENTE').filter(conArchivo);
-            if (!proc) {
-                return { estado: E.PENDIENTE, detalle: 'Sin procedimiento de investigación de accidentes (Art. 71).' };
-            }
-            return {
-                estado: E.CUMPLIDO,
-                detalle: casos.length === 0
-                    ? 'Procedimiento cargado. Sin accidentes investigados en el período.'
-                    : `Procedimiento cargado y ${plural(casos.length, 'investigación registrada', 'investigaciones registradas')}.`,
-            };
-        },
+        evaluar: evaluarItem66,
     },
 
     // ── Fuera del alcance de la plataforma ──
@@ -589,6 +633,6 @@ const definicionesOperacionPara = (ambito) =>
 
 module.exports = {
     DEFINICIONES_OPERACION, definicionesOperacionPara,
-    evaluarItem6, evaluarItem18, evaluarItem19, evaluarItem23, evaluarItem29, evaluarItem53,
+    evaluarItem6, evaluarItem18, evaluarItem19, evaluarItem23, evaluarItem29, evaluarItem53, evaluarItem66,
     porDocumento, porPeriodicidad, porEvento,
 };

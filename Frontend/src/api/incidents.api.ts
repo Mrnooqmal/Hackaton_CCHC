@@ -180,7 +180,7 @@ export interface UpdateIncidentData {
     investigacionJefeDirecto?: Omit<Investigation, 'fecha'>;
     investigacionComiteParitario?: Omit<Investigation, 'fecha'>;
     diasPerdidos?: number;
-    evidencias?: string[];
+    // Sin `evidencias`: el servidor no las acepta por esta vía. Las fotos se agregan con `agregarEvidencias`.
     medidasInmediatas?: string;
     ubicacion?: IncidentLocation;
 }
@@ -216,6 +216,27 @@ export interface PapelesDelCaso {
     archivos: PapelDelCaso[];
     requeridos: PapelRequerido[];
     avance: AvanceDelCaso;
+}
+
+/**
+ * Un caso de la obra visto sin sus datos: lo que entrega `GET /incidents/casos-resumen`
+ * (fase 4). No trae nombres, RUT, relato, archivos ni claves de S3; para eso está el
+ * detalle del caso y su descarga auditada.
+ */
+export interface CasoResumen {
+    incidentId: string;
+    tipo: Incident['tipo'] | null;
+    clasificacion: 'hallazgo' | 'incidente';
+    /** `null` en un hallazgo. */
+    gravedad: 'leve' | 'grave' | 'fatal' | null;
+    /** AAAA-MM-DD */
+    fecha: string | null;
+    estado: 'abierto' | 'cerrado';
+    clasificado: boolean;
+    avance: AvanceDelCaso;
+    /** Los papeles que el caso exige, sin tipo de archivo. */
+    requeridos: Pick<PapelRequerido, 'clave' | 'etiqueta' | 'cumplido'>[];
+    informeInvestigacion: boolean;
 }
 
 export interface SubirPapelData {
@@ -425,6 +446,10 @@ export const incidentsApi = {
     /** Papeles subidos con su descarga firmada, lo que el caso exige y el avance. Exige `incidentes.historial`. */
     getDocuments: (incidentId: string) =>
         apiRequest<PapelesDelCaso>(`/incidents/${incidentId}/documents`),
+
+    /** Casos de una obra sin datos personales ni archivos, del más reciente al más antiguo. Exige `incidentes.historial`. */
+    getCasosResumen: (obraId: string) =>
+        apiRequest<CasoResumen[]>(`/incidents/casos-resumen?obraId=${encodeURIComponent(obraId)}`),
 
     getAnalytics: (params?: { tenantId?: string; obraId?: string; fechaInicio?: string; fechaFin?: string }) => {
         const query = new URLSearchParams(params as Record<string, string>).toString();

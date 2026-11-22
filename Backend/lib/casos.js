@@ -269,10 +269,48 @@ function siguientePaso(incidente) {
     };
 }
 
+// ── Resumen del caso para el FUF y el repositorio (fase 4) ───────────────────
+
+/**
+ * Lo que se puede decir de un caso sin entregar nada de él: ni el afectado, ni
+ * el relato, ni los archivos. Es lo que alimenta el ítem 66 del FUF y la lista de
+ * casos del repositorio de la obra.
+ *
+ * Existe porque los papeles (`incidente.papeles`, con la clave de S3 y el nombre
+ * de cada archivo) no salen del módulo de incidentes salvo por la ruta de
+ * papeles, que firma y audita la descarga. Quien necesita saber "falta el informe"
+ * o "van 3 de 4" pregunta acá y recibe un sí o un no, nunca el archivo.
+ *
+ * Qué lleva cada campo, a propósito:
+ *  - `requeridos`: solo `{ clave, etiqueta, cumplido }`. No `tipoDocumento` (es
+ *    para ofrecer "subir" en la pantalla del caso, que no es esta).
+ *  - `informeInvestigacion`: si el caso TIENE el informe subido, exija o no el
+ *    informe su tipo. Es el dato del ítem 66.
+ *  - `clasificado`: si el prevencionista ya lo clasificó (triaje).
+ * La clasificación y la gravedad salen como las lee todo lo demás (`esHallazgo`:
+ * los incidentes anteriores al triaje no la traen guardada).
+ */
+function resumenDelCaso(incidente) {
+    const inc = incidente || {};
+    const hallazgo = esHallazgo(inc);
+    return {
+        incidentId: inc.incidentId,
+        tipo: inc.tipo || null,
+        clasificacion: hallazgo ? 'hallazgo' : 'incidente',
+        gravedad: hallazgo ? null : (inc.gravedad || null),
+        fecha: inc.fecha || null,
+        estado: estaCerrado(inc) ? 'cerrado' : 'abierto',
+        clasificado: Boolean(inc.triaje),
+        avance: avanceDelCaso(inc),
+        requeridos: papelesRequeridos(inc).map(({ clave, etiqueta, cumplido }) => ({ clave, etiqueta, cumplido })),
+        informeInvestigacion: hayPapel(inc, 'informe_investigacion'),
+    };
+}
+
 module.exports = {
     TIPOS_PAPEL, ORDEN_TIPOS_PAPEL, esTipoPapel, etiquetaTipoPapel, tipoPapelConSalud,
     EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     esHallazgo, papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
-    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
+    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
 };

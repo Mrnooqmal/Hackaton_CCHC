@@ -596,6 +596,7 @@ class EstructuraPreventivaService {
     async completitudAmbito({
         tenantId, ambito, obraId = null, personas = [], documentos = [],
         dotacionDeclarada = null, reglas = {}, actividades = [], obra = null, ahora = new Date(),
+        casos,
     }) {
         const resumen = await this.resumenAmbito({
             tenantId, ambito, obraId, personas, dotacionDeclarada, ahora,
@@ -665,6 +666,12 @@ class EstructuraPreventivaService {
             } : {},
             sinOrganizacionesSindicales: reglas.sinOrganizacionesSindicales || null,
             limiteRegistroDT,
+            // Resumen de los casos de incidentes de la obra (`resumenDelCaso`, con su
+            // `obraId`): sin personas ni archivos. Lo lee el ítem 66 para saber cuántos
+            // accidentes siguen sin informe de investigación. `null` = no se pudieron
+            // leer (el ítem no lo da por bueno); `undefined` = quien arma el contexto no
+            // los entregó. Se acota a la obra por la misma razón que los documentos.
+            casos: Array.isArray(casos) && obraId ? casos.filter((c) => c.obraId === obraId) : casos,
         };
 
         // Tres fuentes de definiciones, un solo motor: estructura preventiva

@@ -4,13 +4,14 @@ const { IncidentsRepository } = require('./incidents.repository');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
-const { personaDeLaEmpresa, personasDeLaEmpresa } = require('../../lib/auth/pertenencia');
+const { personaDeLaEmpresa, personasDeLaEmpresa, obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
+const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const {
     ORDEN_TIPOS_PAPEL, esTipoPapel, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
-    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
+    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
 } = require('../../lib/casos');
 
 const incidentsRepo = new IncidentsRepository();
@@ -130,6 +131,8 @@ router
     .get('/incidents', list)
     .get('/incidents/stats', getStats)
     .get('/incidents/analytics', getAnalytics)
+    // Antes de `/incidents/:id`, o `casos-resumen` se leería como un id.
+    .get('/incidents/casos-resumen', getCasosResumen)
     .post('/incidents/upload-evidence', uploadEvidence)
     .post('/incidents/quick-report', quickReport)
     .get('/incidents/:id', get)
@@ -373,6 +376,14 @@ async function update(request) {
         const cerrado = rechazoSiCerrado(incidente);
         if (cerrado) return cerrado;
         const body = parseBody(request.event);
+        // Las fotos se agregan con `POST /incidents/{id}/evidencias`, que valida cada
+        // clave (de esta empresa, de este incidente, con su forma y sus topes) y solo
+        // agrega. Por acá la lista se reemplazaba entera y sin mirar las claves: con la
+        // de otra empresa, `get` firmaría la descarga de un archivo ajeno. Nada en la
+        // interfaz usa este campo; si llega, se avisa en vez de callarlo.
+        if (body.evidencias !== undefined) {
+            return jsonResponse({ success: false, error: 'Las fotos no se editan por acá: agrégalas con POST /incidents/{id}/evidencias.' }, 400);
+        }
         // El cierre tiene sus reglas (clasificado, papeles y medidas completos, con
         // comentario): por acá no se cierra.
         if (body.estado === 'cerrado') {
@@ -464,6 +475,20 @@ async function calificarAccidente(request) {
         }
         const cerrado = rechazoSiCerrado(incidente);
         if (cerrado) return cerrado;
+        // Si el prevencionista ya clasificó el caso, la clasificación guardada
+        // (`triaje`) tiene que decir lo mismo que `tipo`: lo que leen los papeles y el
+        // cierre sale de los dos, y con un `triaje` que dice "incidente" sobre un caso
+        // que ahora es accidente la pantalla mostraría una cosa y exigiría otra. Se
+        // reclasifica por la misma vía de `PUT /incidents/{id}/triaje`, que deja la
+        // clasificación anterior en el historial. Un caso sin clasificar sigue como
+        // siempre: solo cambia el tipo.
+        if (incidente.triaje && incidente.triaje.tipo !== 'accidente') {
+            const incident = await incidentsRepo.clasificar(incidente, {
+                tipo: 'accidente',
+                gravedad: GRAVEDADES.includes(incidente.gravedad) ? incidente.gravedad : 'leve',
+            }, ses.sesion.personaId);
+            return jsonResponse({ success: true, data: incident, message: 'Calificado como accidente.' });
+        }
         const result = await incidentsRepo.update(request.params.id, {
             tipo: 'accidente',
             clasificacion: 'incidente',
@@ -640,8 +665,13 @@ const diaValido = (valor) => {
     const d = new Date(`${valor}T00:00:00Z`);
     return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === valor;
 };
-/** Ayer (UTC) en AAAA-MM-DD: el margen de un día por la zona horaria, como en la fecha de un documento. */
-const ayerISO = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+/**
+ * Hoy en AAAA-MM-DD, en la hora de Chile. Lambda corre en UTC: pasadas las 21:00 de
+ * Chile (20:00 en horario de invierno) el día UTC ya es el siguiente, y comparar
+ * contra él aceptaba como "hoy" o "no futuro" una fecha que en Chile aún no llega.
+ * Lee `Date.now()` para que las pruebas puedan fijar la hora.
+ */
+const hoyChile = () => fechaHoraChile(Date.now()).fecha;
 
 /**
  * La persona responsable tiene que ser de la empresa (404 si no: el mismo mensaje
@@ -741,7 +771,8 @@ const validarDatosMedida = (body, actual) => {
     } else {
         if (!diaValido(plazo)) return { error: 'El plazo debe ser una fecha válida (AAAA-MM-DD).' };
         // Un plazo ya vencido al crearla (o al cambiarlo) suele ser un error de tipeo.
-        if ((!actual || plazo !== actual.fechaMaxEjecucion) && plazo < ayerISO()) return { error: 'El plazo no puede ser anterior a hoy.' };
+        // "Hoy" es el de Chile: el plazo es el día que escribe una persona en Chile.
+        if ((!actual || plazo !== actual.fechaMaxEjecucion) && plazo < hoyChile()) return { error: 'El plazo no puede ser anterior a hoy.' };
         datos.fechaMaxEjecucion = plazo;
     }
     if (body.jerarquia !== undefined) {
@@ -927,13 +958,8 @@ const NOMBRE_PAPEL = new RegExp(
 /** Nombre para mostrar: sin separadores de ruta ni caracteres de control, de hasta 150 caracteres. */
 const nombreVisible = (valor) => String(valor ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[\\/]/g, '_').trim().slice(0, 150);
 
-/** AAAA-MM-DD de un día real que no sea futuro (con un día de margen por la zona horaria). */
-const fechaDocumentoValida = (valor) => {
-    if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
-    const d = new Date(`${valor}T00:00:00Z`);
-    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== valor) return false;
-    return d.getTime() <= Date.now() + 24 * 60 * 60 * 1000;
-};
+/** AAAA-MM-DD de un día real que no sea futuro, según el día de hoy en Chile. */
+const fechaDocumentoValida = (valor) => diaValido(valor) && valor <= hoyChile();
 
 /** El papel tal como se le muestra a quien lo subió: sin la clave de S3 ni la huella. */
 const papelVisible = ({ s3Key, huella, ...resto }) => resto;
@@ -1049,6 +1075,44 @@ async function getDocuments(request) {
             success: true,
             data: { archivos, requeridos: papelesRequeridos(incidente), avance: avanceDelCaso(incidente) },
         });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+/**
+ * Resumen de los casos de una obra, sin datos personales (fase 4 del rediseño).
+ *
+ * Alimenta la lista "Casos de incidentes y accidentes" del repositorio de la obra
+ * con, por cada caso: tipo, gravedad, fecha, si está abierto o cerrado, cuántos
+ * papeles lleva (`avance`), cuáles exige y si cada uno está cumplido, y si tiene el
+ * informe de investigación. NO entrega nombres, RUT, relato, archivos ni claves de
+ * S3: eso sigue saliendo solo por `GET /incidents/{id}/documents`, que firma y
+ * audita. El cálculo es del servidor porque solo él ve `papeles`.
+ *
+ * Permiso: `incidentes.historial`. El resumen no trae personas, pero es la lista de
+ * los accidentes de la obra con su fecha y gravedad, y la regla del módulo es que
+ * eso lo ve quien ve el historial (sin él, cada persona ve solo lo que reportó). El
+ * ítem 66 del FUF, que sí lo lee todo el que abre el panel, no pasa por acá: lo
+ * calcula el módulo de estructura con los mismos datos y solo entrega un conteo.
+ * La obra tiene que ser de la empresa de la sesión; si no, 404 (como un incidente
+ * ajeno).
+ */
+async function getCasosResumen(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los casos de la obra.');
+        const { obraId } = request.query || {};
+        if (typeof obraId !== 'string' || !obraId) return solicitudInvalida('obraId es requerido.');
+        if (!await obraDeLaEmpresa(obraId, sesion)) {
+            return jsonResponse({ success: false, error: 'Obra no encontrada' }, 404);
+        }
+        // `list` ya los entrega del más reciente al más antiguo.
+        const { items } = await incidentsRepo.list({ tenantId: sesion.tenantId, obraId });
+        const casos = items.map(resumenDelCaso);
+        return jsonResponse({ success: true, data: casos, total: casos.length });
     } catch (err) {
         return errorResponse(err);
     }

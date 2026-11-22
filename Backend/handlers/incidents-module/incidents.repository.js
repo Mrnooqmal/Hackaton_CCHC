@@ -13,6 +13,7 @@ const { validateRut, normalizeRol } = require('../../lib/utils/validation');
 const { construirMensaje } = require('../../lib/bandeja');
 const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
+const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
 const { TenantService } = require('../../lib/services/TenantService');
 
@@ -450,7 +451,9 @@ class IncidentsRepository {
     async getMedidasByObra(tenantId, obraId, estadoFilter) {
         const { items } = await this.list({ tenantId });
         const incidentes = items.filter((i) => !obraId || i.obraId === obraId);
-        const hoy = new Date().toISOString().slice(0, 10);
+        // El plazo es un día de Chile: "vencida" se mide contra el de hoy en Chile, no
+        // contra el día UTC (que desde las 21:00 de Chile ya es el siguiente).
+        const hoy = fechaHoraChile(Date.now()).fecha;
 
         const medidas = [];
         for (const inc of incidentes) {
@@ -687,10 +690,8 @@ class IncidentsRepository {
             updateExpression += ', diasPerdidos = :diasPerdidos';
             expressionAttributeValues[':diasPerdidos'] = data.diasPerdidos;
         }
-        if (data.evidencias) {
-            updateExpression += ', evidencias = :evidencias';
-            expressionAttributeValues[':evidencias'] = data.evidencias;
-        }
+        // `evidencias` no se edita acá: se agregan con `agregarEvidencias`, que el
+        // handler valida clave por clave. Esta función reemplazaba la lista entera.
         if (data.medidasInmediatas !== undefined) {
             updateExpression += ', medidasInmediatas = :medidasInmediatas';
             expressionAttributeValues[':medidasInmediatas'] = textoMedidasInmediatas(data.medidasInmediatas);

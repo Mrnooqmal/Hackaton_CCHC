@@ -131,7 +131,7 @@ Cada fase termina con sus pruebas pasando.
 | 1. Reportar de punta a punta | Implementada el 15 de noviembre (1520 pruebas pasan después de traer `pruebas` del 21 de noviembre; build y lint sin errores). Falta probarla en el navegador |
 | 2. Carpeta del caso | Implementada el 22 de noviembre (1552 pruebas pasan). Falta probarla en el navegador y contra S3 real |
 | 3. Clasificación, medidas y cierre | Implementada el 22 de noviembre (1597 pruebas pasan). Falta probarla en el navegador |
-| 4. FUF y repositorio | Pendiente |
+| 4. FUF y repositorio | Implementada el 22 de noviembre (1624 pruebas pasan). Falta probarla en el navegador |
 
 ### Decisiones de la fase 2 (22 de noviembre)
 
@@ -157,11 +157,20 @@ Riesgos conocidos de la fase 2, sin resolver:
 - **Reabrir** existe, con motivo obligatorio.
 - **Sin estados nuevos:** se siguen usando `reportado | en_investigacion | cerrado` y `abierto | en_proceso | cerrado`.
 
-Pendientes chicos que dejó la fase 3:
+Los tres pendientes chicos que dejó la fase 3 se corrigieron en la fase 4: `calificar-accidente` actualiza la clasificación guardada, `PUT /incidents/{id}` rechaza `evidencias`, y los plazos se comparan con la fecha de Chile.
 
-- La ruta antigua `calificar-accidente` no actualiza la clasificación guardada en `triaje`.
-- `PUT /incidents/{id}` con `evidencias` reemplaza la lista sin validar las claves.
-- El plazo de una medida se compara en UTC, no en hora de Chile.
+### Decisiones de la fase 4 (22 de noviembre)
+
+- **Ítem 66 del FUF (investigación de accidentes):** además del procedimiento, mira los accidentes de la obra. Si alguno no tiene informe de investigación en su caso, el ítem queda Parcial y dice cuántos faltan. Si no se pudieron leer los casos, también queda Parcial: un fallo de lectura no puede salir en verde. La completitud se calcula en el backend (módulo de estructura), que recibe un resumen de los casos sin datos personales.
+- **Repositorio de la obra:** muestra una sección "Casos de incidentes y accidentes" con tipo, fecha, estado y avance de papeles, y un enlace al caso. Los archivos y su descarga auditada siguen solo en la página del caso. Solo con `incidentes.historial`.
+- **`GET /incidents/casos-resumen?obraId=`** exige `incidentes.historial`. No trae nombres, RUT, relato, papeles ni nombres de archivo.
+
+Pendientes que dejó la fase 4, por decidir:
+
+- **Ítem 60:** un ítem 66 Parcial no lo mueve, porque el 60 solo cuenta como faltantes los requisitos Pendiente o Vencido. Si se quiere que los casos incompletos pesen en el registro documental, habría que cambiar `evaluarItem60`, por ejemplo contando los accidentes sin DIAT o sin informe.
+- **Ítem 66:** cuenta solo accidentes, no los incidentes de alto potencial. Los accidentes anteriores al rediseño, sin informe subido, figuran como faltantes.
+- **Detalle del ítem 66:** el panel de completitud lo ve cualquiera con sesión, así que el número de accidentes sin informe de una obra queda a la vista de quien abre el panel.
+- `DocumentsRepository.tsx` quedó con 5 `eslint-disable` sobre `any` que ya existían.
 
 ## 10. Pendientes de decisión
 
