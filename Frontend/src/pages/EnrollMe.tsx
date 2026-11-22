@@ -142,6 +142,28 @@ export default function EnrollMe() {
     // se vacían solas para reintentar. Mientras tanto se ignora lo que se escriba.
     const reintentando = useRef(false);
 
+    // Cambio de PIN: el actual se comprueba en su propio paso, para avisar ahí
+    // mismo si está mal (antes se sabía recién tras elegir y repetir el nuevo).
+    const [verificandoActual, setVerificandoActual] = useState(false);
+    const verificarPinActual = async () => {
+        if (pinActual.length !== LARGO_PIN || verificandoActual) return;
+        const targetId = (user as any)?.personaId || user?.userId;
+        const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
+        setError('');
+        setVerificandoActual(true);
+        try {
+            if (!targetId || !targetTenant) throw new Error('Usuario o Tenant no encontrado en la sesión');
+            const r = await personasApi.verificarPin(targetTenant, targetId, pinActual);
+            if (!r.success) throw new Error(r.error || 'PIN actual incorrecto');
+            irA('create-pin');
+        } catch (err) {
+            setPinActual('');
+            setError(mensajeDeError(err, 'No se pudo verificar el PIN'));
+        } finally {
+            setVerificandoActual(false);
+        }
+    };
+
     const confirmarPin = async (confirmedPin: string) => {
         if (confirmedPin !== pin) {
             setNoCoincide(true);
@@ -426,15 +448,18 @@ export default function EnrollMe() {
 
                 {/* ── PIN actual (solo al cambiar uno existente) ── */}
                 {currentStep === 'current-pin' && (
-                    <form noValidate onSubmit={(e) => { e.preventDefault(); if (pinActual.length === LARGO_PIN) irA('create-pin'); }}>
+                    <form noValidate onSubmit={(e) => { e.preventDefault(); verificarPinActual(); }}>
                         <h1 className="lp-title">Ingresa tu PIN actual</h1>
                         <p className="lp-hint">Para cambiarlo, primero confirma que eres tú.</p>
-                        <PinCasillas id="enr-pin-actual" value={pinActual} onChange={setPinActual}
-                            visible={verPin} autoFocus ariaLabel="PIN actual" />
+                        <PinCasillas id="enr-pin-actual" value={pinActual}
+                            onChange={(v) => { setPinActual(v); if (v) setError(''); }}
+                            visible={verPin} autoFocus ariaLabel="PIN actual" disabled={verificandoActual}
+                            error={!!error && pinActual.length === 0} />
                         {MostrarPin}
                         {ErrorServidor}
-                        <button type="submit" className="lp-submit enr-accion" disabled={pinActual.length < LARGO_PIN}>
-                            <span>Continuar</span><FiArrowRight size={15} />
+                        <button type="submit" className="lp-submit enr-accion"
+                            disabled={pinActual.length < LARGO_PIN || verificandoActual}>
+                            {verificandoActual ? <div className="lp-spinner" /> : <><span>Continuar</span><FiArrowRight size={15} /></>}
                         </button>
                     </form>
                 )}

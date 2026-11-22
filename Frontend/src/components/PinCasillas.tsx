@@ -58,7 +58,16 @@ export default function PinCasillas({
                 type={visible ? 'text' : 'password'}
                 inputMode="numeric"
                 pattern="[0-9]*"
-                autoComplete="off"
+                // Chrome ignora autocomplete="off" en campos de contraseña y
+                // metía la contraseña guardada (sus dígitos quedaban como PIN).
+                // "one-time-code" sí lo frena; los data-* frenan a LastPass,
+                // 1Password y Bitwarden. Se mantiene type=password para que los
+                // lectores de pantalla no lean el PIN.
+                autoComplete="one-time-code"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
                 maxLength={LARGO}
                 value={value}
                 onChange={cambiar}

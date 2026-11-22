@@ -1112,6 +1112,28 @@ class PersonaService {
     }
 
     /**
+     * Verifica el PIN actual de la propia persona, sin cambiar nada: es el
+     * primer paso de "Cambiar PIN", para avisar ahí mismo si está mal en vez de
+     * después de elegir y repetir el nuevo. Pasa por el mismo límite de
+     * intentos que `setPin` (un fallo acá cuenta igual), así que no abre una
+     * vía para probar PINes. `setPin` lo vuelve a verificar al escribir.
+     */
+    async verificarPinActual(personaId, pinActual, actor) {
+        if (!actor?.personaId) throw errorPin('Falta quién verifica el PIN', 'PIN_SIN_ACTOR');
+        if (actor.personaId !== personaId) throw errorPin('Solo la propia persona puede verificar su PIN', 'PIN_AJENO');
+        if (!pinActual) throw errorPin('Debes ingresar tu PIN actual', 'PIN_ACTUAL_REQUERIDO');
+
+        const persona = await this.getById(personaId);
+        if (!persona) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
+        if (!persona._pinHash) throw errorPin('No tienes un PIN configurado', 'PIN_NO_CONFIGURADO');
+
+        // Lanza PIN_BLOQUEADO si la cuenta está bloqueada, y cuenta el fallo.
+        const ok = await verificarConLimiteOLanzar(persona, pinActual, verifyPin);
+        if (!ok) throw errorPin('PIN actual incorrecto', 'PIN_ACTUAL_INCORRECTO');
+        return { valido: true };
+    }
+
+    /**
      * Completar enrolamiento — un solo update (no dos como antes)
      */
     async completarEnrolamiento(tenantId, personaId, pin, eventContext) {
