@@ -24,10 +24,7 @@ custom:
     prod: 90
     dev: 14
 
-  # A dónde llegan las alarmas de operación. Es una casilla personal mientras el
-  # equipo no tenga una de grupo; cambiarla acá y desplegar basta, pero la nueva
-  # dirección debe confirmar la suscripción por correo antes de recibir nada.
-  destinatarioAlertas: ${env:ALERTAS_EMAIL, 'atorres@thecodecookers.cl'}
+  destinatarioAlertas: soporte@buildandserve.cl
 
   # Cada backend acepta el frontend de su ambiente (D-20). El de dev sale de la
   # salida del stack del frontend, así que ese stack se despliega primero. Dev ya
@@ -994,6 +991,17 @@ functions:
           path: /onboarding/licencia/{token}
           method: GET
 
+  # Disponibilidad del nombre y el RUT mientras se escriben en el paso "Empresa".
+  # Exige una licencia válida (si no, sería una consulta pública de clientes).
+  onboardingDisponibilidad:
+    handler: handlers/onboarding/handler.disponibilidad
+    memorySize: 256
+    timeout: 10
+    events:
+      - httpApi:
+          path: /onboarding/disponibilidad
+          method: POST
+
   onboardingCompletar:
     handler: handlers/onboarding/handler.completar
     # El alta hashea la contraseña del administrador con scrypt: mismo criterio
@@ -1031,6 +1039,9 @@ functions:
           method: options
       - httpApi:
           path: /onboarding/completar
+          method: options
+      - httpApi:
+          path: /onboarding/disponibilidad
           method: options
       - httpApi:
           path: /tenants
@@ -1360,6 +1371,7 @@ resources:
       DependsOn:
         - HttpApiRouteGetOnboardingLicenciaTokenVar
         - HttpApiRoutePostOnboardingCompletar
+        - HttpApiRoutePostOnboardingDisponibilidad
         - HttpApiRoutePostCspReporte
         - HttpApiRoutePostAuthLogin
         - HttpApiRoutePostAuthSelectDashtenant
@@ -1378,6 +1390,11 @@ resources:
           'POST /onboarding/completar':
             ThrottlingBurstLimit: 3
             ThrottlingRateLimit: 1
+          # Se llama mientras se escribe (con espera de medio segundo entre
+          # teclas): algo más holgado que validar la licencia, igual acotado.
+          'POST /onboarding/disponibilidad':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 3
           # Pública y la llama cualquier navegador: estricta. Un reporte por
           # violación y por página; con la política bien armada, casi nunca llega
           # nada. Si una violación masiva real se pierde por el límite, basta con

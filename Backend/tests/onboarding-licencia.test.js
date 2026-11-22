@@ -390,3 +390,61 @@ test('el token nunca se guarda en claro', async () => {
     assert.equal(guardada.licenciaHash, hashLicencia(token));
     assert.equal(JSON.stringify(guardada).includes(token), false);
 });
+
+// ─── Disponibilidad en vivo (paso "Empresa") ─────────────────────────────────
+
+const disponibilidad = (cuerpo) => onboarding.disponibilidad({
+    body: JSON.stringify(cuerpo),
+    requestContext: { http: { method: 'POST' } },
+    headers: {},
+});
+
+test('disponibilidad avisa un RUT de empresa ya registrado, sin gastar el enlace', async () => {
+    // Una empresa ya creada con otro enlace.
+    const primera = await emitir();
+    assert.equal((await completar(cuerpoValido(primera.token))).statusCode, 201);
+    const existente = almacen.tenants[0];
+
+    const { token } = await emitir();
+    const original = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.input?.IndexName === 'rutEmpresaHmac-index') {
+            return { Items: [{ PK: existente.PK, SK: existente.SK }] };
+        }
+        return original(cmd);
+    };
+
+    const res = await disponibilidad({ token, nombre: 'Otra Constructora', rutEmpresa: '76.111.999-0' });
+    docClient.send = original;
+    const datos = JSON.parse(res.body).data;
+
+    assert.equal(res.statusCode, 200);
+    assert.match(datos.rutEmpresa, /Ya existe una empresa con el RUT 76\.111\.999-0/);
+    assert.equal(datos.nombre, null);
+    assert.equal(almacen.licencias.get(hashLicencia(token)).estado, 'emitida', 'consultar no gasta el enlace');
+});
+
+test('disponibilidad con datos libres no marca conflictos', async () => {
+    const { token } = await emitir();
+    const res = await disponibilidad({ token, nombre: 'Constructora Nueva SpA', rutEmpresa: '76.111.999-0' });
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body).data, { nombre: null, rutEmpresa: null });
+});
+
+test('disponibilidad no consulta un RUT inválido o a medio escribir', async () => {
+    const { token } = await emitir();
+    const consultas = [];
+    const original = docClient.send;
+    docClient.send = async (cmd) => { if (cmd.input?.IndexName) consultas.push(cmd.input.IndexName); return original(cmd); };
+
+    const res = await disponibilidad({ token, rutEmpresa: '76.111' });
+    docClient.send = original;
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(consultas, [], 'ni el RUT ni el nombre vacío llegan a la base');
+});
+
+test('disponibilidad sin una licencia válida no responde nada sobre las empresas', async () => {
+    esperaEnlaceInvalido(await disponibilidad({ token: 'token-que-no-existe', rutEmpresa: '76.111.999-0' }));
+});

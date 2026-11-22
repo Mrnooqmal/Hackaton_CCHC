@@ -10,10 +10,8 @@ Para entrar, toca **tu nombre** abajo en el menú lateral, o abre el menú de **
 
 ## Tus datos
 
-Ves tu **RUT**, **Cargo**, **Rol** y **Fecha de nacimiento**. Con **Editar** puedes cambiar:
-
-- **Correo electrónico** — ahí te llegan los avisos y la recuperación de contraseña.
-- **Teléfono**.
+Ves tu **RUT**, **Cargo**, **Rol** y **Fecha de nacimiento**. Con **Editar** puedes cambiar tu
+**Correo electrónico**: ahí te llegan los avisos y la recuperación de contraseña.
 
 Mientras editas aparece **Modo edición**; guarda o toca **Cancelar**.
 

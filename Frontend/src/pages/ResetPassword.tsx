@@ -1,28 +1,55 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authApi } from '../api/client';
-import { FiLock, FiEye, FiEyeOff, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
+import { FiLock, FiEye, FiEyeOff, FiCheck, FiCheckCircle, FiArrowLeft, FiArrowRight, FiArrowUp } from 'react-icons/fi';
+import { LuLink2Off } from 'react-icons/lu';
+import TarjetaAcceso from '../components/TarjetaAcceso';
+import '../css/cambio-password.css';
 
+// Misma regla que valida el backend (POST /auth/reset-password).
+const MIN_PASSWORD = 6;
+
+type Campo = 'passwordNuevo' | 'confirmarPassword';
+
+const Volver = () => (
+    <div className="lp-foot">
+        <Link to="/login" className="lp-foot-link"><FiArrowLeft size={14} /> Volver al inicio de sesión</Link>
+    </div>
+);
+
+/**
+ * Restablecer la contraseña desde el enlace del correo, o activar la cuenta
+ * (`?activar=1`). Misma tarjeta y mismos campos que el login y el primer
+ * ingreso (ChangePassword).
+ */
 export default function ResetPassword() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const personaId = searchParams.get('pid') || '';
     const token = searchParams.get('token') || '';
+    const activar = searchParams.get('activar') === '1';
     const linkValido = !!personaId && !!token;
 
     const [form, setForm] = useState({ passwordNuevo: '', confirmarPassword: '' });
-    const [show, setShow] = useState({ nuevo: false, confirmar: false });
+    const [show, setShow] = useState({ passwordNuevo: false, confirmarPassword: false });
+    const [capsLock, setCapsLock] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [done, setDone] = useState(false);
 
-    const minLen = form.passwordNuevo.length >= 6;
+    const minLen = form.passwordNuevo.length >= MIN_PASSWORD;
     const match = form.passwordNuevo === form.confirmarPassword && form.confirmarPassword !== '';
     const canSubmit = linkValido && minLen && match;
+    const requisitos = [
+        { label: `${MIN_PASSWORD} caracteres o más`, ok: minLen },
+        { label: 'Coinciden', ok: match },
+    ];
+
+    const handleCaps = (e: React.KeyboardEvent) => setCapsLock(e.getModifierState('CapsLock'));
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!canSubmit) return;
+        if (!canSubmit || loading) return;
         setLoading(true); setError('');
         try {
             const res = await authApi.resetPassword({
@@ -43,140 +70,104 @@ export default function ResetPassword() {
         }
     };
 
-    return (
-        <div className="auth-simple-page">
-            <div className="auth-simple-card" role="main">
-                <div className="auth-simple-logo" aria-label="Build and Serve">
-                    <span style={{ color: 'var(--text-primary)' }}>Build</span>
-                    <span style={{ color: 'var(--danger-500, #df3601)' }}>&amp;</span>
-                    <span style={{ color: 'var(--text-primary)' }}>Serve</span>
+    if (!linkValido) {
+        return (
+            <TarjetaAcceso>
+                <div className="lp-body onb-resultado">
+                    <span className="onb-resultado-icono onb-resultado-icono--error"><LuLink2Off size={26} /></span>
+                    <h1 className="lp-title">Enlace inválido</h1>
+                    <p className="lp-hint">
+                        {activar
+                            ? 'El enlace de activación está incompleto o es inválido. Pide a tu empresa que active tu acceso.'
+                            : 'El enlace de recuperación está incompleto o es inválido. Solicita uno nuevo.'}
+                    </p>
                 </div>
+                {!activar && <Link to="/recuperar-clave" className="onb-btn-secundario">Solicitar nuevo enlace</Link>}
+                <Volver />
+            </TarjetaAcceso>
+        );
+    }
 
-                {!linkValido ? (
-                    <div className="auth-simple-success">
-                        <FiAlertCircle size={40} style={{ color: 'var(--danger-500, #ef4444)', marginBottom: 12 }} />
-                        <h1 className="auth-simple-title">Enlace inválido</h1>
-                        <p className="auth-simple-sub">
-                            El enlace de recuperación está incompleto o es inválido. Solicita uno nuevo.
-                        </p>
-                        <Link to="/recuperar-clave" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                            Solicitar nuevo enlace
-                        </Link>
-                    </div>
-                ) : done ? (
-                    <div className="auth-simple-success">
-                        <FiCheckCircle size={40} className="auth-simple-success-icon" />
-                        <h1 className="auth-simple-title">¡Contraseña restablecida!</h1>
-                        <p className="auth-simple-sub">Redirigiendo al inicio de sesión…</p>
-                    </div>
-                ) : (
-                    <>
-                        <h1 className="auth-simple-title">Nueva contraseña</h1>
-                        <p className="auth-simple-sub">Crea una contraseña nueva y segura para tu cuenta.</p>
-                        <form onSubmit={handleSubmit} noValidate>
-                            <div className="form-group">
-                                <label className="form-label">Nueva contraseña</label>
-                                <div className="auth-simple-input-wrap">
-                                    <FiLock size={14} className="auth-simple-input-icon" />
-                                    <input
-                                        type={show.nuevo ? 'text' : 'password'}
-                                        className="form-input"
-                                        style={{ paddingLeft: 34, paddingRight: 38 }}
-                                        value={form.passwordNuevo}
-                                        onChange={(e) => setForm({ ...form, passwordNuevo: e.target.value })}
-                                        autoComplete="new-password"
-                                        autoFocus
-                                    />
-                                    <button type="button" className="auth-simple-eye"
-                                        onClick={() => setShow(s => ({ ...s, nuevo: !s.nuevo }))}
-                                        tabIndex={-1} aria-label={show.nuevo ? 'Ocultar' : 'Mostrar'}>
-                                        {show.nuevo ? <FiEyeOff size={15} /> : <FiEye size={15} />}
-                                    </button>
-                                </div>
-                                {form.passwordNuevo && !minLen && (
-                                    <span className="auth-simple-hint">Mínimo 6 caracteres</span>
-                                )}
-                            </div>
+    if (done) {
+        return (
+            <TarjetaAcceso>
+                <div className="lp-body onb-resultado" role="status">
+                    <span className="onb-resultado-icono onb-resultado-icono--ok"><FiCheckCircle size={26} /></span>
+                    <h1 className="lp-title">{activar ? '¡Cuenta activada!' : '¡Contraseña restablecida!'}</h1>
+                    <p className="lp-hint">Redirigiendo al inicio de sesión…</p>
+                </div>
+                <Volver />
+            </TarjetaAcceso>
+        );
+    }
 
-                            <div className="form-group">
-                                <label className="form-label">Confirmar contraseña</label>
-                                <div className="auth-simple-input-wrap">
-                                    <FiLock size={14} className="auth-simple-input-icon" />
-                                    <input
-                                        type={show.confirmar ? 'text' : 'password'}
-                                        className="form-input"
-                                        style={{ paddingLeft: 34, paddingRight: 38 }}
-                                        value={form.confirmarPassword}
-                                        onChange={(e) => setForm({ ...form, confirmarPassword: e.target.value })}
-                                        autoComplete="new-password"
-                                    />
-                                    <button type="button" className="auth-simple-eye"
-                                        onClick={() => setShow(s => ({ ...s, confirmar: !s.confirmar }))}
-                                        tabIndex={-1} aria-label={show.confirmar ? 'Ocultar' : 'Mostrar'}>
-                                        {show.confirmar ? <FiEyeOff size={15} /> : <FiEye size={15} />}
-                                    </button>
-                                </div>
-                                {form.confirmarPassword && !match && (
-                                    <span className="auth-simple-hint">Las contraseñas no coinciden</span>
-                                )}
-                            </div>
-
-                            {error && <p className="auth-simple-error" role="alert">{error}</p>}
-
-                            <button type="submit" className="btn btn-primary" disabled={loading || !canSubmit}
-                                style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}>
-                                {loading ? 'Guardando…' : 'Restablecer contraseña'}
-                            </button>
-                        </form>
-                    </>
-                )}
+    const campo = (id: string, c: Campo, label: string, autoFocus = false) => (
+        <div className="lp-field">
+            <label className="lp-label" htmlFor={id}>{label}</label>
+            <div className="lp-input-wrap">
+                <span className="lp-input-icon"><FiLock size={15} /></span>
+                <input
+                    id={id}
+                    className="lp-input lp-input--password"
+                    type={show[c] ? 'text' : 'password'}
+                    value={form[c]}
+                    onChange={(e) => { setForm((f) => ({ ...f, [c]: e.target.value })); if (error) setError(''); }}
+                    onKeyDown={handleCaps}
+                    onKeyUp={handleCaps}
+                    onBlur={() => setCapsLock(false)}
+                    autoComplete="new-password"
+                    autoFocus={autoFocus}
+                />
+                <button
+                    type="button"
+                    className="lp-eye-btn"
+                    onClick={() => setShow((s) => ({ ...s, [c]: !s[c] }))}
+                    aria-label={show[c] ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                    {show[c] ? <FiEyeOff size={15} /> : <FiEye size={15} />}
+                </button>
             </div>
-
-            <style>{`
-                .auth-simple-page {
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 24px;
-                    background: var(--surface-bg, #0f172a);
-                }
-                .auth-simple-card {
-                    width: 100%;
-                    max-width: 420px;
-                    background: var(--surface-card, #fff);
-                    border: 1px solid var(--surface-border, #e2e8f0);
-                    border-radius: var(--radius-lg, 16px);
-                    padding: 36px 32px;
-                    box-shadow: 0 10px 40px rgba(0,0,0,0.18);
-                }
-                .auth-simple-logo {
-                    font-size: 24px; font-weight: 700; display: flex; gap: 6px;
-                    justify-content: center; margin-bottom: 24px;
-                }
-                .auth-simple-title {
-                    font-size: 20px; font-weight: 700; color: var(--text-primary);
-                    margin: 0 0 8px; text-align: center;
-                }
-                .auth-simple-sub {
-                    font-size: 13px; color: var(--text-secondary); line-height: 1.55;
-                    margin: 0 0 24px; text-align: center;
-                }
-                .auth-simple-input-wrap { position: relative; }
-                .auth-simple-input-icon {
-                    position: absolute; left: 12px; top: 50%;
-                    transform: translateY(-50%); color: var(--text-muted);
-                }
-                .auth-simple-eye {
-                    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-                    background: none; border: none; cursor: pointer; color: var(--text-muted);
-                    display: flex; align-items: center;
-                }
-                .auth-simple-hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; display: block; }
-                .auth-simple-error { font-size: 13px; color: var(--danger-500, #ef4444); margin: 0 0 12px; }
-                .auth-simple-success { text-align: center; }
-                .auth-simple-success-icon { color: var(--success-500, #22c55e); margin-bottom: 12px; }
-            `}</style>
         </div>
+    );
+
+    return (
+        <TarjetaAcceso>
+            <div className="lp-body">
+                <h1 className="lp-title">{activar ? 'Activa tu cuenta' : 'Nueva contraseña'}</h1>
+                <p className="lp-hint">
+                    {activar
+                        ? 'Elige tu contraseña. Después entras con tu RUT y esta contraseña.'
+                        : 'Crea una contraseña nueva y segura para tu cuenta.'}
+                </p>
+
+                <form className="lp-form onb-form" onSubmit={handleSubmit} noValidate>
+                    <div className="onb-row">
+                        {campo('rp-nueva', 'passwordNuevo', 'Contraseña', true)}
+                        {campo('rp-repetir', 'confirmarPassword', 'Repite la contraseña')}
+                    </div>
+                    <ul className="onb-requisitos" aria-label="Requisitos de la contraseña">
+                        {requisitos.map((r) => (
+                            <li key={r.label} className={r.ok ? 'onb-req onb-req--ok' : 'onb-req'}>
+                                {r.ok ? <FiCheck size={11} strokeWidth={3} /> : <span className="onb-req-punto" />}
+                                {r.label}
+                                <span className="sr-only">{r.ok ? ' (cumplido)' : ' (pendiente)'}</span>
+                            </li>
+                        ))}
+                    </ul>
+                    {capsLock && (
+                        <span className="cpw-mayus" role="status"><FiArrowUp size={11} strokeWidth={2.6} /> Bloq Mayús activado</span>
+                    )}
+
+                    {error && <p className="lp-error" role="alert">{error}</p>}
+
+                    <button type="submit" className="lp-submit" disabled={!canSubmit || loading}>
+                        {loading ? <div className="lp-spinner" /> : (
+                            <><span>{activar ? 'Activar mi cuenta' : 'Restablecer contraseña'}</span><FiArrowRight size={15} /></>
+                        )}
+                    </button>
+                </form>
+            </div>
+            <Volver />
+        </TarjetaAcceso>
     );
 }

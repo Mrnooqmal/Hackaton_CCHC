@@ -57,6 +57,7 @@ const valorDe = (flag) => {
 const stage = valorDe('--stage');
 const archivoDatos = valorDe('--datos');
 const confirmar = args.includes('--confirmar');
+const temporalEnTerminal = args.includes('--temporal-en-terminal');
 
 const salir = (mensaje) => { console.error(`\n  ${mensaje}\n`); process.exit(1); };
 
@@ -64,7 +65,7 @@ if (args.includes('--help') || args.includes('-h') || !stage || !archivoDatos) {
     console.log(`
   Alta de una empresa y su administrador.
 
-    AWS_PROFILE=<perfil> node scripts/crear-empresa.js --stage <dev|prod> --datos <archivo.json> [--confirmar]
+    AWS_PROFILE=<perfil> node scripts/crear-empresa.js --stage <dev|prod> --datos <archivo.json> [--confirmar] [--temporal-en-terminal]
 
   Sin --confirmar hace un ENSAYO: valida los datos, comprueba que el nombre, el
   RUT de la empresa y el RUT del administrador estén libres, y no escribe nada.
@@ -169,7 +170,7 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
     console.log(`  Empresa creada:       ${tenant.tenantId}`);
 
     // 2. Administrador.
-    const { persona, passwordTemporal } = await personaService.crear(tenant.tenantId, {
+    const { persona } = await personaService.crear(tenant.tenantId, {
         rut: rutAdmin.formatted,
         nombre: datos.admin.nombre,
         apellidoPaterno: datos.admin.apellidoPaterno || '',
@@ -185,26 +186,33 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
     await tenantService.activar(tenant.tenantId);
     console.log('  Empresa activada');
 
-    // 4. Credenciales: viajan por correo, no por la salida del script. Solo se
-    //    imprimen si el envío falló, porque si no el administrador no puede entrar.
-    let enviado = false;
-    try {
-        const { sendWelcomeEmail } = require('../handlers/notifications/handler');
-        const resultado = await sendWelcomeEmail(persona.email, nombreAdmin, persona.rut, passwordTemporal);
-        enviado = Boolean(resultado?.sent);
-    } catch (err) {
-        console.error(`  Aviso: el correo de bienvenida falló (${err.message})`);
+    const actor = { id: require('./entorno').operadorActual(), tipo: 'operador', nombre: 'Soporte de Build & Serve' };
+    const origen = { canal: 'operador' };
+    if (!temporalEnTerminal) {
+        const r = await personaService.enviarEnlaceActivacion(tenant.tenantId, persona.personaId, { actor, origen });
+        if (r.correo === 'enviado') {
+            console.log(`  Enlace de activación enviado a ${persona.email} (vence ${r.vence})`);
+            console.log('\n  Listo. El administrador elige su contraseña desde el enlace.\n');
+            return;
+        }
+        console.log(`\n  El enlace NO se envió (${r.correo}).`);
     }
-
-    if (enviado) {
-        console.log(`  Correo de bienvenida enviado a ${persona.email}`);
-        console.log('\n  Listo. La contraseña temporal viajó por correo y debe cambiarse en el primer ingreso.\n');
-    } else {
-        console.log(`\n  El correo NO se envió. Entrega estas credenciales por un canal seguro y bórralas de tu terminal:`);
-        console.log(`    RUT:                 ${persona.rut}`);
-        console.log(`    Contraseña temporal: ${passwordTemporal}`);
-        console.log('  Se cambia obligatoriamente en el primer ingreso.\n');
-    }
+    const r = await personaService.emitirTemporal(tenant.tenantId, persona.personaId, {
+        horas: 2,
+        actor,
+        operacion: 'credencial.acceso_activado',
+        exigir: 'pendiente',
+        origen,
+        aviso: {
+            asunto: 'Tu acceso a Build & Serve fue activado',
+            contenido: 'Soporte de Build & Serve activó tu acceso al crear tu empresa. Si no lo pediste, escribe a contacto@buildandserve.cl.',
+        },
+    });
+    console.log('\n  Entrega esta contraseña temporal por un canal seguro y bórrala de tu terminal:');
+    console.log(`    RUT:                 ${persona.rut}`);
+    console.log(`    Contraseña temporal: ${r.password}`);
+    console.log(`    Vence:               ${r.vence}`);
+    console.log('  Se cambia obligatoriamente en el primer ingreso.\n');
 })().catch((err) => {
     console.error(`\n  Falló el alta: ${err.message}\n`);
     process.exit(1);

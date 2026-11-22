@@ -48,6 +48,7 @@ const DETAIL_LEAF: Record<string, string> = {
 const ACTION_LEAF: Record<string, string> = {
     'personas/nueva': 'Nueva persona',
     'personas/carga-masiva': 'Carga masiva',
+    'personas/activacion': 'Activar accesos',
     'obras/nueva': 'Nueva obra',
 };
 

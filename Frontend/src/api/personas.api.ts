@@ -11,7 +11,6 @@ export interface BulkRowInput {
     apellidoMaterno?: string;
     fechaNacimiento?: string;
     email?: string;
-    telefono?: string;
     rol: string;
     cargo?: string;
     obra?: string;
@@ -82,7 +81,6 @@ export const personasApi = {
         apellidoMaterno?: string;
         fechaNacimiento?: string;
         email?: string;
-        telefono?: string;
         rol: string;
         cargo?: string;
         tieneAccesoWeb?: boolean;
@@ -92,7 +90,7 @@ export const personasApi = {
         contactoEmergencia?: { nombre?: string; telefono?: string; relacion?: string };
         cursos?: Array<{ nombre: string }>;
     }) =>
-        apiRequest<{ message: string; persona: PersonaResponse; passwordTemporal?: string; emailNotificado: boolean }>(
+        apiRequest<{ message: string; persona: PersonaResponse; enlaceActivacion: 'enviado' | 'fallido' | 'suprimido' | 'sin-correo' }>(
             `/personas?tenantId=${tenantId}`, {
             method: 'POST',
             body: JSON.stringify(data),
@@ -193,6 +191,18 @@ export const personasApi = {
     // Borra el PIN para que la persona configure uno nuevo. Exige
     // persona.restablecer_pin y un motivo; la persona recibe aviso en su bandeja
     // (en la misma escritura) y por correo si tiene.
+    activarAcceso: (tenantId: string, id: string) =>
+        apiRequest<{ password: string; vence: string; sesionesCerradas: boolean }>(`/personas/${id}/activar-acceso?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: '{}',
+        }),
+
+    enviarActivacion: (tenantId: string, id: string) =>
+        apiRequest<{ correo: 'enviado' | 'fallido' | 'suprimido'; vence: string }>(`/personas/${id}/enviar-activacion?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: '{}',
+        }),
+
     restablecerPin: (tenantId: string, id: string, motivo: string) =>
         apiRequest<{
             message: string; restablecidoEn: string; avisoBandeja: boolean;
@@ -207,11 +217,6 @@ export const personasApi = {
         apiRequest<{ message: string; personaId: string; habilitado: boolean; firmaEnrolamiento: any }>(`/personas/${id}/enrolamiento?tenantId=${tenantId}`, {
             method: 'POST',
             body: JSON.stringify({ pin }),
-        }),
-
-    resetPassword: (tenantId: string, id: string) =>
-        apiRequest<{ message: string; passwordTemporal: string; personaId: string }>(`/personas/${id}/reset-password?tenantId=${tenantId}`, {
-            method: 'POST',
         }),
 
     // Historial dinamico de entregas/reposiciones de EPP (Art. 13)

@@ -175,7 +175,7 @@ test('la fase 2 no corre con filas pendientes', async () => {
 });
 
 test('una fila creada no guarda los datos de la planilla ni el RUT en claro', async () => {
-    const id = await confirmar([fila(2, RUTS[0], { email: 'uno@ejemplo.cl', telefono: '912345678' })]);
+    const id = await confirmar([fila(2, RUTS[0], { email: 'uno@ejemplo.cl' })]);
     await cola.drenar();
     const filaItem = doble.items('CARGAS_TABLE').find((i) => i.cargaId === id && i.sk.startsWith('FILA#'));
     assert.equal(filaItem.estado, 'creada');

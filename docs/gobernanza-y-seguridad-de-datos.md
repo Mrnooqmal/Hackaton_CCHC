@@ -226,8 +226,7 @@ trabajador puede pedir que se supriman sus datos; lo que constituye **evidencia 
 cumplimiento** —firmas, actas, entregas de EPP, capacitaciones, exámenes exigidos
 por el DS 44— no se suprime hasta que vence el plazo, porque la empresa responde
 por ella ante la autoridad. Lo suprimible es lo que **no** constituye evidencia:
-preferencias, foto de perfil, teléfono de contacto, datos de contacto de
-emergencia, y cualquier dato recogido para comodidad del uso y no para acreditar
+preferencias, foto de perfil, datos de contacto de emergencia, y cualquier dato recogido para comodidad del uso y no para acreditar
 cumplimiento. Esa frontera —evidencia frente a conveniencia— es la que hay que
 sostener ante el titular y ante la agencia, y por eso queda escrita acá y no en la
 cabeza de quien responda la solicitud.
@@ -968,7 +967,7 @@ leer; ahora es `HeadObject`.
 ---
 
 ### D-13. Contraseña inicial con los cuatro primeros dígitos del RUT: riesgo aceptado
-**Estado: decidido el 27 de septiembre de 2026. Riesgo aceptado, no pendiente.**
+**Estado: decidido el 27 de septiembre de 2026. Reemplazada por D-40 el 20 de noviembre de 2026.**
 
 La contraseña inicial de toda persona con acceso web son los cuatro primeros
 dígitos de su RUT, con o sin correo, y se le pide cambiarla en el primer
@@ -1161,7 +1160,7 @@ herramienta para registrar la solicitud y su canal de origen.
 
 | Categoría | Datos | Finalidad | Clase | Plazo | Al vencer |
 |---|---|---|---|---|---|
-| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, teléfono, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, telefono, contactoEmergencia, preferencias, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
+| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, contactoEmergencia, preferencias, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
 | Documentos, asignaciones y firmas | Documentos de onboarding, procedimientos, entregas de EPP; a quién se asignaron, quién firmó (nombre, RUT e IP cifrados), difusiones, versiones anteriores con sus firmas. | Acreditar la entrega, difusión y firma de la documentación exigida por el DS 44. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
 | Registro de firmas | Quién firmó qué, cuándo, con qué método (PIN o vale), desde qué IP (cifrada), y los documentos firmados. | Prueba de la firma electrónica simple ante la autoridad. | evidencia | 5 años desde el término del vínculo | Se suprime |
 | Solicitudes de firma | Solicitante y trabajadores convocados (nombre, cargo, RUT cifrado), estado de cada firma. | Convocar y seguir las firmas de un documento o actividad. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
@@ -1971,6 +1970,25 @@ con lo que la Agencia va a juzgar si una demora fue indebida.
 **Lo que queda fuera del código.** La cláusula de mandato en el contrato de
 encargo con cada constructora. Sin ella, la plataforma puede informar y redactar,
 pero no firmar por la responsable.
+
+### D-40. Las cuentas nuevas se activan en terreno, con una contraseña temporal que vence
+**Estado: decidido el 20 de noviembre de 2026 por Adrean; implementado en `pruebas`, por desplegar antes de la visita del 3 de diciembre. Reemplaza D-13.**
+
+**Qué lo motivó.** Con D-13, quien conocía el RUT de un trabajador podía entrar antes que él con los cuatro primeros dígitos, crear el PIN y firmar a su nombre. La firma es el centro del sistema: ese riesgo ya no se acepta.
+
+**Qué se decidió.**
+- **Las altas quedan pendientes de activación, sin contraseña** (`activacionPendiente`): el alta individual, la carga masiva, `crear-empresa.js` y `sembrar-ambiente.js`. El onboarding con licencia no cambia: ahí el administrador elige su contraseña. Una ficha pendiente no entra, y el ingreso responde lo mismo que con una contraseña incorrecta.
+- **Activar acceso** (`POST /personas/{id}/activar-acceso`): una contraseña temporal de 12 caracteres para dictar (`XXXX-XXXX-XXXX`, sin 0, O, 1, I ni L, `crypto.randomInt`), que **vence en 2 horas** y se muestra una vez en pantalla. La ficha, el aviso en la bandeja de la persona y el registro sellado de la auditoría (`credencial.acceso_activado`) van en una sola transacción condicionada a que el estado de la contraseña siga siendo el leído; después se cierran las sesiones de esa ficha. La temporal no queda en ninguna tabla, correo ni log.
+- **La marca de pendiente se mantiene hasta que la persona elige su contraseña** (cambio obligatorio o enlace). Mientras tanto se puede activar de nuevo, y la temporal anterior deja de servir.
+- **Quién activa:** el permiso `persona.activar_acceso`, del administrador y del prevencionista por omisión. Nadie activa su propio acceso ni el de quien tiene algún permiso que él no tiene. Las empresas creadas antes guardan sus roles con los permisos de entonces: su prevencionista lo recibe solo si un administrador se lo da.
+- **Quien tiene correo recibe un enlace de un solo uso** para elegir su contraseña: el mecanismo de la recuperación (`resetTokenHash`, la página `/restablecer-clave?activar=1`) con **72 horas**, auditado (`credencial.enlace_activacion`), condicionado a que la persona siga pendiente y con el mismo correo. Se manda al dar de alta a alguien con correo, desde la carga masiva si se marca la opción y desde la ficha. No agrega rutas públicas ni recursos al stack.
+- **El correo de bienvenida con la contraseña desaparece** (`sendWelcomeEmail`), reemplazado por el de activación.
+- **Una temporal sin vencimiento no abre la cuenta.** Son las fichas creadas con D-13: el ingreso responde «Tu contraseña temporal venció» y se activan como una pendiente. En prod, al decidirlo, no había ninguna.
+- **Operador:** `crear-empresa.js` y `sembrar-ambiente.js` mandan el enlace al administrador; si el correo no sale, o con `--temporal-en-terminal`, imprimen una temporal de 2 horas una sola vez. El actor de la auditoría es el ARN de `sts get-caller-identity`, no un dato que se escriba a mano.
+
+**Riesgo que queda.** Quien activa conoce la temporal durante 2 horas. Lo acotan la presencia de la persona, el registro con su nombre, el aviso en la bandeja y el cambio obligatorio; si alguien entra primero y crea el PIN, la persona lo nota porque ya no puede crear el suyo.
+
+**Verificación.** `Backend/tests/contrasena-temporal.test.js`, `activar-acceso.test.js`, `alta-sin-correo.test.js`, `credencial-entre-empresas.test.js` y `acceso-persona-frontend.test.js`; 31 sabotajes atrapados entre la parte a (16) y la b (15). La prueba de punta a punta activa a la trabajadora por la API y comprueba que los cuatro dígitos no abren nada.
 
 ## 4. Hallazgos priorizados
 

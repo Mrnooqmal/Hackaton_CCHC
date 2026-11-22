@@ -291,8 +291,32 @@ const verificar = async (secreto, almacenado, contexto) => {
     return { valido, obsoleto: valido && desactualizado, motivo: desactualizado ? 'parametros' : undefined };
 };
 
+const ALFABETO_TEMPORAL = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const LARGO_TEMPORAL = 12;
+
+const generarTemporal = () => {
+    const c = Array.from({ length: LARGO_TEMPORAL }, () => ALFABETO_TEMPORAL[crypto.randomInt(ALFABETO_TEMPORAL.length)]);
+    return [c.slice(0, 4), c.slice(4, 8), c.slice(8)].map((g) => g.join('')).join('-');
+};
+
+const temporalVencida = (persona, ahora = new Date()) => Boolean(persona?.passwordTemporal)
+    && (!persona.passwordTemporalVence || new Date(persona.passwordTemporalVence).getTime() <= ahora.getTime());
+
+const pendienteDeActivacion = (persona) => Boolean(persona?.activacionPendiente)
+    || (Boolean(persona?.passwordTemporal) && !persona.passwordTemporalVence);
+
+const CONDICION_PENDIENTE = '(activacionPendiente = :si OR (passwordTemporal = :si AND attribute_not_exists(passwordTemporalVence)))';
+
+const hashTokenEnlace = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+
 module.exports = {
     hashear,
+    generarTemporal,
+    temporalVencida,
+    pendienteDeActivacion,
+    CONDICION_PENDIENTE,
+    hashTokenEnlace,
+    ALFABETO_TEMPORAL,
     // Solo para pruebas: la caché es por contenedor y no se vacía en producción.
     _olvidarPimienta: () => { cache = null; },
     verificar,

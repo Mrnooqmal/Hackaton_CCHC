@@ -80,8 +80,8 @@ const EXIGEN_EJECUCION = new Set([DERECHOS.RECTIFICACION, DERECHOS.SUPRESION]);
 
 /**
  * Lo que el titular puede pedir rectificar con una solicitud (lo revisa quien
- * tiene el permiso). El resto de su perfil de contacto (teléfono, correo,
- * contacto de emergencia, foto) lo corrige directamente en su perfil.
+ * tiene el permiso). El resto de su perfil de contacto (correo, contacto de
+ * emergencia, foto) lo corrige directamente en su perfil.
  */
 const CAMPOS_RECTIFICABLES = ['nombre', 'apellidoPaterno', 'apellidoMaterno', 'rut', 'fechaNacimiento'];
 const NOMBRE_RE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' .-]{1,60}$/;
@@ -238,7 +238,7 @@ function validarCambios(cambios, actual, { ahora = new Date() } = {}) {
     const resultado = {};
     for (const [campo, crudo] of Object.entries(cambios)) {
         if (!CAMPOS_RECTIFICABLES.includes(campo)) {
-            throw error(`"${campo}" no se rectifica con una solicitud. El teléfono, el correo y el contacto de emergencia los corriges en tu perfil.`, 'CAMPO_NO_RECTIFICABLE');
+            throw error(`"${campo}" no se rectifica con una solicitud. El correo y el contacto de emergencia los corriges en tu perfil.`, 'CAMPO_NO_RECTIFICABLE');
         }
         const valor = String(crudo ?? '').trim();
         let normal = valor;

@@ -19,178 +19,64 @@ const SUPRIMIDA = { sent: false, error: 'La dirección está suprimida por un re
  * @param {string} rut - RUT del usuario (para login)
  * @param {string} passwordTemporal - Contraseña temporal
  */
-const sendWelcomeEmail = async (email, nombre, rut, passwordTemporal) => {
-    if (!email) {
-        console.log('No email provided, skipping notification');
-        return { sent: false, reason: 'no_email' };
-    }
+const sendActivacionEmail = async (email, nombre, enlace, horas) => {
+    if (!email) return { sent: false, reason: 'no_email' };
 
-    const loginUrl = `${process.env.FRONTEND_URL || 'https://buildandserve.cl'}/login`;
-
+    const saludo = nombre ? `Hola, ${escaparHtml(nombre)}` : 'Hola';
     const htmlBody = `
 <!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { margin: 0; padding: 0; background: #f0f4f8; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }
-    .wrapper { padding: 32px 16px; }
-    .card { max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.10); }
-    .header { background: linear-gradient(135deg, #002855 0%, #006edc 100%); padding: 36px 40px; text-align: center; }
-    .logo { font-size: 28px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin: 0; }
-    .logo-amp { color: #df3601; }
-    .logo-sub { font-size: 13px; color: rgba(255,255,255,0.70); margin: 6px 0 0; font-weight: 400; }
-    .body { padding: 36px 40px; }
-    .greeting { font-size: 16px; color: #0f172a; margin: 0 0 12px; }
-    .intro { font-size: 14px; color: #475569; line-height: 1.65; margin: 0 0 28px; }
-    .cred-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
-                padding: 20px 24px; margin: 0 0 28px; }
-    .cred-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
-                  letter-spacing: 0.08em; margin: 0 0 14px; }
-    .cred-row { display: flex; justify-content: space-between; align-items: center;
-                padding: 10px 0; border-bottom: 1px solid #e8edf3; }
-    .cred-row:last-child { border-bottom: none; padding-bottom: 0; }
-    .cred-label { font-size: 13px; color: #64748b; }
-    .cred-value { font-family: 'Courier New', Courier, monospace; font-size: 15px;
-                  font-weight: 700; color: #002855; letter-spacing: 0.04em; }
-    .alert { background: #fff8f0; border: 1px solid #fed7a0; border-left: 4px solid #df3601;
-             border-radius: 8px; padding: 14px 18px; margin: 0 0 28px; }
-    .alert p { margin: 0; font-size: 13px; color: #7c2d12; line-height: 1.55; }
-    .alert strong { color: #df3601; }
-    .steps-title { font-size: 13px; font-weight: 700; color: #0f172a; margin: 0 0 12px; }
-    .step { display: flex; gap: 14px; align-items: flex-start; margin: 10px 0; }
-    .step-num { width: 26px; height: 26px; border-radius: 50%; background: #002855; color: #fff;
-                font-size: 12px; font-weight: 700; display: flex; align-items: center;
-                justify-content: center; flex-shrink: 0; }
-    .step p { margin: 0; font-size: 13px; color: #475569; line-height: 1.55; padding-top: 3px; }
-    .footer { background: #f8fafc; border-top: 1px solid #e8edf3; padding: 20px 40px;
-              text-align: center; font-size: 11px; color: #94a3b8; line-height: 1.6; }
-    .btn-login { display: inline-block; background: #006edc; color: #ffffff; text-decoration: none;
-                 font-size: 15px; font-weight: 600; padding: 14px 32px; border-radius: 10px; }
-    /* Responsive: en móvil reducimos el padding lateral para que el texto no se parta */
-    @media only screen and (max-width: 600px) {
-      .wrapper { padding: 16px 8px !important; }
-      .header { padding: 28px 20px !important; }
-      .body { padding: 28px 20px !important; }
-      .cred-box { padding: 16px 16px !important; }
-      .footer { padding: 18px 20px !important; }
-      .logo { font-size: 24px !important; }
-      .btn-login { display: block !important; text-align: center !important; }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="card">
-      <div class="header">
-        <p class="logo">Build <span class="logo-amp">&amp;</span> Serve</p>
-        <p class="logo-sub">Plataforma de Gestión de Obras y Prevención de Riesgos</p>
-      </div>
-      <div class="body">
-        <p class="greeting">Hola, <strong>${escaparHtml(nombre)}</strong></p>
-        <p class="intro">
-          Has sido registrado en <strong>Build &amp; Serve</strong>. A continuación encontrarás
-          tus credenciales de acceso al sistema.
-        </p>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;padding:32px;">
+    <tr><td>
+      <div style="font-size:20px;font-weight:700;color:#002855;margin-bottom:4px;">Build &amp; Serve</div>
+      <div style="font-size:13px;color:#6b7280;margin-bottom:24px;">Plataforma de gestión preventiva — DS 44/2024</div>
 
-        <div class="cred-box">
-          <p class="cred-title">Tus credenciales</p>
-          <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-            <tr>
-              <td style="font-size:13px;color:#64748b;padding:10px 0;border-bottom:1px solid #e8edf3;">RUT (usuario)</td>
-              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;border-bottom:1px solid #e8edf3;">${escaparHtml(rut)}</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#64748b;padding:10px 0;">Contraseña temporal</td>
-              <td align="right" style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:700;color:#002855;letter-spacing:0.04em;padding:10px 0;">${escaparHtml(passwordTemporal)}</td>
-            </tr>
-          </table>
-        </div>
+      <h1 style="font-size:18px;margin:0 0 12px;">${saludo}: activa tu cuenta</h1>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 20px;">
+        Tu empresa te registró en Build &amp; Serve. Con el botón de abajo eliges tu
+        contraseña; después entras con tu RUT y esa contraseña.
+      </p>
 
-        <div class="alert">
-          <p><strong>Importante:</strong> Al ingresar por primera vez al sistema, deberás cambiar
-          tu contraseña por seguridad. Esta contraseña temporal no podrá usarse después del
-          primer inicio de sesión.</p>
-        </div>
+      <p style="margin:0 0 24px;">
+        <a href="${escaparHtml(enlace)}" style="display:inline-block;background:#002855;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;font-size:14px;font-weight:600;">Activar mi cuenta</a>
+      </p>
 
-        <div style="text-align:center;margin:0 0 28px;">
-          <a href="${escaparHtml(loginUrl)}" class="btn-login" style="display:inline-block;background:#006edc;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;font-family:'Segoe UI',Helvetica,Arial,sans-serif;padding:14px 32px;border-radius:10px;">Ingresar al sistema</a>
-        </div>
-
-        <p class="steps-title">Primeros pasos</p>
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-          <tr>
-            <td width="38" valign="top" style="padding:6px 0;">
-              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
-                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">1</td>
-              </tr></table>
-            </td>
-            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Accede al sistema con el RUT y la contraseña temporal indicados arriba.</td>
-          </tr>
-          <tr>
-            <td width="38" valign="top" style="padding:6px 0;">
-              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
-                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">2</td>
-              </tr></table>
-            </td>
-            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Crea una contraseña nueva y segura cuando el sistema lo solicite.</td>
-          </tr>
-          <tr>
-            <td width="38" valign="top" style="padding:6px 0;">
-              <table cellpadding="0" cellspacing="0" role="presentation"><tr>
-                <td width="26" height="26" align="center" valign="middle" style="width:26px;height:26px;background:#002855;color:#ffffff;border-radius:13px;font-size:12px;font-weight:700;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">3</td>
-              </tr></table>
-            </td>
-            <td valign="top" style="font-size:13px;color:#475569;line-height:1.55;padding:6px 0;">Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.</td>
-          </tr>
-        </table>
-      </div>
-      <div class="footer">
-        Build &amp; Serve &mdash; Plataforma de Gestión de Obras<br>
-        Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
-      </div>
-    </div>
-  </div>
+      <p style="font-size:13px;line-height:1.6;color:#6b7280;margin:0 0 8px;">
+        El enlace <strong>sirve una sola vez</strong> y vence en ${escaparHtml(horas)} horas.
+        No lo reenvíes. Si vence, pide a tu empresa que te active el acceso en la obra.
+      </p>
+      <p style="font-size:12px;color:#9ca3af;word-break:break-all;margin:16px 0 0;">
+        Si el botón no funciona, copia esta dirección en tu navegador:<br>${escaparHtml(enlace)}
+      </p>
+    </td></tr>
+  </table>
 </body>
 </html>`.trim();
 
     const textBody = `
-Hola ${nombre},
+Build & Serve — Activa tu cuenta
 
-Has sido registrado en Build & Serve — Plataforma de Gestión de Obras y Prevención de Riesgos.
+Tu empresa te registró en Build & Serve. Elige tu contraseña en este enlace:
 
-Tus credenciales de acceso:
-  RUT (usuario):       ${rut}
-  Contraseña temporal: ${passwordTemporal}
+${enlace}
 
-IMPORTANTE: Al ingresar por primera vez al sistema debes cambiar tu contraseña por seguridad.
-Esta contraseña temporal no podrá usarse después del primer inicio de sesión.
-
-Primeros pasos:
-  1. Accede al sistema con el RUT y la contraseña temporal indicados arriba.
-  2. Crea una contraseña nueva y segura cuando el sistema lo solicite.
-  3. Completa tu perfil y el proceso de enrolamiento para habilitar tu firma digital.
+El enlace sirve una sola vez y vence en ${horas} horas. No lo reenvíes. Si vence,
+pide a tu empresa que te active el acceso en la obra.
 
 ---
 Build & Serve — Plataforma de Gestión de Obras
 Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
-    `.trim();
+`.trim();
 
     try {
-        console.log(`Enviando correo a ${enmascararCorreo(email)}`);
-        const r = await enviarCorreo({ para: email, asunto: 'Bienvenido a Build & Serve — Tus credenciales de acceso', html: htmlBody, texto: textBody });
+        const r = await enviarCorreo({ para: email, asunto: 'Build & Serve — Activa tu cuenta', html: htmlBody, texto: textBody });
         if (!r.enviado) return SUPRIMIDA;
-        console.log(`Correo enviado a ${enmascararCorreo(email)}`);
         return { sent: true, email };
     } catch (err) {
-        console.error('Error sending welcome email:', err);
-        // Si estamos en sandbox y el email no está verificado, devolver error específico
-        if (err.name === 'MessageRejected') {
-            return { sent: false, error: 'Email no verificado en SES sandbox', code: 'SANDBOX_RESTRICTION' };
-        }
-        return { sent: false, error: err.message };
+        console.error('Error enviando el enlace de activación a', enmascararCorreo(email), '-', err.name);
+        return { sent: false, error: err.name || 'error', err };
     }
 };
 
@@ -473,32 +359,15 @@ module.exports.sendWelcome = async (event) => {
         // que incluye RUT y contraseña temporal, con retención infinita.
         //
         // La ruta se retira de `serverless.yml` en el despliegue completo. Este
-        // corte cubre el intervalo. La función interna `sendWelcomeEmail`, que sí
-        // usa el alta de empresa, no se toca.
+        // corte cubre el intervalo.
         return error('Endpoint eliminado.', 410);
-
-        // eslint-disable-next-line no-unreachable
-        const body = JSON.parse(event.body || '{}');
-        const { email, nombre, rut, passwordTemporal } = body;
-        if (!email || !nombre || !rut || !passwordTemporal) {
-            console.error('Missing required fields in notification request');
-            return error('Faltan campos requeridos: email, nombre, rut, passwordTemporal');
-        }
-
-        const result = await sendWelcomeEmail(email, nombre, rut, passwordTemporal);
-
-        if (result.sent) {
-            return success({ message: 'Email enviado exitosamente', email });
-        } else {
-            return error(`No se pudo enviar el email: ${result.reason || result.error}`, 500);
-        }
     } catch (err) {
         console.error('Error in sendWelcome:', err);
         return error(err.message, 500);
     }
 };
 
-module.exports.sendWelcomeEmail = sendWelcomeEmail;
+module.exports.sendActivacionEmail = sendActivacionEmail;
 module.exports.sendPasswordResetEmail = sendPasswordResetEmail;
 module.exports.sendOnboardingLicenseEmail = sendOnboardingLicenseEmail;
 module.exports.sendPinRestablecidoEmail = sendPinRestablecidoEmail;

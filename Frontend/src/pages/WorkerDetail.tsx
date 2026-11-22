@@ -43,6 +43,7 @@ import { useObraContext } from '../context/ObraContext';
 import { Modal, Select, IdentityPanel } from '../components/ui';
 import WorkerEvidencias from '../components/WorkerEvidencias';
 import PinDeFirma, { type PinRestablecido } from '../components/PinDeFirma';
+import AccesoPlataforma from '../components/AccesoPlataforma';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
@@ -105,7 +106,8 @@ export default function WorkerDetail() {
     const canVigilancia = hasPermission(PERMISSIONS.PERSONA_VIGILANCIA_SALUD);
     const canDesvincular = hasPermission(PERMISSIONS.PERSONA_DESVINCULAR);
     const canRestablecerPin = hasPermission(PERMISSIONS.PERSONA_RESTABLECER_PIN);
-    // Editar datos sensibles de la persona (cargo, teléfono, etc.): mismo permiso
+    const canActivarAcceso = hasPermission(PERMISSIONS.PERSONA_ACTIVAR_ACCESO);
+    // Editar datos sensibles de la persona (cargo, correo, etc.): mismo permiso
     // que gestionar/añadir personas.
     const canEditarDatos = hasPermission(PERMISSIONS.PERSONAS_CREAR);
     const { options: cargoOptions } = useCargoCatalog();
@@ -118,7 +120,7 @@ export default function WorkerDetail() {
     const [editando, setEditando] = useState<'datos' | 'vigilancia' | null>(null);
     const [editBase, setEditBase] = useState<string>('');
     const [editForm, setEditForm] = useState({
-        nombre: '', apellidoPaterno: '', apellidoMaterno: '', email: '', telefono: '',
+        nombre: '', apellidoPaterno: '', apellidoMaterno: '', email: '',
         fechaNacimiento: '', cargo: '', nivelEscolar: '',
         contactoNombre: '', contactoTelefono: '', contactoRelacion: '',
     });
@@ -319,7 +321,6 @@ export default function WorkerDetail() {
             apellidoPaterno: w.apellidoPaterno || '',
             apellidoMaterno: w.apellidoMaterno || '',
             email: w.email || '',
-            telefono: w.telefono || '',
             fechaNacimiento: w.fechaNacimiento || '',
             cargo: w.cargo || '',
             nivelEscolar: w.nivelEscolar || '',
@@ -370,7 +371,6 @@ export default function WorkerDetail() {
                 apellidoMaterno: editForm.apellidoMaterno.trim(),
                 apellido,
                 email: editForm.email.trim(),
-                telefono: editForm.telefono.trim(),
                 fechaNacimiento: editForm.fechaNacimiento || null,
                 cargo: editForm.cargo || null,
                 nivelEscolar: editForm.nivelEscolar.trim(),
@@ -959,7 +959,6 @@ Generado por PrevencionApp
                                         <div className="pd-rejilla">
                                             {[
                                                 { k: 'email', l: 'Correo', type: 'email' },
-                                                { k: 'telefono', l: 'Teléfono', type: 'tel' },
                                                 { k: 'fechaNacimiento', l: 'Fecha de nacimiento', type: 'date' },
                                                 { k: 'nivelEscolar', l: 'Nivel escolar', type: 'text' },
                                             ].map((f, i) => (
@@ -979,7 +978,6 @@ Generado por PrevencionApp
                                 ) : (
                                     <div className="pd-rejilla">
                                         <Campo label="Correo" value={worker.email} vacio="Sin correo" />
-                                        <Campo label="Teléfono" value={w.telefono} vacio="Sin teléfono" />
                                         <Campo label="Fecha de nacimiento" value={fechaCorta(w.fechaNacimiento)} />
                                         <Campo label="Nivel escolar" value={w.nivelEscolar} />
                                         <Campo label="Rol de sistema" value={rolLabel(worker.rol)} />
@@ -997,7 +995,7 @@ Generado por PrevencionApp
                                             { k: 'contactoTelefono', l: 'Teléfono' },
                                             { k: 'contactoRelacion', l: 'Relación' },
                                         ].map((f, i) => (
-                                            <label key={f.k} className="pd-input" style={entrada(i + 8)}>
+                                            <label key={f.k} className="pd-input" style={entrada(i + 7)}>
                                                 <span className="pd-label">{f.l}</span>
                                                 <input className="form-input" value={(editForm as any)[f.k]}
                                                     onChange={(e) => setEditForm({ ...editForm, [f.k]: e.target.value })} />
@@ -1064,6 +1062,14 @@ Generado por PrevencionApp
                                     </div>
                                 )}
                             </section>
+
+                            <AccesoPlataforma
+                                tenantId={authTenantId}
+                                persona={worker}
+                                puedeActivar={canActivarAcceso}
+                                esLaMisma={worker.personaId === user?.personaId}
+                                onCambio={loadWorkerData}
+                            />
 
                             <PinDeFirma
                                 tenantId={authTenantId}

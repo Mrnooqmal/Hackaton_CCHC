@@ -25,10 +25,16 @@ nada más.
 
 ### 1. Crear tu contraseña
 
-Cuando tu empresa te registra, tu **contraseña inicial son los cuatro primeros dígitos de tu
-RUT**. Por ejemplo, para el RUT *12.345.678-9* es **1234**.
+Cuando tu empresa te registra, tu acceso queda **pendiente de activación**. Se activa de una de
+dos formas:
 
-Al entrar con ella aparece **Crea tu contraseña**:
+- **En la obra**: alguien de tu empresa activa tu acceso y te muestra una **contraseña
+  temporal** (por ejemplo *K7MP-3QXR-9HTW*). Vence en **2 horas**: entra en ese momento desde tu
+  teléfono, con tu RUT y esa contraseña, con los guiones.
+- **Por correo**, si tienes uno registrado: te llega un enlace **Activa tu cuenta** que vence en
+  72 horas. Ahí eliges tu contraseña directamente y te saltas este paso.
+
+Al entrar con la contraseña temporal aparece **Crea tu contraseña**:
 
 1. Escribe tu **Nueva contraseña** (mínimo 6 caracteres).
 2. Repítela en **Confirmar nueva contraseña**.
@@ -57,11 +63,11 @@ con él firmarás documentos, actividades y encuestas. Es distinto de tu contras
 
 ### 3. Completar tu perfil (opcional)
 
-Por último puedes subir una **foto de tu cara** y tu **teléfono móvil**, para que te reconozcan
-en las cuadrillas y te puedan contactar en obra. Toca **Guardar y terminar**, u **Omitir por
-ahora** si prefieres hacerlo después desde **Configuración**.
+Por último puedes subir una **foto de tu cara**, para que te reconozcan en las cuadrillas. Toca
+**Guardar y terminar**, u **Omitir por ahora** si prefieres hacerlo después desde
+**Configuración**.
 
-![Completa tu perfil, con foto y teléfono](/img/guia-inicio/enrolamiento-perfil.png)
+![Completa tu perfil con tu foto](/img/guia-inicio/enrolamiento-perfil.png)
 
 ## Olvidé mi contraseña
 
@@ -115,9 +121,10 @@ creas uno nuevo:
 No. Solo necesitas el enlace, tu RUT y tu contraseña.
 
 **Escribo mi RUT y contraseña, pero no entra.**
-Revisa que el RUT tenga guion y dígito verificador. Si es tu primer ingreso, la contraseña son
-los cuatro primeros dígitos de tu RUT. Si ya la cambiaste y no la recuerdas, usa
-**¿Olvidaste tu contraseña?**.
+Revisa que el RUT tenga guion y dígito verificador. Si es tu primer ingreso, necesitas que tu
+empresa active tu acceso: pídelo en la obra. Si la contraseña temporal venció, pide que la
+activen de nuevo. Si ya elegiste tu contraseña y no la recuerdas, usa **¿Olvidaste tu
+contraseña?**.
 
 **¿La contraseña y el PIN son lo mismo?**
 No. La **contraseña** sirve para entrar; el **PIN** (4 dígitos) sirve para **firmar**. Son

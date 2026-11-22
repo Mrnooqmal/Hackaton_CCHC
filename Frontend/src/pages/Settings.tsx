@@ -6,6 +6,7 @@ import { FiLock, FiKey, FiEdit2, FiShield } from 'react-icons/fi';
 import ConfirmModal from '../components/ConfirmModal';
 import { IdentityPanel, AlertBanner } from '../components/ui';
 import { getCargoLabel } from '../utils/ds44';
+import { privacidadApi } from '../api/gobernanza.api';
 import '../css/ficha.css';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -44,17 +45,6 @@ function formatDate(iso?: string | null) {
     return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function parseTelDigits(raw?: string | null) {
-    return formatTelDisplay((raw || '').replace(/^\+56\s*/, '').trim());
-}
-
-function formatTelDisplay(raw: string) {
-    const d = raw.replace(/\D/g, '').slice(0, 9);
-    if (d.length > 5) return d[0] + ' ' + d.slice(1, 5) + ' ' + d.slice(5);
-    if (d.length > 1) return d[0] + ' ' + d.slice(1);
-    return d;
-}
-
 // Un campo de solo lectura: rótulo y valor, o un guion si está vacío.
 function Campo({ label, value, vacio = '—' }: { label: string; value: React.ReactNode; vacio?: string }) {
     return (
@@ -74,7 +64,7 @@ export default function Settings() {
     const { user, updateUser } = useAuth();
     const navigate = useNavigate();
 
-    // Nombre, RUT, rol, correo y teléfono vienen con la sesión y se pintan de
+    // Nombre, RUT, rol y correo vienen con la sesión y se pintan de
     // inmediato; cargo y fecha de nacimiento llegan con la ficha y, mientras,
     // solo esos valores muestran su esqueleto.
     const [persona, setPersona] = useState<PersonaResponse | null>(null);
@@ -84,13 +74,27 @@ export default function Settings() {
     const [photoError, setPhotoError] = useState('');
 
     const [editando, setEditando] = useState(false);
-    const [form, setForm] = useState({ email: '', telefono: '' });
-    const [base, setBase] = useState({ email: '', telefono: '' });
+    const [form, setForm] = useState({ email: '' });
+    const [base, setBase] = useState({ email: '' });
     const [guardando, setGuardando] = useState(false);
-    const [errorCampo, setErrorCampo] = useState<{ email?: string; telefono?: string }>({});
+    const [errorCampo, setErrorCampo] = useState<{ email?: string }>({});
     const [errorGuardar, setErrorGuardar] = useState('');
 
     const [showPinConfirm, setShowPinConfirm] = useState(false);
+
+    // La foto depende del consentimiento `foto_perfil`. Se consulta de antemano
+    // para avisar con un acceso directo en vez de intentar y fallar. `null` = no
+    // se supo (sin señal, error): se intenta igual y decide el servidor.
+    const [consienteFoto, setConsienteFoto] = useState<boolean | null>(null);
+    const [avisoConsentimientoFoto, setAvisoConsentimientoFoto] = useState(false);
+    const consultarConsentimientoFoto = async (): Promise<boolean | null> => {
+        const r = await privacidadApi.consentimientos().catch(() => null);
+        const f = r?.success ? r.data?.finalidades.find((x) => x.finalidad === 'foto_perfil') : undefined;
+        const vigente = f ? f.vigente : null;
+        setConsienteFoto(vigente);
+        return vigente;
+    };
+    useEffect(() => { consultarConsentimientoFoto(); }, []);
 
     useEffect(() => {
         const tenantId = user?.tenantId || (user as any)?.empresaId;
@@ -108,7 +112,6 @@ export default function Settings() {
     const cargo = getCargoLabel(cargoCodigo) || cargoCodigo || 'Sin cargo';
     const fechaNac = formatDate(persona?.fechaNacimiento || (user as any)?.fechaNacimiento);
     const correo = user?.email || persona?.email || '';
-    const telefono = user?.telefono || persona?.telefono || '';
 
     const personaId = (user as any)?.personaId || user?.userId;
     const tenantId = user?.tenantId;
@@ -117,13 +120,25 @@ export default function Settings() {
         setPhotoSaving(true);
         setPhotoSuccess(false);
         setPhotoError('');
+        setAvisoConsentimientoFoto(false);
+        if (consienteFoto === false) {
+            setPhotoSaving(false);
+            setAvisoConsentimientoFoto(true);
+            return;
+        }
         try {
             const base64 = await resizeImageToBase64(file, 320);
             if (personaId && tenantId) {
                 // La foto depende de tu consentimiento (Mis datos y privacidad):
-                // sin él, el servidor no la guarda y se explica por qué.
+                // sin él, el servidor no la guarda.
                 const res = await personasApi.update(tenantId, personaId, { fotoPerfil: base64 });
-                if (!res.success) { setPhotoError(res.error || 'No se pudo guardar la foto.'); return; }
+                if (!res.success) {
+                    // Si el estado no se sabía (o cambió en otra pestaña), se vuelve
+                    // a consultar para ofrecer el acceso directo en vez del texto.
+                    if (await consultarConsentimientoFoto() === false) setAvisoConsentimientoFoto(true);
+                    else setPhotoError(res.error || 'No se pudo guardar la foto.');
+                    return;
+                }
             }
             updateUser({ fotoPerfil: base64 });
             setPhotoSuccess(true);
@@ -142,7 +157,7 @@ export default function Settings() {
     };
 
     const empezar = () => {
-        const f = { email: correo, telefono: parseTelDigits(telefono) };
+        const f = { email: correo };
         setForm(f);
         setBase(f);
         setErrorCampo({});
@@ -156,21 +171,18 @@ export default function Settings() {
         setErrorGuardar('');
     };
 
-    const cambios = (['email', 'telefono'] as const).filter((k) => form[k].trim() !== base[k].trim());
+    const cambios = (['email'] as const).filter((k) => form[k].trim() !== base[k].trim());
 
     const guardar = async () => {
         const email = form.email.trim();
-        const digitos = form.telefono.replace(/\D/g, '');
-        const errores: { email?: string; telefono?: string } = {};
+        const errores: { email?: string } = {};
         if (email && !CORREO_RE.test(email)) errores.email = 'Revisa el correo: falta la @ o el dominio.';
-        if (digitos && digitos.length !== 9) errores.telefono = 'El número tiene 9 dígitos, por ejemplo 9 1234 5678.';
         setErrorCampo(errores);
         if (Object.keys(errores).length > 0) return;
         if (!personaId || !tenantId) return;
 
-        const payload: { email?: string; telefono?: string } = {};
+        const payload: { email?: string } = {};
         if (cambios.includes('email')) payload.email = email;
-        if (cambios.includes('telefono')) payload.telefono = digitos ? `+56 ${form.telefono.trim()}` : '';
 
         setGuardando(true);
         setErrorGuardar('');
@@ -232,6 +244,18 @@ export default function Settings() {
                 {photoError && (
                     <AlertBanner variant="warning" message={photoError} onDismiss={() => setPhotoError('')} />
                 )}
+                {avisoConsentimientoFoto && (
+                    <AlertBanner
+                        variant="warning"
+                        autoDismissMs={0}
+                        onDismiss={() => setAvisoConsentimientoFoto(false)}
+                        message="Para subir una foto de perfil, primero otorga tu consentimiento en Mis datos y privacidad. Sin foto, el sistema funciona igual."
+                    >
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => navigate('/mis-datos?seccion=consentimientos')}>
+                            Ir a Mis datos y privacidad
+                        </button>
+                    </AlertBanner>
+                )}
 
                 <div
                     className={`pd-tab${editando ? ' pd-tab--editando' : ''}`}
@@ -243,7 +267,7 @@ export default function Settings() {
                             <span className="pd-hint">
                                 {editando
                                     ? 'Editando · los cambios se aplican al guardar'
-                                    : 'El correo y el teléfono los actualizas tú; el resto lo mantiene tu empresa.'}
+                                    : 'El correo lo actualizas tú; el resto lo mantiene tu empresa.'}
                             </span>
                             <span className="pd-head-accion">
                                 {editando
@@ -270,20 +294,6 @@ export default function Settings() {
                                         ? <span className="pd-ayuda set-error">{errorCampo.email}</span>
                                         : <span className="pd-ayuda">Aquí te llegan los avisos y la recuperación de contraseña.</span>}
                                 </label>
-                                <label className="pd-input" style={{ animationDelay: '35ms' }}>
-                                    <span className="pd-label">Teléfono</span>
-                                    <span className={`set-tel${errorCampo.telefono ? ' is-invalid' : ''}`}>
-                                        <span className="set-tel-prefijo" aria-hidden="true">+56</span>
-                                        <input
-                                            type="text" inputMode="numeric" placeholder="9 1234 5678"
-                                            aria-label="Número de teléfono" autoComplete="tel-national"
-                                            value={form.telefono}
-                                            aria-invalid={!!errorCampo.telefono}
-                                            onChange={(e) => setForm({ ...form, telefono: formatTelDisplay(e.target.value) })}
-                                        />
-                                    </span>
-                                    {errorCampo.telefono && <span className="pd-ayuda set-error">{errorCampo.telefono}</span>}
-                                </label>
                                 <div className="pd-solo-lectura">
                                     <Campo label="Fecha de nacimiento" value={fechaNac ? `${fechaNac} · la mantiene tu empresa` : null} />
                                 </div>
@@ -291,7 +301,6 @@ export default function Settings() {
                         ) : (
                             <div className="pd-rejilla">
                                 <Campo label="Correo electrónico" value={correo} vacio="Sin correo" />
-                                <Campo label="Teléfono" value={telefono} vacio="Sin teléfono" />
                                 <Campo label="Fecha de nacimiento" value={cargando && !fechaNac ? <Pendiente w={110} /> : fechaNac} />
                             </div>
                         )}
@@ -330,22 +339,6 @@ export default function Settings() {
                 /* Lo propio de esta pantalla; el resto es la ficha compartida (css/ficha.css). */
                 .set-pendiente { display: inline-flex; align-items: center; height: 22px; vertical-align: middle; }
                 .set-error { color: var(--danger-alerta); }
-                .set-tel {
-                    display: flex; align-items: center; height: 38px; overflow: hidden;
-                    border: 1px solid var(--surface-border); border-radius: 8px; background: var(--surface-elevated);
-                    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-                }
-                .set-tel:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-                .set-tel.is-invalid { border-color: var(--danger-alerta); }
-                .set-tel-prefijo {
-                    display: flex; align-items: center; align-self: stretch; padding: 0 12px;
-                    border-right: 1px solid var(--surface-border);
-                    font-size: 13px; font-weight: 600; color: var(--text-secondary); user-select: none;
-                }
-                .set-tel input {
-                    flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: none; outline: none; background: none;
-                    font-family: inherit; font-size: 13.5px; color: var(--text-primary);
-                }
                 .pd-input .form-input[aria-invalid='true'] { border-color: var(--danger-alerta); }
             `}</style>
         </>

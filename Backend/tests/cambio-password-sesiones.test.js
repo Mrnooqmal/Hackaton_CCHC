@@ -10,11 +10,11 @@
 // sesión. Con la contraseña inicial de D-13, quien conoce un RUT puede entrar
 // antes que su dueña y dejar abierta esa sesión: cuando ella cambiaba la
 // contraseña, la sesión ajena dejaba de ser provisional y quedaba completa por
-// seis horas. Lo mismo al restablecerla por correo o por un administrador.
+// seis horas. Lo mismo al restablecerla por correo.
 //
 // La regla que fijan estas pruebas: si la contraseña cambió, ninguna sesión
 // abierta con la anterior sigue valiendo, en ninguna de las empresas de la
-// persona. Ver D-26.
+// persona donde esa contraseña valía. Ver D-26.
 
 process.env.CAMPO_HMAC_KEY = 'clave-de-prueba-hmac';
 process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString('base64');
@@ -34,7 +34,7 @@ const { sesionDesdeToken } = require('../lib/auth/sesion');
 const auth = require('../handlers/auth/handler');
 
 const RUT = '12.345.678-5';
-const INICIAL = '1234';
+let INICIAL;
 
 let doble;
 let tenantA;
@@ -49,6 +49,10 @@ beforeEach(async () => {
         rut: RUT, nombre: 'Juan', rol: 'trabajador', email: 'juan@ejemplo.cl', tieneAccesoWeb: true,
     });
     personaA = persona.personaId;
+    INICIAL = (await new PersonaService().emitirTemporal(tenantA, personaA, {
+        horas: 2, actor: { id: 'p-prueba', tipo: 'persona', nombre: 'Prueba' }, operacion: 'credencial.acceso_activado',
+        exigir: 'pendiente', aviso: { asunto: 'Acceso activado', contenido: 'Prueba activó tu acceso.' },
+    })).password;
 });
 afterEach(() => doble.restaurar());
 
@@ -109,16 +113,21 @@ test('una sesión ajena abierta con la contraseña inicial también queda revoca
         'si sobrevive, deja de ser provisional y queda completa por seis horas');
 });
 
-test('se revocan también las sesiones de la misma persona en otras empresas', async () => {
-    // La contraseña es una para toda la identidad: `propagarPassword` la cambia
-    // en las fichas hermanas, así que sus sesiones abiertas con la anterior
-    // tampoco pueden seguir.
+test('se revocan también las sesiones de la otra empresa donde la contraseña actual coincidía', async () => {
     const tenantB = (await new TenantService().setup({ nombre: 'Constructora B', rutEmpresa: '77.777.777-7' })).tenantId;
     const { persona: hermana } = await new PersonaService().crear(tenantB, {
         rut: RUT, nombre: 'Juan', rol: 'trabajador', email: 'juan@ejemplo.cl', tieneAccesoWeb: true,
     });
+    const credenciales = require('../lib/credenciales');
+    const { PutCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+    for (const [t, p] of [[tenantA, personaA], [tenantB, hermana.personaId]]) {
+        await docClient.send(new UpdateCommand({
+            TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${t}`, SK: `PERSONA#${p}` },
+            UpdateExpression: 'SET passwordHash = :h, passwordTemporal = :f',
+            ExpressionAttributeValues: { ':h': await credenciales.hashear('Comun-1', p), ':f': false },
+        }));
+    }
     const token = crypto.randomBytes(32).toString('hex');
-    const { PutCommand } = require('@aws-sdk/lib-dynamodb');
     const { hashToken } = require('../lib/auth/sesion');
     await docClient.send(new PutCommand({ TableName: 'SESSIONS_TABLE', Item: {
         sessionId: 's-hermana', personaId: hermana.personaId, tenantId: tenantB, tokenHash: hashToken(token),
@@ -126,7 +135,16 @@ test('se revocan también las sesiones de la misma persona en otras empresas', a
     } }));
     assert.ok(await sesionDesdeToken(token), 'la sesión de la otra empresa existe antes del cambio');
 
-    await cambiar(await login());
+    const res = await auth.changePassword({
+        requestContext: {
+            http: { method: 'POST', path: '/auth/change-password', sourceIp: '10.0.0.1' },
+            authorizer: { lambda: { sessionId: 's-propia', personaId: personaA, tenantId: tenantA, rol: 'trabajador', permisos: '' } },
+        },
+        rawPath: '/auth/change-password',
+        headers: { 'user-agent': 'prueba' },
+        body: JSON.stringify({ passwordActual: 'Comun-1', passwordNuevo: 'Nueva-clave-1', confirmarPassword: 'Nueva-clave-1' }),
+    });
+    assert.equal(res.statusCode, 200, res.body);
     assert.equal(await sesionDesdeToken(token), null);
 });
 
@@ -168,12 +186,6 @@ test('restablecer la contraseña por correo revoca las sesiones abiertas', async
         body: JSON.stringify({ personaId: personaA, token, passwordNuevo: 'Otra-clave-2', confirmarPassword: 'Otra-clave-2' }),
     });
     assert.equal(res.statusCode, 200, res.body);
-    assert.equal(await sesionDesdeToken(abierta.token), null);
-});
-
-test('el restablecimiento por un administrador revoca las sesiones abiertas', async () => {
-    const abierta = await login();
-    await new PersonaService().resetPassword(tenantA, personaA);
     assert.equal(await sesionDesdeToken(abierta.token), null);
 });
 

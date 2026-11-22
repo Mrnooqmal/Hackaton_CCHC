@@ -61,6 +61,34 @@ const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
 
 class AltaEmpresaService {
     /**
+     * ¿Está libre la empresa? Solo el nombre y el RUT, para el paso "Empresa"
+     * del onboarding: que el conflicto se vea al escribirlo y no al final.
+     *
+     * Lo que no viene o no es válido no se consulta (queda en null): el formato
+     * ya lo avisa la interfaz, y una consulta por un RUT a medio escribir no
+     * sirve de nada. Igual que en `revisar`, una lectura que falla propaga.
+     *
+     * @returns {Promise<{nombre: string|null, rutEmpresa: string|null}>} el
+     *          conflicto de cada campo, o null si está libre o no se consultó.
+     */
+    static async disponibilidadEmpresa({ nombre, rutEmpresa }) {
+        const tenantService = new TenantService();
+        const empresa = validateRut(rutEmpresa);
+        const nombreLimpio = typeof nombre === 'string' ? nombre.trim() : '';
+        const slug = nombreLimpio.length >= 3 ? tenantService._generarSlug(nombreLimpio) : null;
+
+        const [porSlug, porRut] = await Promise.all([
+            slug ? tenantService.getBySlug(slug) : null,
+            empresa.valid ? tenantService.getByRutEmpresa(empresa.formatted) : null,
+        ]);
+
+        return {
+            nombre: porSlug ? `Ya existe una empresa con el nombre "${nombreLimpio}"` : null,
+            rutEmpresa: porRut ? `Ya existe una empresa con el RUT ${empresa.formatted}` : null,
+        };
+    }
+
+    /**
      * Valida los datos y comprueba conflictos, SIN escribir.
      *
      * Se usa dos veces: en el ensayo del script del operador y antes de consumir
@@ -127,11 +155,11 @@ class AltaEmpresaService {
      *
      * @param {object} datos
      * @param {string|null} datos.password - si viene, el administrador queda con
-     *        SU contraseña y sin paso de cambio obligatorio. Si no, se genera una
-     *        temporal (camino del script del operador).
+     *        SU contraseña y sin paso de cambio obligatorio. Si no, queda
+     *        pendiente de activación.
      * @param {object|null} datos.identidad - `{ colorPrimario, logoBase64, logoOscuroBase64 }`
      *        elegidos en el onboarding; los mismos campos que edita Mi Empresa.
-     * @returns {Promise<{tenant, persona, passwordTemporal: string|null}>}
+     * @returns {Promise<{tenant, persona}>}
      */
     static async crear({ nombre, rutEmpresa, admin, password = null, identidad = null, creadoPor = null }) {
         const revision = await this.revisar({ nombre, rutEmpresa, admin, password, identidad });
@@ -180,7 +208,7 @@ class AltaEmpresaService {
         }
 
         // 3. Administrador.
-        const { persona, passwordTemporal } = await personaService.crear(tenant.tenantId, {
+        const { persona } = await personaService.crear(tenant.tenantId, {
             rut: revision.rutAdmin,
             nombre: admin.nombre,
             apellidoPaterno: admin.apellidoPaterno || '',
@@ -198,7 +226,7 @@ class AltaEmpresaService {
         await tenantService.updateConfig(tenant.tenantId, { adminPersonaId: persona.personaId });
         const activo = await tenantService.activar(tenant.tenantId);
 
-        return { tenant: activo || tenant, persona, passwordTemporal };
+        return { tenant: activo || tenant, persona };
     }
 }
 

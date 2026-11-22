@@ -1,7 +1,7 @@
 /**
  * Onboarding de una empresa con licencia de un solo uso.
  *
- * Dos rutas públicas, y son públicas por la misma razón que lo es la
+ * Tres rutas públicas, y son públicas por la misma razón que lo es la
  * recuperación de contraseña: **quien las usa todavía no tiene sesión y no puede
  * tenerla**, porque su empresa no existe. La credencial es el token del enlace.
  *
@@ -68,6 +68,39 @@ module.exports.validarLicencia = async (event) => {
     } catch (err) {
         console.error('Error validando licencia:', err);
         return error('No se pudo validar el enlace', 500);
+    }
+};
+
+/**
+ * POST /onboarding/disponibilidad
+ *
+ * Body: { token, nombre?, rutEmpresa? }
+ *
+ * Dice, mientras se escribe, si el nombre o el RUT de la empresa ya están
+ * tomados. Exige una licencia válida: sin ella, esto sería una consulta pública
+ * de "¿esta empresa es cliente?". Es POST para que el RUT no quede en la URL ni
+ * en los registros de acceso.
+ *
+ * Es una ayuda, no la regla: `completar` vuelve a comprobarlo todo.
+ */
+module.exports.disponibilidad = async (event) => {
+    try {
+        const body = JSON.parse(event.body || '{}');
+
+        const licencia = await LicenciaService.validar(body.token);
+        if (!licencia.ok) {
+            registrarMotivo('onboarding.disponibilidad.invalida', licencia.motivo, licencia.licencia);
+            return error(ENLACE_INVALIDO, 404);
+        }
+
+        const conflictos = await AltaEmpresaService.disponibilidadEmpresa({
+            nombre: body.nombre,
+            rutEmpresa: body.rutEmpresa,
+        });
+        return success(conflictos);
+    } catch (err) {
+        console.error('Error comprobando disponibilidad:', err);
+        return error('No se pudo comprobar la disponibilidad', 500);
     }
 };
 

@@ -21,7 +21,6 @@ export interface Worker {
     nombre: string;
     apellido?: string;
     email?: string;
-    telefono?: string;
     fotoPerfil?: string;
     cargo: string;
     fechaEnrolamiento: string;
@@ -52,7 +51,6 @@ export interface CreateWorkerData {
     nombre: string;
     apellido?: string;
     email?: string;
-    telefono?: string;
     cargo: string;
     tenantId?: string;
     obraIds?: string[];

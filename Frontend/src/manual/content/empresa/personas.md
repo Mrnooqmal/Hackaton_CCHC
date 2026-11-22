@@ -22,7 +22,7 @@ Lo que ves en **Personas** depende de dónde estás:
 1. En la vista de empresa, toca **Nueva persona**.
 2. Completa las secciones:
    - **Datos personales** — **RUT** y **Nombre** *(obligatorios)*, apellidos, fecha de
-     nacimiento, correo y teléfono.
+     nacimiento y correo.
    - **Acceso y rol** — el **Rol** *(obligatorio)*, el **Cargo** (define qué le exige el DS 44)
      y el nivel de escolaridad.
    - **Asignación a obras** *(opcional)* — al asignarla a una obra empieza su **onboarding DS
@@ -34,9 +34,12 @@ Lo que ves en **Personas** depende de dónde estás:
 ![Formulario de nueva persona](/img/personas/nueva-persona.png)
 
 ::: info Su primer acceso
-Toda persona registrada puede entrar a la plataforma con su **RUT** y, como **contraseña
-inicial, los cuatro primeros dígitos de su RUT**. Al entrar se le pide cambiarla y crear su PIN
-de firma. Si no tiene correo, no recibe ningún aviso: **díselo en persona**.
+Toda persona registrada queda **pendiente de activación**: nadie puede entrar con su RUT hasta
+que se active su acceso. Si tiene correo, le llega un enlace para elegir su contraseña (vence en
+72 horas). En terreno, con la persona presente, abre su ficha y toca **Activar acceso**, o usa
+**Activar accesos** en Personas para activar a varias seguidas: aparece una **contraseña
+temporal** que vence en **2 horas**. La persona entra en ese momento desde su teléfono, elige su
+contraseña y crea su PIN de firma.
 :::
 
 > **Rol ≠ Cargo.** El **rol** es el nivel de acceso en la plataforma. El **cargo** es su oficio
@@ -73,7 +76,7 @@ Al tocar a una persona se abre su **ficha**, con su foto, nombre, cargo y estado
 pestañas:
 
 - **Datos** — datos personales, **contacto de emergencia**, **vigilancia de salud**,
-  **entregas de EPP** y su **PIN de firma**.
+  **entregas de EPP**, su **acceso a la plataforma** (activarlo) y su **PIN de firma**.
 - **Asignaciones** — su **onboarding DS 44** (qué está completado, pendiente o no aplica), sus
   **obras** actuales y anteriores, el **historial de cumplimiento** con todas sus firmas, sus
   **cursos y certificaciones** y sus **evidencias vigentes** (examen de altura, certificados).
@@ -114,8 +117,9 @@ El **rol** define qué puede hacer en la plataforma. El **cargo** define su trab
 con eso, qué documentos y capacitaciones necesita.
 
 **Creé a la persona, pero no puede entrar.**
-Su contraseña inicial son los cuatro primeros dígitos de su RUT. Si ya la cambió y no la
-recuerda, puede usar **¿Olvidaste tu contraseña?** (si tiene correo registrado).
+Su acceso está pendiente de activación: actívalo desde su ficha con la persona presente. Si la
+contraseña temporal venció sin usarse, toca **Activar de nuevo**. Si ya eligió su contraseña y no
+la recuerda, puede usar **¿Olvidaste tu contraseña?** (si tiene correo registrado).
 
 **¿Puedo asignar una persona a varias obras?**
 Sí. Puede trabajar en varias obras a la vez, con su cargo en cada una.

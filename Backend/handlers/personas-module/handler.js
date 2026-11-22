@@ -9,23 +9,23 @@ const ExcelJS = require('exceljs');
 const { v4: uuidv4 } = require('uuid');
 const { PutCommand, QueryCommand, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
-const { PersonaService, passwordInicialDeRut } = require('../../lib/services/PersonaService');
+const { PersonaService } = require('../../lib/services/PersonaService');
 const { ObraService } = require('../../lib/services/ObraService');
 const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { normalizeRol, validateRut } = require('../../lib/utils/validation');
-const { PERMISSIONS } = require('../../lib/permissions');
+const { PERMISSIONS, resolvePersonaPermisos } = require('../../lib/permissions');
+const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const auditoria = require('../../lib/gobernanza/auditoria');
 const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { seOpone } = require('../../lib/gobernanza/derechos');
-const { sendWelcomeEmail } = require('../notifications/handler');
 const { eventBus } = require('../../lib/events/EventBus');
 const cargas = require('../../lib/cargas');
 const { normalizeCargoCodigo, resolveCargoKitFromCatalog, resolveKitUnion, esEvidenciaReutilizable } = require('../../lib/ds44');
 const { InboxRepository } = require('../inbox-module/inbox.repository');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
-const { conNeutro } = require('../../lib/degradacion');
+const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
 const { conAuditoriaSalud, anotarAccesoSalud, tieneDatosDeSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
@@ -46,6 +46,9 @@ const ESTADO_POR_ERROR_DE_PIN = {
     PIN_CAMBIO_CONCURRENTE: 409,
     PIN_NO_CONFIGURADO: 409,
     PIN_BLOQUEADO: 423,
+    TEMPORAL_CONFLICTO: 409,
+    SIN_ACCESO_WEB: 409,
+    SIN_CORREO: 409,
 };
 
 const personaService = new PersonaService();
@@ -86,7 +89,6 @@ const TEMPLATE_HEADERS = [
     'apellidoMaterno',
     'fechaNacimiento',
     'email',
-    'telefono',
     'rol',
     'cargo',
     'obra',
@@ -106,8 +108,8 @@ const TEMPLATE_HEADERS = [
 // de onboarding). Un rol de gestión (Prevencionista, Jefe de Obra, Admin) NO lleva
 // cargo de terreno: deja la columna cargo vacía.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-5', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Persona trabajadora', 'Carpintero', 'OBRA-001', '11.111.111-1', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Supervisor', '', 'OBRA-001', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
+    ['12.345.678-5', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', 'Persona trabajadora', 'Carpintero', 'OBRA-001', '11.111.111-1', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', 'Supervisor', '', 'OBRA-001', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
@@ -116,8 +118,8 @@ const TEMPLATE_INSTRUCTIONS = [
     '3. cargo: cargo del trabajador (ej. Carpintero, Jornal de aseo y acarreo, Maestro albañil, Prevencionista).',
     '4. obra: elige la obra del desplegable (muestra "Nombre (CODIGO)"). Tambien puedes escribir el codigo (ej. OBRA-001). Para asignar a varias obras, separalas por coma. Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. supervisor: RUT del supervisor de la cuadrilla. Puede venir en este mismo Excel con rol "Supervisor". Si se deja vacio, la persona queda sin cuadrilla y se le asigna un supervisor despues.',
-    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional.',
-    '7. El email es opcional. Con o sin email, la contraseña temporal para el acceso web son los primeros 4 digitos del RUT; la persona debera cambiarla en su primer ingreso. Si tiene email, ademas se le envia por correo.',
+    '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional. La columna viene en formato texto para que Excel no la convierta en fecha: escribela tal cual, con guiones.',
+    '7. El email es opcional. Las personas quedan pendientes de activacion: el acceso se activa en terreno desde su ficha o desde la lista de pendientes. Si tiene email y se marca la opcion al cargar, se le envia un enlace para que elija su contrasena.',
     '8. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '9. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
     '10. Reemplaza los datos de ejemplo por los de tus trabajadores antes de importar.',
@@ -198,8 +200,6 @@ const headerAliases = {
     fechanac: 'fechaNacimiento',
     email: 'email',
     correo: 'email',
-    telefono: 'telefono',
-    phone: 'telefono',
     rol: 'rol',
     cargo: 'cargo',
     obra: 'obra',
@@ -900,7 +900,7 @@ const RELACION_EMERGENCIA_OPCIONES = [
 ];
 
 // Columnas (1-based) de la hoja Personas que llevan desplegable.
-const COL = { rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, relacion: 15 };
+const COL = { fechaNacimiento: 5, rol: 7, cargo: 8, obra: 9, nivelEscolar: 11, telefonoEmergencia: 13, relacion: 14 };
 const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
 
 // Etiqueta de obra para el desplegable de la plantilla y su resolución: "Nombre
@@ -939,6 +939,7 @@ const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
     // Encabezado en negrita.
     ws.getRow(1).font = { bold: true };
     ws.columns.forEach((col) => { col.width = 20; });
+    for (const c of [COL.fechaNacimiento, COL.telefonoEmergencia]) ws.getColumn(c).numFmt = '@';
 
     // Rangos de cada lista en la hoja oculta.
     const rango = (letra, n) => `Listas!$${letra}$1:$${letra}$${Math.max(n, 1)}`;
@@ -998,7 +999,7 @@ const bulkRutKey = (r) => String(r || '').replace(/[.\-]/g, '').toLowerCase();
 // Lo único de una fila que se guarda en la carga (D-24): los campos de la
 // plantilla. Cualquier otra propiedad del cuerpo se ignora.
 const CAMPOS_FILA_CARGA = [
-    'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email', 'telefono',
+    'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email',
     'rol', 'cargo', 'obra', 'supervisor', 'nivelEscolar',
     'contactoEmergenciaNombre', 'contactoEmergenciaTelefono', 'contactoEmergenciaRelacion', 'cursos',
 ];
@@ -1027,7 +1028,7 @@ const parseBulkWorkbook = (buffer) => {
         filas.push({
             filaExcel: i + 1,
             rut: get('rut'), nombre: get('nombre'), apellidoPaterno, apellidoMaterno,
-            fechaNacimiento: get('fechaNacimiento'), email: get('email'), telefono: get('telefono'),
+            fechaNacimiento: get('fechaNacimiento'), email: get('email'),
             rol: get('rol'), cargo: get('cargo'), obra: get('obra'), supervisor: get('supervisor'),
             nivelEscolar: get('nivelEscolar'),
             contactoEmergenciaNombre: get('contactoEmergenciaNombre'),
@@ -1144,7 +1145,7 @@ const dependenciasCarga = () => ({
     },
     crearFicha: (tenantId, f, { personaId: id, obraIds }) => personaService.crear(tenantId, {
         rut: f.rut, nombre: f.nombre, apellidoPaterno: f.apellidoPaterno, apellidoMaterno: f.apellidoMaterno,
-        fechaNacimiento: f.fechaNacimiento, email: f.email, telefono: f.telefono,
+        fechaNacimiento: f.fechaNacimiento, email: f.email,
         rol: f.rol, cargo: f.cargo ? normalizeCargoCodigo(f.cargo) : '',
         obraIds, nivelEscolar: f.nivelEscolar,
         contactoEmergencia: { nombre: f.contactoEmergenciaNombre, telefono: f.contactoEmergenciaTelefono, relacion: f.contactoEmergenciaRelacion },
@@ -1159,7 +1160,10 @@ const dependenciasCarga = () => ({
             await runOnboardingForObra({ tenantId, obraId: oId, persona, solicitante: null });
         }
     },
-    enviarBienvenida: (persona, password) => sendWelcomeEmail(persona.email, persona.nombre, persona.rut, password || passwordInicialDeRut(persona.rut)),
+    enviarActivacion: (persona, meta) => personaService.enviarEnlaceActivacion(persona.tenantId, persona.personaId, {
+        actor: { id: meta.iniciadaPor?.personaId || 'carga-masiva', tipo: 'persona', nombre: meta.iniciadaPor?.nombre || 'Tu empresa' },
+        origen: { canal: 'carga_masiva' },
+    }),
     supervisoresExistentes: async (tenantId) => (await buildBulkContext(tenantId)).supervisoresPorRut,
     // Preserva los cargos ya asignados en la obra; solo fija el supervisor.
     asignarSupervisor: async ({ tenantId, personaId: id, obraId, supervisorId }) => {
@@ -1170,6 +1174,7 @@ const dependenciasCarga = () => ({
 });
 
 module.exports.dependenciasCarga = dependenciasCarga;
+module.exports.createTemplateBuffer = createTemplateBuffer;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
@@ -1252,7 +1257,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
     // otra, con `personas.detalle` (la pantalla de la ficha) o `personas.ver`.
     // Sin eso, lo mismo que el listado (H-16). Hasta el 8 de noviembre de 2026
     // solo el listado estaba recortado: GET /personas/{id} y /by-rut/{rut}
-    // entregaban RUT, fecha de nacimiento, teléfono y contacto de emergencia a
+    // entregaban RUT, fecha de nacimiento y contacto de emergencia a
     // cualquier sesión de la empresa (revisión de minimización, fila 7.5).
     const puedeVerFicha = (persona) => persona.personaId === sesion?.personaId
         || puede(PERMISSIONS.PERSONAS_DETALLE) || puede(PERMISSIONS.PERSONAS_VER);
@@ -1264,7 +1269,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
      * le podía cambiar el rol a `admin`, el estado a desvinculado o la ficha de
      * vigilancia de salud. Se resuelve por campo y no por ruta porque la misma
      * ruta atiende dos cosas distintas: cada quien editando su perfil (foto,
-     * teléfono, correo) y la gestión de la ficha de un tercero.
+     * correo) y la gestión de la ficha de un tercero.
      *
      * Devuelve el mensaje del rechazo, o null si todo lo enviado está permitido.
      */
@@ -1273,7 +1278,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         // porque es un dato de contacto: el ingreso es por RUT, así que cambiarlo
         // no cambia con qué se entra, solo adónde llegan avisos y recuperaciones.
         const CAMPOS_PROPIOS = new Set([
-            'fotoPerfil', 'telefono', 'email', 'preferencias', 'contactoEmergencia',
+            'fotoPerfil', 'email', 'preferencias', 'contactoEmergencia',
         ]);
         // Campos con dueño distinto de PERSONAS_CREAR (el resto exige ese permiso).
         const PERMISOS_POR_CAMPO = {
@@ -1563,7 +1568,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             // Quién crea sale de la sesión, no del cuerpo.
             const creadorId = sesion.personaId;
 
-            const { persona, passwordTemporal } = await personaService.crear(tenantId, {
+            const { persona } = await personaService.crear(tenantId, {
                 ...body,
                 creadoPor: creadorId,
             });
@@ -1592,25 +1597,24 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 }
             }
 
-            // Enviar email de bienvenida si tiene acceso web
-            let emailSent = false;
-            if (persona.email && passwordTemporal) {
+            let enlaceActivacion = 'sin-correo';
+            if (persona.email && persona.tieneAccesoWeb) {
+                const nombre = await nombreDeSesion();
                 try {
-                    const nombreCompleto = [persona.nombre, persona.apellido].filter(Boolean).join(' ');
-                    const emailResult = await sendWelcomeEmail(
-                        persona.email, nombreCompleto, persona.rut, passwordTemporal
-                    );
-                    emailSent = emailResult?.sent || false;
-                } catch (emailErr) {
-                    console.error('Error sending welcome email:', emailErr);
+                    enlaceActivacion = (await personaService.enviarEnlaceActivacion(tenantId, persona.personaId, {
+                        actor: { id: creadorId, tipo: 'persona', nombre: nombre || 'Tu empresa', rol: sesion.rol },
+                        origen: auditoria.origenDe(event),
+                    })).correo;
+                } catch (enlaceErr) {
+                    registrarFallo('persona.alta.enlace_activacion', enlaceErr, { personaId: persona.personaId });
+                    enlaceActivacion = 'fallido';
                 }
             }
 
             return created({
                 message: 'Persona creada exitosamente',
                 persona: fichaVisible(persona),
-                passwordTemporal: passwordTemporal || undefined,
-                emailNotificado: emailSent
+                enlaceActivacion,
             });
         }
 
@@ -2219,17 +2223,46 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             }
         }
 
-        // POST /personas/{id}/reset-password — Resetear contraseña.
-        // Devuelve la contraseña temporal en la respuesta: sin permiso era una toma
-        // de cuenta de un solo paso sobre cualquier persona conocida.
-        if (method === 'POST' && personaId && action === 'reset-password') {
+        if (method === 'POST' && personaId && (action === 'activar-acceso' || action === 'enviar-activacion')) {
             if (!sesion) return sesionRes.respuesta;
-            if (!puede(PERMISSIONS.PERSONAS_CREAR)) {
-                return error('No tienes permiso para resetear contraseñas', 403);
+            if (!puede(PERMISSIONS.PERSONA_ACTIVAR_ACCESO)) {
+                return error('No tienes permiso para activar el acceso de otras personas', 403);
             }
-            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
-            const result = await personaService.resetPassword(tenantId, personaId);
-            return success(result);
+            const objetivo = await personaDelTenant(personaId);
+            if (!objetivo) return error('Persona no encontrada', 404);
+            if (objetivo.personaId === sesion.personaId) return error('No puedes activar tu propio acceso', 403);
+            const tenant = await tenantService.getById(tenantId);
+            if (!resolvePersonaPermisos(objetivo, tenant).every((p) => puede(p))) {
+                return error('No puedes activar el acceso de alguien que tiene permisos que tú no tienes', 403);
+            }
+            const nombre = await nombreDeSesion();
+            if (!nombre) return error('No se pudo identificar a quien activa. Intenta de nuevo.', 503);
+            const actor = { id: sesion.personaId, tipo: 'persona', nombre, rol: sesion.rol };
+            const origen = auditoria.origenDe(event);
+
+            try {
+                if (action === 'enviar-activacion') {
+                    return success(await personaService.enviarEnlaceActivacion(tenantId, personaId, { actor, origen }));
+                }
+                const { fecha, horario } = fechaHoraChile(new Date());
+                const r = await personaService.emitirTemporal(tenantId, personaId, {
+                    horas: 2,
+                    actor,
+                    operacion: 'credencial.acceso_activado',
+                    exigir: 'pendiente',
+                    origen,
+                    aviso: {
+                        asunto: 'Tu acceso a Build & Serve fue activado',
+                        contenido: `${nombre} activó tu acceso el ${fecha} a las ${horario}. `
+                            + 'Si no estabas presente cuando ocurrió, avisa a tu empresa o al prevencionista de tu obra.',
+                    },
+                });
+                return success({ password: r.password, vence: r.vence, sesionesCerradas: r.sesionesCerradas });
+            } catch (err) {
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
+                throw err;
+            }
         }
 
         return error('Ruta no encontrada', 404);

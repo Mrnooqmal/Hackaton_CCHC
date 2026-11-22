@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { onboardingApi } from '../api/onboarding.api';
-import type { LicenciaValida } from '../api/onboarding.api';
+import type { LicenciaValida, DisponibilidadEmpresa } from '../api/onboarding.api';
 import {
     FiArrowRight, FiArrowLeft, FiCheck, FiCheckCircle, FiLock, FiEye, FiEyeOff, FiMail,
     FiPlus,
@@ -10,6 +10,7 @@ import { LuLink2Off } from 'react-icons/lu';
 import '../css/AuthCard.css';
 import { SUGGESTED_COLORS, monograma } from '../utils/identidadEmpresa';
 import LogoModos from '../components/LogoModos';
+import TarjetaAcceso from '../components/TarjetaAcceso';
 import type { LogosValor } from '../components/LogoModos';
 import { DEFAULT_PRIMARY_COLOR } from '../context/BrandContext';
 
@@ -84,27 +85,6 @@ const PASOS: { id: Paso; label: string }[] = [
     { id: 'acceso', label: 'Acceso' },
 ];
 
-/** La tarjeta del login, con su logo. Fuera del componente: si se declarara
- *  adentro, React la montaría de nuevo en cada tecla y los campos perderían el foco. */
-function Tarjeta({ children }: { children: React.ReactNode }) {
-    return (
-        <div className="lp-root">
-            <div className="lp-bg" aria-hidden="true" />
-            <main className="lp-card">
-                <div className="lp-head">
-                    <div className="lp-logo" aria-label="Build and Serve">
-                        <span className="lp-logo-build">Build</span>
-                        <span className="lp-logo-amp">&amp;</span>
-                        <span className="lp-logo-serve">Serve</span>
-                    </div>
-                    <div className="lp-divider" aria-hidden="true" />
-                </div>
-                {children}
-            </main>
-        </div>
-    );
-}
-
 export default function Onboarding() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -129,6 +109,13 @@ export default function Onboarding() {
     const [logoError, setLogoError] = useState('');
     const logo = logos.claro;
     const logoOscuro = logos.mismo ? null : logos.oscuro;
+
+    // Disponibilidad del nombre y el RUT de la empresa, consultada mientras se
+    // escriben. Se guarda con la clave de lo consultado: una respuesta vieja no
+    // vale para lo que hay escrito ahora.
+    const empresaNombre = empresa.nombre.trim();
+    const claveEmpresa = `${empresaNombre}|${empresa.rutEmpresa}`;
+    const [disponibilidad, setDisponibilidad] = useState<{ clave: string } & DisponibilidadEmpresa | null>(null);
 
     useEffect(() => {
         let vigente = true;
@@ -157,11 +144,29 @@ export default function Onboarding() {
         return () => { vigente = false; };
     }, [token]);
 
+    useEffect(() => {
+        if (!licencia || empresaNombre.length < 3 || !rutValido(empresa.rutEmpresa)) return;
+        let vigente = true;
+        const espera = setTimeout(async () => {
+            try {
+                const res = await onboardingApi.disponibilidad(token, { nombre: empresaNombre, rutEmpresa: empresa.rutEmpresa });
+                if (!vigente) return;
+                setDisponibilidad({ clave: claveEmpresa, ...(res.success && res.data ? res.data : { nombre: null, rutEmpresa: null }) });
+            } catch {
+                // Si no se pudo comprobar, no se bloquea: el alta lo vuelve a revisar al final.
+                if (vigente) setDisponibilidad({ clave: claveEmpresa, nombre: null, rutEmpresa: null });
+            }
+        }, 450);
+        return () => { vigente = false; clearTimeout(espera); };
+    }, [licencia, token, empresaNombre, empresa.rutEmpresa, claveEmpresa]);
+
     const datosOk = admin.nombre.trim().length >= 2
         && admin.apellidoPaterno.trim().length >= 2
         && rutValido(admin.rut)
         && fechaOk(admin.fechaNacimiento);
-    const empresaOk = empresa.nombre.trim().length >= 3 && rutValido(empresa.rutEmpresa);
+    const disponibilidadActual = disponibilidad?.clave === claveEmpresa ? disponibilidad : null;
+    const empresaOk = empresaNombre.length >= 3 && rutValido(empresa.rutEmpresa)
+        && !!disponibilidadActual && !disponibilidadActual.nombre && !disponibilidadActual.rutEmpresa;
     const colorOk = COLOR_HEX.test(color);
     const requisitos = [
         { label: `${MIN_PASSWORD} caracteres o más`, ok: admin.password.length >= MIN_PASSWORD },
@@ -214,18 +219,18 @@ export default function Onboarding() {
     // ── Estados sin formulario ────────────────────────────────────────────────
     if (validando) {
         return (
-            <Tarjeta>
+            <TarjetaAcceso>
                 <div className="lp-body onb-estado" role="status">
                     <div className="onb-spinner" />
                     <p className="lp-hint">Validando el enlace de activación…</p>
                 </div>
-            </Tarjeta>
+            </TarjetaAcceso>
         );
     }
 
     if (enlaceInvalido || !licencia) {
         return (
-            <Tarjeta>
+            <TarjetaAcceso>
                 <div className="lp-body onb-resultado">
                     <span className="onb-resultado-icono onb-resultado-icono--error"><LuLink2Off size={28} /></span>
                     <h1 className="lp-title">Enlace inválido o vencido</h1>
@@ -237,13 +242,13 @@ export default function Onboarding() {
                     </ul>
                 </div>
                 <Link to="/login" className="onb-btn-secundario">Ir al inicio de sesión</Link>
-            </Tarjeta>
+            </TarjetaAcceso>
         );
     }
 
     if (listo) {
         return (
-            <Tarjeta>
+            <TarjetaAcceso>
                 <div className="lp-body onb-resultado">
                     <span className="onb-resultado-icono onb-resultado-icono--ok"><FiCheckCircle size={28} /></span>
                     <h1 className="lp-title">Empresa creada</h1>
@@ -267,7 +272,7 @@ export default function Onboarding() {
                     <FiArrowRight size={15} />
                 </Link>
                 <p className="onb-nota">Te llevamos al inicio de sesión en unos segundos…</p>
-            </Tarjeta>
+            </TarjetaAcceso>
         );
     }
 
@@ -308,7 +313,7 @@ export default function Onboarding() {
     const nombreEmpresa = empresa.nombre.trim() || 'Tu empresa';
 
     return (
-        <Tarjeta>
+        <TarjetaAcceso>
             <div className="lp-body">
                 {Stepper}
 
@@ -398,8 +403,11 @@ export default function Onboarding() {
                                     value={empresa.nombre}
                                     onChange={(e) => setEmpresa({ ...empresa, nombre: e.target.value })}
                                     placeholder="Constructora Ejemplo SpA" />
-                                {empresa.nombre && empresa.nombre.trim().length < 3 && (
+                                {empresa.nombre && empresaNombre.length < 3 && (
                                     <span className="onb-field-hint">Escribe el nombre completo de la empresa</span>
+                                )}
+                                {disponibilidadActual?.nombre && (
+                                    <span className="onb-field-hint onb-field-hint--error" role="alert">{disponibilidadActual.nombre}</span>
                                 )}
                             </div>
                             <div className="lp-field">
@@ -410,6 +418,9 @@ export default function Onboarding() {
                                     placeholder="76.111.999-0" />
                                 {empresa.rutEmpresa && !rutValido(empresa.rutEmpresa) && (
                                     <span className="onb-field-hint onb-field-hint--error">El RUT no es válido</span>
+                                )}
+                                {disponibilidadActual?.rutEmpresa && (
+                                    <span className="onb-field-hint onb-field-hint--error" role="alert">{disponibilidadActual.rutEmpresa}</span>
                                 )}
                             </div>
                             <button type="submit" className="lp-submit" disabled={!empresaOk}>
@@ -566,7 +577,7 @@ export default function Onboarding() {
                 )}
             </div>
             {Pie}
-        </Tarjeta>
+        </TarjetaAcceso>
     );
 }
 

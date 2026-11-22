@@ -1137,44 +1137,27 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
 }
 .enr-foto-quitar:hover { color: #c2410c; }
 
-.enr-telefono { margin-top: 20px; }
-.enr-telefono-campo {
-    display: flex;
-    height: 44px;
-    box-sizing: border-box;
+.enr-consent {
+    margin-top: 16px;
+    padding: 12px 14px;
     background: #f8fafc;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
-    overflow: hidden;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
-.enr-telefono-campo:focus-within {
-    border-color: #006edc;
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(0, 110, 220, 0.12);
-}
-.enr-telefono-prefijo {
+.enr-consent-texto { margin: 0; font-size: 12.5px; line-height: 1.5; color: #475569; }
+.enr-consent-check {
     display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 12px;
-    border-right: 1px solid #e2e8f0;
-    font-size: 14px;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 13.5px;
     font-weight: 500;
-    color: #334155;
-}
-.enr-telefono-campo input {
-    flex: 1;
-    min-width: 0;
-    padding: 0 12px;
-    border: none;
-    background: transparent;
-    font-family: inherit;
-    font-size: 14px;
+    line-height: 1.4;
     color: #0f172a;
-    outline: none;
+    cursor: pointer;
 }
-.enr-telefono-campo input::placeholder { color: #94a3b8; }
+.enr-consent-check .custom-checkbox { margin-top: 1px; }
+.enr-consent-nota { margin: 8px 0 0; font-size: 12px; color: #64748b; }
 
 .enr-omitir {
     display: block;
@@ -1224,10 +1207,108 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
     .pin-casillas { gap: 8px; }
     .enr-datos { gap: 8px; }
     .enr-datos li { padding: 12px 10px; }
-    .enr-telefono-campo input { font-size: 16px; }
     .enr-final { margin-bottom: 20px; }
 }
 
 @media (max-width: 360px) {
     .pin-casilla { width: 54px; height: 66px; }
+}
+
+/* La tarjeta de onboarding es siempre clara: el selector de logo (LogoModos)
+   usa los tokens del tema, que en modo oscuro dejan el texto en blanco. */
+.lp-card .lm {
+    --text-primary: #0f172a;
+    --text-secondary: #424b5a;
+    --text-muted: #64748b;
+    --surface-border: #e2e8f0;
+    --surface-elevated: #ffffff;
+    --surface-hover: #f1f5f9;
+}
+
+/* Enrolamiento: enlace al aviso de privacidad y su vista completa.
+   La tarjeta es siempre clara, así que el aviso fija los tokens claros. */
+.enr-aviso-enlace {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    margin: 16px 0;
+    padding: 0 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+    text-align: left;
+    cursor: pointer;
+}
+.enr-aviso-enlace span { flex: 1; }
+.enr-aviso-enlace svg { color: #006edc; flex-shrink: 0; }
+.enr-aviso-enlace:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.enr-aviso-enlace:focus-visible { outline: 2px solid #006edc; outline-offset: 2px; }
+
+.enr-aviso {
+    --text-primary: #0f172a;
+    --text-secondary: #424b5a;
+    --surface-border: #e2e8f0;
+    --surface-hover: #f1f5f9;
+    --accent: #006edc;
+    margin-top: 16px;
+    text-align: left;
+    color: #0f172a;
+}
+/* Alto fijo de la tarjeta; solo el aviso hace scroll, el fondo no crece */
+.enr-card-aviso { height: min(720px, calc(100dvh - 48px)); }
+.enr-card-aviso .enr-aviso {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 8px 12px 0;
+    border-top: 1px solid #e8edf3;
+    padding-top: 14px;
+}
+.enr-card-aviso .enr-aviso:focus-visible { outline: 2px solid #006edc; outline-offset: 2px; }
+@media (max-width: 560px) {
+    .enr-card-aviso { height: calc(100dvh - 32px); }
+}
+.enr-aviso .aviso-privacidad h3 { color: #0f172a; }
+.enr-aviso .aviso-privacidad strong { color: #0f172a; }
+.enr-aviso .form-error { color: #b91c1c; }
+
+/* Scroll dentro de la tarjeta: fino y claro, como el del menú lateral.
+   La barra global usa los tokens del tema, que en modo oscuro pintan un riel
+   oscuro sobre la tarjeta blanca. */
+.lp-card .enr-aviso,
+.lp-card .aviso-privacidad__tabla,
+.lp-card .lp-tenant-list {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+.lp-card .enr-aviso:hover,
+.lp-card .aviso-privacidad__tabla:hover,
+.lp-card .lp-tenant-list:hover { scrollbar-color: #94a3b8 transparent; }
+
+.lp-card .enr-aviso::-webkit-scrollbar,
+.lp-card .aviso-privacidad__tabla::-webkit-scrollbar,
+.lp-card .lp-tenant-list::-webkit-scrollbar { width: 8px; height: 8px; }
+.lp-card .enr-aviso::-webkit-scrollbar-track,
+.lp-card .aviso-privacidad__tabla::-webkit-scrollbar-track,
+.lp-card .lp-tenant-list::-webkit-scrollbar-track { background: transparent; }
+.lp-card .enr-aviso::-webkit-scrollbar-thumb,
+.lp-card .aviso-privacidad__tabla::-webkit-scrollbar-thumb,
+.lp-card .lp-tenant-list::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-clip: padding-box;
+}
+.lp-card .enr-aviso::-webkit-scrollbar-thumb:hover,
+.lp-card .aviso-privacidad__tabla::-webkit-scrollbar-thumb:hover,
+.lp-card .lp-tenant-list::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+    background-clip: padding-box;
 }

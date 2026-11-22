@@ -92,7 +92,6 @@ Fuera de camino caliente (cron y scripts, aceptable pero cuentan para el inventa
 | `rut` | 55 | Identificatorio |
 | `fechaNacimiento` | 56 | Personal |
 | `email` | 57 | Contacto |
-| `telefono` | 58 | Contacto |
 | `contactoEmergencia` | 92 | Personal de tercero |
 | `vigilanciaSalud` | 116-122 | **Salud**: protocolos, fecha del último examen, aptitud laboral, restricciones |
 | `restriccionLaboral` | 125 | **Salud**: restricción o traslado por enfermedad profesional |
