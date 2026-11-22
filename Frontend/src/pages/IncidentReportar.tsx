@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { plural } from '../utils/plural';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-    FiUpload, FiCamera, FiX, FiMic, FiRefreshCw, FiCheck,
+    FiCamera, FiX, FiMic, FiRefreshCw, FiCheck,
 } from 'react-icons/fi';
 import { incidentsApi, workersApi, aiApi, SIN_CONSENTIMIENTO_DICTADO, MAX_MEDIDAS_INMEDIATAS } from '../api/client';
 import { privacidadApi } from '../api/gobernanza.api';
@@ -13,8 +13,9 @@ import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
 import { FormPage, FieldSection, PageHeader, Select, SegmentedControl, AlertBanner } from '../components/ui';
 import { ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
-import { MAX_EVIDENCIAS_POR_ENVIO, MIME_FOTOS } from '../utils/casos';
+import { MAX_EVIDENCIAS_POR_ENVIO } from '../utils/casos';
 import { subirYAdjuntarFotos } from '../utils/subirFotos';
+import { ZonaCargaFotos, MiniaturasFotos } from '../components/FotosEvidencia';
 import { ancla } from '../ayuda/registro';
 
 const INITIAL_FORM: CreateIncidentData = {
@@ -256,12 +257,9 @@ export default function IncidentReportar() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
+    const handleFileSelect = (elegidas: File[], descartados: number) => {
         // Solo fotos: el servidor no firma la subida de otro tipo de archivo.
-        const archivos = Array.from(e.target.files);
-        const elegidas = archivos.filter((f) => MIME_FOTOS.includes(f.type));
-        if (elegidas.length < archivos.length) setFormError('Solo se aceptan fotos (JPG, PNG, WebP o HEIC).');
+        if (descartados > 0) setFormError('Solo se aceptan fotos (JPG, PNG, WebP o HEIC).');
         setUploadedFiles((prev) => {
             if (prev.length + elegidas.length > MAX_FOTOS) setFormError(`Puedes adjuntar hasta ${MAX_FOTOS} fotos por reporte.`);
             return [...prev, ...elegidas].slice(0, MAX_FOTOS);
@@ -652,14 +650,7 @@ export default function IncidentReportar() {
                 <FieldSection title="Evidencia fotográfica" inline description="Opcional, pero ayuda a la revisión" ancla={ancla('incidente-reportar.evidencia')}>
                     <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                         <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch' }}>
-                            <div className="upload-zone" style={{ flex: 1 }}>
-                                <input type="file" id="inc-file-upload" className="hidden" multiple accept={MIME_FOTOS.join(',')} onChange={handleFileSelect} />
-                                <label htmlFor="inc-file-upload" className="upload-label">
-                                    <FiUpload size={22} className="text-muted mb-1" />
-                                    <p className="font-semibold" style={{ fontSize: 'var(--text-sm)' }}>Seleccionar fotos</p>
-                                    <p className="text-xs text-muted">PNG, JPG hasta 10MB</p>
-                                </label>
-                            </div>
+                            <ZonaCargaFotos id="inc-file-upload" onElegir={handleFileSelect} />
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flexShrink: 0 }}>
                                 <button type="button" className="inc-camera-btn" data-active={cameraActive} onClick={cameraActive ? capturePhoto : startCamera}>
                                     <FiCamera size={20} />
@@ -680,21 +671,7 @@ export default function IncidentReportar() {
                             </div>
                         )}
 
-                        {uploadedFiles.length > 0 && (
-                            <div>
-                                <p className="text-sm font-semibold mb-2">{plural(uploadedFiles.length, 'archivo seleccionado', 'archivos seleccionados')}</p>
-                                <div className="inc-evidence-grid">
-                                    {uploadedFiles.map((file, index) => (
-                                        <div key={index} className="inc-evidence-thumb">
-                                            <img src={URL.createObjectURL(file)} alt={file.name} />
-                                            <button type="button" className="inc-evidence-remove" onClick={() => removeFile(index)} aria-label={`Quitar ${file.name}`}>
-                                                <FiX size={13} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        <MiniaturasFotos archivos={uploadedFiles} onQuitar={removeFile} />
                     </div>
                 </FieldSection>
 
@@ -773,19 +750,6 @@ export default function IncidentReportar() {
                     font-size: var(--text-xs); color: var(--primary-400); font-weight: 600;
                 }
                 .inc-camera-preview video { width: 100%; max-height: 240px; object-fit: cover; display: block; }
-
-                .inc-evidence-grid { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-                .inc-evidence-thumb {
-                    position: relative; width: 86px; height: 86px; flex-shrink: 0;
-                    border-radius: var(--radius-md); overflow: hidden;
-                    border: 1px solid var(--surface-border); background: var(--surface-elevated);
-                }
-                .inc-evidence-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-                .inc-evidence-remove {
-                    position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%;
-                    border: none; background: rgba(0,0,0,0.55); color: #fff;
-                    display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
-                }
 
                 .inc-confirm-box { background: var(--surface-elevated); border: 1px solid var(--surface-border); border-radius: var(--radius-lg); overflow: hidden; }
                 .inc-confirm-meta {

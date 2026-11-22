@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { FiUploadCloud } from 'react-icons/fi';
 import type { Incident } from '../api/client';
 import { useToast } from '../context/ToastContext';
-import { MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL, MIME_FOTOS } from '../utils/casos';
+import { MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL } from '../utils/casos';
 import { subirYAdjuntarFotos } from '../utils/subirFotos';
 import { plural } from '../utils/plural';
+import { MiniaturasFotos, ZonaCargaFotos } from './FotosEvidencia';
 
 interface Props {
     incidente: Incident;
@@ -21,13 +22,16 @@ interface Props {
  * y `POST /incidents/{id}/evidencias`), con sus reglas: lo puede hacer quien reportó el caso
  * o quien gestiona incidentes, y el servidor lo rechaza en un caso cerrado (el padre ni
  * monta esta sección en ese caso).
+ *
+ * La zona de carga y las miniaturas son las mismas del formulario de reporte
+ * (`FotosEvidencia`), para que las dos pantallas no vuelvan a diferir. La cámara es solo
+ * del formulario.
  */
 export default function AgregarFotosAlCaso({ incidente, onCambio }: Props) {
     const { toast } = useToast();
     const [elegidas, setElegidas] = useState<File[]>([]);
     const [subiendo, setSubiendo] = useState(false);
     const [error, setError] = useState('');
-    const input = useRef<HTMLInputElement>(null);
 
     const yaHay = incidente.evidencias?.length ?? 0;
     const cupo = Math.max(0, MAX_EVIDENCIAS_TOTAL - yaHay);
@@ -37,14 +41,18 @@ export default function AgregarFotosAlCaso({ incidente, onCambio }: Props) {
         return <p className="inc-ficha-texto inc-ficha-vacio">El caso ya tiene el máximo de {MAX_EVIDENCIAS_TOTAL} fotos.</p>;
     }
 
-    const elegir = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const archivos = Array.from(e.target.files ?? []);
-        const fotos = archivos.filter((f) => MIME_FOTOS.includes(f.type));
+    // Suma a lo ya elegido (se puede seguir agregando) hasta el tope por envío.
+    const elegir = (fotos: File[], descartados: number) => {
         let aviso = '';
-        if (fotos.length < archivos.length) aviso = 'Solo se aceptan fotos (JPG, PNG, WebP o HEIC).';
-        if (fotos.length > limite) aviso = `Puedes agregar hasta ${plural(limite, 'foto', 'fotos')} por vez.`;
+        if (descartados > 0) aviso = 'Solo se aceptan fotos (JPG, PNG, WebP o HEIC).';
+        if (elegidas.length + fotos.length > limite) aviso = `Puedes agregar hasta ${plural(limite, 'foto', 'fotos')} por vez.`;
         setError(aviso);
-        setElegidas(fotos.slice(0, limite));
+        setElegidas([...elegidas, ...fotos].slice(0, limite));
+    };
+
+    const quitar = (indice: number) => {
+        setError('');
+        setElegidas((prev) => prev.filter((_, i) => i !== indice));
     };
 
     const subir = async (e: React.FormEvent) => {
@@ -61,7 +69,6 @@ export default function AgregarFotosAlCaso({ incidente, onCambio }: Props) {
                 toast.success(adjuntas.length === 1 ? 'Foto agregada al caso' : 'Fotos agregadas al caso');
             }
             setElegidas([]);
-            if (input.current) input.current.value = '';
             if (adjuntas.length > 0) onCambio?.();
         } finally {
             setSubiendo(false);
@@ -70,27 +77,18 @@ export default function AgregarFotosAlCaso({ incidente, onCambio }: Props) {
 
     return (
         <form className="inc-papeles-form" onSubmit={subir}>
-            <div className="form-group">
-                <label className="form-label" htmlFor="caso-fotos">
-                    Agregar fotos (JPG, PNG, WebP o HEIC; hasta {plural(limite, 'foto', 'fotos')} por vez)
-                </label>
-                <input
-                    id="caso-fotos"
-                    ref={input}
-                    className="form-input"
-                    type="file"
-                    multiple
-                    accept={MIME_FOTOS.join(',')}
-                    disabled={subiendo}
-                    onChange={elegir}
-                />
+            <div style={{ display: 'flex' }}>
+                <ZonaCargaFotos id="caso-fotos" onElegir={elegir} disabled={subiendo} />
             </div>
+            <MiniaturasFotos archivos={elegidas} onQuitar={quitar} disabled={subiendo} />
             {error && <div className="alert alert-danger" role="alert"><div>{error}</div></div>}
-            <div>
-                <button type="submit" className="btn btn-primary" disabled={subiendo || elegidas.length === 0}>
-                    <FiUploadCloud size={16} /> {subiendo ? 'Subiendo…' : elegidas.length > 0 ? `Subir ${plural(elegidas.length, 'foto', 'fotos')}` : 'Subir fotos'}
-                </button>
-            </div>
+            {elegidas.length > 0 && (
+                <div>
+                    <button type="submit" className="btn btn-primary" disabled={subiendo}>
+                        <FiUploadCloud size={16} /> {subiendo ? 'Subiendo…' : `Subir ${plural(elegidas.length, 'foto', 'fotos')}`}
+                    </button>
+                </div>
+            )}
         </form>
     );
 }

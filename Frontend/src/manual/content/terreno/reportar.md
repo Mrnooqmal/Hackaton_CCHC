@@ -54,8 +54,9 @@ La pantalla **Incidentes y hallazgos** tiene dos pestañas, según tus permisos:
      **Dictar** y contarlo en voz alta: la plataforma lo transcribe a texto. El dictado necesita tu
      autorización, porque el audio se envía a un servicio externo para pasarlo a texto. Ver
      [Tus datos y tu privacidad](/terreno/mis-datos#lo-que-autorizas).
-   - **Evidencia fotográfica** *(opcional)* — sube fotos (PNG o JPG, hasta 10 MB) o tómalas con la
-     cámara del teléfono.
+   - **Evidencia fotográfica** *(opcional)* — sube fotos (JPG, PNG, WebP o HEIC) o tómalas con la
+     cámara del teléfono. Si reportas sin fotos, puedes agregarlas después desde la página del
+     reporte.
 4. Revisa la **Confirmación de envío** y envía.
 
 ![Pantalla Reportar con las opciones Hallazgo e Incidente](/img/incidentes/reportar.png)
