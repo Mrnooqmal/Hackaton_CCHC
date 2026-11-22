@@ -197,7 +197,9 @@ test('sin permiso no se cierra la gobernanza de un hallazgo', async () => {
         EMPRESA_A, 'PUT', '/incidents/i-a/gobernanza',
         {
             body: { estadoCierre: 'cerrado', actorId: 'el-supervisor' },
-            extra: { rol: 'colaborador', permisos: 'actividades.ver' },
+            // Con historial para poder leer el caso: sin él la ruta responde 404 (no sabe que existe) y no se
+            // llegaría a probar la falta de permiso de gestión, que es lo que esta prueba fija (403).
+            extra: { rol: 'colaborador', permisos: 'actividades.ver,incidentes.historial' },
         },
     ));
 

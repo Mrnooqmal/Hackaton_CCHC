@@ -134,14 +134,16 @@ export default function Incidents() {
             setGobError('El comentario de cierre es requerido para cerrar el hallazgo.');
             return;
         }
-        setGobSaving(true);
-        setGobError('');
         // Cerrar el hallazgo es cerrar el caso: el servidor lo exige a quien tiene
         // `incidentes.calificar_accidente`. La opción ni se ofrece a quien no lo tiene.
+        // Se comprueba ANTES de marcar "guardando": con el `return` después, el panel
+        // quedaba pegado en "guardando" sin que nada lo volviera a soltar.
         if (gobForm.estadoCierre === 'cerrado' && !canCalificarAccidente) {
             setGobError('Solo quien clasifica incidentes puede cerrar el hallazgo.');
             return;
         }
+        setGobSaving(true);
+        setGobError('');
         try {
             // El nombre del responsable lo lee el servidor de su ficha.
             const res = await incidentsApi.updateGobernanza(gobIncident.incidentId, {
@@ -1929,7 +1931,7 @@ export default function Incidents() {
                 isOpen={!!gobIncident}
                 onClose={() => setGobIncident(null)}
                 title="Gobernanza del hallazgo"
-                subtitle={gobIncident?.descripcion ? gobIncident.descripcion.slice(0, 80) : ''}
+                subtitle={gobIncident?.descripcion ? Array.from(gobIncident.descripcion).slice(0, 80).join('') : ''}
                 size="lg"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>

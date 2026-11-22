@@ -7,6 +7,7 @@ const { conNeutro } = require('../../lib/degradacion');
 const { personaDeLaEmpresa, personasDeLaEmpresa, obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { tenantParaPermisos } = require('../../lib/auth/permisos-empresa');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
+const { cortar } = require('../../lib/utils/texto');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const {
     ORDEN_TIPOS_PAPEL, esTipoPapel, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
@@ -19,6 +20,9 @@ const {
 
 const incidentsRepo = new IncidentsRepository();
 const router = Router();
+
+/** Todos los tipos de caso que existen: los dos de hallazgo y los dos de incidente. */
+const TIPOS_CLASIFICABLES = [...TIPOS_HALLAZGO, ...TIPOS_INCIDENTE];
 
 // ─── Taxonomia reunion 2026-06-10: hallazgos vs incidentes ───────────────────
 // Hallazgos: reportables por cualquier trabajador, con marco de gobernanza.
@@ -243,15 +247,22 @@ async function create(request) {
         delete body.medidasCorrectivas;
         delete body.gobernanza;
 
-        const clasificacion = body.clasificacion || clasificacionDelTipo(body.tipo);
-        body.clasificacion = clasificacion;
-
-        // Coherencia tipo <-> clasificacion
-        if (clasificacion === 'hallazgo' && !TIPOS_HALLAZGO.includes(body.tipo)) {
-            return jsonResponse({ success: false, error: `Tipo invalido para hallazgo. Tipos validos: ${TIPOS_HALLAZGO.join(', ')}` }, 400);
+        // La clasificación sale SIEMPRE del tipo, nunca del cliente. Antes valía la que
+        // viniera en el cuerpo, y las validaciones (y el permiso de abajo) solo corrían si
+        // era exactamente 'hallazgo' o 'incidente': con `clasificacion: 'x'` y
+        // `tipo: 'accidente'` se creaba un accidente sin tener `incidentes.reportar`.
+        if (!body.tipo) return solicitudInvalida('El tipo de reporte es requerido');
+        if (!TIPOS_CLASIFICABLES.includes(body.tipo)) {
+            return solicitudInvalida(`Tipo inválido. Tipos válidos: ${TIPOS_CLASIFICABLES.join(', ')}`);
         }
-        if (clasificacion === 'incidente' && !TIPOS_INCIDENTE.includes(body.tipo)) {
-            return jsonResponse({ success: false, error: `Tipo invalido para incidente. Tipos validos: ${TIPOS_INCIDENTE.join(', ')}` }, 400);
+        const clasificacion = clasificacionDelTipo(body.tipo);
+        // Si el cliente manda una clasificación, tiene que decir lo mismo que el tipo.
+        if (body.clasificacion !== undefined && body.clasificacion !== clasificacion) {
+            return solicitudInvalida(`La clasificación no corresponde al tipo: un ${body.tipo} es de clasificación "${clasificacion}".`);
+        }
+        body.clasificacion = clasificacion;
+        if (body.gravedad !== undefined && !GRAVEDADES.includes(body.gravedad)) {
+            return solicitudInvalida(`Gravedad inválida. Valores válidos: ${GRAVEDADES.join(', ')}`);
         }
 
         // Incidentes/accidentes: requiere permiso 'incidentes.reportar' (sensibilidad
@@ -293,7 +304,7 @@ async function create(request) {
                 esFlash: true,
                 segunInformacionDisponible: true,
                 afectados: body.afectados || [],
-                descripcionBreve: String(body.descripcionBreve || '').slice(0, 500),
+                descripcionBreve: cortar(body.descripcionBreve || '', 500),
                 severidad: body.gravedad || 'leve',
                 evidencias: [],
                 ubicacionReferencia: body.ubicacionReferencia || '',
@@ -364,7 +375,9 @@ async function markViewed(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        // Quien no puede leer el caso tampoco lo marca como visto: el mismo 404 que `get`.
+        const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
+        if (!puedeLeer(incidente, ses.sesion)) return noEncontrado();
         // Quién lo vio es quien tiene la sesión.
         await incidentsRepo.markAsViewed(request.params.id, ses.sesion.personaId);
         return jsonResponse({ success: true });
@@ -378,10 +391,8 @@ async function update(request) {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
         const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
-        if (!incidente) return noEncontrado();
-        if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
-            return sinPermiso('No tienes permiso para editar incidentes.');
-        }
+        const rechazo = rechazoParaGestionar(incidente, ses.sesion, PERMISO_GESTIONAR, 'No tienes permiso para editar incidentes.');
+        if (rechazo) return rechazo;
         const cerrado = rechazoSiCerrado(incidente);
         if (cerrado) return cerrado;
         const body = parseBody(request.event);
@@ -406,10 +417,16 @@ async function update(request) {
         if (body.estado === 'cerrado') {
             return jsonResponse({ success: false, error: 'Para cerrar el caso usa el cierre del caso: exige papeles y medidas completos.' }, 400);
         }
+        // El estado tampoco se edita por acá: cambia solo al clasificar (pasa a investigación),
+        // al cerrar y al reabrir, que dejan quién y cuándo. Ninguna pantalla lo manda.
+        if (body.estado !== undefined) {
+            return solicitudInvalida('El estado no se edita por acá: cambia al clasificar, cerrar o reabrir el caso.');
+        }
         // `tenantId` no se reasigna por esta vía: mover un incidente de empresa no
         // es una edición, es una fuga.
         delete body.tenantId;
-        const result = await incidentsRepo.update(request.params.id, body);
+        // Con el elemento ya leído: la escritura falla con 409 si el caso cambió desde esta lectura.
+        const result = await incidentsRepo.update(incidente, body);
         // Return incident data directly for frontend compatibility
         return jsonResponse({
             success: true,
@@ -486,10 +503,8 @@ async function calificarAccidente(request) {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
         const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
-        if (!incidente) return noEncontrado();
-        if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE)) {
-            return sinPermiso('No tienes permiso para calificar como accidente.');
-        }
+        const rechazo = rechazoParaGestionar(incidente, ses.sesion, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE, 'No tienes permiso para calificar como accidente.');
+        if (rechazo) return rechazo;
         const cerrado = rechazoSiCerrado(incidente);
         if (cerrado) return cerrado;
         // Si el prevencionista ya clasificó el caso, la clasificación guardada
@@ -506,7 +521,7 @@ async function calificarAccidente(request) {
             }, ses.sesion.personaId);
             return jsonResponse({ success: true, data: incident, message: 'Calificado como accidente.' });
         }
-        const result = await incidentsRepo.update(request.params.id, {
+        const result = await incidentsRepo.update(incidente, {
             tipo: 'accidente',
             clasificacion: 'incidente',
         });
@@ -566,15 +581,13 @@ async function addInvestigation(request) {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
         const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
-        if (!incidente) return noEncontrado();
-        if (!sesionPuede(ses.sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
-            return sinPermiso('No tienes permiso para registrar investigaciones.');
-        }
+        const rechazo = rechazoParaGestionar(incidente, ses.sesion, PERMISO_GESTIONAR, 'No tienes permiso para registrar investigaciones.');
+        if (rechazo) return rechazo;
         // Registrar una investigación pone el caso "en investigación": en uno cerrado lo reabriría sin motivo.
         const cerrado = rechazoSiCerrado(incidente);
         if (cerrado) return cerrado;
         const body = parseBody(request.event);
-        const result = await incidentsRepo.addInvestigation(request.params.id, body);
+        const result = await incidentsRepo.addInvestigation(incidente, body);
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -592,10 +605,8 @@ async function updateGobernanza(request) {
         if (!ses.ok) return ses.respuesta;
         const sesion = ses.sesion;
         const incidente = await incidenteDelTenant(request.params.id, sesion);
-        if (!incidente) return noEncontrado();
-        if (!esSupervisorOSuperior(sesion)) {
-            return sinPermiso('Solo supervisores y roles superiores pueden gestionar la gobernanza de hallazgos.');
-        }
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_GESTIONAR, 'Solo supervisores y roles superiores pueden gestionar la gobernanza de hallazgos.');
+        if (rechazo) return rechazo;
         // Un hallazgo cerrado no se reabre ni se edita por acá (sería una puerta
         // lateral al cierre): `PUT /incidents/{id}/reabrir`.
         const cerrado = rechazoSiCerrado(incidente);
@@ -663,19 +674,66 @@ async function updateGobernanza(request) {
     }
 }
 
+const esObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const MAX_AFECTADOS_FLASH = 50;
+
+/**
+ * Valida lo que trae `flash-completar` y deja solo los campos que la ruta sabe escribir.
+ * La gravedad se valida contra `GRAVEDADES`; y si el caso ya está clasificado (`triaje`),
+ * la gravedad es de la clasificación: por acá no se cambia (antes esta ruta la pisaba por
+ * fuera de ella, y el caso quedaba diciendo dos cosas). Devuelve `{ error }` o `{ datos }`.
+ */
+const validarCompletarFlash = (body, incidente) => {
+    const datos = {};
+    if (body.gravedad !== undefined) {
+        if (!GRAVEDADES.includes(body.gravedad)) return { error: `Gravedad inválida. Valores válidos: ${GRAVEDADES.join(', ')}` };
+        if (incidente.triaje) {
+            if (body.gravedad !== incidente.gravedad) {
+                return { error: 'La gravedad ya la fijó la clasificación del caso: para cambiarla reclasifícalo (PUT /incidents/{id}/triaje).' };
+            }
+        } else {
+            datos.gravedad = body.gravedad;
+        }
+    }
+    for (const campo of ['descripcion', 'descripcionBreve', 'ubicacionReferencia']) {
+        if (body[campo] === undefined) continue;
+        if (typeof body[campo] !== 'string') return { error: `El campo ${campo} no es válido.` };
+        datos[campo] = body[campo];
+    }
+    if (body.diasPerdidos !== undefined) {
+        if (!Number.isInteger(body.diasPerdidos) || body.diasPerdidos < 0) return { error: 'Los días perdidos deben ser un número entero, cero o más.' };
+        datos.diasPerdidos = body.diasPerdidos;
+    }
+    if (body.afectados !== undefined) {
+        if (!Array.isArray(body.afectados) || body.afectados.length > MAX_AFECTADOS_FLASH || !body.afectados.every(esObjeto)) {
+            return { error: `Los afectados no son válidos (hasta ${MAX_AFECTADOS_FLASH}).` };
+        }
+        datos.afectados = body.afectados;
+    }
+    if (body.trabajador !== undefined) {
+        if (!esObjeto(body.trabajador)) return { error: 'El trabajador no es válido.' };
+        const texto = (v) => (typeof v === 'string' ? v : '');
+        datos.trabajador = {
+            nombre: texto(body.trabajador.nombre), rut: texto(body.trabajador.rut),
+            genero: texto(body.trabajador.genero), cargo: texto(body.trabajador.cargo),
+        };
+    }
+    return { datos };
+};
+
 async function completarFlash(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
         const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
-        if (!incidente) return noEncontrado();
-        if (!esSupervisorOSuperior(ses.sesion)) {
-            return sinPermiso('Solo supervisores y roles superiores pueden completar el reporte flash.');
-        }
+        const rechazo = rechazoParaGestionar(incidente, ses.sesion, PERMISO_GESTIONAR, 'Solo supervisores y roles superiores pueden completar el reporte flash.');
+        if (rechazo) return rechazo;
         const cerrado = rechazoSiCerrado(incidente);
         if (cerrado) return cerrado;
-        const body = parseBody(request.event);
-        const result = await incidentsRepo.completarFlash(request.params.id, body);
+        const validado = validarCompletarFlash(parseBody(request.event), incidente);
+        if (validado.error) return solicitudInvalida(validado.error);
+        // Con el elemento ya leído: la escritura falla con 409 si el caso cambió desde esta lectura.
+        const result = await incidentsRepo.completarFlash(incidente, validado.datos);
         return jsonResponse(result);
     } catch (err) {
         return errorResponse(err);
@@ -687,10 +745,8 @@ async function updateMedidaEstado(request) {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
         const incidente = await incidenteDelTenant(request.params.id, ses.sesion);
-        if (!incidente) return noEncontrado();
-        if (!esSupervisorOSuperior(ses.sesion)) {
-            return sinPermiso('No tienes permiso para actualizar las medidas correctivas.');
-        }
+        const rechazo = rechazoParaGestionar(incidente, ses.sesion, PERMISO_GESTIONAR, 'No tienes permiso para actualizar las medidas correctivas.');
+        if (rechazo) return rechazo;
         const body = parseBody(request.event);
         // En un caso cerrado solo se puede seguir confirmando lo hecho (completada ->
         // verificada); devolver una medida a pendiente dejaría un cierre falso.
@@ -717,8 +773,6 @@ async function updateMedidaEstado(request) {
 // Lo que no puede leer ni sabe que existe: el mismo 404 que `get`. Lo que puede
 // leer pero no gestionar: 403. Un caso cerrado no acepta nada de esto (409) salvo
 // reabrirlo.
-
-const TIPOS_CLASIFICABLES = [...TIPOS_HALLAZGO, ...TIPOS_INCIDENTE];
 
 /** AAAA-MM-DD de un día real. */
 const diaValido = (valor) => {
@@ -890,7 +944,11 @@ const validarDatosMedida = (body, actual) => {
         if (!diaValido(plazo)) return { error: 'El plazo debe ser una fecha válida (AAAA-MM-DD).' };
         // Un plazo ya vencido al crearla (o al cambiarlo) suele ser un error de tipeo.
         // "Hoy" es el de Chile: el plazo es el día que escribe una persona en Chile.
-        if ((!actual || plazo !== actual.fechaMaxEjecucion) && plazo < hoyChile()) return { error: 'El plazo no puede ser anterior a hoy.' };
+        // Las medidas antiguas guardaron el plazo como fecha y hora (ISO completo): se compara
+        // el día, o el formulario (que recorta a 10 caracteres) lo tomaría por un plazo nuevo
+        // y rechazaría editar el texto de una medida cuyo plazo ya venció.
+        const plazoActual = actual ? String(actual.fechaMaxEjecucion ?? '').slice(0, 10) : null;
+        if ((!actual || plazo !== plazoActual) && plazo < hoyChile()) return { error: 'El plazo no puede ser anterior a hoy.' };
         datos.fechaMaxEjecucion = plazo;
     }
     if (body.jerarquia !== undefined) {
@@ -1073,7 +1131,8 @@ const NOMBRE_PAPEL = new RegExp(
 );
 
 /** Nombre para mostrar: sin separadores de ruta ni caracteres de control, de hasta 150 caracteres. */
-const nombreVisible = (valor) => String(valor ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[\\/]/g, '_').trim().slice(0, 150);
+// Por caracteres completos: un corte a mitad de un emoji dejaba una mitad suelta en el nombre.
+const nombreVisible = (valor) => cortar(String(valor ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[\\/]/g, '_').trim(), 150).trim();
 
 /** AAAA-MM-DD de un día real que no sea futuro, según el día de hoy en Chile. */
 const fechaDocumentoValida = (valor) => diaValido(valor) && valor <= hoyChile();

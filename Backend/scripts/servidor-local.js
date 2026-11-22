@@ -421,6 +421,11 @@ function traducirRespuesta(resp) {
 // CORS
 // ---------------------------------------------------------------------------
 
+/** Las cabeceras de una respuesta sin las `access-control-*` que haya puesto el handler. */
+function sinCabecerasCors(cabeceras) {
+    return Object.fromEntries(Object.entries(cabeceras).filter(([k]) => !k.toLowerCase().startsWith('access-control-')));
+}
+
 /** Cabeceras CORS de una respuesta; vacío si el origen no está permitido. */
 function cabecerasCors(cors, origen, preflight) {
     if (!origen || !cors.origenes.includes(origen)) return {};
@@ -567,12 +572,18 @@ function leerCuerpo(req) {
     return new Promise((resolver, rechazar) => {
         const partes = [];
         let total = 0;
+        // Pasado el tope se sigue LEYENDO (y descartando) hasta el final: cerrar la
+        // conexión de golpe (`req.destroy()`) le cortaba al cliente la subida antes de
+        // poder leer el 413, y veía un error de red en vez de la respuesta.
+        let demasiado = false;
         req.on('data', (c) => {
             total += c.length;
-            if (total > MAX_BODY) { rechazar(Object.assign(new Error('cuerpo demasiado grande'), { demasiado: true })); req.destroy(); return; }
+            if (total > MAX_BODY) { demasiado = true; partes.length = 0; return; }
             partes.push(c);
         });
-        req.on('end', () => resolver(Buffer.concat(partes)));
+        req.on('end', () => (demasiado
+            ? rechazar(Object.assign(new Error('cuerpo demasiado grande'), { demasiado: true }))
+            : resolver(Buffer.concat(partes))));
         req.on('error', rechazar);
     });
 }
@@ -651,7 +662,10 @@ function crearServidor({ config, ejecutar, registrar = console.log }) {
             }
             const t = traducirRespuesta(resp);
             estado = t.estado;
-            responder(res, t.estado, { ...t.cabeceras, ...corsRespuesta }, t.cuerpo, t.cookies);
+            // El CORS lo decide la configuración (como API Gateway), no el handler: sus
+            // cabeceras `access-control-*` (por ejemplo un `*`) no pasan, y con un origen
+            // no permitido la respuesta sale sin ellas.
+            responder(res, t.estado, { ...sinCabecerasCors(t.cabeceras), ...corsRespuesta }, t.cuerpo, t.cookies);
             fin();
         } catch (err) {
             console.error(`Error del servidor local: ${err.message}`);
@@ -713,6 +727,7 @@ module.exports = {
     armarEvento,
     traducirRespuesta,
     cabecerasCors,
+    sinCabecerasCors,
     entornosDeFunciones,
     crearServidor,
     crearEjecutor,

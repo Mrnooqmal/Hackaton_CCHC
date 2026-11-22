@@ -264,7 +264,7 @@ test('ítem 66: si todos los accidentes tienen su informe queda Cumplido', () =>
 test('ítem 66: sin accidentes queda Cumplido como siempre; los incidentes y hallazgos no cuentan', () => {
     const base = evaluarItem66(ctx66());
     assert.equal(base.estado, E.CUMPLIDO);
-    assert.match(base.detalle, /Sin accidentes investigados/);
+    assert.match(base.detalle, /Sin accidentes registrados en la obra/);
     const solo = evaluarItem66(ctx66({ casos: [], documentos: [doc('PROCEDIMIENTO_INVESTIGACION')] }));
     assert.deepEqual(solo, base);
     const otros = evaluarItem66(ctx66({ casos: [

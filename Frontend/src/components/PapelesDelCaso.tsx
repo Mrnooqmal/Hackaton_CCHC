@@ -12,6 +12,8 @@ import { ZonaCarga } from './FotosEvidencia';
 import { plural } from '../utils/plural';
 
 const MB = 1024 * 1024;
+/** Espera antes de reintentar la confirmación tras un 409 (otra escritura sobre el mismo caso). */
+const REINTENTO_CONFIRMAR_MS = 1200;
 
 const tamanoLegible = (bytes: number) => (bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
@@ -58,6 +60,10 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
     const [fechaDocumento, setFechaDocumento] = useState('');
     const [subiendo, setSubiendo] = useState(false);
     const [errorSubida, setErrorSubida] = useState('');
+    // El archivo que ya llegó a S3 pero cuyo registro en el caso falló. Se conserva la clave para
+    // reintentar SOLO la confirmación (el servidor es idempotente con la misma clave): si se
+    // volviera a subir el archivo, el primero quedaría huérfano en un bucket que no deja borrar.
+    const [sinConfirmar, setSinConfirmar] = useState<{ s3Key: string; tipo: TipoPapel } | null>(null);
 
     useEffect(() => {
         let cancelado = false;
@@ -79,6 +85,16 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
     const requeridos = useMemo(() => papelesRequeridos({ ...incidente, papeles: archivos }), [incidente, archivos]);
     const avance = useMemo(() => avanceDelCaso({ ...incidente, papeles: archivos }), [incidente, archivos]);
 
+    // Con otro archivo u otro tipo, la clave pendiente ya no corresponde (el tipo va en la clave).
+    const cambiarTipo = (nuevo: TipoPapel) => {
+        setTipo(nuevo);
+        if (sinConfirmar && sinConfirmar.tipo !== nuevo) setSinConfirmar(null);
+    };
+    const cambiarArchivo = (nuevo: File | null) => {
+        setArchivo(nuevo);
+        setSinConfirmar(null);
+    };
+
     const subir = async (e: React.FormEvent) => {
         e.preventDefault();
         if (subiendo) return;
@@ -89,27 +105,48 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
         if (archivos.length >= MAX_PAPELES_POR_CASO) { setErrorSubida(`El caso admite hasta ${MAX_PAPELES_POR_CASO} archivos.`); return; }
         setErrorSubida('');
         setSubiendo(true);
+        let archivoYaSubido = Boolean(sinConfirmar);
         try {
-            // 1. URL de subida. El servidor todavía no registra nada.
-            const url = await incidentsApi.pedirSubidaPapel(id, { archivo, tipo });
-            if (!url.success || !url.data) { setErrorSubida(url.error || 'No se pudo preparar la subida.'); return; }
-            // 2. El archivo va directo a S3. `fetch` no lanza con un 4xx/5xx: se mira `ok`.
-            const subida = await fetch(url.data.uploadUrl, { method: 'PUT', body: archivo, headers: url.data.uploadHeaders });
-            if (!subida.ok) { setErrorSubida('No se pudo subir el archivo. Intenta de nuevo.'); return; }
+            let s3Key = sinConfirmar?.s3Key;
+            if (!s3Key) {
+                // 1. URL de subida. El servidor todavía no registra nada.
+                const url = await incidentsApi.pedirSubidaPapel(id, { archivo, tipo });
+                if (!url.success || !url.data) { setErrorSubida(url.error || 'No se pudo preparar la subida.'); return; }
+                // 2. El archivo va directo a S3. `fetch` no lanza con un 4xx/5xx: se mira `ok`.
+                const subida = await fetch(url.data.uploadUrl, { method: 'PUT', body: archivo, headers: url.data.uploadHeaders });
+                if (!subida.ok) { setErrorSubida('No se pudo subir el archivo. Intenta de nuevo.'); return; }
+                s3Key = url.data.s3Key;
+                archivoYaSubido = true;
+                // Desde acá el archivo existe: si confirmar falla, se reintenta con esta misma clave.
+                setSinConfirmar({ s3Key, tipo });
+            }
             // 3. Confirmar: el servidor comprueba que llegó y recién ahí lo registra.
-            const confirmado = await incidentsApi.confirmarPapel(id, {
-                s3Key: url.data.s3Key,
+            const datosConfirmacion = {
+                s3Key,
                 fileName: archivo.name,
                 ...(fechaDocumento ? { fechaDocumento } : {}),
-            });
-            if (!confirmado.success) { setErrorSubida(confirmado.error || 'El archivo se subió, pero no se pudo registrar. Intenta de nuevo.'); return; }
+            };
+            let confirmado = await incidentsApi.confirmarPapel(id, datosConfirmacion);
+            // 409: el caso cambió justo en ese momento (otra persona guardó algo). Confirmar con la misma
+            // clave es seguro y la segunda vez ya lee el caso nuevo: se reintenta una vez, sin pedirle nada a la persona.
+            if (!confirmado.success && confirmado.codigo === 'CONFLICTO') {
+                await new Promise((resolver) => setTimeout(resolver, REINTENTO_CONFIRMAR_MS));
+                confirmado = await incidentsApi.confirmarPapel(id, datosConfirmacion);
+            }
+            if (!confirmado.success) {
+                setErrorSubida(`El archivo ya se subió, pero no se pudo registrar en el caso${confirmado.error ? `: ${confirmado.error}` : ''}. Presiona "Reintentar registro" para volver a intentarlo sin subirlo de nuevo.`);
+                return;
+            }
             toast.success('Papel agregado al caso');
             setArchivo(null);
             setFechaDocumento('');
+            setSinConfirmar(null);
             setRecarga((n) => n + 1);
             onCambio?.();
         } catch {
-            setErrorSubida('Error de conexión al subir el archivo. Intenta de nuevo.');
+            setErrorSubida(archivoYaSubido
+                ? 'Error de conexión al registrar el archivo. Presiona "Reintentar registro": no hace falta subirlo de nuevo.'
+                : 'Error de conexión al subir el archivo. Intenta de nuevo.');
         } finally {
             setSubiendo(false);
         }
@@ -130,7 +167,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                     <Select
                         ariaLabel="Tipo de papel"
                         value={tipo}
-                        onChange={(v) => setTipo(v as TipoPapel)}
+                        onChange={(v) => cambiarTipo(v as TipoPapel)}
                         placeholder="Elige el tipo…"
                         options={ORDEN_TIPOS_PAPEL.map((t) => ({ value: t, label: TIPOS_PAPEL[t].etiqueta }))}
                         disabled={subiendo}
@@ -160,7 +197,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                     disabled={subiendo}
                     onElegir={(elegidos) => {
                         // Cancelar el selector no trae archivos: se conserva el que ya había.
-                        if (elegidos[0]) { setArchivo(elegidos[0]); setErrorSubida(''); }
+                        if (elegidos[0]) { cambiarArchivo(elegidos[0]); setErrorSubida(''); }
                     }}
                 />
                 {archivo && (
@@ -173,7 +210,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                         <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            onClick={() => { setArchivo(null); setErrorSubida(''); }}
+                            onClick={() => { cambiarArchivo(null); setErrorSubida(''); }}
                             disabled={subiendo}
                             aria-label={`Quitar ${archivo.name}`}
                         >
@@ -190,7 +227,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
             {errorSubida && <div className="alert alert-danger" role="alert"><div>{errorSubida}</div></div>}
             <div>
                 <button type="submit" className="btn btn-primary" disabled={subiendo || !tipo || !archivo}>
-                    <FiUploadCloud size={16} /> {subiendo ? 'Subiendo…' : 'Subir papel'}
+                    <FiUploadCloud size={16} /> {subiendo ? (sinConfirmar ? 'Registrando…' : 'Subiendo…') : sinConfirmar ? 'Reintentar registro' : 'Subir papel'}
                 </button>
             </div>
         </form>
@@ -231,7 +268,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                                     <span className="inc-papeles-nombre">{r.etiqueta}</span>
                                     <Badge variant={r.cumplido ? 'success' : 'warning'} size="sm">{r.cumplido ? 'Cumplido' : 'Falta'}</Badge>
                                     {puedeSubir && !r.cumplido && r.tipoDocumento && (
-                                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTipo(r.tipoDocumento as TipoPapel)}>
+                                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => cambiarTipo(r.tipoDocumento as TipoPapel)}>
                                             Subir
                                         </button>
                                     )}

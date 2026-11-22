@@ -137,6 +137,14 @@ export async function apiRequest<T>(
             };
         }
 
+        // 409: el recurso cambió mientras se trabajaba (bloqueo optimista del servidor, o un cierre al que le
+        // falta algo). Se marca con un código para que la pantalla pueda reintentar solo ese caso sin leer el
+        // texto del error; el resto del cuerpo (`error`, `pendientes`) llega igual.
+        if (response.status === 409) {
+            const cuerpo = await response.json().catch(() => null);
+            return { ...(cuerpo && typeof cuerpo === 'object' ? cuerpo : {}), success: false, codigo: cuerpo?.codigo ?? 'CONFLICTO' };
+        }
+
         const data = await response.json();
         return data;
     } catch (error) {

@@ -330,6 +330,11 @@ test('papelesDelCaso: los papeles del contrato anterior (documentos.diat / diep)
         claveDeOtroIncidente: { ...accidente, documentos: anterior('diat', 'tenants/T1/incidentes/I2/diat-x.pdf') },
         claveConPuntos: { ...accidente, documentos: anterior('diat', 'tenants/T1/incidentes/I1/../I2/diat-x.pdf') },
         claveNoTexto: { ...accidente, documentos: anterior('diat', 42) },
+        // El formato de diciembre de 2025 a septiembre de 2026: `{id}/documents/…`, sin empresa.
+        claveAnteriorSinEmpresa: { ...accidente, documentos: anterior('diat', 'I1/documents/diat-0b6f1c2e-3d4a-4b5c-8d9e-0f1a2b3c4d5e.pdf') },
+        claveAnteriorDeOtroIncidente: { ...accidente, documentos: anterior('diat', 'I2/documents/diat-0b6f1c2e-3d4a-4b5c-8d9e-0f1a2b3c4d5e.pdf') },
+        claveAnteriorConPuntos: { ...accidente, documentos: anterior('diat', 'I1/documents/../I2/documents/diat-x.pdf') },
+        claveAnteriorOtraCarpeta: { ...accidente, documentos: anterior('diat', 'I1/fotos/diat-x.pdf') },
         otroTipoNoCuenta: { ...accidente, documentos: anterior('informe_investigacion', CLAVE('informe')) },
         sinIdentidad: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', documentos: anterior('diat', CLAVE('diat')) },
         documentosVacios: { ...accidente, documentos: {} },
@@ -337,6 +342,10 @@ test('papelesDelCaso: los papeles del contrato anterior (documentos.diat / diep)
     };
     assert.equal(cumplido(casos.diatAnterior, 'diat'), true, 'la DIAT anterior cuenta');
     assert.equal(cumplido(casos.diatYDiep, 'diat'), true);
+    assert.equal(cumplido(casos.claveAnteriorSinEmpresa, 'diat'), true, 'la clave de 2025 sin empresa cuenta');
+    for (const n of ['claveAnteriorDeOtroIncidente', 'claveAnteriorConPuntos', 'claveAnteriorOtraCarpeta']) {
+        assert.equal(cumplido(casos[n], 'diat'), false, n);
+    }
     for (const n of ['claveAjena', 'claveDeOtroIncidente', 'claveConPuntos', 'claveNoTexto', 'otroTipoNoCuenta', 'sinIdentidad', 'documentosVacios']) {
         assert.equal(cumplido(casos[n], 'diat'), false, n);
     }

@@ -242,6 +242,73 @@ test('de extremo a extremo con handlers simulados: 401, autorizador, contexto, C
     } finally { await new Promise((res) => srv.close(res)); }
 });
 
+test('CORS: con un origen no permitido (o sin origen) no sale ninguna cabecera access-control-* del handler; con uno permitido, solo las de la configuración', async () => {
+    const config = {
+        rutas: [s.nuevaRuta('any', '/x', 'h', null)],
+        autorizadores: {},
+        cors: { origenes: ['http://localhost:5173'], metodos: ['GET'], cabeceras: ['Authorization'], maxAge: 5 },
+    };
+    // Un handler como los del repositorio: pone su propio `*`.
+    const ejecutar = async () => ({
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Credentials': 'true', 'Access-Control-Allow-Methods': 'GET,POST' },
+        body: '{}',
+    });
+    const srv = s.crearServidor({ config, ejecutar, registrar: () => {} });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const { port } = srv.address();
+    const pedir = (cabeceras) => new Promise((resolver, rechazar) => {
+        const rq = http.request({ host: '127.0.0.1', port, method: 'GET', path: '/x', headers: cabeceras }, (rs) => {
+            rs.resume();
+            rs.on('end', () => resolver(rs));
+        });
+        rq.on('error', rechazar);
+        rq.end();
+    });
+    const acceso = (rs) => Object.keys(rs.headers).filter((k) => k.startsWith('access-control-'));
+    try {
+        assert.deepEqual(acceso(await pedir({ origin: 'https://otro.example' })), []);
+        assert.deepEqual(acceso(await pedir({})), []);
+        const permitido = await pedir({ origin: 'http://localhost:5173' });
+        assert.deepEqual(acceso(permitido), ['access-control-allow-origin']);
+        assert.equal(permitido.headers['access-control-allow-origin'], 'http://localhost:5173');
+    } finally { await new Promise((res) => srv.close(res)); }
+    assert.deepEqual(s.sinCabecerasCors({ 'content-type': 'x', 'access-control-allow-origin': '*', 'Access-Control-Max-Age': '1' }), { 'content-type': 'x' });
+});
+
+test('un cuerpo de más de 10 MB responde 413 (con CORS) en vez de cortar la conexión', async () => {
+    const config = {
+        rutas: [s.nuevaRuta('post', '/subida', 'h', null)],
+        autorizadores: {},
+        cors: { origenes: ['http://localhost:5173'], metodos: ['POST'], cabeceras: ['Authorization'], maxAge: 5 },
+    };
+    let invocada = false;
+    const ejecutar = async () => { invocada = true; return { statusCode: 200, body: '{}' }; };
+    const srv = s.crearServidor({ config, ejecutar, registrar: () => {} });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const { port } = srv.address();
+    const enviar = (bytes) => new Promise((resolver, rechazar) => {
+        const rq = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/subida', headers: { origin: 'http://localhost:5173', 'content-length': String(bytes) } }, (rs) => {
+            const partes = [];
+            rs.on('data', (c) => partes.push(c));
+            rs.on('end', () => resolver({ estado: rs.statusCode, cab: rs.headers, cuerpo: Buffer.concat(partes).toString() }));
+        });
+        rq.on('error', rechazar);
+        rq.end(Buffer.alloc(bytes, 1));
+    });
+    try {
+        const grande = await enviar(11 * 1024 * 1024);
+        assert.equal(grande.estado, 413);
+        assert.equal(grande.cab['access-control-allow-origin'], 'http://localhost:5173');
+        assert.match(grande.cuerpo, /Too Large/);
+        assert.equal(invocada, false, 'el handler no se invocó');
+        // Uno que cabe pasa.
+        const chico = await enviar(1024);
+        assert.equal(chico.estado, 200);
+        assert.equal(invocada, true);
+    } finally { await new Promise((res) => srv.close(res)); }
+});
+
 test('lee el entorno de las Lambdas de dev: por función, sin AWS_*, con IS_OFFLINE falso', () => {
     const salida = JSON.stringify({ Functions: [
         { FunctionName: 'BuildAndServe-dev-a', Timeout: 29, Environment: { Variables: { TABLA: 'T1', IS_OFFLINE: 'true', AWS_REGION: 'x' } } },

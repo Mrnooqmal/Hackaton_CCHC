@@ -157,14 +157,16 @@ export default function MedidasDelCaso({ incidente, puedeGestionar, cerrado, onC
                 </div>
                 {medidas.length > 0 && (
                     <ul className="inc-papeles-lista">
-                        {medidas.map((m) => {
+                        {medidas.map((m, indice) => {
+                            // El servidor numera las medidas antiguas que no traían número; el índice evita que
+                            // React repita `key` si aun así llegara una sin número o repetida.
                             const numero = String(m.numero);
                             const terminada = medidaTerminada(m);
                             const vencida = !terminada && Boolean(m.fechaMaxEjecucion) && String(m.fechaMaxEjecucion).slice(0, 10) < hoy;
                             // En un caso cerrado solo se puede dejar completada o verificada.
                             const estados = cerrado ? ESTADOS_MEDIDA.filter((e) => e === 'completada' || e === 'verificada') : ESTADOS_MEDIDA;
                             return (
-                                <li key={numero} className="inc-papeles-fila">
+                                <li key={`${numero}-${indice}`} className="inc-papeles-fila">
                                     <div className="inc-papeles-nombre">
                                         <div>{numero}. {m.medida}</div>
                                         <div className="inc-papeles-meta">

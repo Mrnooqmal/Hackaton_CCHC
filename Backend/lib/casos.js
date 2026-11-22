@@ -118,18 +118,24 @@ const hayLista = (v) => Array.isArray(v) && v.length > 0;
  * (el contrato anterior dejaba escribir `documentos` desde el cliente: sin esta
  * comprobación, `getDocuments` firmaría la descarga de un archivo ajeno). Sale marcado
  * `legado: true`, con la forma de un papel nuevo.
+ *
+ * Hubo dos formatos de clave: el de septiembre de 2026 en adelante,
+ * `tenants/{empresa}/incidentes/{id}/…`, y el anterior (diciembre de 2025 a septiembre
+ * de 2026), `{id}/documents/{diat|diep}-….pdf`, sin empresa. El segundo trae el id del
+ * incidente (un uuid generado por el servidor), así que no puede ser de otro caso: se
+ * acepta con el prefijo `{id}/documents/`.
  */
 const TIPOS_PAPEL_ANTERIORES = ['diat', 'diep'];
 function papelesDelCaso(inc) {
     const nuevos = Array.isArray(inc?.papeles) ? inc.papeles.filter(Boolean) : [];
     const documentos = inc?.documentos;
     if (!documentos || typeof documentos !== 'object' || !inc?.tenantId || !inc?.incidentId) return nuevos;
-    const prefijo = `tenants/${inc.tenantId}/incidentes/${inc.incidentId}/`;
+    const prefijos = [`tenants/${inc.tenantId}/incidentes/${inc.incidentId}/`, `${inc.incidentId}/documents/`];
     const anteriores = [];
     for (const tipo of TIPOS_PAPEL_ANTERIORES) {
         const d = documentos[tipo];
         const clave = d?.s3Key;
-        if (typeof clave !== 'string' || !clave.startsWith(prefijo) || clave.includes('..')) continue;
+        if (typeof clave !== 'string' || !prefijos.some((p) => clave.startsWith(p)) || clave.includes('..')) continue;
         if (nuevos.some((p) => p.s3Key === clave)) continue;
         anteriores.push({
             papelId: `anterior-${tipo}`,
@@ -149,6 +155,18 @@ function papelesDelCaso(inc) {
 }
 
 const hayPapel = (inc, tipo) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
+
+/**
+ * ¿Tiene una investigación registrada con el flujo anterior al rediseño
+ * (`POST /incidents/{id}/investigations`, que guarda `investigaciones.prevencionista`,
+ * `jefeDirecto` o `comiteParitario`)? Cuenta la que tiene contenido: hallazgos,
+ * recomendaciones o medidas con texto. Es de lectura nada más, como `documentos`.
+ */
+const INVESTIGADORES_ANTERIORES = ['prevencionista', 'jefeDirecto', 'comiteParitario'];
+const investigacionAnterior = (inc) => INVESTIGADORES_ANTERIORES.some((quien) => {
+    const i = inc?.investigaciones?.[quien];
+    return Boolean(i) && typeof i === 'object' && [i.hallazgos, i.recomendaciones, i.medidas].some((v) => hayTexto(v) || hayLista(v));
+});
 
 /**
  * Papeles que el caso exige, cada uno con si ya está cumplido.
@@ -234,6 +252,23 @@ const JERARQUIA_CONTROL = ['eliminacion', 'sustitucion', 'ingenieria', 'administ
 const MAX_MEDIDAS_POR_CASO = 30;
 const MAX_TEXTO_MEDIDA = 500;
 
+/**
+ * Las medidas anteriores a la fase 3 pueden no traer `numero`, y todo lo que actúa sobre
+ * una medida la busca por número: con `undefined`, una acción sobre una de ellas caía sobre
+ * TODAS las que no lo tenían. Esto devuelve el incidente con cada medida sin número
+ * numerada, sin tocar lo guardado: se asigna a partir del mayor número que ya existe, en el
+ * orden de la lista (que solo crece), así que el mismo caso da siempre los mismos números y
+ * no choca con los existentes. Al guardar la lista, los números quedan escritos.
+ * Devuelve el mismo objeto si no hay nada que numerar.
+ */
+const sinNumero = (m) => m?.numero === undefined || m?.numero === null || m?.numero === '';
+function conMedidasNumeradas(inc) {
+    const medidas = inc?.medidasCorrectivas;
+    if (!Array.isArray(medidas) || !medidas.some((m) => m && typeof m === 'object' && sinNumero(m))) return inc;
+    let siguiente = medidas.reduce((mayor, m) => Math.max(mayor, Number(m?.numero) || 0), 0);
+    return { ...inc, medidasCorrectivas: medidas.map((m) => (m && typeof m === 'object' && sinNumero(m) ? { ...m, numero: ++siguiente } : m)) };
+}
+
 const listaDeMedidas = (inc) => (Array.isArray(inc?.medidasCorrectivas) ? inc.medidasCorrectivas : []);
 const medidasSinTerminar = (inc) => listaDeMedidas(inc).filter((m) => !medidaTerminada(m));
 
@@ -247,8 +282,9 @@ const estaCerrado = (inc) => (esHallazgo(inc)
     : inc?.estado === 'cerrado');
 
 const resumenMedida = (m) => {
-    const texto = String(m?.medida || '').trim();
-    return texto.length > 60 ? `${texto.slice(0, 57)}…` : texto;
+    // Por caracteres completos: `slice` podía partir un emoji por la mitad.
+    const letras = Array.from(String(m?.medida || '').trim());
+    return letras.length > 60 ? `${letras.slice(0, 57).join('')}…` : letras.join('');
 };
 
 /**
@@ -356,8 +392,9 @@ function siguientePaso(incidente) {
  * Qué lleva cada campo, a propósito:
  *  - `requeridos`: solo `{ clave, etiqueta, cumplido }`. No `tipoDocumento` (es
  *    para ofrecer "subir" en la pantalla del caso, que no es esta).
- *  - `informeInvestigacion`: si el caso TIENE el informe subido, exija o no el
- *    informe su tipo. Es el dato del ítem 66.
+ *  - `informeInvestigacion`: si el caso está investigado: tiene el informe subido
+ *    (exija o no el informe su tipo) o una investigación registrada con el flujo
+ *    anterior (`investigaciones.*` con contenido). Es el dato del ítem 66.
  *  - `clasificado`: si el prevencionista ya lo clasificó (triaje).
  * La clasificación y la gravedad salen como las lee todo lo demás (`esHallazgo`:
  * los incidentes anteriores al triaje no la traen guardada).
@@ -375,7 +412,7 @@ function resumenDelCaso(incidente) {
         clasificado: Boolean(inc.triaje),
         avance: avanceDelCaso(inc),
         requeridos: papelesRequeridos(inc).map(({ clave, etiqueta, cumplido }) => ({ clave, etiqueta, cumplido })),
-        informeInvestigacion: hayPapel(inc, 'informe_investigacion'),
+        informeInvestigacion: hayPapel(inc, 'informe_investigacion') || investigacionAnterior(inc),
     };
 }
 
@@ -385,7 +422,7 @@ module.exports = {
     TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo,
     MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
     EXTENSION_POR_MIME_FOTO, MIME_FOTOS,
-    esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso,
+    esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso, conMedidasNumeradas,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
     medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
 };

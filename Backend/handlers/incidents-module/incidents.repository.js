@@ -6,7 +6,8 @@ const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3')
 const almacenamiento = require('../../lib/almacenamiento');
 const {
     EXTENSION_POR_MIME, EXTENSION_POR_MIME_FOTO, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_MEDIDAS_INMEDIATAS,
-    tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso,
+    tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso, conMedidasNumeradas,
+    TIPOS_HALLAZGO, GRAVEDADES,
 } = require('../../lib/casos');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
@@ -17,6 +18,7 @@ const { construirMensaje } = require('../../lib/bandeja');
 const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
+const { cortar } = require('../../lib/utils/texto');
 const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
 const { tenantParaPermisos } = require('../../lib/auth/permisos-empresa');
 
@@ -45,7 +47,8 @@ const TIPO_EN_AVISO = {
 
 // Lo que pase del tope (`MAX_MEDIDAS_INMEDIATAS`, en lib/casos) se corta, igual que
 // `descripcionBreve` del reporte flash; el formulario no deja escribir más.
-const textoMedidasInmediatas = (valor) => (typeof valor === 'string' ? valor.trim().slice(0, MAX_MEDIDAS_INMEDIATAS) : '');
+// Se corta por caracteres completos: `slice` podía partir un emoji por la mitad.
+const textoMedidasInmediatas = (valor) => (typeof valor === 'string' ? cortar(valor.trim(), MAX_MEDIDAS_INMEDIATAS) : '');
 
 class IncidentsRepository {
     constructor() {
@@ -307,7 +310,9 @@ class IncidentsRepository {
             throw new Error('La descripción es requerida');
         }
 
-        const clasificacionNueva = data.clasificacion || clasificacionDelTipo(data.tipo);
+        // La clasificación sale siempre del tipo (el handler ya la comprueba): la que traiga
+        // `data` no cuenta.
+        const clasificacionNueva = clasificacionDelTipo(data.tipo);
         const esHallazgoNuevo = clasificacionNueva === 'hallazgo';
 
         const incident = {
@@ -330,8 +335,10 @@ class IncidentsRepository {
             // retención y la supresión a solicitud (lib/gobernanza) no podían
             // encontrar los incidentes de alguien sin descifrarlos todos.
             afectadoRutHmac: validateRut(data.trabajador?.rut || '').valid ? await hmacRut(data.trabajador.rut) : null,
-            fecha: data.fecha || now.split('T')[0],
-            hora: data.hora || now.split('T')[1].split('.')[0],
+            // Sin fecha del cliente, la de Chile: Lambda corre en UTC, y pasadas las 21:00 de
+            // Chile el día UTC ya es el siguiente.
+            fecha: data.fecha || fechaHoraChile(now).fecha,
+            hora: data.hora || fechaHoraChile(now).horario,
             descripcion: data.descripcion,
             // Qué se hizo en el momento para contener el riesgo (fase 1 del
             // rediseño). Es texto libre sobre la obra, no sobre personas: va en el
@@ -431,7 +438,7 @@ class IncidentsRepository {
                     ExpressionAttributeValues: { ':tenantId': tenantId },
                     ...(desde ? { ExclusiveStartKey: desde } : {})
                 }));
-                items.push(...(result.Items || []));
+                items.push(...(result.Items || []).map(conMedidasNumeradas));
                 desde = result.LastEvaluatedKey;
             } while (desde);
             return items;
@@ -443,7 +450,7 @@ class IncidentsRepository {
             }));
             // Un `Scan` recorre la tabla entera y ve también los elementos con la
             // parte sensible, que no son incidentes.
-            items.push(...(result.Items || []).filter((i) => !esTraza(i, 'incidentId')));
+            items.push(...(result.Items || []).filter((i) => !esTraza(i, 'incidentId')).map(conMedidasNumeradas));
             desde = result.LastEvaluatedKey;
         } while (desde);
         return items;
@@ -543,44 +550,54 @@ class IncidentsRepository {
     // ─── Completar reporte flash (reunion 2026-06-10) ───────────────────────────
     // Permite corregir/completar los datos una vez disponible la informacion real.
     // esFlash y segunInformacionDisponible son INMUTABLES (trazabilidad legal).
-    async completarFlash(incidentId, data) {
-        const res = await this.dynamo.send(new GetCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId }
-        }));
-        if (!res.Item) throw new Error('Incidente no encontrado');
-        if (!res.Item.reporteFlash?.esFlash) {
-            throw new Error('El incidente no fue creado como reporte flash');
+    /**
+     * @param {object} incidente el elemento leído por el handler: la escritura falla con 409
+     *   si el caso cambió desde esa lectura (antes escribía sin condición).
+     * @param {object} data ya validado por el handler (`validarCompletarFlash`).
+     *
+     * El reporte flash y los datos del afectado (`trabajador`, con su RUT) viven en la TRAZA
+     * (`create`), no en el elemento listado: esta ruta leía `reporteFlash` del listado y por
+     * eso nunca encontraba nada. Ahora lee la traza y, al guardar, escribe ahí lo sensible;
+     * en el elemento solo queda el nombre y el vínculo por HMAC. El elemento se escribe PRIMERO,
+     * porque es el que lleva el bloqueo: quien pierde la carrera no toca la traza.
+     */
+    async completarFlash(incidente, data) {
+        const completo = await conTraza(this.incidentsTable, 'incidentId', incidente);
+        const flashActual = completo?.reporteFlash;
+        if (!flashActual?.esFlash) {
+            throw Object.assign(new Error('El incidente no fue creado como reporte flash'), { statusCode: 400 });
         }
+        console.log('[FLASH] incidente', incidente.incidentId, '| campos:', Object.keys(data || {}).join(',') || '-');
 
         const now = new Date().toISOString();
         const reporteFlash = {
-            ...res.Item.reporteFlash,
-            afectados: data.afectados !== undefined ? data.afectados : res.Item.reporteFlash.afectados,
-            descripcionBreve: data.descripcionBreve !== undefined ? String(data.descripcionBreve).slice(0, 500) : res.Item.reporteFlash.descripcionBreve,
-            severidad: data.gravedad || res.Item.reporteFlash.severidad,
-            ubicacionReferencia: data.ubicacionReferencia !== undefined ? data.ubicacionReferencia : res.Item.reporteFlash.ubicacionReferencia,
+            ...flashActual,
+            afectados: data.afectados !== undefined ? data.afectados : flashActual.afectados,
+            descripcionBreve: data.descripcionBreve !== undefined ? cortar(data.descripcionBreve, 500) : flashActual.descripcionBreve,
+            severidad: data.gravedad || flashActual.severidad,
+            ubicacionReferencia: data.ubicacionReferencia !== undefined ? data.ubicacionReferencia : flashActual.ubicacionReferencia,
             esFlash: true,
             segunInformacionDisponible: true,
             editadoEn: now
         };
 
         // Campos del incidente que se completan con la investigacion.
-        let updateExpression = 'SET reporteFlash = :rf, updatedAt = :u';
-        const values = { ':rf': reporteFlash, ':u': now };
-        if (data.descripcion) { updateExpression += ', descripcion = :d'; values[':d'] = data.descripcion; }
-        if (data.gravedad) { updateExpression += ', gravedad = :gr'; values[':gr'] = data.gravedad; }
-        if (data.trabajador) { updateExpression += ', trabajador = :t'; values[':t'] = data.trabajador; }
-        if (data.diasPerdidos !== undefined) { updateExpression += ', diasPerdidos = :dp'; values[':dp'] = data.diasPerdidos; }
+        const campos = {};
+        if (data.descripcion) campos.descripcion = data.descripcion;
+        if (data.gravedad) campos.gravedad = data.gravedad;
+        if (data.diasPerdidos !== undefined) campos.diasPerdidos = data.diasPerdidos;
+        const trabajador = data.trabajador || completo.trabajador || null;
+        if (data.trabajador) {
+            campos.trabajadorNombre = data.trabajador.nombre;
+            campos.afectadoRutHmac = validateRut(data.trabajador.rut || '').valid ? await hmacRut(data.trabajador.rut) : null;
+        }
 
-        const result = await this.dynamo.send(new UpdateCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId },
-            UpdateExpression: updateExpression,
-            ExpressionAttributeValues: values,
-            ReturnValues: 'ALL_NEW'
-        }));
-        return { incident: result.Attributes };
+        const actualizado = await this.actualizarCaso(incidente, campos);
+        await guardarTraza(this.incidentsTable, 'incidentId', incidente.incidentId, { trabajador, reporteFlash });
+        // El elemento de un caso anterior puede traer todavía `reporteFlash` y `trabajador` en claro:
+        // la respuesta nunca los devuelve.
+        const { reporteFlash: _flash, trabajador: _trabajador, ...visible } = actualizado;
+        return { incident: visible };
     }
 
     // ─── DS44 Art. 71 — Seguimiento del estado de una medida correctiva ─────────
@@ -631,7 +648,8 @@ class IncidentsRepository {
             TableName: this.incidentsTable,
             Key: { incidentId }
         }));
-        return result.Item || null;
+        // Las medidas antiguas sin número salen numeradas (ver `conMedidasNumeradas`).
+        return result.Item ? conMedidasNumeradas(result.Item) : null;
     }
 
     /**
@@ -647,7 +665,7 @@ class IncidentsRepository {
                 TableName: this.incidentsTable,
                 Key: { incidentId: id }
             }));
-            item = result.Item;
+            item = result.Item ? conMedidasNumeradas(result.Item) : result.Item;
         }
 
         if (!item) {
@@ -667,66 +685,51 @@ class IncidentsRepository {
     }
 
     // UPDATE
-    async update(id, data) {
-        // Qué campos cambian, nunca sus valores (ver la nota de `create`).
-        console.log('[UPDATE] incidente', id, '| campos:', Object.keys(data || {}).join(',') || '-');
-        const now = new Date().toISOString();
-        let updateExpression = 'SET updatedAt = :updatedAt';
-        const expressionAttributeValues = { ':updatedAt': now };
+    /** El caso a escribir: el elemento ya leído, o el que corresponde a un id (para quien llama solo con el id). */
+    async casoParaEscribir(ref) {
+        const incidente = typeof ref === 'string' ? await this.getItem(ref) : ref;
+        if (!incidente) throw Object.assign(new Error('Incidente no encontrado'), { statusCode: 404 });
+        return incidente;
+    }
 
-        if (data.tipo) {
-            updateExpression += ', tipo = :tipo';
-            expressionAttributeValues[':tipo'] = data.tipo;
+    /**
+     * @param {object|string} ref el elemento leído por el handler, o un id (lo usa el cierre de
+     *   la investigación de la obra, que no lo lee antes). La escritura exige que el caso no
+     *   haya cambiado desde la lectura: 409 si cambió (antes escribía sin condición, y pisaba lo
+     *   que otra persona acababa de guardar).
+     */
+    async update(ref, data) {
+        const incidente = await this.casoParaEscribir(ref);
+        // Qué campos cambian, nunca sus valores (ver la nota de `create`).
+        console.log('[UPDATE] incidente', incidente.incidentId, '| campos:', Object.keys(data || {}).join(',') || '-');
+        const now = new Date().toISOString();
+        const campos = {};
+
+        if (data.tipo) campos.tipo = data.tipo;
+        if (data.clasificacion) campos.clasificacion = data.clasificacion;
+        if (data.estado) campos.estado = data.estado;
+        const investigaciones = { ...(incidente.investigaciones || {}) };
+        let conInvestigacion = false;
+        for (const [campoData, campo] of [
+            ['investigacionPrevencionista', 'prevencionista'],
+            ['investigacionJefeDirecto', 'jefeDirecto'],
+            ['investigacionComiteParitario', 'comiteParitario'],
+        ]) {
+            if (!data[campoData]) continue;
+            investigaciones[campo] = { ...data[campoData], fecha: now };
+            conInvestigacion = true;
         }
-        if (data.clasificacion) {
-            updateExpression += ', clasificacion = :clasificacion';
-            expressionAttributeValues[':clasificacion'] = data.clasificacion;
-        }
-        if (data.estado) {
-            updateExpression += ', estado = :estado';
-            expressionAttributeValues[':estado'] = data.estado;
-        }
-        if (data.investigacionPrevencionista) {
-            updateExpression += ', investigaciones.prevencionista = :invPrev';
-            expressionAttributeValues[':invPrev'] = { ...data.investigacionPrevencionista, fecha: now };
-        }
-        if (data.investigacionJefeDirecto) {
-            updateExpression += ', investigaciones.jefeDirecto = :invJefe';
-            expressionAttributeValues[':invJefe'] = { ...data.investigacionJefeDirecto, fecha: now };
-        }
-        if (data.investigacionComiteParitario) {
-            updateExpression += ', investigaciones.comiteParitario = :invComite';
-            expressionAttributeValues[':invComite'] = { ...data.investigacionComiteParitario, fecha: now };
-        }
-        if (data.diasPerdidos !== undefined) {
-            updateExpression += ', diasPerdidos = :diasPerdidos';
-            expressionAttributeValues[':diasPerdidos'] = data.diasPerdidos;
-        }
+        if (conInvestigacion) campos.investigaciones = investigaciones;
+        if (data.diasPerdidos !== undefined) campos.diasPerdidos = data.diasPerdidos;
         // `evidencias` no se edita acá: se agregan con `agregarEvidencias`, que el
         // handler valida clave por clave. Esta función reemplazaba la lista entera.
-        if (data.medidasInmediatas !== undefined) {
-            updateExpression += ', medidasInmediatas = :medidasInmediatas';
-            expressionAttributeValues[':medidasInmediatas'] = textoMedidasInmediatas(data.medidasInmediatas);
-        }
-        if (data.fechaCierre !== undefined) {
-            updateExpression += ', fechaCierre = :fechaCierre';
-            expressionAttributeValues[':fechaCierre'] = data.fechaCierre;
-        }
-        if (data.informeDocumentId !== undefined) {
-            updateExpression += ', informeDocumentId = :informeDocumentId';
-            expressionAttributeValues[':informeDocumentId'] = data.informeDocumentId;
-        }
+        if (data.medidasInmediatas !== undefined) campos.medidasInmediatas = textoMedidasInmediatas(data.medidasInmediatas);
+        if (data.fechaCierre !== undefined) campos.fechaCierre = data.fechaCierre;
+        if (data.informeDocumentId !== undefined) campos.informeDocumentId = data.informeDocumentId;
 
-        const result = await this.dynamo.send(new UpdateCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId: id },
-            UpdateExpression: updateExpression,
-            ExpressionAttributeValues: expressionAttributeValues,
-            ReturnValues: 'ALL_NEW'
-        }));
-
+        const incident = await this.actualizarCaso(incidente, campos);
         return {
-            incident: result.Attributes,
+            incident,
             message: 'Incidente actualizado exitosamente'
         };
     }
@@ -856,8 +859,9 @@ class IncidentsRepository {
     }
 
     // ADD INVESTIGATION
-    async addInvestigation(id, data) {
-        if (!id) throw new Error('ID de incidente requerido');
+    /** @param {object|string} ref el elemento leído por el handler (la escritura falla con 409 si el caso cambió desde entonces), o un id. */
+    async addInvestigation(ref, data) {
+        if (!ref) throw new Error('ID de incidente requerido');
         const now = new Date().toISOString();
 
         if (!data.tipo || !data.hallazgos || !data.recomendaciones || !data.medidas) {
@@ -883,20 +887,14 @@ class IncidentsRepository {
             estado: 'completada'
         };
 
-        const result = await this.dynamo.send(new UpdateCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId: id },
-            UpdateExpression: `SET investigaciones.${campoInvestigacion} = :investigation, estado = :estado, updatedAt = :updatedAt`,
-            ExpressionAttributeValues: {
-                ':investigation': investigation,
-                ':estado': 'en_investigacion',
-                ':updatedAt': now
-            },
-            ReturnValues: 'ALL_NEW'
-        }));
+        const incidente = await this.casoParaEscribir(ref);
+        const incident = await this.actualizarCaso(incidente, {
+            investigaciones: { ...(incidente.investigaciones || {}), [campoInvestigacion]: investigation },
+            estado: 'en_investigacion',
+        });
 
         return {
-            incident: result.Attributes,
+            incident,
             message: 'Investigación agregada exitosamente',
             investigation
         };
@@ -1064,8 +1062,9 @@ class IncidentsRepository {
             const lugar = obra?.nombre || incidente.centroTrabajo || 'obra sin especificar';
             const [a, m, d] = String(medida.fechaMaxEjecucion || '').split('-');
             const plazo = a && m && d ? `${d}-${m}-${a}` : String(medida.fechaMaxEjecucion || '');
-            const texto = String(medida.medida || '').trim();
-            const resumen = texto.length > 140 ? `${texto.slice(0, 137)}…` : texto;
+            // Por caracteres completos: un corte a mitad de un emoji dejaba una mitad suelta.
+            const letras = Array.from(String(medida.medida || '').trim());
+            const resumen = letras.length > 140 ? `${letras.slice(0, 137).join('')}…` : letras.join('');
             const ahora = new Date().toISOString();
             return await conNeutro('incidente.medida.aviso', async () => {
                 await this.dynamo.send(new PutCommand({
@@ -1253,6 +1252,18 @@ class IncidentsRepository {
         return { papel, yaRegistrado: false };
     }
 
+    /**
+     * Bucket de un papel. Las claves actuales (`tenants/{empresa}/{carpeta}/…`) lo dicen en
+     * su carpeta (`almacenamiento.bucketDeClave`). Las del contrato de diciembre de 2025 a
+     * septiembre de 2026 (`{id}/documents/{tipo}-….pdf`, sin empresa) no tienen carpeta: ese
+     * segundo tramo es `documents`, y `bucketDeClave` las mandaría al bucket de trabajo.
+     * Los papeles de incidentes siempre se guardaron en el bucket de evidencia del módulo,
+     * así que ahí se buscan.
+     */
+    bucketDelPapel(s3Key) {
+        return String(s3Key).startsWith('tenants/') ? almacenamiento.bucketDeClave(s3Key) : this.incidentEvidenceBucket;
+    }
+
     // Los papeles del caso con un enlace de descarga FIRMADO de 15 minutos (como
     // las fotos). Nunca una URL directa al bucket: no abre y, si abriera, no
     // dejaría constancia de quién la pidió.
@@ -1263,7 +1274,7 @@ class IncidentsRepository {
         const archivos = await Promise.all(papeles.map(async (p) => {
             const { s3Key, huella, ...visible } = p;
             const url = await getSignedUrl(s3Client, new GetObjectCommand({
-                Bucket: almacenamiento.bucketDeClave(s3Key),
+                Bucket: this.bucketDelPapel(s3Key),
                 Key: s3Key,
                 // El navegador descarga con el nombre original, no con la clave.
                 ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(p.nombreArchivo || 'documento')}`,
@@ -1338,22 +1349,29 @@ class IncidentsRepository {
         if (!data.tipo || !data.centroTrabajo || !data.descripcion) {
             throw new Error('Campos requeridos: tipo, centroTrabajo, descripcion');
         }
+        // El reporte rápido por QR lo puede hacer cualquier persona con sesión, sin
+        // `incidentes.reportar`: por eso solo crea HALLAZGOS. Un incidente o un accidente
+        // exige ese permiso (`POST /incidents`), y esta ruta no lo comprobaba.
+        if (!TIPOS_HALLAZGO.includes(data.tipo)) {
+            throw Object.assign(new Error(`El reporte rápido solo crea hallazgos. Tipos válidos: ${TIPOS_HALLAZGO.join(', ')}`), { statusCode: 400 });
+        }
+        if (data.gravedad !== undefined && !GRAVEDADES.includes(data.gravedad)) {
+            throw Object.assign(new Error(`Gravedad inválida. Valores válidos: ${GRAVEDADES.join(', ')}`), { statusCode: 400 });
+        }
+        // Fecha y hora de Chile, no del reloj UTC de Lambda (pasadas las 21:00 de Chile el día UTC ya es el siguiente).
+        const { fecha, horario } = fechaHoraChile(now);
 
         const incident = {
             incidentId,
             tipo: data.tipo,
-            clasificacion: data.clasificacion || 'hallazgo',
+            clasificacion: 'hallazgo',
             tipoHallazgo: data.tipoHallazgo || 'condicion',
             etapaConstructiva: data.etapaConstructiva || '',
             centroTrabajo: data.centroTrabajo,
-            trabajador: {
-                nombre: data.reportadoPor || 'Reporte Anónimo',
-                rut: '',
-                genero: '',
-                cargo: ''
-            },
-            fecha: now.split('T')[0],
-            hora: now.split('T')[1].split('.')[0],
+            // Quién reporta va a la traza, como en `create`: nunca en el elemento listado.
+            trabajadorNombre: '',
+            fecha,
+            hora: horario,
             descripcion: data.descripcion,
             gravedad: data.gravedad || 'leve',
             diasPerdidos: 0,
@@ -1376,6 +1394,18 @@ class IncidentsRepository {
             createdAt: now,
             updatedAt: now
         };
+
+        // Según la decisión de la fase 1, el reporte rápido guarda en el nombre del
+        // trabajador a quien reporta (`reportadoPor`, que el handler fija con su personaId).
+        await guardarTraza(this.incidentsTable, 'incidentId', incidentId, {
+            trabajador: {
+                nombre: data.reportadoPor || 'Reporte Anónimo',
+                rut: '',
+                genero: '',
+                cargo: ''
+            },
+            reporteFlash: null,
+        });
 
         await this.dynamo.send(new PutCommand({
             TableName: this.incidentsTable,

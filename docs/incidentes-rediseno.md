@@ -195,6 +195,22 @@ Encontrado y sin corregir:
 - El responsable de un hallazgo no recibe aviso, y si no tiene `incidentes.historial` no puede ver el hallazgo que se le asignó.
 - `afectadoRutHmac` se conserva al anonimizar, porque es el vínculo que usa la retención.
 
+### Casos borde (22 de noviembre)
+
+Una segunda revisión independiente buscó casos borde y encontró 14; se corrigieron todos. Los que cambian reglas:
+
+- **La clasificación de un reporte se deriva siempre de su tipo.** Una clasificación que no coincide con el tipo se rechaza, y el tipo y la gravedad se validan contra sus listas.
+- **El reporte rápido (QR) solo crea hallazgos.** Guarda los datos del trabajador en la traza cifrada y la fecha en hora de Chile.
+- **Completar un reporte flash** ahora funciona: lee la traza, valida la gravedad y no la cambia si el caso ya está clasificado (para eso está la clasificación).
+- **`PUT /incidents/{id}` ya no cambia el estado.** El estado cambia solo al clasificar, cerrar o reabrir.
+- **Las rutas antiguas** (editar, calificar accidente, gobernanza, flash, estado de medida, investigación, marcar visto) exigen poder leer el caso, igual que las nuevas, y escriben con bloqueo optimista.
+- **Papeles de 2026 con el formato de clave anterior** (`{incidentId}/documents/…`) se leen como papeles válidos, se descargan del bucket de evidencia y entran en la retención.
+- **Ítem 66:** un accidente cuenta como investigado si tiene el informe de investigación o una investigación registrada con el flujo anterior. Solo cuentan los accidentes reales, y se mira la historia completa de la obra. El cierre de un accidente sigue exigiendo el informe como papel.
+- **Medidas antiguas sin número** se numeran al leerlas, y las de plazo en formato completo se pueden editar.
+- **Si confirmar un papel da conflicto,** se reintenta con el mismo archivo, sin volver a subirlo.
+
+Sin verificar: si las DIAT de 2025 y 2026 siguen en el bucket de evidencia actual o quedaron en el bucket del stack anterior.
+
 ## 10. Pendientes de decisión
 
 - Plazos internos para clasificar e investigar: no son normativos.

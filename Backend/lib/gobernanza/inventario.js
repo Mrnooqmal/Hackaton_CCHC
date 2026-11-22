@@ -179,7 +179,12 @@ const FUENTES = [
         archivosDe: (it) => [
             ...(Array.isArray(it.evidencias) ? it.evidencias.map((e) => (typeof e === 'string' ? e : e?.key || e?.fileKey)) : []),
             ...(Array.isArray(it.papeles) ? it.papeles.map((x) => x?.s3Key) : []),
-        ].filter(Boolean),
+            // La DIAT y la DIEP guardadas con el contrato anterior (`documentos.diat/diep`,
+            // un archivo por tipo): siguen siendo datos de salud en S3 y tienen que entrar
+            // en la retención y en la supresión, aunque ya no se escriban.
+            it.documentos?.diat?.s3Key,
+            it.documentos?.diep?.s3Key,
+        ].filter((k) => typeof k === 'string' && k),
     },
     {
         tabla: 'SURVEYS_TABLE',

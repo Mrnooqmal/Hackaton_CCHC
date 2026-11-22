@@ -176,7 +176,7 @@ export interface CreateIncidentData {
 }
 
 export interface UpdateIncidentData {
-    estado?: 'reportado' | 'en_investigacion' | 'cerrado';
+    // Sin `estado`: el servidor lo rechaza (cambia al clasificar, cerrar o reabrir el caso).
     investigacionPrevencionista?: Omit<Investigation, 'fecha'>;
     investigacionJefeDirecto?: Omit<Investigation, 'fecha'>;
     investigacionComiteParitario?: Omit<Investigation, 'fecha'>;

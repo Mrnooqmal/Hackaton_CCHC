@@ -325,8 +325,9 @@ function evaluarItem53(ctx) {
 
 /**
  * Art. 71. Además del procedimiento, mira los accidentes de la obra: cada uno
- * exige su informe de investigación (papel `informe_investigacion` del caso, ver
- * `lib/casos.js`). `ctx.casos` es el resumen de los casos de la obra
+ * exige su investigación: el papel `informe_investigacion` del caso o una
+ * investigación registrada con el flujo anterior (ver `resumenDelCaso` en
+ * `lib/casos.js`). Cuenta la historia completa de la obra, sin filtrar por período. `ctx.casos` es el resumen de los casos de la obra
  * (`resumenDelCaso`), sin datos personales ni archivos.
  *
  *  - Sin procedimiento: Pendiente, como siempre; los accidentes no cambian eso.
@@ -355,7 +356,9 @@ function evaluarItem66(ctx) {
     if (ctx.casos === null) {
         return { estado: E.PARCIAL, detalle: `Procedimiento cargado${registradas}. No se pudieron revisar los accidentes de la obra: vuelve a intentarlo.` };
     }
-    const accidentes = (ctx.casos || []).filter((c) => c?.tipo === 'accidente');
+    // Solo los accidentes reales: un "hallazgo" cuyo tipo dice accidente no lo es.
+    // Se mira la historia completa de la obra, no un período.
+    const accidentes = (ctx.casos || []).filter((c) => c?.tipo === 'accidente' && c.clasificacion !== 'hallazgo');
     const sinInforme = accidentes.filter((c) => !c.informeInvestigacion);
     if (sinInforme.length > 0) {
         return {
@@ -372,7 +375,7 @@ function evaluarItem66(ctx) {
     return {
         estado: E.CUMPLIDO,
         detalle: documentos.length === 0
-            ? 'Procedimiento cargado. Sin accidentes investigados en el período.'
+            ? 'Procedimiento cargado. Sin accidentes registrados en la obra.'
             : `Procedimiento cargado y ${plural(documentos.length, 'investigación registrada', 'investigaciones registradas')}.`,
     };
 }

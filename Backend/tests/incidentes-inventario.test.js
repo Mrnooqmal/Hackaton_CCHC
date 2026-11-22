@@ -180,12 +180,15 @@ async function crearCasos() {
     ok(await pedir(trab(), 'POST', `/incidents/${h}/evidencias`, { evidencias: [`tenants/${A}/incidentes/${h}/${UUID}.png`] }));
     ok(await pedir(prev(), 'PUT', `/incidents/${h}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparada' }));
 
-    // 3. Un reporte flash. (`flash-completar` no se ejercita acá: lee `reporteFlash` del elemento listado, y desde que
-    //    vive en la traza esa ruta responde 400 siempre; ver el informe de la revisión.)
+    // 3. Un reporte flash, y su completado (lee y escribe la traza, donde vive el reporte flash).
     const f = datos(ok(await pedir(gest(), 'POST', '/incidents', {
         clasificacion: 'incidente', tipo: 'incidente', esFlash: true, descripcionBreve: 'Caída leve', obraId: obraA, ubicacionReferencia: 'Piso 3',
         afectados: [{ nombre: 'Juan Pérez', rut: '17.777.777-3', cargo: 'Enfierrador' }],
     }))).incidentId;
+    ok(await pedir(gest(), 'PUT', `/incidents/${f}/flash-completar`, {
+        descripcion: 'Caída desde 2 metros', gravedad: 'grave', diasPerdidos: 3,
+        trabajador: { nombre: 'Juan Pérez', rut: '17.777.777-3', cargo: 'Enfierrador' },
+    }));
     ok(await pedir(prev(), 'PUT', `/incidents/${f}/calificar-accidente`, {}));
 
     // 4. Un reporte rápido por QR.

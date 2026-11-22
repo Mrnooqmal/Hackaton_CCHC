@@ -124,12 +124,13 @@ export function papelesDelCaso(inc?: CasoParaPapeles | null): Array<{ tipo?: str
     const nuevos = Array.isArray(lista) ? lista.filter(Boolean) : [];
     const documentos = inc?.documentos;
     if (!documentos || typeof documentos !== 'object' || !inc?.tenantId || !inc?.incidentId) return nuevos;
-    const prefijo = `tenants/${inc.tenantId}/incidentes/${inc.incidentId}/`;
+    // Dos formatos de clave: el actual y el de diciembre de 2025 a septiembre de 2026 (`{id}/documents/…`).
+    const prefijos = [`tenants/${inc.tenantId}/incidentes/${inc.incidentId}/`, `${inc.incidentId}/documents/`];
     const anteriores: Array<{ tipo?: string; s3Key?: string; [campo: string]: unknown }> = [];
     for (const tipo of TIPOS_PAPEL_ANTERIORES) {
         const d = documentos[tipo];
         const clave = d?.s3Key;
-        if (typeof clave !== 'string' || !clave.startsWith(prefijo) || clave.includes('..')) continue;
+        if (typeof clave !== 'string' || !prefijos.some((p) => clave.startsWith(p)) || clave.includes('..')) continue;
         if (nuevos.some((p) => p.s3Key === clave)) continue;
         anteriores.push({
             papelId: `anterior-${tipo}`,
@@ -245,8 +246,9 @@ export const estaCerrado = (inc?: CasoParaPasos | null): boolean => (esHallazgo(
     : inc?.estado === 'cerrado');
 
 const resumenMedida = (m?: { medida?: string } | null) => {
-    const texto = String(m?.medida || '').trim();
-    return texto.length > 60 ? `${texto.slice(0, 57)}…` : texto;
+    // Por caracteres completos: `slice` podía partir un emoji por la mitad.
+    const letras = Array.from(String(m?.medida || '').trim());
+    return letras.length > 60 ? `${letras.slice(0, 57).join('')}…` : letras.join('');
 };
 
 /**

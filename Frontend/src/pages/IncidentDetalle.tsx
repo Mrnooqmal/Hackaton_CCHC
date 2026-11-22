@@ -184,7 +184,11 @@ export default function IncidentDetalle() {
     // abierto (el servidor lo exige igual). Es la salida de un hallazgo que llegó sin foto
     // (un reporte rápido por QR nunca las trae) y no se puede cerrar sin una.
     const puedeAgregarFotos = !cerrado && (incidente.reportadoPor === user?.personaId || puedeSubirPapeles);
-    const meToca = siguiente.permiso && hasPermission(siguiente.permiso);
+    // "Te toca" solo para quien puede hacer el paso DESDE ESTA PANTALLA: los pasos (clasificar,
+    // papeles, medidas, cerrar) se hacen en secciones que solo ve quien tiene el historial
+    // (`verPapeles`). Con el permiso del paso pero sin esas secciones, el mensaje mandaba a
+    // hacer algo que la pantalla no ofrece; esa persona ve solo el texto simple de "Qué sigue".
+    const meToca = Boolean(siguiente.permiso) && verPapeles && hasPermission(siguiente.permiso as string);
 
     return (
         <div className="page-content">

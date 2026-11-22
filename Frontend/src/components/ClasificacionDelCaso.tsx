@@ -4,7 +4,6 @@ import { incidentsApi, type ClasificarData, type Incident } from '../api/client'
 import { useToast } from '../context/ToastContext';
 import { Select, SegmentedControl } from './ui';
 import SelectorResponsable from './SelectorResponsable';
-import { fechaLocal } from '../utils/prescripciones';
 import { esHallazgo } from '../utils/casos';
 
 type Tipo = Incident['tipo'];
@@ -46,8 +45,13 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
     const previo = incidente.triaje;
     const yaClasificado = Boolean(previo);
 
-    const [tipo, setTipo] = useState<Tipo>(previo?.tipo ?? incidente.tipo);
-    const [gravedad, setGravedad] = useState<Gravedad>(previo?.gravedad ?? incidente.gravedad ?? 'leve');
+    // Un caso antiguo puede traer un tipo o una gravedad que ya no está entre las opciones
+    // (el servidor responde 400 si se envían). Si el valor no está en la lista, se parte
+    // vacío, y hay que elegir: antes el selector no mostraba nada y enviaba el valor viejo.
+    const tipoGuardado = previo?.tipo ?? incidente.tipo;
+    const gravedadGuardada = previo?.gravedad ?? incidente.gravedad;
+    const [tipo, setTipo] = useState<Tipo | ''>(TIPOS.some((t) => t.value === tipoGuardado) ? tipoGuardado : '');
+    const [gravedad, setGravedad] = useState<Gravedad | ''>(GRAVEDADES.some((g) => g.value === gravedadGuardada) ? (gravedadGuardada as Gravedad) : '');
     // Sin respuesta previa, vacío: las dos preguntas hay que contestarlas a conciencia.
     const [danoMayor, setDanoMayor] = useState<string>(previo?.danoMayor == null ? '' : previo.danoMayor ? 'si' : 'no');
     const [granSusto, setGranSusto] = useState<string>(previo?.granSusto == null ? '' : previo.granSusto ? 'si' : 'no');
@@ -56,18 +60,26 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
     const [guardando, setGuardando] = useState(false);
     const [error, setError] = useState('');
 
-    const hallazgo = esHallazgo({ tipo });
+    const hallazgo = tipo !== '' && esHallazgo({ tipo });
     const incidentePeligroso = tipo === 'incidente';
 
     const guardar = async (e: React.FormEvent) => {
         e.preventDefault();
         if (guardando) return;
+        if (!tipo) {
+            setError('Elige qué es lo que se reportó.');
+            return;
+        }
+        if (!hallazgo && !gravedad) {
+            setError('Elige la gravedad.');
+            return;
+        }
         if (incidentePeligroso && (!danoMayor || !granSusto)) {
             setError('Responde las dos preguntas para saber si el incidente es de alto potencial.');
             return;
         }
         const datos: ClasificarData = { tipo };
-        if (!hallazgo) datos.gravedad = gravedad;
+        if (!hallazgo && gravedad) datos.gravedad = gravedad;
         if (incidentePeligroso) { datos.danoMayor = danoMayor === 'si'; datos.granSusto = granSusto === 'si'; }
         if (hallazgo) {
             if (responsableId) datos.responsableId = responsableId;
@@ -103,6 +115,7 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
                     <label className="form-label">Qué es</label>
                     <Select
                         ariaLabel="Tipo de caso"
+                        placeholder="Elegir…"
                         value={tipo}
                         onChange={(v) => setTipo(v as Tipo)}
                         options={TIPOS}
@@ -110,7 +123,7 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
                     />
                 </div>
 
-                {!hallazgo && (
+                {tipo !== '' && !hallazgo && (
                     <div className="form-group">
                         <label className="form-label">Gravedad</label>
                         <SegmentedControl
@@ -147,11 +160,12 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
                         </div>
                         <div className="form-group">
                             <label className="form-label" htmlFor="clasificar-plazo">Plazo para corregirlo (opcional)</label>
+                            {/* Sin `min`: el servidor acepta un plazo ya vencido (un hallazgo se puede registrar tarde), y con
+                                `min` el navegador impedía reclasificar un hallazgo cuyo plazo precargado ya pasó. */}
                             <input
                                 id="clasificar-plazo"
                                 className="form-input"
                                 type="date"
-                                min={fechaLocal()}
                                 value={plazo}
                                 disabled={guardando}
                                 onChange={(e) => setPlazo(e.target.value)}

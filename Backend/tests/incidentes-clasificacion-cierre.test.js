@@ -313,7 +313,9 @@ test('medida: el número sigue al mayor, también con medidas anteriores a la fa
     const id = await crear();
     guardado(id).medidasCorrectivas = [{ numero: '5', medida: 'Antigua', estado: 'pendiente' }, { medida: 'Sin número', estado: 'pendiente' }];
     const res = await crearMedida(id);
-    assert.equal(datos(res).medida.numero, 6);
+    // La que no traía número se numera al leerla (6, a continuación del mayor) y la nueva sigue (7).
+    assert.equal(datos(res).medida.numero, 7);
+    assert.deepEqual(guardado(id).medidasCorrectivas.map((m) => m.numero), ['5', 6, 7]);
 });
 
 test('medida: el responsable debe ser de la empresa (404) y estar activo (400)', async () => {
