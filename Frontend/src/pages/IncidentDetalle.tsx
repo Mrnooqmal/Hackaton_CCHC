@@ -3,7 +3,10 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { FiAlertCircle, FiArrowRight, FiCheckCircle, FiCircle, FiClock, FiImage } from 'react-icons/fi';
 import { incidentsApi, type Incident } from '../api/client';
 import { useObraContext } from '../context/ObraContext';
+import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../permissions';
 import { PageHeader, AlertBanner, LoadingSpinner } from '../components/ui';
+import PapelesDelCaso from '../components/PapelesDelCaso';
 import { incidenteCerrado } from '../utils/incidentes';
 import { plural } from '../utils/plural';
 
@@ -90,6 +93,12 @@ export default function IncidentDetalle() {
     const location = useLocation();
     const navegacion = (location.state || {}) as EstadoNavegacion;
     const { obras } = useObraContext();
+    const { hasPermission } = useAuth();
+    // Los papeles del caso (DIAT y DIEP traen datos de salud) son del historial:
+    // quien solo ve su propio reporte no recibe la sección. Subir, además, exige
+    // `incidentes.reportar`. El servidor aplica las mismas reglas.
+    const verPapeles = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
+    const puedeSubirPapeles = hasPermission(PERMISSIONS.INCIDENTES_REPORTAR);
 
     // Lo cargado queda junto al id que se pidió: "cargando" es que todavía no
     // llegó la respuesta de ESTE id, sin un setState síncrono dentro del efecto.
@@ -244,6 +253,8 @@ export default function IncidentDetalle() {
                         )}
                     </div>
                 </section>
+
+                {verPapeles && <PapelesDelCaso incidente={incidente} puedeSubir={puedeSubirPapeles} />}
             </div>
         </div>
     );

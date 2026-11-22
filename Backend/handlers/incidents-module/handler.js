@@ -5,6 +5,11 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
 const { personaDeLaEmpresa, personasDeLaEmpresa } = require('../../lib/auth/pertenencia');
+const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
+const {
+    ORDEN_TIPOS_PAPEL, esTipoPapel, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
+    papelesRequeridos, avanceDelCaso,
+} = require('../../lib/casos');
 
 const incidentsRepo = new IncidentsRepository();
 const router = Router();
@@ -105,7 +110,9 @@ router
     .put('/incidents/:id/gobernanza', updateGobernanza)
     .put('/incidents/:id/flash-completar', completarFlash)
     .put('/incidents/:id/medidas/:numero', updateMedidaEstado)
-    .post('/incidents/:id/documents', uploadDocument)
+    // Papeles del caso (fase 2): subir en dos pasos y listar con descarga firmada.
+    .post('/incidents/:id/documents', pedirSubidaDocumento)
+    .post('/incidents/:id/documents/confirmar', confirmarDocumento)
     .get('/incidents/:id/documents', getDocuments);
 
 router.all('*', () => jsonResponse({ error: 'Not Found' }, 404));
@@ -130,8 +137,25 @@ const jsonResponse = (data, status = 200) => ({
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type,Authorization',
     },
-    body: JSON.stringify(data.success !== undefined ? data : { success: true, data }),
+    body: JSON.stringify(data.success !== undefined ? data : { success: true, data }, sinPapeles),
 });
+
+/**
+ * Las claves `papeles` y `documentos` del incidente (los archivos del caso, con
+ * su clave de S3) nunca salen en una respuesta de este módulo.
+ *
+ * El detalle, el listado y las respuestas de las ediciones devuelven el incidente
+ * tal como está guardado, y ahí van la DIAT y la DIEP, que traen RUT y datos de
+ * salud. Quien reportó un caso lo puede leer aunque no tenga `incidentes.historial`
+ * y a esa persona no se le expone la DIAT; y quien sí tiene historial las descarga
+ * por `GET /incidents/{id}/documents`, que firma el enlace y deja la auditoría. Por
+ * eso la lista se saca acá, por defecto, y no ruta por ruta: una respuesta nueva
+ * que devuelva el incidente (fases 3 y 4) tampoco la filtra por olvido. Esa ruta
+ * entrega su lista bajo otro nombre (`archivos`).
+ */
+function sinPapeles(clave, valor) {
+    return clave === 'papeles' || clave === 'documentos' ? undefined : valor;
+}
 
 const errorResponse = (err) => {
     console.error('Handler Error:', err);
@@ -512,26 +536,152 @@ async function updateMedidaEstado(request) {
     }
 }
 
-async function uploadDocument(request) {
+// ─── Papeles del caso (fase 2 del rediseño) ──────────────────────────────────
+//
+// Subir exige `incidentes.reportar` (quien gestiona incidentes); ver y descargar,
+// `incidentes.historial`. Lo que no puede leer ni sabe que existe: el mismo 404
+// que `get`. Lo que puede leer pero no gestionar: 403.
+
+/** Rechazo para quien quiere subir un papel al caso, o null si puede. */
+const rechazoParaSubirPapel = (incidente, sesion) => {
+    if (!puedeLeer(incidente, sesion)) return noEncontrado();
+    if (!sesionPuede(sesion, PERMISSIONS.INCIDENTES_REPORTAR)) {
+        return sinPermiso('Solo quien gestiona incidentes puede subir papeles al caso.');
+    }
+    return null;
+};
+
+const cantidadDePapeles = (incidente) => (Array.isArray(incidente.papeles) ? incidente.papeles.length : 0);
+const SIN_CUPO = `El caso admite hasta ${MAX_PAPELES_POR_CASO} archivos.`;
+
+// Lo que arma `pedirSubidaPapel` después del prefijo: `{tipo}-{uuid}.{extensión}`.
+// Las fotos (`{uuid}.{ext}`, sin el segmento `papeles/`) no pasan por acá, y los
+// papeles no pasan por `NOMBRE_EVIDENCIA`: cada clave pertenece a un solo flujo.
+const NOMBRE_PAPEL = new RegExp(
+    `^(${ORDEN_TIPOS_PAPEL.join('|')})-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\.(pdf|jpg|png|webp)$`, 'i'
+);
+
+/** Nombre para mostrar: sin separadores de ruta ni caracteres de control, de hasta 150 caracteres. */
+const nombreVisible = (valor) => String(valor ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/[\\/]/g, '_').trim().slice(0, 150);
+
+/** AAAA-MM-DD de un día real que no sea futuro (con un día de margen por la zona horaria). */
+const fechaDocumentoValida = (valor) => {
+    if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+    const d = new Date(`${valor}T00:00:00Z`);
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== valor) return false;
+    return d.getTime() <= Date.now() + 24 * 60 * 60 * 1000;
+};
+
+/** El papel tal como se le muestra a quien lo subió: sin la clave de S3 ni la huella. */
+const papelVisible = ({ s3Key, huella, ...resto }) => resto;
+
+// Paso 1: URL de subida prefirmada. No registra nada en el incidente.
+async function pedirSubidaDocumento(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!await incidenteDelTenant(request.params.id, ses.sesion)) return noEncontrado();
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaSubirPapel(incidente, sesion);
+        if (rechazo) return rechazo;
+
         const body = parseBody(request.event);
-        const result = await incidentsRepo.uploadDocument(request.params.id, { ...body, tenantId: ses.sesion.tenantId });
-        return jsonResponse(result);
+        if (!esTipoPapel(body.tipo)) {
+            return jsonResponse({ success: false, error: `Tipo de documento inválido. Valores válidos: ${ORDEN_TIPOS_PAPEL.join(', ')}` }, 400);
+        }
+        if (!MIME_PAPELES.includes(body.fileType)) {
+            return jsonResponse({ success: false, error: 'Solo se aceptan archivos PDF o imágenes (JPG, PNG o WebP).' }, 400);
+        }
+        // El tamaño lo declara el cliente y no se firma en la URL: es una barrera
+        // para quien se equivoca. Lo que S3 recibió se mide de nuevo al confirmar.
+        if (body.tamano !== undefined && (!Number.isFinite(body.tamano) || body.tamano <= 0 || body.tamano > MAX_BYTES_PAPEL)) {
+            return jsonResponse({ success: false, error: `El archivo debe pesar hasta ${Math.round(MAX_BYTES_PAPEL / (1024 * 1024))} MB.` }, 413);
+        }
+        if (cantidadDePapeles(incidente) >= MAX_PAPELES_POR_CASO) {
+            return jsonResponse({ success: false, error: SIN_CUPO }, 400);
+        }
+        const result = await incidentsRepo.pedirSubidaPapel({
+            incidentId: incidente.incidentId,
+            tenantId: sesion.tenantId,
+            tipo: body.tipo,
+            fileType: body.fileType,
+            checksumSha256: body.checksumSha256,
+        });
+        return jsonResponse({ success: true, data: { ...result, tipo: body.tipo } });
     } catch (err) {
         return errorResponse(err);
     }
 }
 
+// Paso 2: confirmar la subida. Con HeadObject se comprueba que el archivo existe
+// y recién ahí se registra; sin esto no hay registro.
+async function confirmarDocumento(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaSubirPapel(incidente, sesion);
+        if (rechazo) return rechazo;
+
+        const body = parseBody(request.event);
+        // La clave tiene que ser de ESTA empresa, de ESTE incidente y de la carpeta
+        // de papeles: de otra forma se registraría como papel un archivo ajeno (o
+        // una foto) y `get` firmaría su descarga.
+        const prefijo = incidentsRepo.prefijoPapeles(sesion.tenantId, incidente.incidentId);
+        const s3Key = body.s3Key;
+        const partes = typeof s3Key === 'string' && s3Key.startsWith(prefijo) ? NOMBRE_PAPEL.exec(s3Key.slice(prefijo.length)) : null;
+        if (!partes) {
+            return jsonResponse({ success: false, error: 'Clave de documento inválida para este incidente' }, 400);
+        }
+        const nombreArchivo = nombreVisible(body.fileName);
+        if (!nombreArchivo) {
+            return jsonResponse({ success: false, error: 'Falta el nombre del archivo' }, 400);
+        }
+        if (body.fechaDocumento !== undefined && body.fechaDocumento !== null && body.fechaDocumento !== '' && !fechaDocumentoValida(body.fechaDocumento)) {
+            return jsonResponse({ success: false, error: 'La fecha del documento debe ser un día válido (AAAA-MM-DD) que no sea futuro.' }, 400);
+        }
+        const yaEsta = Array.isArray(incidente.papeles) && incidente.papeles.some((x) => x.s3Key === s3Key);
+        if (!yaEsta && cantidadDePapeles(incidente) >= MAX_PAPELES_POR_CASO) {
+            return jsonResponse({ success: false, error: SIN_CUPO }, 400);
+        }
+
+        const { papel, yaRegistrado } = await incidentsRepo.registrarPapel(incidente, {
+            s3Key,
+            tipo: partes[1].toLowerCase(),
+            papelId: partes[2].toLowerCase(),
+            nombreArchivo,
+            fechaDocumento: body.fechaDocumento || null,
+            personaId: sesion.personaId,
+        });
+        return jsonResponse({ success: true, data: { papel: papelVisible(papel) } }, yaRegistrado ? 200 : 201);
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+// Lista de papeles con enlace de descarga firmado (15 minutos) y lo que el caso
+// exige. La DIAT y la DIEP traen datos de salud: su entrega queda en la
+// auditoría de acceso a datos de salud, y si el registro no se puede escribir la
+// respuesta no sale (`conAuditoriaSalud`, en `incidentsHandler`).
 async function getDocuments(request) {
     try {
         const ses = sesionDe(request);
         if (!ses.ok) return ses.respuesta;
-        if (!puedeLeer(await incidenteDelTenant(request.params.id, ses.sesion), ses.sesion)) return noEncontrado();
-        const result = await incidentsRepo.getDocuments(request.params.id);
-        return jsonResponse(result);
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        if (!puedeLeer(incidente, sesion)) return noEncontrado();
+        // Quien reportó el caso lo ve, pero sus papeles son del historial.
+        if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los papeles del caso.');
+
+        const { archivos, clavesConSalud } = await incidentsRepo.getDocuments(incidente);
+        if (clavesConSalud.length) {
+            anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.DESCARGA, documentos: [incidente.incidentId], claves: clavesConSalud });
+        }
+        return jsonResponse({
+            success: true,
+            data: { archivos, requeridos: papelesRequeridos(incidente), avance: avanceDelCaso(incidente) },
+        });
     } catch (err) {
         return errorResponse(err);
     }
@@ -566,7 +716,9 @@ async function quickReport(request) {
 // Main Lambda Handler
 // Toda salida, venga de la rama que venga (router, OPTIONS, conversión de
 // Response, error 500), sale con `Cache-Control: no-store` (lib/utils/response.js).
-module.exports.incidentsHandler = async (event) => sinCache(await atender(event));
+// `conAuditoriaSalud` envuelve todo el enrutador: la única ruta que entrega datos
+// de salud es la de papeles, y es la que anota el acceso.
+module.exports.incidentsHandler = async (event) => sinCache(await conAuditoriaSalud(atender)(event));
 
 const atender = async (event) => {
     // Adapt Lambda event to itty-router request

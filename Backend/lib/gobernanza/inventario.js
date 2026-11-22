@@ -130,19 +130,28 @@ const FUENTES = [
         // el incidente es borrar esa traza entera.
         traza: 'incidentId',
         nombre: 'Incidentes, accidentes y hallazgos',
-        datos: 'Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas y evidencia.',
+        datos: 'Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas y evidencia. '
+            + 'Papeles del caso (DIAT, DIEP, informe de investigación, constancia del aviso a la autoridad y respaldos): '
+            + 'el incidente guarda su tipo, nombre de archivo, fecha, quién lo subió y la clave del archivo; la DIAT y la DIEP '
+            + 'traen RUT y datos de salud y se guardan en el bucket de evidencia, con descarga auditada.',
         finalidad: 'Registro de AT/EP e incidentes peligrosos (Arts. 71 a 73) e indicadores de accidentabilidad.',
         clase: CLASE.EVIDENCIA,
         // Se conserva el hecho (tipo, fecha, gravedad, días perdidos, obra) para
         // los indicadores; se quitan los datos de las personas.
         alVencer: AL_VENCER.ANONIMIZAR,
-        camposPersonales: ['cifrado', 'trabajadorNombre', 'realizadoPor', 'reportadoPor', 'viewedBy', 'investigaciones', 'descripcion', 'evidencias', 'documentos'],
+        camposPersonales: ['cifrado', 'trabajadorNombre', 'realizadoPor', 'reportadoPor', 'viewedBy', 'investigaciones', 'descripcion', 'evidencias', 'documentos', 'papeles'],
         // La persona afectada se vincula por `afectadoRutHmac` (el mismo HMAC de su
         // ficha), que el proceso resuelve a personaId con `ctx.personaPorRutHmac`.
         // `reportadoPor` es un nombre, no un id.
         personasDe: (it, ctx = {}) => [...uno(ctx.personaPorRutHmac?.[it.afectadoRutHmac]), ...uno(it.realizadoPor?.personaId),
             ...uno(it.gobernanza?.responsableId), ...ids(it.medidasCorrectivas, 'responsableId')],
-        archivosDe: (it) => (Array.isArray(it.evidencias) ? it.evidencias.map((e) => (typeof e === 'string' ? e : e?.key || e?.fileKey)).filter(Boolean) : []),
+        // Las fotos y los papeles del caso (`papeles[].s3Key`, fase 2): al vencer el
+        // incidente se suprimen o se conservan juntos, y un archivo que el plan no
+        // conoce no se vigila ni se extiende su bloqueo de S3.
+        archivosDe: (it) => [
+            ...(Array.isArray(it.evidencias) ? it.evidencias.map((e) => (typeof e === 'string' ? e : e?.key || e?.fileKey)) : []),
+            ...(Array.isArray(it.papeles) ? it.papeles.map((x) => x?.s3Key) : []),
+        ].filter(Boolean),
     },
     {
         tabla: 'SURVEYS_TABLE',

@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
+import type { AvanceDelCaso, PapelRequerido, TipoPapel } from '../utils/casos';
 
 export interface IncidentLocation {
     lat: number;
@@ -75,6 +76,10 @@ export interface Incident {
     gravedad: 'leve' | 'grave' | 'fatal';
     diasPerdidos?: number;
     evidencias: string[];
+    // Medidas del caso (Art. 71); cuenta como papel en `utils/casos`.
+    medidasCorrectivas?: unknown[];
+    // Lo agrega la fase 3 (triaje); mientras no exista, el incidente no exige informe.
+    altoPotencial?: boolean;
     investigaciones: {
         prevencionista?: Investigation;
         jefeDirecto?: Investigation;
@@ -143,10 +148,6 @@ export interface UpdateIncidentData {
     investigacionJefeDirecto?: Omit<Investigation, 'fecha'>;
     investigacionComiteParitario?: Omit<Investigation, 'fecha'>;
     diasPerdidos?: number;
-    documentos?: {
-        diat?: string;
-        diep?: string;
-    };
     evidencias?: string[];
     medidasInmediatas?: string;
     ubicacion?: IncidentLocation;
@@ -162,21 +163,35 @@ export interface AddInvestigationData {
     medidas: string[];
 }
 
-export interface UploadDocumentData {
-    /** De él sale la huella SHA-256 que exige el bucket de evidencia. */
-    archivo: Blob;
-    fileName: string;
-    fileType: string;
-    documentType: 'diat' | 'diep';
+/** Un archivo subido a la carpeta del caso (DIAT, DIEP, informe…). Sin la clave de S3: se descarga con `url`. */
+export interface PapelDelCaso {
+    papelId: string;
+    tipo: TipoPapel;
+    nombreArchivo: string;
+    tipoMime: string;
+    subidoPor: string;
+    subidoEn: string;
+    /** Fecha que declaró quien subió el archivo (por ejemplo, la de la DIAT); AAAA-MM-DD. */
+    fechaDocumento: string | null;
+    tamano: number;
+    /** La DIAT y la DIEP traen datos de salud: su descarga queda auditada. */
+    contieneSalud: boolean;
+    /** Enlace firmado de 15 minutos. */
+    url: string;
 }
 
-export interface DocumentReference {
-    documentType: 'diat' | 'diep';
-    s3Key: string;
-    fileName: string;
-    uploadedBy: string;
-    uploadedAt: string;
-    url?: string;
+export interface PapelesDelCaso {
+    archivos: PapelDelCaso[];
+    requeridos: PapelRequerido[];
+    avance: AvanceDelCaso;
+}
+
+export interface SubirPapelData {
+    /** De él sale la huella SHA-256 que exige el bucket de evidencia. */
+    archivo: File;
+    tipo: TipoPapel;
+    /** AAAA-MM-DD, opcional. */
+    fechaDocumento?: string;
 }
 
 export interface QuickReportData {
@@ -332,18 +347,28 @@ export const incidentsApi = {
             body: JSON.stringify(data),
         }),
 
-    uploadDocument: async (incidentId: string, { archivo, ...data }: UploadDocumentData) => {
+    // Papeles del caso, en dos pasos: (1) pedir la URL de subida, (2) confirmar
+    // cuando el archivo ya está en S3. El servidor registra el papel solo en el
+    // paso 2, después de comprobar que el archivo existe.
+    pedirSubidaPapel: async (incidentId: string, { archivo, tipo }: Pick<SubirPapelData, 'archivo' | 'tipo'>) => {
         const checksumSha256 = await huellaSha256(archivo);
-        const res = await apiRequest<{ uploadUrl: string; s3Key: string }>(`/incidents/${incidentId}/documents`, {
+        const res = await apiRequest<{ uploadUrl: string; s3Key: string; papelId: string }>(`/incidents/${incidentId}/documents`, {
             method: 'POST',
-            body: JSON.stringify({ ...data, checksumSha256 }),
+            body: JSON.stringify({ tipo, fileType: archivo.type, tamano: archivo.size, checksumSha256 }),
         });
-        if (!res.success || !res.data) return res as { success: boolean; data?: { uploadUrl: string; s3Key: string; uploadHeaders: Record<string, string> }; error?: string };
-        return { ...res, data: { ...res.data, uploadHeaders: headersDeSubida(data.fileType, checksumSha256) } };
+        if (!res.success || !res.data) return res as { success: boolean; data?: undefined; error?: string };
+        return { ...res, data: { ...res.data, uploadHeaders: headersDeSubida(archivo.type, checksumSha256) } };
     },
 
+    confirmarPapel: (incidentId: string, data: { s3Key: string; fileName: string; fechaDocumento?: string }) =>
+        apiRequest<{ papel: Omit<PapelDelCaso, 'url' | 'contieneSalud'> }>(`/incidents/${incidentId}/documents/confirmar`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    /** Papeles subidos con su descarga firmada, lo que el caso exige y el avance. Exige `incidentes.historial`. */
     getDocuments: (incidentId: string) =>
-        apiRequest<{ documents: DocumentReference[] }>(`/incidents/${incidentId}/documents`),
+        apiRequest<PapelesDelCaso>(`/incidents/${incidentId}/documents`),
 
     getAnalytics: (params?: { tenantId?: string; obraId?: string; fechaInicio?: string; fechaFin?: string }) => {
         const query = new URLSearchParams(params as Record<string, string>).toString();

@@ -1,8 +1,10 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand, QueryCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { HUELLA_SHA256, urlDeSubida } = require('../../lib/clients/s3');
+const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3');
+const almacenamiento = require('../../lib/almacenamiento');
+const { EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, tipoPapelConSalud } = require('../../lib/casos');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
@@ -338,7 +340,11 @@ class IncidentsRepository {
             gravedad: data.gravedad || 'leve',
             diasPerdidos: data.diasPerdidos || 0,
             evidencias: data.evidencias || [],
-            documentos: data.documentos || {},
+            // Los papeles del caso NO vienen del cliente: se agregan con
+            // `registrarPapel`, con el archivo ya comprobado. `documentos` es el campo
+            // anterior (un archivo por tipo), que ya no se escribe.
+            documentos: {},
+            papeles: [],
             investigaciones: {
                 prevencionista: null,
                 jefeDirecto: null,
@@ -675,10 +681,6 @@ class IncidentsRepository {
             updateExpression += ', diasPerdidos = :diasPerdidos';
             expressionAttributeValues[':diasPerdidos'] = data.diasPerdidos;
         }
-        if (data.documentos) {
-            updateExpression += ', documentos = :documentos';
-            expressionAttributeValues[':documentos'] = data.documentos;
-        }
         if (data.evidencias) {
             updateExpression += ', evidencias = :evidencias';
             expressionAttributeValues[':evidencias'] = data.evidencias;
@@ -889,24 +891,34 @@ class IncidentsRepository {
         };
     }
 
-    // UPLOAD DOCUMENT
-    async uploadDocument(id, data) {
-        if (!id) throw new Error('ID de incidente requerido');
-        const { fileName, fileType, documentType, tenantId, checksumSha256 } = data;
-        if (!fileName || !fileType || !documentType) {
-            throw new Error('fileName, fileType y documentType son requeridos');
-        }
-        if (!HUELLA_SHA256.test(String(checksumSha256 || ''))) {
-            throw new Error('Falta la huella SHA-256 del archivo. Recarga la página e intenta de nuevo.');
-        }
-        if (!tenantId) throw new Error('tenantId es requerido');
-        const tiposValidos = ['diat', 'diep'];
-        if (!tiposValidos.includes(documentType)) {
-            throw new Error(`Tipo de documento inválido. Valores válidos: ${tiposValidos.join(', ')}`);
-        }
+    // ─── PAPELES DEL CASO (fase 2 del rediseño) ──────────────────────────────────
+    //
+    // Los papeles de un caso son evidencia de cumplimiento (Arts. 71-72): viven en
+    // el bucket con Object Lock, bajo `tenants/{empresa}/incidentes/{id}/papeles/`,
+    // un prefijo distinto al de las fotos. En el incidente quedan en `papeles`, una
+    // LISTA: cada subida agrega y nada se pisa ni se borra (una segunda DIAT no
+    // reemplaza a la primera; el bucket, además, no deja borrar).
+    //
+    // La subida es en dos pasos: `pedirSubidaPapel` firma la URL y NO escribe nada
+    // en el incidente; `registrarPapel` comprueba con HeadObject que el archivo
+    // llegó y recién ahí lo registra. Antes el registro se escribía al pedir la URL
+    // y quedaba aunque la subida fallara. Sin confirmación no hay registro.
 
-        const fileExtension = fileName.split('.').pop();
-        const s3Key = `tenants/${data.tenantId}/incidentes/${id}/${documentType}-${uuidv4()}.${fileExtension}`;
+    /** Prefijo de los papeles de un caso. El de las fotos es el mismo sin `papeles/`. */
+    prefijoPapeles(tenantId, incidentId) {
+        return `tenants/${tenantId}/incidentes/${incidentId}/papeles/`;
+    }
+
+    // Paso 1: URL de subida. La huella SHA-256 la calcula el navegador (S3 rechaza
+    // escrituras sin huella en el bucket con bloqueo). La extensión sale del tipo
+    // MIME validado, no del nombre del archivo, y el nombre no se escribe en logs.
+    async pedirSubidaPapel({ incidentId, tenantId, tipo, fileType, checksumSha256 }) {
+        console.log('[PAPELES] subida solicitada | incidente', incidentId, '| tipo', tipo);
+        if (!HUELLA_SHA256.test(String(checksumSha256 || ''))) {
+            throw Object.assign(new Error('Falta la huella SHA-256 del archivo. Recarga la página e intenta de nuevo.'), { statusCode: 400 });
+        }
+        const papelId = uuidv4();
+        const s3Key = `${this.prefijoPapeles(tenantId, incidentId)}${tipo}-${papelId}.${EXTENSION_POR_MIME[fileType]}`;
         const command = new PutObjectCommand({
             Bucket: this.incidentEvidenceBucket,
             Key: s3Key,
@@ -914,44 +926,91 @@ class IncidentsRepository {
             ChecksumSHA256: checksumSha256,
         });
         const uploadUrl = await urlDeSubida(command, 3600);
-        const now = new Date().toISOString();
-
-        await this.dynamo.send(new UpdateCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId: id },
-            UpdateExpression: `SET documentos.${documentType} = :docInfo, updatedAt = :updatedAt`,
-            ExpressionAttributeValues: {
-                ':docInfo': { s3Key, fileName, fileType, uploadedAt: now },
-                ':updatedAt': now
-            }
-        }));
-
-        return { uploadUrl, s3Key, documentType };
+        return { uploadUrl, s3Key, papelId };
     }
 
-    // GET DOCUMENTS
-    async getDocuments(id) {
-        if (!id) throw new Error('ID de incidente requerido');
-        const result = await this.dynamo.send(new GetCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId: id }
-        }));
-        if (!result.Item) throw new Error('Incidente no encontrado');
+    // Paso 2: comprueba que el archivo está en el bucket y lo registra en el caso.
+    // `incidente` es el elemento leído por el handler (para el tope y la
+    // idempotencia); el agregado se hace con la condición de que no haya cambiado
+    // desde esa lectura, como `agregarEvidencias`.
+    async registrarPapel(incidente, { s3Key, tipo, papelId, nombreArchivo, fechaDocumento, personaId }) {
+        const previos = Array.isArray(incidente.papeles) ? incidente.papeles : [];
+        // Confirmar dos veces (un reintento tras un corte) no duplica el papel.
+        const yaEsta = previos.find((p) => p.s3Key === s3Key);
+        if (yaEsta) return { papel: yaEsta, yaRegistrado: true };
 
-        const documents = [];
-        const incident = result.Item;
-        if (incident.documentos) {
-            for (const [docType, docInfo] of Object.entries(incident.documentos)) {
-                if (docInfo && docInfo.s3Key) {
-                    documents.push({
-                        documentType: docType,
-                        ...docInfo,
-                        url: `https://${this.incidentEvidenceBucket}.s3.amazonaws.com/${docInfo.s3Key}`
-                    });
-                }
+        let cabecera;
+        try {
+            cabecera = await s3Client.send(new HeadObjectCommand({
+                Bucket: almacenamiento.bucketDeClave(s3Key),
+                Key: s3Key,
+                ChecksumMode: 'ENABLED',
+            }));
+        } catch (err) {
+            if (err?.name === 'NotFound' || err?.$metadata?.httpStatusCode === 404) {
+                throw Object.assign(new Error('No encontramos el archivo subido. Vuelve a subirlo.'), { statusCode: 400 });
             }
+            throw err;
         }
-        return { documents };
+        // Lo que S3 tiene guardado manda sobre lo que diga el cliente.
+        const tipoMime = String(cabecera.ContentType || '').split(';')[0].trim();
+        if (!MIME_PAPELES.includes(tipoMime)) {
+            throw Object.assign(new Error('El archivo subido no es un PDF ni una imagen válida.'), { statusCode: 400 });
+        }
+        const tamano = Number(cabecera.ContentLength) || 0;
+        if (tamano > MAX_BYTES_PAPEL) {
+            throw Object.assign(new Error(`El archivo supera el máximo de ${Math.round(MAX_BYTES_PAPEL / (1024 * 1024))} MB.`), { statusCode: 413 });
+        }
+
+        const papel = {
+            papelId,
+            tipo,
+            nombreArchivo,
+            tipoMime,
+            s3Key,
+            subidoPor: personaId,
+            subidoEn: new Date().toISOString(),
+            fechaDocumento: fechaDocumento || null,
+            tamano,
+            // La huella que S3 verificó al recibir el PUT (lib/huellaArchivo.js).
+            huella: cabecera.ChecksumSHA256
+                ? { alg: 'sha256', valor: cabecera.ChecksumSHA256, versionId: cabecera.VersionId || null }
+                : null,
+        };
+        try {
+            await this.dynamo.send(new UpdateCommand({
+                TableName: this.incidentsTable,
+                Key: { incidentId: incidente.incidentId },
+                UpdateExpression: 'SET papeles = list_append(if_not_exists(papeles, :vacia), :nuevo), updatedAt = :u',
+                ConditionExpression: 'updatedAt = :leido',
+                ExpressionAttributeValues: { ':vacia': [], ':nuevo': [papel], ':u': new Date().toISOString(), ':leido': incidente.updatedAt },
+            }));
+        } catch (err) {
+            if (err?.name === 'ConditionalCheckFailedException') {
+                throw Object.assign(new Error('El reporte cambió mientras se registraba el papel. Intenta de nuevo.'), { statusCode: 409 });
+            }
+            throw err;
+        }
+        console.log('[PAPELES] registrado | incidente', incidente.incidentId, '| tipo', tipo, '| papel', papelId);
+        return { papel, yaRegistrado: false };
+    }
+
+    // Los papeles del caso con un enlace de descarga FIRMADO de 15 minutos (como
+    // las fotos). Nunca una URL directa al bucket: no abre y, si abriera, no
+    // dejaría constancia de quién la pidió.
+    async getDocuments(incidente) {
+        const papeles = Array.isArray(incidente?.papeles) ? incidente.papeles : [];
+        const archivos = await Promise.all(papeles.map(async (p) => {
+            const { s3Key, huella, ...visible } = p;
+            const url = await getSignedUrl(s3Client, new GetObjectCommand({
+                Bucket: almacenamiento.bucketDeClave(s3Key),
+                Key: s3Key,
+                // El navegador descarga con el nombre original, no con la clave.
+                ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(p.nombreArchivo || 'documento')}`,
+            }), { expiresIn: 900 });
+            return { ...visible, contieneSalud: tipoPapelConSalud(p.tipo), url };
+        }));
+        return { archivos, clavesConSalud: papeles.filter((p) => tipoPapelConSalud(p.tipo)).map((p) => p.s3Key) };
     }
 
     // GET ANALYTICS
