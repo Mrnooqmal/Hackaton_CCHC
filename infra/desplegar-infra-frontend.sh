@@ -36,7 +36,11 @@ set -euo pipefail
 
 COMMIT="${1:?uso: infra/desplegar-infra-frontend.sh <commit> [--solo-dev]}"
 SOLO_DEV=""
-[ "${2:-}" = "--solo-dev" ] && SOLO_DEV=1
+case "${2:-}" in
+    "") ;;
+    --solo-dev) SOLO_DEV=1 ;;
+    *) echo "Opción desconocida: $2 (solo se acepta --solo-dev)." >&2; exit 1 ;;
+esac
 CSP_MODO="${CSP_MODO:-activa}"
 [[ "$CSP_MODO" == "activa" || "$CSP_MODO" == "solo-reporte" ]] || { echo "CSP_MODO inválido: $CSP_MODO (activa o solo-reporte)." >&2; exit 1; }
 STACK_FRONTEND="${STACK_FRONTEND:-BuildAndServe-frontend}"
@@ -45,6 +49,8 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 RAIZ="$(git rev-parse --show-toplevel)"
 git -C "$RAIZ" fetch --quiet origin
 SHA="$(git -C "$RAIZ" rev-parse --verify "$COMMIT^{commit}")"
+cmp -s "$0" <(git -C "$RAIZ" show "$SHA:infra/$(basename "$0")" 2>/dev/null) || {
+    echo "Este $(basename "$0") no es el del commit $SHA: córrelo desde un checkout de ese commit (git worktree add --detach <carpeta> $SHA)." >&2; exit 1; }
 git -C "$RAIZ" branch -r --contains "$SHA" | grep -q . || {
     echo "El commit $SHA no está en ninguna rama remota: solo se despliegan commits pusheados." >&2; exit 1; }
 
