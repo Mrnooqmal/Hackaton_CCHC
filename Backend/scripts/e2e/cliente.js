@@ -24,9 +24,9 @@ function ambiente(stage) {
     const backend = salidasDe(`BuildAndServe-${stage}`);
     const frontend = salidasDe('BuildAndServe-frontend');
     return {
-        api: backend.HttpApiUrl,
+        api: backend.ApiDominio || backend.HttpApiUrl,
         // Prod se sirve en el dominio propio (D-21); dev, en su distribución (D-20).
-        origen: stage === 'prod' ? 'https://buildandserve.cl' : `https://${frontend.DominioDistribucionDev}`,
+        origen: stage === 'prod' ? 'https://buildandserve.cl' : `https://${frontend.DominioPropioDev || frontend.DominioDistribucionDev}`,
     };
 }
 

@@ -35,11 +35,16 @@ custom:
   # ese origen. Esta lista es también el CORS de los buckets de prod.
   frontendUrl:
     prod: https://buildandserve.cl
-    dev: https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
+    dev: https://dev.buildandserve.cl
+  dominioApi:
+    prod: api.buildandserve.cl
+    dev: api-dev.buildandserve.cl
+  certificadoApi: ${env:CERTIFICADO_API, ''}
   corsOrigins:
     prod:
       - https://buildandserve.cl
     dev:
+      - https://dev.buildandserve.cl
       - https://${cf:BuildAndServe-frontend.DominioDistribucionDev}
       - http://localhost:5173
       - http://localhost:3000
@@ -1288,6 +1293,17 @@ functions:
             name: sesionUsuario
 
 resources:
+  Conditions:
+    ConDominioApi: !Not [!Equals ['${self:custom.certificadoApi}', '']]
+
+  Outputs:
+    ApiDominio:
+      Condition: ConDominioApi
+      Value: https://${self:custom.dominioApi.${self:provider.stage}}
+    ApiDominioDestino:
+      Condition: ConDominioApi
+      Value: !GetAtt DominioApi.RegionalDomainName
+
   # Límite de tasa. El de la API entera es generoso; el del onboarding no, porque
   # sus dos rutas son públicas y la de completar crea una empresa. Con esto, un
   # enlace filtrado no habilita a martillar el alta, y probar tokens al azar deja
@@ -1360,6 +1376,25 @@ resources:
             ThrottlingRateLimit: 10
 
   Resources:
+    DominioApi:
+      Type: AWS::ApiGatewayV2::DomainName
+      Condition: ConDominioApi
+      Properties:
+        DomainName: ${self:custom.dominioApi.${self:provider.stage}}
+        DomainNameConfigurations:
+          - CertificateArn: ${self:custom.certificadoApi}
+            EndpointType: REGIONAL
+            SecurityPolicy: TLS_1_2
+
+    MapeoDominioApi:
+      Type: AWS::ApiGatewayV2::ApiMapping
+      Condition: ConDominioApi
+      DependsOn: HttpApiStage
+      Properties:
+        ApiId: !Ref HttpApi
+        DomainName: !Ref DominioApi
+        Stage: $default
+
     # ==========================================
     # CLAVE PROPIA (KMS)
     # ==========================================

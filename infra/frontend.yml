@@ -66,6 +66,13 @@ Parameters:
       www.buildandserve.cl. Vacío = la distribución sigue solo en cloudfront.net.
       Lo pasa infra/desplegar-infra-frontend.sh cuando el certificado está emitido.
 
+  CertificadoDev:
+    Type: String
+    Default: ''
+    Description: >-
+      ARN del certificado de ACM (us-east-1) que cubre dev.buildandserve.cl.
+      Vacío = la distribución de dev sigue solo en cloudfront.net.
+
   Publicadores:
     Type: CommaDelimitedList
     Default: 'arn:aws:iam::772706200162:user/Adrean,arn:aws:iam::772706200162:user/Benjamin'
@@ -98,6 +105,7 @@ Conditions:
   CspActiva: !And [!Condition ConCsp, !Equals [!Ref CspModo, activa]]
   CspActivaDev: !And [!Condition ConCspDev, !Equals [!Ref CspModo, activa]]
   ConDominio: !Not [!Equals [!Ref CertificadoProd, '']]
+  ConDominioDev: !Not [!Equals [!Ref CertificadoDev, '']]
   ExigeRol: !Equals [!Ref ExigirRolPublicador, 'true']
 
 Resources:
@@ -415,11 +423,40 @@ Resources:
                 Override: true
           - !Ref AWS::NoValue
 
+  RedireccionDev:
+    Type: AWS::CloudFront::Function
+    Condition: ConDominioDev
+    Properties:
+      Name: buildandserve-dev-a-dominio
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Redirige el dominio de CloudFront de dev a dev.buildandserve.cl
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var req = event.request;
+          var host = req.headers.host ? req.headers.host.value.toLowerCase() : '';
+          if (host === 'dev.buildandserve.cl') return req;
+          function cod(x) { try { return encodeURIComponent(decodeURIComponent(x)); } catch (e) { return encodeURIComponent(x); } }
+          var qs = [];
+          for (var k in req.querystring) {
+            var v = req.querystring[k];
+            if (v.multiValue) { v.multiValue.forEach(function (m) { qs.push(cod(k) + '=' + cod(m.value)); }); }
+            else { qs.push(v.value === '' ? cod(k) : cod(k) + '=' + cod(v.value)); }
+          }
+          return {
+            statusCode: 301,
+            statusDescription: 'Moved Permanently',
+            headers: { location: { value: 'https://dev.buildandserve.cl' + req.uri + (qs.length ? '?' + qs.join('&') : '') } }
+          };
+        }
+
   DistribucionDev:
     Type: AWS::CloudFront::Distribution
     Properties:
       DistributionConfig:
         Comment: CF for buildandserve-frontend-dev (QA)
+        Aliases: !If [ConDominioDev, [dev.buildandserve.cl], !Ref AWS::NoValue]
         Enabled: true
         DefaultRootObject: index.html
         HttpVersion: http2
@@ -439,6 +476,11 @@ Resources:
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           ResponseHeadersPolicyId: !GetAtt CabecerasSeguridadDev.Id
+          FunctionAssociations: !If
+            - ConDominioDev
+            - - EventType: viewer-request
+                FunctionARN: !GetAtt RedireccionDev.FunctionMetadata.FunctionARN
+            - !Ref AWS::NoValue
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 200
@@ -448,9 +490,13 @@ Resources:
             ResponseCode: 200
             ResponsePagePath: /index.html
             ErrorCachingMinTTL: 10
-        ViewerCertificate:
-          CloudFrontDefaultCertificate: true
-          MinimumProtocolVersion: TLSv1
+        ViewerCertificate: !If
+          - ConDominioDev
+          - AcmCertificateArn: !Ref CertificadoDev
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+            MinimumProtocolVersion: TLSv1
 
   # ─── Publicación (D-22) ────────────────────────────────────────────────────
   # El único que publica el frontend: subir a los buckets e invalidar. Lo
@@ -528,5 +574,8 @@ Outputs:
     Value: !Ref DistribucionDev
   DominioDistribucionDev:
     Value: !GetAtt DistribucionDev.DomainName
+  DominioPropioDev:
+    Condition: ConDominioDev
+    Value: dev.buildandserve.cl
   BucketDev:
     Value: !Ref BucketFrontendDev
