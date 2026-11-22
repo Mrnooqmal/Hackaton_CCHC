@@ -98,3 +98,48 @@ test('dev sirve en dev.buildandserve.cl y prod no cambia de origen', () => {
     const dev = /\n {2}corsOrigins:\n {4}prod:\n(?: {6}- .+\n)+ {4}dev:\n((?: {6}- .+\n)+)/.exec(yml);
     assert.ok(dev && dev[1].includes('https://dev.buildandserve.cl'));
 });
+
+test('cada script de despliegue se niega a correr si no es la versión del commit que despliega', () => {
+    for (const nombre of ['desplegar-backend.sh', 'desplegar-frontend.sh', 'desplegar-infra-frontend.sh']) {
+        const script = leer('infra', nombre);
+        const sha = script.indexOf('SHA="$(git -C "$RAIZ" rev-parse --verify "$COMMIT^{commit}")"');
+        const chequeo = script.indexOf('\ncmp -s "$0" <(git -C "$RAIZ" show "$SHA:infra/$(basename "$0")"') + 1;
+        assert.ok(sha >= 0 && chequeo > sha, nombre);
+        assert.doesNotMatch(script.slice(sha, chequeo), /serverless|aws |npm /, nombre);
+        const bloqueChequeo = script.slice(chequeo).split('\n').slice(0, 2).join('\n');
+        assert.equal(ejecutarChequeo(bloqueChequeo, false), 0, `${nombre}: con la misma versión sigue`);
+        assert.equal(ejecutarChequeo(bloqueChequeo, true), 1, `${nombre}: con otra versión se detiene`);
+    }
+});
+
+function ejecutarChequeo(bloqueChequeo, modificar) {
+    const { execFileSync, spawnSync } = require('child_process');
+    const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'version-script-'));
+    try {
+        const git = (...a) => execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { stdio: 'ignore' });
+        git('init', '-q');
+        fs.mkdirSync(path.join(dir, 'infra'));
+        const archivo = path.join(dir, 'infra', 'd.sh');
+        fs.writeFileSync(archivo, ['set -euo pipefail', 'RAIZ="$(git rev-parse --show-toplevel)"', 'SHA="$(git -C "$RAIZ" rev-parse HEAD)"', bloqueChequeo, 'echo sigue', ''].join('\n'));
+        git('add', '.');
+        git('commit', '-qm', 'a');
+        if (modificar) fs.appendFileSync(archivo, '#\n');
+        const r = spawnSync('bash', ['infra/d.sh'], { cwd: dir, encoding: 'utf8' });
+        if (r.status === 0) assert.match(r.stdout, /sigue/);
+        return r.status;
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+}
+
+test('desplegar-infra-frontend.sh rechaza una opción distinta de --solo-dev en vez de desplegar completo', () => {
+    const { spawnSync } = require('child_process');
+    for (const opcion of ['--solodev', 'solo-dev', '--dev']) {
+        const r = spawnSync('bash', [path.join(RAIZ, 'infra', 'desplegar-infra-frontend.sh'), 'HEAD', opcion], {
+            encoding: 'utf8', env: { PATH: '/usr/bin:/bin' },
+        });
+        assert.equal(r.status, 1, opcion);
+        assert.match(r.stderr, /Opción desconocida/, opcion);
+    }
+});
