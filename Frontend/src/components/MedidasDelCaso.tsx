@@ -238,7 +238,8 @@ export default function MedidasDelCaso({ incidente, puedeGestionar, cerrado, onC
                     <div className="inc-papeles-campos">
                         <div className="form-group">
                             <label className="form-label">Responsable</label>
-                            <SelectorResponsable value={form.responsableId} onChange={(v) => setForm({ ...form, responsableId: v })} disabled={guardando} />
+                            {/* Solo quien puede abrir el caso: el aviso de la medida lo lleva ahí, y el servidor no acepta a otra persona. */}
+                            <SelectorResponsable value={form.responsableId} onChange={(v) => setForm({ ...form, responsableId: v })} disabled={guardando} soloQuienVeElCaso />
                         </div>
                         <div className="form-group">
                             <label className="form-label" htmlFor="medida-plazo">Plazo</label>

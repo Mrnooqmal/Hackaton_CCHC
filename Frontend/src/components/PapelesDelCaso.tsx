@@ -22,7 +22,11 @@ const fechaCorta = (aaaammdd: string) => {
 
 interface Props {
     incidente: Incident;
-    /** `incidentes.reportar`: quien gestiona incidentes puede subir papeles (y el caso no está cerrado). */
+    /**
+     * `incidentes.reportar`: quien gestiona incidentes puede subir papeles. También en un caso
+     * cerrado: completar el respaldo documental de un caso cerrado (por ejemplo, el informe de
+     * investigación de un accidente anterior al rediseño) es justo lo que pide el repositorio.
+     */
     puedeSubir: boolean;
     /** Se llama después de subir un papel: lo que sigue en el caso puede haber cambiado. */
     onCambio?: () => void;
@@ -169,9 +173,9 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                                         <div className="inc-papeles-nombre">
                                             <div>{etiquetaTipoPapel(p.tipo)}</div>
                                             <div className="inc-papeles-meta">
-                                                {p.nombreArchivo} · {tamanoLegible(p.tamano)}
+                                                {p.nombreArchivo || 'Sin nombre'}{p.tamano ? ` · ${tamanoLegible(p.tamano)}` : ''}
                                                 {p.fechaDocumento ? ` · documento del ${fechaCorta(p.fechaDocumento)}` : ''}
-                                                {` · subido el ${new Date(p.subidoEn).toLocaleDateString('es-CL')}`}
+                                                {p.subidoEn ? ` · subido el ${new Date(p.subidoEn).toLocaleDateString('es-CL')}` : ''}
                                             </div>
                                         </div>
                                         {p.contieneSalud && (

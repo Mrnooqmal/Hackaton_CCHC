@@ -23,6 +23,7 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const EP = require('../../lib/estructura-preventiva');
 const { resumenDelCaso } = require('../../lib/casos');
+const { IncidentsRepository } = require('../incidents-module/incidents.repository');
 const { construirExport, renderHtml } = require('../../lib/completitud-export');
 
 const { QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
@@ -60,7 +61,7 @@ const listarActividadesTenant = async (tenantId) => {
     }
 };
 
-const INCIDENTS_TABLE = process.env.INCIDENTS_TABLE || 'Incidents';
+const incidentsRepo = new IncidentsRepository();
 
 /**
  * Resumen de los casos de incidentes del tenant, para el ítem 66 (investigación
@@ -69,25 +70,17 @@ const INCIDENTS_TABLE = process.env.INCIDENTS_TABLE || 'Incidents';
  * módulo de incidentes el que decide quién ve los casos. Solo se conserva, además,
  * la obra a la que pertenecen.
  *
+ * La lectura es la del repositorio de incidentes (`list`), que pagina: antes esta
+ * función repetía la consulta, y un listado que solo lee la primera página deja casos
+ * fuera del conteo de "accidentes sin informe".
+ *
  * A diferencia de documentos y actividades, un fallo de lectura devuelve `null` y
  * no una lista vacía: "no hay accidentes sin informe" sería una afirmación de
  * cumplimiento hecha con lo que no se pudo leer. El ítem lo trata como no verificado.
  */
 const listarCasosTenant = async (tenantId) => {
     try {
-        const items = [];
-        let siguiente;
-        do {
-            const res = await docClient.send(new QueryCommand({
-                TableName: INCIDENTS_TABLE,
-                IndexName: 'tenantId-fecha-index',
-                KeyConditionExpression: 'tenantId = :t',
-                ExpressionAttributeValues: { ':t': tenantId },
-                ExclusiveStartKey: siguiente,
-            }));
-            items.push(...(res.Items || []));
-            siguiente = res.LastEvaluatedKey;
-        } while (siguiente);
+        const { items } = await incidentsRepo.list({ tenantId });
         return items.map((i) => ({ obraId: i.obraId || null, ...resumenDelCaso(i) }));
     } catch (err) {
         registrarFallo('estructura.casos', err);

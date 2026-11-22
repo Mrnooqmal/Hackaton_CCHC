@@ -10,8 +10,10 @@ import PapelesDelCaso from '../components/PapelesDelCaso';
 import ClasificacionDelCaso from '../components/ClasificacionDelCaso';
 import MedidasDelCaso from '../components/MedidasDelCaso';
 import CierreDelCaso from '../components/CierreDelCaso';
-import { PERMISO_CLASIFICAR, PERMISO_GESTIONAR, siguientePaso as calcularSiguientePaso, type PasoDelCaso } from '../utils/casos';
-import { incidenteCerrado } from '../utils/incidentes';
+import AgregarFotosAlCaso from '../components/AgregarFotosAlCaso';
+import {
+    PERMISO_CLASIFICAR, PERMISO_GESTIONAR, esHallazgo, estaCerrado, siguientePaso as calcularSiguientePaso, type PasoDelCaso,
+} from '../utils/casos';
 import { plural } from '../utils/plural';
 
 /** Lo que deja `IncidentReportar` al navegar acá después de enviar. */
@@ -27,19 +29,16 @@ const ETIQUETA_TIPO: Record<Incident['tipo'], string> = {
     accion_subestandar: 'Acción subestándar',
 };
 
-const esHallazgo = (inc: Incident) =>
-    inc.clasificacion === 'hallazgo' || inc.tipo === 'condicion_subestandar' || inc.tipo === 'accion_subestandar';
-
 type Etapa = 'recibido' | 'en_curso' | 'cerrado';
 
 /**
  * En qué va el caso, con los estados que ya existen: un hallazgo avanza por
  * `gobernanza.estadoCierre` (abierto → en_proceso → cerrado) y un incidente por
  * `estado` (reportado → en_investigacion → cerrado). Cerrado se decide con
- * `incidenteCerrado`, el mismo criterio que los contadores.
+ * `estaCerrado` (utils/casos), el mismo criterio del servidor y de los contadores.
  */
 const etapaDe = (inc: Incident): Etapa => {
-    if (incidenteCerrado(inc)) return 'cerrado';
+    if (estaCerrado(inc)) return 'cerrado';
     if (esHallazgo(inc)) return inc.gobernanza?.estadoCierre === 'en_proceso' ? 'en_curso' : 'recibido';
     return inc.estado === 'en_investigacion' ? 'en_curso' : 'recibido';
 };
@@ -109,7 +108,7 @@ export default function IncidentDetalle() {
     const location = useLocation();
     const navegacion = (location.state || {}) as EstadoNavegacion;
     const { obras } = useObraContext();
-    const { hasPermission } = useAuth();
+    const { user, hasPermission } = useAuth();
     // Los papeles del caso (DIAT y DIEP traen datos de salud) son del historial:
     // quien solo ve su propio reporte no recibe la sección. Subir, además, exige
     // `incidentes.reportar`. El servidor aplica las mismas reglas.
@@ -181,6 +180,10 @@ export default function IncidentDetalle() {
     // el de los papeles.
     const siguiente = incidente.siguientePaso ?? calcularSiguientePaso(incidente);
     const cerrado = siguiente.paso === 'cerrado';
+    // Agregar fotos: quien reportó el caso o quien gestiona incidentes, mientras el caso esté
+    // abierto (el servidor lo exige igual). Es la salida de un hallazgo que llegó sin foto
+    // (un reporte rápido por QR nunca las trae) y no se puede cerrar sin una.
+    const puedeAgregarFotos = !cerrado && (incidente.reportadoPor === user?.personaId || puedeSubirPapeles);
     const meToca = siguiente.permiso && hasPermission(siguiente.permiso);
 
     return (
@@ -283,6 +286,7 @@ export default function IncidentDetalle() {
                                 ))}
                             </div>
                         )}
+                        {puedeAgregarFotos && <AgregarFotosAlCaso incidente={incidente} onCambio={recargar} />}
                     </div>
                 </section>
 
@@ -290,7 +294,7 @@ export default function IncidentDetalle() {
                     <ClasificacionDelCaso key={`clasificacion-${incidente.updatedAt}`} incidente={incidente} onCambio={recargar} />
                 )}
 
-                {verPapeles && <PapelesDelCaso incidente={incidente} puedeSubir={puedeSubirPapeles && !cerrado} onCambio={recargar} />}
+                {verPapeles && <PapelesDelCaso incidente={incidente} puedeSubir={puedeSubirPapeles} onCambio={recargar} />}
 
                 {verPapeles && (
                     <MedidasDelCaso incidente={incidente} puedeGestionar={puedeSubirPapeles} cerrado={cerrado} onCambio={recargar} />

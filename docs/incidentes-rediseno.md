@@ -34,7 +34,7 @@ Origen: el artefacto "Gestión de Casos SST" (propuesta de diseño de octubre de
 | Tipo | Papeles del caso |
 |---|---|
 | Hallazgo | Reporte con foto, responsable y plazo, comentario de cierre |
-| Incidente | Lo anterior, más el informe de investigación si es de alto potencial |
+| Incidente | Informe de investigación, solo si es de alto potencial |
 | Accidente | DIAT, informe de investigación, medidas correctivas |
 | Accidente grave o fatal | Lo anterior, más la constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud |
 | Enfermedad profesional | DIEP e informe de investigación |
@@ -131,7 +131,7 @@ Cada fase termina con sus pruebas pasando.
 | 1. Reportar de punta a punta | Implementada el 15 de noviembre (1520 pruebas pasan después de traer `pruebas` del 21 de noviembre; build y lint sin errores). Falta probarla en el navegador |
 | 2. Carpeta del caso | Implementada el 22 de noviembre (1552 pruebas pasan). Falta probarla en el navegador y contra S3 real |
 | 3. Clasificación, medidas y cierre | Implementada el 22 de noviembre (1597 pruebas pasan). Falta probarla en el navegador |
-| 4. FUF y repositorio | Implementada el 22 de noviembre (1624 pruebas pasan). Falta probarla en el navegador |
+| 4. FUF y repositorio | Implementada el 22 de noviembre (1624 pruebas pasan; 1663 después de las correcciones de la revisión). Falta probarla en el navegador |
 
 ### Decisiones de la fase 2 (22 de noviembre)
 
@@ -153,7 +153,8 @@ Riesgos conocidos de la fase 2, sin resolver:
 - **Plazos internos:** no se imponen. Cada medida lleva el plazo que define quien la crea.
 - **Siguiente paso:** clasificar → papeles → medidas → cerrar. Lo calcula `siguientePaso` en `lib/casos.js`. El detalle del reporte dice a quién le toca.
 - **Clasificar y cerrar** exigen `incidentes.calificar_accidente`. **Crear y editar medidas** exige `incidentes.reportar`. El responsable de una medida debe ser una persona activa de la empresa, y recibe un aviso sin datos del afectado.
-- **Cerrar** exige el caso clasificado, los papeles completos y todas las medidas completadas o verificadas. La gobernanza de hallazgos aplica las mismas reglas. Un caso cerrado no acepta cambios, salvo terminar sus medidas.
+- **Cerrar** exige el caso clasificado, los papeles completos y todas las medidas completadas o verificadas. Cerrar un hallazgo desde la gobernanza exige el mismo permiso (`incidentes.calificar_accidente`), pasa por la misma función de cierre y evalúa los mismos pendientes. Editar el responsable, el plazo o pasar a "en proceso" sigue con `incidentes.reportar`.
+- **Un caso cerrado no acepta cambios**, salvo terminar sus medidas y agregar papeles. Los papeles se pueden subir a un caso cerrado para completar su respaldo documental sin reabrirlo (por ejemplo, el informe de un accidente antiguo).
 - **Reabrir** existe, con motivo obligatorio.
 - **Sin estados nuevos:** se siguen usando `reportado | en_investigacion | cerrado` y `abierto | en_proceso | cerrado`.
 
@@ -171,6 +172,28 @@ Pendientes que dejó la fase 4, por decidir:
 - **Ítem 66:** cuenta solo accidentes, no los incidentes de alto potencial. Los accidentes anteriores al rediseño, sin informe subido, figuran como faltantes.
 - **Detalle del ítem 66:** el panel de completitud lo ve cualquiera con sesión, así que el número de accidentes sin informe de una obra queda a la vista de quien abre el panel.
 - `DocumentsRepository.tsx` quedó con 5 `eslint-disable` sobre `any` que ya existían.
+
+### Revisión independiente y correcciones (22 de noviembre)
+
+Un revisor independiente encontró 17 hallazgos en la rama, y se corrigieron todos. Los que cambian reglas:
+
+- **Fotos:** el cierre de un hallazgo sigue exigiendo una foto, y ahora se pueden agregar desde el detalle del caso (quien reportó y quien gestiona), mientras no esté cerrado. Antes, un hallazgo sin foto (por ejemplo, uno del reporte rápido por QR) no se podía cerrar nunca.
+- **Tipo y clasificación:** `PUT /incidents/{id}` ya no los cambia. Se cambian solo con la clasificación (`PUT /incidents/{id}/triaje`).
+- **Responsable de una medida:** tiene que ser una persona activa con `incidentes.historial`, para que pueda abrir el caso al que lo lleva su aviso. El selector solo ofrece a esas personas (`GET /personas?conPermiso=incidentes.historial`).
+- **Responsable y plazo** se validan igual en todas las rutas: persona activa de la empresa, nombre leído de su ficha y plazo con fecha real.
+- **Al crear un reporte** se ignoran las medidas correctivas, y la gobernanza solo se acepta en hallazgos.
+- **Reabrir un hallazgo** borra su comentario de cierre; el anterior queda en el historial de reaperturas.
+- **Subida de fotos:** exige el caso y solo acepta imágenes (jpeg, png, webp, heic).
+- **Papeles del contrato anterior** (`documentos.diat` y `documentos.diep`) se leen como papeles válidos, sin migrar datos.
+- **Anonimización:** alcanza todos los campos nuevos del caso. Una prueba compara lo que se escribe con el inventario.
+- **Concurrencia y lecturas:** todas las escrituras del caso usan bloqueo optimista, la lectura de casos pagina en un solo lugar y las rutas de gestión ya no descifran la traza.
+
+Encontrado y sin corregir:
+
+- `PUT /incidents/{id}/flash-completar` nunca funciona: lee `reporteFlash` del elemento listado, pero se guarda en la traza. Viene de antes del rediseño.
+- El reporte rápido por QR no exige permiso para crear un accidente.
+- El responsable de un hallazgo no recibe aviso, y si no tiene `incidentes.historial` no puede ver el hallazgo que se le asignó.
+- `afectadoRutHmac` se conserva al anonimizar, porque es el vínculo que usa la retención.
 
 ## 10. Pendientes de decisión
 

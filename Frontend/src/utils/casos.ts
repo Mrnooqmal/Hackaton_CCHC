@@ -44,6 +44,8 @@ export const MAX_PAPELES_POR_CASO = 30;
 
 /** Lo que estas reglas leen del incidente. `papeles` es la lista de archivos subidos al caso. */
 export interface CasoParaPapeles {
+    incidentId?: string;
+    tenantId?: string;
     tipo?: string;
     clasificacion?: string;
     gravedad?: string;
@@ -52,7 +54,9 @@ export interface CasoParaPapeles {
     evidencias?: unknown[];
     gobernanza?: { responsableId?: string | null; plazoRespuestaISO?: string | null; comentarioCierre?: string | null } | null;
     medidasCorrectivas?: unknown[];
-    papeles?: { tipo?: string }[];
+    papeles?: { tipo?: string; s3Key?: string }[];
+    /** Contrato anterior de los papeles: un archivo por tipo (`diat` y `diep`). Solo se lee. */
+    documentos?: Record<string, { s3Key?: unknown; fileName?: unknown; fileType?: unknown; uploadedAt?: unknown } | null | undefined> | null;
 }
 
 export interface PapelRequerido {
@@ -69,15 +73,82 @@ export interface AvanceDelCaso {
     porcentaje: number;
 }
 
-const HALLAZGOS = ['condicion_subestandar', 'accion_subestandar'];
+/** Tipos de caso: los dos de hallazgo y los dos de incidente. */
+export const TIPOS_HALLAZGO = ['condicion_subestandar', 'accion_subestandar'];
+export const TIPOS_INCIDENTE = ['accidente', 'incidente'];
+export const GRAVEDADES = ['leve', 'grave', 'fatal'];
+
+/** Clasificación que corresponde a un tipo: los dos de hallazgo son hallazgos, el resto son incidentes. */
+export const clasificacionDelTipo = (tipo?: string | null): 'hallazgo' | 'incidente' =>
+    (TIPOS_HALLAZGO.includes(tipo ?? '') ? 'hallazgo' : 'incidente');
 
 /** Los incidentes anteriores a la clasificación no la tienen: se deriva del tipo. */
 export const esHallazgo = (inc?: CasoParaPapeles | null): boolean =>
-    (inc?.clasificacion ? inc.clasificacion === 'hallazgo' : HALLAZGOS.includes(inc?.tipo ?? ''));
+    (inc?.clasificacion ? inc.clasificacion === 'hallazgo' : TIPOS_HALLAZGO.includes(inc?.tipo ?? ''));
+
+// ── Topes de texto y de fotos (los mismos que aplica el servidor) ──
+
+/** Qué se hizo en el momento para contener el riesgo: un párrafo, no un informe. */
+export const MAX_MEDIDAS_INMEDIATAS = 1000;
+export const MAX_COMENTARIO_CIERRE = 1000;
+export const MAX_MOTIVO_REAPERTURA = 500;
+/** Fotos por envío (y por reporte al reportar): más que eso falla entero al adjuntar. */
+export const MAX_EVIDENCIAS_POR_ENVIO = 10;
+/** Fotos por caso. */
+export const MAX_EVIDENCIAS_TOTAL = 20;
+
+/** Fotos: imágenes, incluido HEIC/HEIF (cámaras de iPhone). La extensión de la clave sale de acá. */
+export const EXTENSION_POR_MIME_FOTO: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+};
+export const MIME_FOTOS: string[] = Object.keys(EXTENSION_POR_MIME_FOTO);
 
 const hayTexto = (v: unknown) => typeof v === 'string' && v.trim() !== '';
 const hayLista = (v: unknown) => Array.isArray(v) && v.length > 0;
-const hayPapel = (inc: CasoParaPapeles, tipo: TipoPapel) => Array.isArray(inc.papeles) && inc.papeles.some((p) => p?.tipo === tipo);
+
+const TIPOS_PAPEL_ANTERIORES = ['diat', 'diep'];
+
+/**
+ * Los papeles del caso: los de la lista `papeles` y, de lectura nada más, los del
+ * contrato anterior (`documentos.diat` y `documentos.diep`), que solo se aceptan si su
+ * clave es de esta empresa y de este incidente. Es el espejo de `papelesDelCaso` de
+ * lib/casos.js. El cliente no recibe `documentos` (el servidor lo saca de sus
+ * respuestas): esto sirve para que el espejo dé lo mismo que el servidor.
+ */
+export function papelesDelCaso(inc?: CasoParaPapeles | null): Array<{ tipo?: string; s3Key?: string; [campo: string]: unknown }> {
+    const lista = inc?.papeles;
+    const nuevos = Array.isArray(lista) ? lista.filter(Boolean) : [];
+    const documentos = inc?.documentos;
+    if (!documentos || typeof documentos !== 'object' || !inc?.tenantId || !inc?.incidentId) return nuevos;
+    const prefijo = `tenants/${inc.tenantId}/incidentes/${inc.incidentId}/`;
+    const anteriores: Array<{ tipo?: string; s3Key?: string; [campo: string]: unknown }> = [];
+    for (const tipo of TIPOS_PAPEL_ANTERIORES) {
+        const d = documentos[tipo];
+        const clave = d?.s3Key;
+        if (typeof clave !== 'string' || !clave.startsWith(prefijo) || clave.includes('..')) continue;
+        if (nuevos.some((p) => p.s3Key === clave)) continue;
+        anteriores.push({
+            papelId: `anterior-${tipo}`,
+            tipo,
+            nombreArchivo: typeof d?.fileName === 'string' ? d.fileName : '',
+            tipoMime: typeof d?.fileType === 'string' ? d.fileType : '',
+            s3Key: clave,
+            subidoPor: null,
+            subidoEn: typeof d?.uploadedAt === 'string' ? d.uploadedAt : null,
+            fechaDocumento: null,
+            tamano: null,
+            huella: null,
+            legado: true,
+        });
+    }
+    return [...nuevos, ...anteriores];
+}
+
+const hayPapel = (inc: CasoParaPapeles, tipo: TipoPapel) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
 
 /**
  * Papeles que el caso exige, cada uno con si ya está cumplido.

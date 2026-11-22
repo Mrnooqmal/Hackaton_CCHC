@@ -589,7 +589,8 @@ test('cierre y reapertura: solo con incidentes.calificar_accidente (403); 404 de
     assert.equal(guardado(id).estado, 'cerrado');
 });
 
-test('un caso cerrado no acepta triaje, medidas, papeles, fotos, investigaciones ni gobernanza', async () => {
+// Los papeles sí se pueden subir en un caso cerrado (ver tests/incidentes-revision.test.js).
+test('un caso cerrado no acepta triaje, medidas, fotos, investigaciones ni gobernanza', async () => {
     const id = await accidenteListo();
     assert.equal((await cerrar(id)).statusCode, 200);
     const antes = JSON.stringify(guardado(id));
@@ -598,8 +599,8 @@ test('un caso cerrado no acepta triaje, medidas, papeles, fotos, investigaciones
         triaje: await triaje(id, { tipo: 'accidente', gravedad: 'fatal' }),
         medidaNueva: await crearMedida(id),
         medidaEditada: await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1/datos`, { medida: 'Otra' }),
-        papelPedir: await pedir(gest(), 'POST', `/incidents/${id}/documents`, { tipo: 'otro', fileType: 'application/pdf', checksumSha256: Buffer.alloc(32, 7).toString('base64') }),
-        papelConfirmar: await pedir(gest(), 'POST', `/incidents/${id}/documents/confirmar`, { s3Key: `tenants/${A}/incidentes/${id}/papeles/otro-0b6f1c2e-3d4a-4b5c-8d9e-0f1a2b3c4d5e.pdf`, fileName: 'a.pdf' }),
+        fotoSubida: await pedir(gest(), 'POST', '/incidents/upload-evidence', { incidentId: id, fileName: 'a.jpg', fileType: 'image/jpeg', checksumSha256: Buffer.alloc(32, 7).toString('base64') }),
+        gobernanza: await pedir(gest(), 'PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'abierto' }),
         foto: await pedir(gest(), 'POST', `/incidents/${id}/evidencias`, { evidencias: [`tenants/${A}/incidentes/${id}/0b6f1c2e-3d4a-4b5c-8d9e-0f1a2b3c4d5e.jpg`] }),
         update: await pedir(gest(), 'PUT', `/incidents/${id}`, { estado: 'en_investigacion' }),
         investigacion: await pedir(gest(), 'POST', `/incidents/${id}/investigations`, { tipo: 'prevencionista', hallazgos: 'a', recomendaciones: 'b', medidas: ['c'] }),
@@ -637,7 +638,8 @@ test('PUT /incidents/{id} no cierra el caso: el cierre tiene sus reglas', async 
 
 test('la gobernanza no cierra un hallazgo sin cumplir lo mismo que el cierre del caso', async () => {
     const id = await crearHallazgo(como(trabajadora, TRABAJADOR), { responsableId: responsable, plazoRespuestaISO: hoyMas(5) });
-    const cerrarPorGobernanza = (extra = {}) => pedir(gest(), 'PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparado', ...extra });
+    // Quien cierra tiene el permiso de cierre (incidentes.calificar_accidente): sin él, ni se mira lo que falta.
+    const cerrarPorGobernanza = (extra = {}) => pedir(prev(), 'PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparado', ...extra });
 
     // Sin clasificar y sin foto: 409 con la lista.
     const r1 = await cerrarPorGobernanza();
@@ -656,7 +658,7 @@ test('la gobernanza no cierra un hallazgo sin cumplir lo mismo que el cierre del
 
     // Sin comentario tampoco (ni en el guardado ni en la petición).
     await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1`, { estado: 'verificada' });
-    const r3 = await pedir(gest(), 'PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado' });
+    const r3 = await pedir(prev(), 'PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado' });
     assert.equal(r3.statusCode, 409);
     assert.deepEqual(cuerpo(r3).pendientes, ['Falta: Comentario de cierre.']);
 
@@ -664,7 +666,8 @@ test('la gobernanza no cierra un hallazgo sin cumplir lo mismo que el cierre del
     const ok = await cerrarPorGobernanza();
     assert.equal(ok.statusCode, 200, ok.body);
     assert.equal(guardado(id).gobernanza.estadoCierre, 'cerrado');
-    assert.equal(guardado(id).gobernanza.verificadoPor, gestora);
+    assert.equal(guardado(id).gobernanza.verificadoPor, prevencionista);
+    assert.equal(guardado(id).cierre.cerradoPor, prevencionista, 'el cierre por gobernanza también deja `cierre`');
     // Cambiar el estado sin cerrar sigue sin exigir nada.
     const otro = await crearHallazgo();
     assert.equal((await pedir(gest(), 'PUT', `/incidents/${otro}/gobernanza`, { estadoCierre: 'en_proceso' })).statusCode, 200);

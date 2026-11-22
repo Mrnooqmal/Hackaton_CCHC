@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
+import type { Worker } from './workers.api';
 import type { AvanceDelCaso, EstadoMedida, JerarquiaControl, PapelRequerido, SiguientePaso, TipoPapel } from '../utils/casos';
 
 export interface IncidentLocation {
@@ -185,8 +186,8 @@ export interface UpdateIncidentData {
     ubicacion?: IncidentLocation;
 }
 
-/** El mismo tope que aplica el backend (incidents.repository.js). */
-export const MAX_MEDIDAS_INMEDIATAS = 1000;
+/** El tope de las medidas inmediatas es el mismo que aplica el backend: vive en `utils/casos`, espejo de lib/casos.js. */
+export { MAX_MEDIDAS_INMEDIATAS } from '../utils/casos';
 
 export interface AddInvestigationData {
     tipo: 'prevencionista' | 'jefe_directo' | 'comite_paritario';
@@ -201,11 +202,15 @@ export interface PapelDelCaso {
     tipo: TipoPapel;
     nombreArchivo: string;
     tipoMime: string;
-    subidoPor: string;
-    subidoEn: string;
+    /** `null` en un papel guardado con el contrato anterior (la DIAT y la DIEP de antes). */
+    subidoPor: string | null;
+    subidoEn: string | null;
     /** Fecha que declaró quien subió el archivo (por ejemplo, la de la DIAT); AAAA-MM-DD. */
     fechaDocumento: string | null;
-    tamano: number;
+    /** `null` en un papel guardado con el contrato anterior: no se midió. */
+    tamano: number | null;
+    /** El papel venía guardado con el contrato anterior (`documentos.diat`/`diep`): se ve y cuenta igual. */
+    legado?: boolean;
     /** La DIAT y la DIEP traen datos de salud: su descarga queda auditada. */
     contieneSalud: boolean;
     /** Enlace firmado de 15 minutos. */
@@ -515,6 +520,22 @@ export const incidentsApi = {
             method: 'PUT',
             body: JSON.stringify({ motivo }),
         }),
+
+    /**
+     * Las personas ACTIVAS de la empresa a quienes se puede dejar a cargo de algo (el servidor las
+     * filtra: `estado=activo`, y el listado recortado de quien no tiene `personas.ver` ni trae el
+     * estado, así que no se puede filtrar acá). Con `soloQuienVeElCaso`, además, solo las que tienen
+     * `incidentes.historial`: es lo que acepta el servidor para el responsable de una medida, porque
+     * el aviso de la medida las lleva al caso y sin ese permiso el caso les responde 404. Lo resuelve
+     * el servidor con la misma lógica de roles de la empresa (`GET /personas?conPermiso=`).
+     */
+    personasACargo: async (opciones?: { soloQuienVeElCaso?: boolean }) => {
+        const res = await apiRequest<{ total: number; personas: Worker[] }>(
+            `/personas?estado=activo${opciones?.soloQuienVeElCaso ? '&conPermiso=incidentes.historial' : ''}`
+        );
+        if (res.success && res.data) return { success: true as const, data: res.data.personas };
+        return { success: false as const, data: undefined, error: res.error };
+    },
 
     markAsViewed: (id: string, userId: string) =>
         apiRequest<{ success: true }>(`/incidents/${id}/viewed`, {

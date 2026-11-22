@@ -2,10 +2,8 @@ import { useState } from 'react';
 import { FiLock, FiUnlock } from 'react-icons/fi';
 import { incidentsApi, type Incident } from '../api/client';
 import { useToast } from '../context/ToastContext';
-
-/** Los mismos topes que aplica el servidor. */
-const MAX_COMENTARIO_CIERRE = 1000;
-const MAX_MOTIVO_REAPERTURA = 500;
+// Los topes son los que aplica el servidor: viven en `utils/casos`, espejo de lib/casos.js.
+import { MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA } from '../utils/casos';
 
 interface Props {
     incidente: Incident;

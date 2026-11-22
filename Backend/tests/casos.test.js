@@ -259,3 +259,102 @@ test('el espejo del frontend da lo mismo en siguientePaso, pendientesDeCierre y 
     assert.equal(E.MAX_TEXTO_MEDIDA, C.MAX_TEXTO_MEDIDA);
     for (const e of [...C.ESTADOS_MEDIDA, 'zzz', undefined]) assert.equal(E.medidaTerminada({ estado: e }), C.medidaTerminada({ estado: e }), String(e));
 });
+
+// ── Reglas compartidas: tipos, topes, fotos y papeles del contrato anterior ──
+
+test('tipos, gravedades y topes: una sola definición en lib/casos.js, y el espejo del frontend dice lo mismo', () => {
+    const E = cargarTs('casos.ts');
+    assert.deepEqual(C.TIPOS_HALLAZGO, ['condicion_subestandar', 'accion_subestandar']);
+    assert.deepEqual(C.TIPOS_INCIDENTE, ['accidente', 'incidente']);
+    assert.deepEqual(C.GRAVEDADES, ['leve', 'grave', 'fatal']);
+    assert.deepEqual(E.TIPOS_HALLAZGO, C.TIPOS_HALLAZGO);
+    assert.deepEqual(E.TIPOS_INCIDENTE, C.TIPOS_INCIDENTE);
+    assert.deepEqual(E.GRAVEDADES, C.GRAVEDADES);
+    for (const tope of ['MAX_MEDIDAS_INMEDIATAS', 'MAX_COMENTARIO_CIERRE', 'MAX_MOTIVO_REAPERTURA', 'MAX_EVIDENCIAS_POR_ENVIO', 'MAX_EVIDENCIAS_TOTAL',
+        'MAX_MEDIDAS_POR_CASO', 'MAX_TEXTO_MEDIDA', 'MAX_PAPELES_POR_CASO', 'MAX_BYTES_PAPEL']) {
+        assert.equal(typeof C[tope], 'number', tope);
+        assert.equal(E[tope], C[tope], `${tope}: el frontend y el backend tienen que coincidir`);
+    }
+    assert.deepEqual(E.EXTENSION_POR_MIME_FOTO, C.EXTENSION_POR_MIME_FOTO);
+    assert.deepEqual(E.MIME_FOTOS, C.MIME_FOTOS);
+    assert.deepEqual(E.EXTENSION_POR_MIME, C.EXTENSION_POR_MIME);
+    assert.deepEqual(C.MIME_FOTOS, ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+    for (const tipo of [...C.TIPOS_HALLAZGO, ...C.TIPOS_INCIDENTE, 'otro', '', null, undefined]) {
+        assert.equal(E.clasificacionDelTipo(tipo), C.clasificacionDelTipo(tipo), String(tipo));
+    }
+    assert.equal(C.clasificacionDelTipo('accion_subestandar'), 'hallazgo');
+    assert.equal(C.clasificacionDelTipo('accidente'), 'incidente');
+});
+
+test('ningún otro archivo del módulo redefine esas reglas: todos usan lib/casos.js o su espejo', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const raiz = path.join(__dirname, '..', '..');
+    const leer = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8');
+    const redefinicion = /(?:const|let|var)\s+(TIPOS_HALLAZGO|TIPOS_INCIDENTE|GRAVEDADES|HALLAZGOS|MAX_COMENTARIO_CIERRE|MAX_MOTIVO_REAPERTURA|MAX_MEDIDAS_INMEDIATAS|MAX_EVIDENCIAS_POR_ENVIO|MAX_EVIDENCIAS_TOTAL|MAX_FOTOS)\s*=\s*[\d[]/;
+    const archivos = [
+        ['Backend', 'handlers', 'incidents-module', 'handler.js'],
+        ['Backend', 'handlers', 'incidents-module', 'incidents.repository.js'],
+        ['Frontend', 'src', 'api', 'incidents.api.ts'],
+        ['Frontend', 'src', 'components', 'CierreDelCaso.tsx'],
+        ['Frontend', 'src', 'components', 'MedidasDelCaso.tsx'],
+        ['Frontend', 'src', 'components', 'ClasificacionDelCaso.tsx'],
+        ['Frontend', 'src', 'components', 'PapelesDelCaso.tsx'],
+        ['Frontend', 'src', 'components', 'AgregarFotosAlCaso.tsx'],
+        ['Frontend', 'src', 'pages', 'IncidentDetalle.tsx'],
+        ['Frontend', 'src', 'pages', 'IncidentReportar.tsx'],
+        ['Frontend', 'src', 'pages', 'Incidents.tsx'],
+    ];
+    for (const a of archivos) {
+        const fuente = leer(...a);
+        assert.doesNotMatch(fuente, redefinicion, `${a.join('/')} redefine una regla que vive en casos`);
+        // `esHallazgo` y el cierre se importan, no se reescriben.
+        assert.doesNotMatch(fuente, /const\s+esHallazgo\s*=/, `${a.join('/')} reescribe esHallazgo`);
+    }
+    // `incidenteCerrado` deriva de `estaCerrado`: una sola regla de cierre.
+    assert.match(leer('Frontend', 'src', 'utils', 'incidentes.ts'), /incidenteCerrado[^\n]*estaCerrado\(/);
+    // El handler no repite la comprobación de gestionar/subir.
+    assert.doesNotMatch(leer('Backend', 'handlers', 'incidents-module', 'handler.js'), /rechazoParaSubirPapel/);
+});
+
+test('papelesDelCaso: los papeles del contrato anterior (documentos.diat / diep) cuentan y se leen sin migrar nada', () => {
+    const E = cargarTs('casos.ts');
+    const base = { tenantId: 'T1', incidentId: 'I1' };
+    const anterior = (tipo, clave, extra = {}) => ({ [tipo]: { s3Key: clave, fileName: `${tipo}.pdf`, fileType: 'application/pdf', uploadedAt: '2026-05-01T12:00:00.000Z', ...extra } });
+    const CLAVE = (tipo) => `tenants/T1/incidentes/I1/${tipo}-0b6f1c2e-3d4a-4b5c-8d9e-0f1a2b3c4d5e.pdf`;
+    const accidente = { ...base, clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve' };
+    const casos = {
+        diatAnterior: { ...accidente, documentos: anterior('diat', CLAVE('diat')) },
+        diatYDiep: { ...accidente, documentos: { ...anterior('diat', CLAVE('diat')), ...anterior('diep', CLAVE('diep')) } },
+        claveAjena: { ...accidente, documentos: anterior('diat', 'tenants/OTRA/incidentes/I1/diat-x.pdf') },
+        claveDeOtroIncidente: { ...accidente, documentos: anterior('diat', 'tenants/T1/incidentes/I2/diat-x.pdf') },
+        claveConPuntos: { ...accidente, documentos: anterior('diat', 'tenants/T1/incidentes/I1/../I2/diat-x.pdf') },
+        claveNoTexto: { ...accidente, documentos: anterior('diat', 42) },
+        otroTipoNoCuenta: { ...accidente, documentos: anterior('informe_investigacion', CLAVE('informe')) },
+        sinIdentidad: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', documentos: anterior('diat', CLAVE('diat')) },
+        documentosVacios: { ...accidente, documentos: {} },
+        nuevoYAnterior: { ...accidente, documentos: anterior('diat', CLAVE('diat')), papeles: [{ tipo: 'diat', s3Key: CLAVE('diat') }, papel('informe_investigacion')] },
+    };
+    assert.equal(cumplido(casos.diatAnterior, 'diat'), true, 'la DIAT anterior cuenta');
+    assert.equal(cumplido(casos.diatYDiep, 'diat'), true);
+    for (const n of ['claveAjena', 'claveDeOtroIncidente', 'claveConPuntos', 'claveNoTexto', 'otroTipoNoCuenta', 'sinIdentidad', 'documentosVacios']) {
+        assert.equal(cumplido(casos[n], 'diat'), false, n);
+    }
+    // Cada archivo sale una vez, y el papel anterior sale con la forma de un papel nuevo.
+    assert.deepEqual(C.papelesDelCaso(casos.nuevoYAnterior).map((p) => p.tipo), ['diat', 'informe_investigacion']);
+    const [leg] = C.papelesDelCaso(casos.diatAnterior);
+    assert.deepEqual(Object.keys(leg).sort(), ['fechaDocumento', 'huella', 'legado', 'nombreArchivo', 'papelId', 's3Key', 'subidoEn', 'subidoPor', 'tamano', 'tipo', 'tipoMime']);
+    assert.equal(leg.legado, true);
+    assert.equal(leg.tipo, 'diat');
+    assert.equal(leg.nombreArchivo, 'diat.pdf');
+    assert.deepEqual(C.papelesDelCaso(null), []);
+    assert.deepEqual(C.papelesDelCaso({ papeles: 'no es lista' }), []);
+    // El espejo da lo mismo, caso por caso.
+    for (const [nombre, inc] of Object.entries(casos)) {
+        assert.deepEqual(E.papelesDelCaso(inc), C.papelesDelCaso(inc), nombre);
+        assert.deepEqual(E.papelesRequeridos(inc), C.papelesRequeridos(inc), nombre);
+        assert.deepEqual(E.avanceDelCaso(inc), C.avanceDelCaso(inc), nombre);
+    }
+    // Y el resumen para el FUF también ve el informe anterior.
+    assert.equal(C.resumenDelCaso({ ...accidente, documentos: anterior('diat', CLAVE('diat')) }).requeridos[0].cumplido, true);
+});

@@ -15,6 +15,7 @@ import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
 import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
 import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { esHallazgo } from '../utils/casos';
 import { ancla } from '../ayuda/registro';
 import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
 import SinConexion from '../components/SinConexion';
@@ -98,8 +99,6 @@ export default function Incidents() {
     const canVerHistorial = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
     const canCalificarAccidente = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
     const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
-    const esHallazgo = (inc: Incident) =>
-        inc.clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
 
     // Gobernanza de hallazgos (panel supervisor+)
     const [gobIncident, setGobIncident] = useState<Incident | null>(null);
@@ -132,12 +131,17 @@ export default function Incidents() {
         }
         setGobSaving(true);
         setGobError('');
+        // Cerrar el hallazgo es cerrar el caso: el servidor lo exige a quien tiene
+        // `incidentes.calificar_accidente`. La opción ni se ofrece a quien no lo tiene.
+        if (gobForm.estadoCierre === 'cerrado' && !canCalificarAccidente) {
+            setGobError('Solo quien clasifica incidentes puede cerrar el hallazgo.');
+            return;
+        }
         try {
-            const responsable = personasTenant.find((p) => p.personaId === gobForm.responsableId);
+            // El nombre del responsable lo lee el servidor de su ficha.
             const res = await incidentsApi.updateGobernanza(gobIncident.incidentId, {
                 actorId: user.personaId,
                 responsableId: gobForm.responsableId || null,
-                responsableNombre: responsable ? `${responsable.nombre} ${responsable.apellido || ''}`.trim() : null,
                 plazoRespuestaISO: gobForm.plazoRespuestaISO || null,
                 estadoCierre: gobForm.estadoCierre as HallazgoGobernanza['estadoCierre'],
                 comentarioCierre: gobForm.comentarioCierre || null
@@ -1855,7 +1859,7 @@ export default function Incidents() {
                         <label className="form-label">Responsable de cierre</label>
                         <select className="form-input form-select" value={gobForm.responsableId} onChange={(e) => setGobForm({ ...gobForm, responsableId: e.target.value })}>
                             <option value="">Selecciona…</option>
-                            {personasTenant.map((p) => (
+                            {personasTenant.filter((p) => p.estado === 'activo' || p.personaId === gobForm.responsableId).map((p) => (
                                 <option key={p.personaId} value={p.personaId}>{p.nombre} {p.apellido || ''} {p.cargo ? `- ${p.cargo}` : ''}</option>
                             ))}
                         </select>
@@ -1870,14 +1874,19 @@ export default function Incidents() {
                             <select className="form-input form-select" value={gobForm.estadoCierre} onChange={(e) => setGobForm({ ...gobForm, estadoCierre: e.target.value })}>
                                 <option value="abierto">Abierto</option>
                                 <option value="en_proceso">En proceso</option>
-                                <option value="cerrado">Cerrado</option>
+                                {/* Cerrar exige el permiso de cierre; sin él la opción no se ofrece (salvo que ya esté cerrado). */}
+                                {(canCalificarAccidente || gobForm.estadoCierre === 'cerrado') && <option value="cerrado">Cerrado</option>}
                             </select>
                         </div>
                     </div>
                     <div className="form-group">
                         <label className="form-label">Comentario de cierre {gobForm.estadoCierre === 'cerrado' && '*'}</label>
                         <textarea className="form-input" rows={3} value={gobForm.comentarioCierre} onChange={(e) => setGobForm({ ...gobForm, comentarioCierre: e.target.value })} style={{ resize: 'vertical' }} />
-                        <span className="form-hint">El cierre queda verificado por ti ({user?.nombre || 'usuario actual'}).</span>
+                        <span className="form-hint">
+                            {canCalificarAccidente
+                                ? `Cerrar el hallazgo cierra el caso: pide la clasificación, la foto, el responsable con plazo y las medidas completas. El cierre queda verificado por ti (${user?.nombre || 'usuario actual'}).`
+                                : 'El cierre del caso lo hace quien clasifica incidentes (prevención de riesgos).'}
+                        </span>
                     </div>
                 </div>
             </Modal>

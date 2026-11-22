@@ -66,17 +66,89 @@ const MAX_PAPELES_POR_CASO = 30;
 
 // ── Qué exige cada caso ──────────────────────────────────────────────────────
 
-const HALLAZGOS = ['condicion_subestandar', 'accion_subestandar'];
+/** Tipos de caso: los dos de hallazgo y los dos de incidente. Los usa todo el módulo (handler, repositorio, pantallas). */
+const TIPOS_HALLAZGO = ['condicion_subestandar', 'accion_subestandar'];
+const TIPOS_INCIDENTE = ['accidente', 'incidente'];
+const GRAVEDADES = ['leve', 'grave', 'fatal'];
+
+/** Clasificación que corresponde a un tipo: los dos de hallazgo son hallazgos, el resto son incidentes. */
+const clasificacionDelTipo = (tipo) => (TIPOS_HALLAZGO.includes(tipo) ? 'hallazgo' : 'incidente');
 
 /**
  * ¿Es un hallazgo? Los incidentes guardados antes de la clasificación no la
  * tienen: se deriva del tipo, igual que al crearlos.
  */
-const esHallazgo = (inc) => (inc?.clasificacion ? inc.clasificacion === 'hallazgo' : HALLAZGOS.includes(inc?.tipo));
+const esHallazgo = (inc) => (inc?.clasificacion ? inc.clasificacion === 'hallazgo' : TIPOS_HALLAZGO.includes(inc?.tipo));
+
+// ── Topes de texto y de fotos (los mismos en el servidor y en las pantallas) ──
+
+/** Qué se hizo en el momento para contener el riesgo: un párrafo, no un informe. */
+const MAX_MEDIDAS_INMEDIATAS = 1000;
+const MAX_COMENTARIO_CIERRE = 1000;
+const MAX_MOTIVO_REAPERTURA = 500;
+/** Fotos por envío: cubre una ráfaga en terreno. Más que eso falla entero al adjuntar. */
+const MAX_EVIDENCIAS_POR_ENVIO = 10;
+/** Fotos por caso: evita que un caso se vuelva un depósito de archivos. */
+const MAX_EVIDENCIAS_TOTAL = 20;
+
+/**
+ * Fotos del caso: imágenes. Incluye HEIC/HEIF, el formato de las cámaras de iPhone,
+ * que un selector `image/*` entrega tal cual. La extensión de la clave de S3 sale de
+ * acá y no del nombre del archivo.
+ */
+const EXTENSION_POR_MIME_FOTO = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+};
+const MIME_FOTOS = Object.keys(EXTENSION_POR_MIME_FOTO);
 
 const hayTexto = (v) => typeof v === 'string' && v.trim() !== '';
 const hayLista = (v) => Array.isArray(v) && v.length > 0;
-const hayPapel = (inc, tipo) => Array.isArray(inc?.papeles) && inc.papeles.some((p) => p?.tipo === tipo);
+
+/**
+ * Los papeles del caso: los de la lista `papeles` y, de lectura nada más, los que se
+ * guardaron con el contrato anterior (`documentos.diat` y `documentos.diep`, un archivo
+ * por tipo). Sin esto, la DIAT que ya estaba subida dejaba de verse y de contar, y el
+ * caso volvía a pedirla. No se migra ningún dato: se leen donde están.
+ *
+ * Un papel anterior se acepta solo si su clave es de ESTA empresa y de ESTE incidente
+ * (el contrato anterior dejaba escribir `documentos` desde el cliente: sin esta
+ * comprobación, `getDocuments` firmaría la descarga de un archivo ajeno). Sale marcado
+ * `legado: true`, con la forma de un papel nuevo.
+ */
+const TIPOS_PAPEL_ANTERIORES = ['diat', 'diep'];
+function papelesDelCaso(inc) {
+    const nuevos = Array.isArray(inc?.papeles) ? inc.papeles.filter(Boolean) : [];
+    const documentos = inc?.documentos;
+    if (!documentos || typeof documentos !== 'object' || !inc?.tenantId || !inc?.incidentId) return nuevos;
+    const prefijo = `tenants/${inc.tenantId}/incidentes/${inc.incidentId}/`;
+    const anteriores = [];
+    for (const tipo of TIPOS_PAPEL_ANTERIORES) {
+        const d = documentos[tipo];
+        const clave = d?.s3Key;
+        if (typeof clave !== 'string' || !clave.startsWith(prefijo) || clave.includes('..')) continue;
+        if (nuevos.some((p) => p.s3Key === clave)) continue;
+        anteriores.push({
+            papelId: `anterior-${tipo}`,
+            tipo,
+            nombreArchivo: typeof d.fileName === 'string' ? d.fileName : '',
+            tipoMime: typeof d.fileType === 'string' ? d.fileType : '',
+            s3Key: clave,
+            subidoPor: null,
+            subidoEn: typeof d.uploadedAt === 'string' ? d.uploadedAt : null,
+            fechaDocumento: null,
+            tamano: null,
+            huella: null,
+            legado: true,
+        });
+    }
+    return [...nuevos, ...anteriores];
+}
+
+const hayPapel = (inc, tipo) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
 
 /**
  * Papeles que el caso exige, cada uno con si ya está cumplido.
@@ -310,7 +382,10 @@ function resumenDelCaso(incidente) {
 module.exports = {
     TIPOS_PAPEL, ORDEN_TIPOS_PAPEL, esTipoPapel, etiquetaTipoPapel, tipoPapelConSalud,
     EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
-    esHallazgo, papelesRequeridos, avanceDelCaso,
+    TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo,
+    MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
+    EXTENSION_POR_MIME_FOTO, MIME_FOTOS,
+    esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
     medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
 };

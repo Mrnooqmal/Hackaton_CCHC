@@ -350,11 +350,10 @@ test('el panel del FUF cuenta los accidentes de la obra sin informe, solo de esa
 test('el panel del FUF no da por cumplido el ítem 66 si no se pueden leer los casos', async () => {
     await ponerProcedimiento(A, obraA);
     await crear();
-    // El doble de DynamoDB vive en el prototipo: se tapa con una propiedad propia de
-    // `docClient` y se destapa borrándola (restaurarla con `mock` dejaría una copia
-    // del doble de esta prueba pegada a la instancia para las siguientes).
-    const delDoble = Object.getPrototypeOf(docClient).send;
-    docClient.send = async function (cmd) {
+    // Los casos se leen con el repositorio de incidentes, que tiene su PROPIO cliente de
+    // DynamoDB: el doble vive en el prototipo y es ahí donde se hace fallar la tabla.
+    const delDoble = DynamoDBDocumentClient.prototype.send;
+    DynamoDBDocumentClient.prototype.send = async function (cmd) {
         if (cmd.input?.TableName === 'INCIDENTS_TABLE') throw new Error('DynamoDB no responde');
         return delDoble.call(this, cmd);
     };
@@ -363,7 +362,32 @@ test('el panel del FUF no da por cumplido el ítem 66 si no se pueden leer los c
         assert.equal(r.estado, 'Parcial');
         assert.match(r.detalle, /No se pudieron revisar/);
     } finally {
-        delete docClient.send;
+        DynamoDBDocumentClient.prototype.send = delDoble;
+    }
+});
+
+test('el panel del FUF cuenta los accidentes de TODAS las páginas de la consulta (la misma lectura que el listado de casos)', async () => {
+    await ponerProcedimiento(A, obraA);
+    for (let n = 0; n < 5; n++) await crear();
+    // La consulta por empresa devuelve de a dos elementos y avisa con `LastEvaluatedKey`.
+    const delDoble = DynamoDBDocumentClient.prototype.send;
+    let consultas = 0;
+    DynamoDBDocumentClient.prototype.send = async function (cmd) {
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input?.TableName === 'INCIDENTS_TABLE' && cmd.input.IndexName === 'tenantId-fecha-index') {
+            const todo = (await delDoble.call(this, cmd)).Items;
+            const desde = cmd.input.ExclusiveStartKey?.desde || 0;
+            consultas += 1;
+            return { Items: todo.slice(desde, desde + 2), LastEvaluatedKey: desde + 2 < todo.length ? { desde: desde + 2 } : undefined };
+        }
+        return delDoble.call(this, cmd);
+    };
+    try {
+        const { r } = await item66(gest(), obraA);
+        assert.equal(r.estado, 'Parcial');
+        assert.match(r.detalle, /5 accidentes sin informe de investigación/);
+        assert.ok(consultas >= 3, `se siguieron las páginas (${consultas} consultas)`);
+    } finally {
+        DynamoDBDocumentClient.prototype.send = delDoble;
     }
 });
 

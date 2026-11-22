@@ -44,6 +44,8 @@ const AL_VENCER = { SUPRIMIR: 'suprimir', ANONIMIZAR: 'anonimizar', GRUPAL: 'gru
 
 const ids = (lista, campo = 'personaId') => (Array.isArray(lista) ? lista.map((x) => x?.[campo]).filter(Boolean) : []);
 const uno = (v) => (v ? [v] : []);
+/** Un identificador de persona, y no un valor de sistema como 'sistema' o 'QR-Publico'. */
+const esPersona = (v) => typeof v === 'string' && v !== '' && v !== 'sistema' && v !== 'QR-Publico';
 
 /**
  * Cada fuente dice, para un ítem de su tabla, qué personas involucra
@@ -137,14 +139,40 @@ const FUENTES = [
         finalidad: 'Registro de AT/EP e incidentes peligrosos (Arts. 71 a 73) e indicadores de accidentabilidad.',
         clase: CLASE.EVIDENCIA,
         // Se conserva el hecho (tipo, fecha, gravedad, días perdidos, obra) para
-        // los indicadores; se quitan los datos de las personas.
+        // los indicadores; se quitan los datos de las personas y todo texto libre, que
+        // puede nombrar a alguien (el relato, las medidas inmediatas, las medidas
+        // correctivas, el comentario de cierre, los motivos de reapertura) o dejar quién
+        // hizo qué (la clasificación, el cierre, las reaperturas, la gobernanza).
+        // Una prueba (tests/inventario-datos.test.js) crea casos por todas las rutas y
+        // falla si el repositorio escribe un campo que no está clasificado acá.
         alVencer: AL_VENCER.ANONIMIZAR,
-        camposPersonales: ['cifrado', 'trabajadorNombre', 'realizadoPor', 'reportadoPor', 'viewedBy', 'investigaciones', 'descripcion', 'evidencias', 'documentos', 'papeles'],
+        // `reporteFlash` ya no se guarda acá (vive en la traza, con los afectados y sus RUT), pero los
+        // incidentes anteriores sí lo traen en el elemento listado.
+        camposPersonales: [
+            'cifrado', 'trabajadorNombre', 'trabajador', 'realizadoPor', 'reportadoPor', 'viewedBy', 'investigaciones',
+            'descripcion', 'evidencias', 'documentos', 'papeles', 'firmaConfirmacion', 'reporteFlash',
+            'medidasInmediatas', 'medidasCorrectivas', 'gobernanza', 'triaje', 'cierre', 'reaperturas',
+        ],
         // La persona afectada se vincula por `afectadoRutHmac` (el mismo HMAC de su
         // ficha), que el proceso resuelve a personaId con `ctx.personaPorRutHmac`.
-        // `reportadoPor` es un nombre, no un id.
-        personasDe: (it, ctx = {}) => [...uno(ctx.personaPorRutHmac?.[it.afectadoRutHmac]), ...uno(it.realizadoPor?.personaId),
-            ...uno(it.gobernanza?.responsableId), ...ids(it.medidasCorrectivas, 'responsableId')],
+        // Además, las personas que actuaron sobre el caso: quien lo reportó
+        // (`reportadoPor` guarda su personaId desde que la identidad sale de la sesión; un
+        // valor de sistema como 'QR-Publico' se descarta, o el caso no vencería nunca), quien
+        // lo clasificó (y quienes lo clasificaron antes), quien lo cerró y quienes lo
+        // reabrieron, quien verificó el cierre, el responsable del hallazgo y los de las
+        // medidas, quien creó o editó cada medida y quien subió cada papel. Un caso vence
+        // cuando vence el plazo de TODAS las personas involucradas.
+        personasDe: (it, ctx = {}) => [
+            ...uno(ctx.personaPorRutHmac?.[it.afectadoRutHmac]), ...uno(it.realizadoPor?.personaId),
+            ...uno(it.reportadoPor),
+            ...uno(it.gobernanza?.responsableId), ...uno(it.gobernanza?.verificadoPor),
+            ...uno(it.triaje?.clasificadoPor), ...ids(it.triaje?.anteriores, 'clasificadoPor'),
+            ...uno(it.cierre?.cerradoPor),
+            ...ids(it.reaperturas, 'reabiertoPor'),
+            ...(Array.isArray(it.reaperturas) ? it.reaperturas.flatMap((r) => uno(r?.cierreAnterior?.cerradoPor)) : []),
+            ...ids(it.medidasCorrectivas, 'responsableId'), ...ids(it.medidasCorrectivas, 'creadaPor'), ...ids(it.medidasCorrectivas, 'editadaPor'),
+            ...ids(it.papeles, 'subidoPor'),
+        ].filter(esPersona),
         // Las fotos y los papeles del caso (`papeles[].s3Key`, fase 2): al vencer el
         // incidente se suprimen o se conservan juntos, y un archivo que el plan no
         // conoce no se vigila ni se extiende su bloqueo de S3.

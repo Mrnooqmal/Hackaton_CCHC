@@ -267,12 +267,53 @@ test('upload-evidence: un incidentId que no es texto responde 400', async () => 
     assert.equal(res.statusCode, 400, res.body);
 });
 
-test('upload-evidence sin incidentId sigue yendo al prefijo temporal, que no se puede adjuntar', async () => {
-    const res = await subir(como(trabajadora, TRABAJADOR));
+test('upload-evidence sin incidentId responde 400: ya no se firma una subida a un prefijo sin dueño', async () => {
+    // Antes iba a `incidentes/sin-incidente/`, en el bucket que no deja borrar durante 5 años,
+    // y `agregarEvidencias` nunca aceptaba esa clave: un archivo guardado años sin incidente.
+    for (const sinId of [undefined, null, '', 0]) {
+        const res = await pedir(como(trabajadora, TRABAJADOR), 'POST', '/incidents/upload-evidence', {
+            fileName: 'foto.jpg', fileType: 'image/jpeg', checksumSha256: HUELLA, ...(sinId === undefined ? {} : { incidentId: sinId }),
+        });
+        assert.equal(res.statusCode, 400, `${String(sinId)}: ${res.body}`);
+        assert.match(JSON.parse(res.body).error, /incidentId/);
+        assert.ok(!res.body.includes('sin-incidente') && !res.body.includes('uploadUrl'));
+    }
+});
+
+test('upload-evidence: solo imágenes (jpeg, png, webp, heic, heif); cualquier otro tipo responde 400', async () => {
+    const id = await reportar();
+    const pedirTipo = (fileType) => pedir(como(trabajadora, TRABAJADOR), 'POST', '/incidents/upload-evidence', {
+        fileName: 'archivo', fileType, checksumSha256: HUELLA, incidentId: id,
+    });
+    const extensiones = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' };
+    for (const [tipo, ext] of Object.entries(extensiones)) {
+        const res = await pedirTipo(tipo);
+        assert.equal(res.statusCode, 200, `${tipo}: ${res.body}`);
+        // La extensión de la clave sale del tipo, no del nombre del archivo.
+        assert.ok(JSON.parse(res.body).data.s3Key.endsWith(`.${ext}`), tipo);
+    }
+    for (const malo of ['application/pdf', 'text/html', 'image/svg+xml', 'image/gif', 'application/x-msdownload', 'image/jpg', 'IMAGE/JPEG', '', undefined, 5]) {
+        const res = await pedirTipo(malo);
+        assert.equal(res.statusCode, 400, `${String(malo)}: ${res.body}`);
+    }
+});
+
+test('upload-evidence: la extensión del nombre del archivo no decide la clave (un .exe con tipo imagen sale como imagen)', async () => {
+    const id = await reportar();
+    const res = await pedir(como(trabajadora, TRABAJADOR), 'POST', '/incidents/upload-evidence', {
+        fileName: 'virus.exe', fileType: 'image/png', checksumSha256: HUELLA, incidentId: id,
+    });
     assert.equal(res.statusCode, 200, res.body);
     const { s3Key } = JSON.parse(res.body).data;
-    assert.ok(s3Key.startsWith(`tenants/${A}/incidentes/sin-incidente/`), s3Key);
+    assert.ok(s3Key.endsWith('.png') && !s3Key.includes('exe'), s3Key);
+    // Y una clave con otra extensión no se acepta al adjuntar.
+    const mala = await pedir(como(trabajadora, TRABAJADOR), 'POST', `/incidents/${id}/evidencias`, { evidencias: [clave(A, id, UUID, 'exe')] });
+    assert.equal(mala.statusCode, 400, mala.body);
+});
+
+test('upload-evidence: en un caso cerrado no se firma la subida (la foto quedaría huérfana en el bucket)', async () => {
     const id = await reportar();
-    const adj = await pedir(como(trabajadora, TRABAJADOR), 'POST', `/incidents/${id}/evidencias`, { evidencias: [s3Key] });
-    assert.equal(adj.statusCode, 400, adj.body);
+    guardado(id).gobernanza.estadoCierre = 'cerrado';
+    const res = await subir(como(supervisora, GESTION), id);
+    assert.equal(res.statusCode, 409, res.body);
 });

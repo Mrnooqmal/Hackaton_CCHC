@@ -4,7 +4,10 @@ const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = requ
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3');
 const almacenamiento = require('../../lib/almacenamiento');
-const { EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, tipoPapelConSalud, esHallazgo } = require('../../lib/casos');
+const {
+    EXTENSION_POR_MIME, EXTENSION_POR_MIME_FOTO, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_MEDIDAS_INMEDIATAS,
+    tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso,
+} = require('../../lib/casos');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
@@ -15,7 +18,7 @@ const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
-const { TenantService } = require('../../lib/services/TenantService');
+const { tenantParaPermisos } = require('../../lib/auth/permisos-empresa');
 
 // Quién recibe el aviso de un reporte nuevo: quien puede clasificarlo, que es
 // justo lo que el aviso le pide hacer, y además SIEMPRE el prevencionista
@@ -32,9 +35,6 @@ const PERMISO_AVISO_REPORTE = PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE;
 // cambia aunque la empresa renombre el rol.
 const ROL_AVISO_SIEMPRE = 'prevencionista';
 
-// Los dos tipos de hallazgo; el resto de los tipos son incidentes (mismo criterio que el handler).
-const TIPOS_HALLAZGO = ['condicion_subestandar', 'accion_subestandar'];
-
 // Cómo se nombra cada tipo en el aviso a prevención (todos masculinos: "un …").
 const TIPO_EN_AVISO = {
     condicion_subestandar: 'hallazgo (condición subestándar)',
@@ -43,10 +43,8 @@ const TIPO_EN_AVISO = {
     accidente: 'accidente',
 };
 
-// Tope del campo "medidas inmediatas": un párrafo, no un informe. Lo que pase de
-// ahí se corta, igual que `descripcionBreve` del reporte flash; el formulario no
-// deja escribir más.
-const MAX_MEDIDAS_INMEDIATAS = 1000;
+// Lo que pase del tope (`MAX_MEDIDAS_INMEDIATAS`, en lib/casos) se corta, igual que
+// `descripcionBreve` del reporte flash; el formulario no deja escribir más.
 const textoMedidasInmediatas = (valor) => (typeof valor === 'string' ? valor.trim().slice(0, MAX_MEDIDAS_INMEDIATAS) : '');
 
 class IncidentsRepository {
@@ -149,13 +147,7 @@ class IncidentsRepository {
      */
     async destinatariosDelAviso(tenantId) {
         if (!tenantId) return [];
-        const tenant = await conNeutro(
-            'incidente.aviso.roles',
-            () => new TenantService().getById(tenantId),
-            null,
-            { tenantId }
-        );
-        const tenantSafe = tenant ? tenant.toSafeFormat() : null;
+        const tenantSafe = await tenantParaPermisos(tenantId, 'incidente.aviso.roles');
         const items = [];
         let desde;
         do {
@@ -315,14 +307,18 @@ class IncidentsRepository {
             throw new Error('La descripción es requerida');
         }
 
+        const clasificacionNueva = data.clasificacion || clasificacionDelTipo(data.tipo);
+        const esHallazgoNuevo = clasificacionNueva === 'hallazgo';
+
         const incident = {
             incidentId,
             tipo: data.tipo,
             // Taxonomia reunion 2026-06-10: 'hallazgo' (abierto a todos, con
             // gobernanza) | 'incidente' (creacion restringida a supervisor+).
-            clasificacion: data.clasificacion
-                || (['condicion_subestandar', 'accion_subestandar'].includes(data.tipo) ? 'hallazgo' : 'incidente'),
-            gobernanza: data.gobernanza || null,
+            clasificacion: clasificacionNueva,
+            // La gobernanza es solo de hallazgos y la arma el handler, con el responsable
+            // y el plazo ya validados (`responsableYPlazo`). Un incidente no la tiene.
+            gobernanza: esHallazgoNuevo ? (data.gobernanza || null) : null,
             // `reporteFlash` lleva `afectados[]` con nombre y RUT: va aparte.
             centroTrabajo: data.centroTrabajo || '',
             // El nombre queda en el elemento listado porque la tabla en pantalla
@@ -375,7 +371,10 @@ class IncidentsRepository {
 
             // Medidas correctivas (Art. 71) — read-model de la Fase ACT en ObraDetalle.
             // [{ numero, causaRaiz, medida, responsableId, responsableNombre, fechaMaxEjecucion, estado:'pendiente'|'en_proceso'|'completada'|'verificada' }]
-            medidasCorrectivas: data.medidasCorrectivas || [],
+            // Nacen vacías: se crean con `POST /incidents/{id}/medidas`, que valida el
+            // texto, el plazo y a la persona responsable, y le asigna el número. Las que
+            // vengan en la creación no se guardan (llegarían sin ninguna de esas comprobaciones).
+            medidasCorrectivas: [],
 
             reportadoPor: data.reportadoPor || 'sistema',
             // El frontend envía tenantId; empresaId se acepta como alias legacy.
@@ -410,28 +409,50 @@ class IncidentsRepository {
         };
     }
 
-    // LIST
-    async list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin }) {
-        console.log('Repo.list called');
-        let items = [];
-
+    /**
+     * TODOS los incidentes de una empresa, o de la tabla entera si no se da empresa.
+     *
+     * Es el único lugar que los lee por empresa, y PAGINA: una consulta de DynamoDB
+     * devuelve hasta 1 MB y avisa con `LastEvaluatedKey` que hay más. Cada lector
+     * (listado, estadísticas, analítica, medidas de la obra, resumen de casos, ítem 66
+     * del FUF) hacía su propia consulta sin seguir esa llave, y una empresa con muchos
+     * casos recibía solo la primera página sin que nada lo dijera. Lanza si la lectura
+     * falla: quien llama decide si degrada (el FUF, por ejemplo, a "no verificado").
+     */
+    async itemsDeLaEmpresa(tenantId) {
+        const items = [];
+        let desde;
         if (tenantId) {
-            // Query por GSI tenantId-fecha-index
-            const result = await this.dynamo.send(new QueryCommand({
-                TableName: this.incidentsTable,
-                IndexName: 'tenantId-fecha-index',
-                KeyConditionExpression: 'tenantId = :tenantId',
-                ExpressionAttributeValues: { ':tenantId': tenantId }
-            }));
-            items = result.Items || [];
-        } else {
+            do {
+                const result = await this.dynamo.send(new QueryCommand({
+                    TableName: this.incidentsTable,
+                    IndexName: 'tenantId-fecha-index',
+                    KeyConditionExpression: 'tenantId = :tenantId',
+                    ExpressionAttributeValues: { ':tenantId': tenantId },
+                    ...(desde ? { ExclusiveStartKey: desde } : {})
+                }));
+                items.push(...(result.Items || []));
+                desde = result.LastEvaluatedKey;
+            } while (desde);
+            return items;
+        }
+        do {
             const result = await this.dynamo.send(new ScanCommand({
-                TableName: this.incidentsTable
+                TableName: this.incidentsTable,
+                ...(desde ? { ExclusiveStartKey: desde } : {})
             }));
             // Un `Scan` recorre la tabla entera y ve también los elementos con la
             // parte sensible, que no son incidentes.
-            items = (result.Items || []).filter((i) => !esTraza(i, 'incidentId'));
-        }
+            items.push(...(result.Items || []).filter((i) => !esTraza(i, 'incidentId')));
+            desde = result.LastEvaluatedKey;
+        } while (desde);
+        return items;
+    }
+
+    // LIST
+    async list({ tenantId, obraId, tipo, estado, fechaInicio, fechaFin }) {
+        console.log('Repo.list called');
+        let items = await this.itemsDeLaEmpresa(tenantId);
 
         if (obraId) items = items.filter(item => item.obraId === obraId);
         if (tipo) items = items.filter(item => item.tipo === tipo);
@@ -495,48 +516,28 @@ class IncidentsRepository {
     }
 
     // ─── Gobernanza de hallazgos (reunion 2026-06-10) ────────────────────────────
-    // Actualiza responsable, plazo y estado de cierre SIN tocar el resto del registro.
+    // Actualiza responsable, plazo, estado de seguimiento y comentario SIN tocar el
+    // resto del registro, y SIN cerrar: el cierre de un hallazgo (`estadoCierre =
+    // 'cerrado'`) pasa siempre por `cerrar`, que exige el permiso de cierre, deja
+    // `cierre` escrito y verifica quién cerró. El handler ya validó a la persona
+    // responsable (de la empresa, activa, con el nombre de su ficha) y el plazo.
     /**
-     * @param {object} data lo que el cliente puede cambiar.
-     * @param {{verificadoPor?: string|null}} servidor lo que decide el handler a
-     *   partir de la sesión: quién verificó el cierre. Nunca sale de `data`.
+     * @param {object} incidente el elemento leído por el handler (la escritura exige que
+     *   no haya cambiado desde esa lectura: 409 si cambió).
+     * @param {{responsableId?: string|null, responsableNombre?: string|null, plazoRespuestaISO?: string|null,
+     *   estadoCierre?: 'abierto'|'en_proceso', comentarioCierre?: string|null}} cambios ya validados.
      */
-    async updateGobernanza(incidentId, data, { verificadoPor = null } = {}) {
-        const res = await this.dynamo.send(new GetCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId }
-        }));
-        if (!res.Item) throw new Error('Incidente no encontrado');
-        if (res.Item.clasificacion !== 'hallazgo') {
-            throw new Error('La gobernanza solo aplica a hallazgos');
+    async updateGobernanza(incidente, cambios) {
+        if (!esHallazgo(incidente)) {
+            throw Object.assign(new Error('La gobernanza solo aplica a hallazgos'), { statusCode: 400 });
         }
-
         const camposPermitidos = ['responsableId', 'responsableNombre', 'plazoRespuestaISO', 'estadoCierre', 'comentarioCierre'];
-        const estadosValidos = ['abierto', 'en_proceso', 'cerrado'];
-        if (data.estadoCierre && !estadosValidos.includes(data.estadoCierre)) {
-            throw new Error(`Estado de cierre invalido. Validos: ${estadosValidos.join(', ')}`);
-        }
-        if (data.estadoCierre === 'cerrado' && !data.comentarioCierre && !res.Item.gobernanza?.comentarioCierre) {
-            throw new Error('El comentario de cierre es requerido para cerrar un hallazgo');
-        }
-
-        const gobernanza = { ...(res.Item.gobernanza || {}) };
+        const gobernanza = { ...(incidente.gobernanza || {}) };
         camposPermitidos.forEach((campo) => {
-            if (data[campo] !== undefined) gobernanza[campo] = data[campo];
+            if (cambios[campo] !== undefined) gobernanza[campo] = cambios[campo];
         });
-        if (data.estadoCierre === 'cerrado') {
-            gobernanza.verificadoPor = verificadoPor;
-            if (!gobernanza.fechaVerificacion) gobernanza.fechaVerificacion = new Date().toISOString();
-        }
-
-        const result = await this.dynamo.send(new UpdateCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId },
-            UpdateExpression: 'SET gobernanza = :g, updatedAt = :u',
-            ExpressionAttributeValues: { ':g': gobernanza, ':u': new Date().toISOString() },
-            ReturnValues: 'ALL_NEW'
-        }));
-        return { incident: result.Attributes, gobernanza };
+        const actualizado = await this.actualizarCaso(incidente, { gobernanza });
+        return { incident: actualizado, gobernanza };
     }
 
     // ─── Completar reporte flash (reunion 2026-06-10) ───────────────────────────
@@ -583,67 +584,78 @@ class IncidentsRepository {
     }
 
     // ─── DS44 Art. 71 — Seguimiento del estado de una medida correctiva ─────────
-    async updateMedidaEstado(incidentId, numero, estado) {
+    /**
+     * Cambia el estado de una medida. Escribe con la condición de que el incidente no
+     * haya cambiado desde que el handler lo leyó (409 si cambió): antes pisaba la lista
+     * entera con lo que había leído un instante antes, y dos cambios a la vez se
+     * perdían uno al otro (o una medida recién creada). Responde `{ incident, medidas }`
+     * como siempre: lo lee `ObraDetalle`.
+     */
+    async updateMedidaEstado(incidente, numero, estado) {
         const estadosValidos = ['pendiente', 'en_proceso', 'completada', 'verificada'];
         if (!estadosValidos.includes(estado)) {
-            throw new Error(`Estado inválido. Válidos: ${estadosValidos.join(', ')}`);
+            throw Object.assign(new Error(`Estado inválido. Válidos: ${estadosValidos.join(', ')}`), { statusCode: 400 });
         }
-        const res = await this.dynamo.send(new GetCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId }
-        }));
-        if (!res.Item) throw new Error('Incidente no encontrado');
+        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
+        if (!previas.some((m) => String(m.numero) === String(numero))) {
+            throw Object.assign(new Error('Medida no encontrada'), { statusCode: 404 });
+        }
 
         const now = new Date().toISOString();
-        const medidas = (res.Item.medidasCorrectivas || []).map((m) =>
+        const medidas = previas.map((m) =>
             String(m.numero) === String(numero)
                 ? { ...m, estado, fechaActualizacionEstado: now }
                 : m
         );
         const todasVerificadas = medidas.length > 0 && medidas.every((m) => m.estado === 'verificada');
 
-        const result = await this.dynamo.send(new UpdateCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId },
-            UpdateExpression: 'SET medidasCorrectivas = :m, medidasVerificadas = :mv, updatedAt = :u',
-            ExpressionAttributeValues: { ':m': medidas, ':mv': todasVerificadas, ':u': now },
-            ReturnValues: 'ALL_NEW'
-        }));
-
-        return { incident: result.Attributes, medidas };
+        const incident = await this.actualizarCaso(incidente, { medidasCorrectivas: medidas, medidasVerificadas: todasVerificadas });
+        return { incident, medidas };
     }
 
     // GET
     /**
-     * Devuelve el incidente CRUDO, sin previsualizaciones de evidencia.
+     * Devuelve el incidente CRUDO: sin la parte sensible (`conTraza`, que descifra
+     * con KMS) y sin previsualizaciones de evidencia.
      *
-     * Existe para comprobar a qué empresa pertenece antes de responder cualquier
-     * cosa sobre él: `get()` además arma URLs firmadas de la evidencia, y hacer
-     * ese trabajo (y pagar esas llamadas a S3) para un incidente que no es de
-     * quien pregunta sería exactamente al revés.
+     * Existe para comprobar a qué empresa pertenece, si está cerrado y qué papeles
+     * lleva antes de responder cualquier cosa sobre él, que es lo que hace toda ruta.
+     * `get()` además lee y descifra la traza y arma URLs firmadas de la evidencia, y
+     * hacer ese trabajo (y pagar esas llamadas a KMS y a S3) para un incidente que no
+     * es de quien pregunta, o solo para comprobar el estado, sería exactamente al revés.
+     * Ningún dato de la traza (RUT, género, cargo, reporte flash) se necesita para
+     * decidir permisos, estado ni papeles.
      */
     async getItem(incidentId) {
         const result = await this.dynamo.send(new GetCommand({
             TableName: this.incidentsTable,
             Key: { incidentId }
         }));
-        if (!result.Item) return null;
-        return conTraza(this.incidentsTable, 'incidentId', result.Item);
+        return result.Item || null;
     }
 
-    async get(id) {
+    /**
+     * La ficha completa: el incidente con su parte sensible y las previsualizaciones
+     * firmadas de la evidencia. Si quien llama ya leyó el elemento (`getItem`) lo pasa
+     * en `itemLeido` y no se lee otra vez.
+     */
+    async get(id, itemLeido) {
         console.log('[GET] Repo.get called for ID:', id);
-        const result = await this.dynamo.send(new GetCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId: id }
-        }));
+        let item = itemLeido;
+        if (!item) {
+            const result = await this.dynamo.send(new GetCommand({
+                TableName: this.incidentsTable,
+                Key: { incidentId: id }
+            }));
+            item = result.Item;
+        }
 
-        if (!result.Item) {
+        if (!item) {
             console.error('[GET] Incident not found:', id);
             throw new Error('Incidente no encontrado');
         }
 
-        const incident = await conTraza(this.incidentsTable, 'incidentId', result.Item);
+        const incident = await conTraza(this.incidentsTable, 'incidentId', item);
         console.log('[GET] Building evidence previews for', (incident.evidencias || []).length, 'items');
         const evidencePreviews = await this.buildEvidencePreviews(incident.evidencias || []);
         console.log('[GET] Evidence previews built:', evidencePreviews.length);
@@ -765,6 +777,14 @@ class IncidentsRepository {
         if (!fileName || !fileType) {
             throw new Error('fileName y fileType son requeridos');
         }
+        // Lo que se firma va a un bucket que no deja borrar durante 5 años: solo
+        // imágenes, y solo a la carpeta de un incidente (sin id no hay carpeta, y una
+        // subida a un prefijo suelto quedaría guardada años sin dueño). El handler ya lo
+        // rechaza con 400; esto cubre a quien use el repositorio directo.
+        if (!incidentId) throw Object.assign(new Error('incidentId es requerido'), { statusCode: 400 });
+        if (!EXTENSION_POR_MIME_FOTO[fileType]) {
+            throw Object.assign(new Error('Solo se aceptan fotos (JPG, PNG, WebP o HEIC).'), { statusCode: 400 });
+        }
         // El bucket de evidencia tiene Object Lock: sin huella, S3 rechaza la subida.
         if (!HUELLA_SHA256.test(String(checksumSha256 || ''))) {
             throw new Error('Falta la huella SHA-256 del archivo. Recarga la página e intenta de nuevo.');
@@ -775,8 +795,8 @@ class IncidentsRepository {
         // incidentes/…`. Antes empezaba por el incidentId, así que quedaba fuera
         // del modelo de pertenencia —que se apoya en ese prefijo— y ningún
         // control podía decir de quién era el archivo.
-        const fileExtension = fileName.split('.').pop();
-        const s3Key = `tenants/${tenantId}/incidentes/${incidentId || 'sin-incidente'}/${uuidv4()}.${fileExtension}`;
+        // La extensión sale del tipo validado, no del nombre del archivo.
+        const s3Key = `tenants/${tenantId}/incidentes/${incidentId}/${uuidv4()}.${EXTENSION_POR_MIME_FOTO[fileType]}`;
 
         const command = new PutObjectCommand({
             Bucket: this.incidentEvidenceBucket,
@@ -798,23 +818,7 @@ class IncidentsRepository {
         mes = mes || new Date().toISOString().slice(0, 7);
         masaLaboral = parseInt(masaLaboral) || 100;
 
-        let items = [];
-        if (tenantId) {
-            const result = await this.dynamo.send(new QueryCommand({
-                TableName: this.incidentsTable,
-                IndexName: 'tenantId-fecha-index',
-                KeyConditionExpression: 'tenantId = :tenantId',
-                ExpressionAttributeValues: { ':tenantId': tenantId }
-            }));
-            items = result.Items || [];
-        } else {
-            const result = await this.dynamo.send(new ScanCommand({
-                TableName: this.incidentsTable
-            }));
-            // Un `Scan` recorre la tabla entera y ve también los elementos con la
-            // parte sensible, que no son incidentes.
-            items = (result.Items || []).filter((i) => !esTraza(i, 'incidentId'));
-        }
+        let items = await this.itemsDeLaEmpresa(tenantId);
         if (obraId) items = items.filter(item => item.obraId === obraId);
         items = items.filter(item => item.fecha && item.fecha.startsWith(mes));
 
@@ -947,7 +951,7 @@ class IncidentsRepository {
      */
     async clasificar(incidente, datos, personaId) {
         const ahora = new Date().toISOString();
-        const clasificacion = TIPOS_HALLAZGO.includes(datos.tipo) ? 'hallazgo' : 'incidente';
+        const clasificacion = clasificacionDelTipo(datos.tipo);
         const esHallazgoNuevo = clasificacion === 'hallazgo';
         const esIncidentePeligroso = datos.tipo === 'incidente';
 
@@ -1091,15 +1095,20 @@ class IncidentsRepository {
     /**
      * Cierra el caso. El handler ya comprobó que no falta nada. Un incidente o
      * accidente pasa a `estado = 'cerrado'`; un hallazgo, a `gobernanza.estadoCierre
-     * = 'cerrado'` con el comentario, quién verificó y cuándo (como `updateGobernanza`).
-     * En los dos queda `cierre` con el comentario, quién cerró y cuándo.
+     * = 'cerrado'` con el comentario, quién verificó y cuándo. En los dos queda
+     * `cierre` con el comentario, quién cerró y cuándo. Es la ÚNICA vía de cierre:
+     * `PUT /incidents/{id}/cerrar` y `PUT /incidents/{id}/gobernanza` con `estadoCierre =
+     * 'cerrado'` llegan acá, así que `cierre` y la reapertura siempre tienen de dónde leer.
      */
-    async cerrar(incidente, comentarioCierre, personaId) {
+    async cerrar(incidente, comentarioCierre, personaId, gobernanzaExtra = {}) {
         const ahora = new Date().toISOString();
         const campos = { cierre: { comentario: comentarioCierre, cerradoPor: personaId, cerradoEn: ahora } };
         if (esHallazgo(incidente)) {
             campos.gobernanza = {
                 ...(incidente.gobernanza || {}),
+                // Lo que se guardó junto con el cierre (responsable y plazo que vienen en la
+                // misma petición de la gobernanza), ya validado por el handler.
+                ...gobernanzaExtra,
                 estadoCierre: 'cerrado',
                 comentarioCierre,
                 verificadoPor: personaId,
@@ -1126,6 +1135,10 @@ class IncidentsRepository {
                 estadoCierre: 'en_proceso',
                 verificadoPor: null,
                 fechaVerificacion: null,
+                // El comentario del cierre anterior queda en `reaperturas[].cierreAnterior`.
+                // Dejarlo acá hacía que el papel "Comentario de cierre" siguiera cumplido con
+                // el caso abierto, y que el siguiente cierre arrastrara un texto que ya no vale.
+                comentarioCierre: null,
             };
             // Un hallazgo cerrado por otra vía pudo dejar `estado = 'cerrado'`.
             if (incidente.estado === 'cerrado') campos.estado = 'en_investigacion';
@@ -1244,7 +1257,9 @@ class IncidentsRepository {
     // las fotos). Nunca una URL directa al bucket: no abre y, si abriera, no
     // dejaría constancia de quién la pidió.
     async getDocuments(incidente) {
-        const papeles = Array.isArray(incidente?.papeles) ? incidente.papeles : [];
+        // Incluye los papeles del contrato anterior (`documentos.diat`/`diep`): con
+        // la misma firma y la misma auditoría que los demás.
+        const papeles = papelesDelCaso(incidente);
         const archivos = await Promise.all(papeles.map(async (p) => {
             const { s3Key, huella, ...visible } = p;
             const url = await getSignedUrl(s3Client, new GetObjectCommand({
@@ -1261,24 +1276,7 @@ class IncidentsRepository {
     // GET ANALYTICS
     async getAnalytics({ tenantId, obraId, fechaInicio, fechaFin }) {
         fechaFin = fechaFin || new Date().toISOString().split('T')[0];
-        let items = [];
-
-        if (tenantId) {
-            const result = await this.dynamo.send(new QueryCommand({
-                TableName: this.incidentsTable,
-                IndexName: 'tenantId-fecha-index',
-                KeyConditionExpression: 'tenantId = :tenantId',
-                ExpressionAttributeValues: { ':tenantId': tenantId }
-            }));
-            items = result.Items || [];
-        } else {
-            const result = await this.dynamo.send(new ScanCommand({
-                TableName: this.incidentsTable
-            }));
-            // Un `Scan` recorre la tabla entera y ve también los elementos con la
-            // parte sensible, que no son incidentes.
-            items = (result.Items || []).filter((i) => !esTraza(i, 'incidentId'));
-        }
+        let items = await this.itemsDeLaEmpresa(tenantId);
 
         if (obraId) items = items.filter(item => item.obraId === obraId);
         if (fechaInicio) items = items.filter(item => item.fecha >= fechaInicio);

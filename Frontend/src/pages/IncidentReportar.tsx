@@ -13,6 +13,8 @@ import { useToast } from '../context/ToastContext';
 import { PERMISSIONS } from '../permissions';
 import { FormPage, FieldSection, PageHeader, Select, SegmentedControl, AlertBanner } from '../components/ui';
 import { ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { MAX_EVIDENCIAS_POR_ENVIO, MIME_FOTOS } from '../utils/casos';
+import { subirYAdjuntarFotos } from '../utils/subirFotos';
 import { ancla } from '../ayuda/registro';
 
 const INITIAL_FORM: CreateIncidentData = {
@@ -29,9 +31,9 @@ const INITIAL_FORM: CreateIncidentData = {
     medidasInmediatas: '',
 };
 
-// El backend acepta hasta 10 archivos por envío (POST /incidents/{id}/evidencias):
+// El backend acepta hasta `MAX_EVIDENCIAS_POR_ENVIO` archivos por envío (POST /incidents/{id}/evidencias):
 // más que eso fallaría entero al adjuntar, así que se corta al elegir.
-const MAX_FOTOS = 10;
+const MAX_FOTOS = MAX_EVIDENCIAS_POR_ENVIO;
 
 // Lo que trae `GET /personas` para el buscador: además de `Worker`, el
 // identificador anterior y campos que solo algunas fichas tienen.
@@ -256,33 +258,16 @@ export default function IncidentReportar() {
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
-        const elegidas = Array.from(e.target.files);
+        // Solo fotos: el servidor no firma la subida de otro tipo de archivo.
+        const archivos = Array.from(e.target.files);
+        const elegidas = archivos.filter((f) => MIME_FOTOS.includes(f.type));
+        if (elegidas.length < archivos.length) setFormError('Solo se aceptan fotos (JPG, PNG, WebP o HEIC).');
         setUploadedFiles((prev) => {
             if (prev.length + elegidas.length > MAX_FOTOS) setFormError(`Puedes adjuntar hasta ${MAX_FOTOS} fotos por reporte.`);
             return [...prev, ...elegidas].slice(0, MAX_FOTOS);
         });
     };
     const removeFile = (index: number) => setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
-
-    // Cuenta lo que no subió: `fetch` no lanza con un 4xx/5xx de S3, así que
-    // antes una foto rechazada se adjuntaba igual como si existiera.
-    const uploadFiles = async (incidentId: string): Promise<{ claves: string[]; fallidas: number }> => {
-        const claves: string[] = [];
-        let fallidas = 0;
-        for (const file of uploadedFiles) {
-            try {
-                const urlResponse = await incidentsApi.uploadEvidence({ archivo: file, fileName: file.name, fileType: file.type, incidentId });
-                if (!urlResponse.success || !urlResponse.data) { fallidas++; continue; }
-                const subida = await fetch(urlResponse.data.uploadUrl, { method: 'PUT', body: file, headers: urlResponse.data.uploadHeaders });
-                if (subida.ok) claves.push(urlResponse.data.s3Key);
-                else fallidas++;
-            } catch (error) {
-                console.error('Error subiendo archivo:', error);
-                fallidas++;
-            }
-        }
-        return { claves, fallidas };
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -322,18 +307,11 @@ export default function IncidentReportar() {
                 const incidentId = response.data.incidentId;
                 // El reporte ya existe aunque las fotos fallen: no se vuelve a
                 // enviar (quedaría duplicado), se avisa cuántas no quedaron.
+                // La subida y el conteo de lo que falló son los mismos del detalle del caso
+                // (`utils/subirFotos`).
                 let fotosSinAdjuntar = 0;
                 if (uploadedFiles.length > 0) {
-                    const { claves, fallidas } = await uploadFiles(incidentId);
-                    fotosSinAdjuntar = fallidas;
-                    if (claves.length > 0) {
-                        try {
-                            const adjunto = await incidentsApi.agregarEvidencias(incidentId, claves);
-                            if (!adjunto.success) fotosSinAdjuntar += claves.length;
-                        } catch {
-                            fotosSinAdjuntar += claves.length;
-                        }
-                    }
+                    fotosSinAdjuntar = (await subirYAdjuntarFotos(incidentId, uploadedFiles)).sinAdjuntar;
                 }
                 const tipoTexto = esHallazgoForm ? 'Hallazgo' : 'Incidente';
                 if (fotosSinAdjuntar > 0) {
@@ -675,7 +653,7 @@ export default function IncidentReportar() {
                     <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                         <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch' }}>
                             <div className="upload-zone" style={{ flex: 1 }}>
-                                <input type="file" id="inc-file-upload" className="hidden" multiple accept="image/*" onChange={handleFileSelect} />
+                                <input type="file" id="inc-file-upload" className="hidden" multiple accept={MIME_FOTOS.join(',')} onChange={handleFileSelect} />
                                 <label htmlFor="inc-file-upload" className="upload-label">
                                     <FiUpload size={22} className="text-muted mb-1" />
                                     <p className="font-semibold" style={{ fontSize: 'var(--text-sm)' }}>Seleccionar fotos</p>
