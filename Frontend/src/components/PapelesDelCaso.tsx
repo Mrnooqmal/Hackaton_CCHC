@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { FiCheckCircle, FiCircle, FiDownload, FiLock, FiUploadCloud } from 'react-icons/fi';
+import { useEffect, useMemo, useState } from 'react';
+import { FiCheckCircle, FiCircle, FiDownload, FiFileText, FiLock, FiUploadCloud, FiX } from 'react-icons/fi';
 import { incidentsApi, type Incident, type PapelDelCaso } from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { Select, Badge, LoadingSpinner } from './ui';
 import { fechaLocal } from '../utils/prescripciones';
 import {
     ORDEN_TIPOS_PAPEL, TIPOS_PAPEL, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
-    avanceDelCaso, papelesRequeridos, etiquetaTipoPapel, type TipoPapel,
+    avanceDelCaso, papelesRequeridos, etiquetaTipoPapel, esHallazgo, type TipoPapel,
 } from '../utils/casos';
+import { ZonaCarga } from './FotosEvidencia';
 import { plural } from '../utils/plural';
 
 const MB = 1024 * 1024;
@@ -57,7 +58,6 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
     const [fechaDocumento, setFechaDocumento] = useState('');
     const [subiendo, setSubiendo] = useState(false);
     const [errorSubida, setErrorSubida] = useState('');
-    const inputArchivo = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         let cancelado = false;
@@ -106,7 +106,6 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
             toast.success('Papel agregado al caso');
             setArchivo(null);
             setFechaDocumento('');
-            if (inputArchivo.current) inputArchivo.current.value = '';
             setRecarga((n) => n + 1);
             onCambio?.();
         } catch {
@@ -115,6 +114,87 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
             setSubiendo(false);
         }
     };
+
+    // Los papeles que exige un hallazgo (foto, responsable y plazo, comentario de cierre)
+    // no se cumplen subiendo un archivo: la foto se agrega arriba, en "Fotos", y lo demás
+    // se completa en sus propias secciones. Acá solo cabe un respaldo opcional (informe,
+    // constancia, otro), así que el formulario va plegado y con esa aclaración.
+    const soloRespaldos = esHallazgo(incidente);
+
+    const formulario = (
+        <form className="inc-papeles-form" onSubmit={subir}>
+            {!soloRespaldos && <div className="inc-ficha-label">Subir un papel</div>}
+            <div className="inc-papeles-campos">
+                <div className="form-group">
+                    <label className="form-label">Papel</label>
+                    <Select
+                        ariaLabel="Tipo de papel"
+                        value={tipo}
+                        onChange={(v) => setTipo(v as TipoPapel)}
+                        placeholder="Elige el tipo…"
+                        options={ORDEN_TIPOS_PAPEL.map((t) => ({ value: t, label: TIPOS_PAPEL[t].etiqueta }))}
+                        disabled={subiendo}
+                    />
+                </div>
+                <div className="form-group">
+                    <label className="form-label" htmlFor="papel-fecha">Fecha del documento (opcional)</label>
+                    <input
+                        id="papel-fecha"
+                        className="form-input"
+                        type="date"
+                        max={fechaLocal()}
+                        value={fechaDocumento}
+                        disabled={subiendo}
+                        onChange={(e) => setFechaDocumento(e.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="form-group">
+                <span className="form-label">Archivo</span>
+                <ZonaCarga
+                    id="papel-archivo"
+                    accept={MIME_PAPELES}
+                    titulo="Seleccionar archivo"
+                    tituloCambiar={archivo ? 'Cambiar archivo' : undefined}
+                    ayuda={`PDF o imagen (JPG, PNG o WebP), hasta ${MAX_BYTES_PAPEL / MB} MB`}
+                    disabled={subiendo}
+                    onElegir={(elegidos) => {
+                        // Cancelar el selector no trae archivos: se conserva el que ya había.
+                        if (elegidos[0]) { setArchivo(elegidos[0]); setErrorSubida(''); }
+                    }}
+                />
+                {archivo && (
+                    <div className="inc-archivo-elegido">
+                        <FiFileText size={18} className="inc-archivo-elegido-icono" />
+                        <div className="inc-archivo-elegido-texto">
+                            <div className="inc-archivo-elegido-nombre">{archivo.name}</div>
+                            <div className="inc-papeles-meta">{tamanoLegible(archivo.size)}</div>
+                        </div>
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { setArchivo(null); setErrorSubida(''); }}
+                            disabled={subiendo}
+                            aria-label={`Quitar ${archivo.name}`}
+                        >
+                            <FiX size={14} /> Quitar
+                        </button>
+                    </div>
+                )}
+            </div>
+            {tipo && TIPOS_PAPEL[tipo].salud && (
+                <p className="inc-ficha-texto inc-papeles-ayuda">
+                    Este documento trae datos de salud. Solo lo ve quien tiene acceso al historial de incidentes y cada descarga queda registrada.
+                </p>
+            )}
+            {errorSubida && <div className="alert alert-danger" role="alert"><div>{errorSubida}</div></div>}
+            <div>
+                <button type="submit" className="btn btn-primary" disabled={subiendo || !tipo || !archivo}>
+                    <FiUploadCloud size={16} /> {subiendo ? 'Subiendo…' : 'Subir papel'}
+                </button>
+            </div>
+        </form>
+    );
 
     return (
         <section className="inc-ficha-card" aria-label="Papeles del caso">
@@ -192,59 +272,15 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                         )}
                     </div>
 
-                    {puedeSubir && (
-                        <form className="inc-papeles-form" onSubmit={subir}>
-                            <div className="inc-ficha-label">Subir un papel</div>
-                            <div className="inc-papeles-campos">
-                                <div className="form-group">
-                                    <label className="form-label">Papel</label>
-                                    <Select
-                                        ariaLabel="Tipo de papel"
-                                        value={tipo}
-                                        onChange={(v) => setTipo(v as TipoPapel)}
-                                        placeholder="Elige el tipo…"
-                                        options={ORDEN_TIPOS_PAPEL.map((t) => ({ value: t, label: TIPOS_PAPEL[t].etiqueta }))}
-                                        disabled={subiendo}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="papel-archivo">Archivo (PDF o imagen, hasta {MAX_BYTES_PAPEL / MB} MB)</label>
-                                    <input
-                                        id="papel-archivo"
-                                        ref={inputArchivo}
-                                        className="form-input"
-                                        type="file"
-                                        accept={MIME_PAPELES.join(',')}
-                                        disabled={subiendo}
-                                        onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="papel-fecha">Fecha del documento (opcional)</label>
-                                    <input
-                                        id="papel-fecha"
-                                        className="form-input"
-                                        type="date"
-                                        max={fechaLocal()}
-                                        value={fechaDocumento}
-                                        disabled={subiendo}
-                                        onChange={(e) => setFechaDocumento(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            {tipo && TIPOS_PAPEL[tipo].salud && (
-                                <p className="inc-ficha-texto inc-papeles-ayuda">
-                                    Este documento trae datos de salud. Solo lo ve quien tiene acceso al historial de incidentes y cada descarga queda registrada.
-                                </p>
-                            )}
-                            {errorSubida && <div className="alert alert-danger" role="alert"><div>{errorSubida}</div></div>}
-                            <div>
-                                <button type="submit" className="btn btn-primary" disabled={subiendo}>
-                                    <FiUploadCloud size={16} /> {subiendo ? 'Subiendo…' : 'Subir papel'}
-                                </button>
-                            </div>
-                        </form>
-                    )}
+                    {puedeSubir && (soloRespaldos ? (
+                        <details className="inc-papeles-opcional">
+                            <summary>Subir un respaldo (opcional)</summary>
+                            <p className="inc-ficha-texto inc-papeles-ayuda">
+                                Un hallazgo no necesita archivos para cerrarse: su foto se agrega en "Fotos" y el resto (responsable, plazo y comentario de cierre) se completa en las otras secciones del caso. Acá solo se suben respaldos opcionales, como un informe o una constancia.
+                            </p>
+                            {formulario}
+                        </details>
+                    ) : formulario)}
                 </>
             )}
         </section>

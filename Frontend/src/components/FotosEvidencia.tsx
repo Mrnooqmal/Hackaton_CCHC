@@ -10,25 +10,34 @@ import { plural } from '../utils/plural';
  */
 export const AYUDA_FOTOS = 'JPG, PNG, WebP o HEIC';
 
-interface ZonaProps {
+interface ZonaCargaProps {
     id: string;
-    /** Recibe las fotos elegidas (ya filtradas por tipo) y cuántos archivos se descartaron; el aviso lo da quien la usa. */
-    onElegir: (archivos: File[], descartados: number) => void;
+    /** Recibe los archivos que la persona eligió, tal cual: filtrar por tipo es cosa de quien la usa. */
+    onElegir: (archivos: File[]) => void;
+    /** Tipos MIME que ofrece el selector del sistema (no reemplaza validar lo elegido). */
+    accept: string[];
+    /** Título de la zona, por ejemplo "Seleccionar fotos". */
+    titulo: string;
+    /** Lo que se acepta, dicho como lo ve la persona. */
+    ayuda: string;
+    multiple?: boolean;
     disabled?: boolean;
+    /** Texto del título si ya hay un archivo elegido (para cambiarlo); por defecto, el mismo `titulo`. */
+    tituloCambiar?: string;
 }
 
 /**
- * Zona de carga de fotos: el mismo bloque del formulario de reporte y del detalle del caso.
+ * Zona de carga de archivos: el bloque común del formulario de reporte, de las fotos del
+ * caso y de los papeles del caso.
  * El input va oculto a la vista pero accesible: el `label` lo abre con clic y, con teclado,
  * el input recibe el foco (la zona muestra el aro de foco con `:focus-within`).
  */
-export function ZonaCargaFotos({ id, onElegir, disabled = false }: ZonaProps) {
+export function ZonaCarga({ id, onElegir, accept, titulo, ayuda, multiple = false, disabled = false, tituloCambiar }: ZonaCargaProps) {
     const alElegir = (e: React.ChangeEvent<HTMLInputElement>) => {
         const archivos = Array.from(e.target.files ?? []);
-        // Se vacía para poder volver a elegir la misma foto después de quitarla.
+        // Se vacía para poder volver a elegir el mismo archivo después de quitarlo.
         e.target.value = '';
-        const fotos = archivos.filter((f) => MIME_FOTOS.includes(f.type));
-        onElegir(fotos, archivos.length - fotos.length);
+        onElegir(archivos);
     };
 
     return (
@@ -37,17 +46,44 @@ export function ZonaCargaFotos({ id, onElegir, disabled = false }: ZonaProps) {
                 type="file"
                 id={id}
                 className="inc-file-input"
-                multiple
-                accept={MIME_FOTOS.join(',')}
+                multiple={multiple}
+                accept={accept.join(',')}
                 disabled={disabled}
                 onChange={alElegir}
             />
             <label htmlFor={id} className="upload-label">
                 <FiUpload size={22} className="text-muted mb-1" />
-                <p className="font-semibold" style={{ fontSize: 'var(--text-sm)' }}>Seleccionar fotos</p>
-                <p className="text-xs text-muted">{AYUDA_FOTOS}</p>
+                <p className="font-semibold" style={{ fontSize: 'var(--text-sm)' }}>{tituloCambiar ?? titulo}</p>
+                <p className="text-xs text-muted">{ayuda}</p>
             </label>
         </div>
+    );
+}
+
+interface ZonaProps {
+    id: string;
+    /** Recibe las fotos elegidas (ya filtradas por tipo) y cuántos archivos se descartaron; el aviso lo da quien la usa. */
+    onElegir: (archivos: File[], descartados: number) => void;
+    disabled?: boolean;
+}
+
+/** Zona de carga de fotos: el mismo bloque del formulario de reporte y del detalle del caso. */
+export function ZonaCargaFotos({ id, onElegir, disabled = false }: ZonaProps) {
+    const alElegir = (archivos: File[]) => {
+        const fotos = archivos.filter((f) => MIME_FOTOS.includes(f.type));
+        onElegir(fotos, archivos.length - fotos.length);
+    };
+
+    return (
+        <ZonaCarga
+            id={id}
+            onElegir={alElegir}
+            accept={MIME_FOTOS}
+            titulo="Seleccionar fotos"
+            ayuda={AYUDA_FOTOS}
+            multiple
+            disabled={disabled}
+        />
     );
 }
 

@@ -396,6 +396,48 @@
   gap: var(--space-3);
 }
 
+/* Archivo elegido para subir como papel: nombre, tamaño y botón para quitarlo. */
+.inc-archivo-elegido {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+}
+
+.inc-archivo-elegido-icono { flex-shrink: 0; color: var(--text-muted); }
+
+.inc-archivo-elegido-texto { flex: 1; min-width: 0; }
+
+.inc-archivo-elegido-nombre {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Formulario de respaldos plegado (hallazgos): el resumen hace de botón de apertura. */
+.inc-papeles-opcional {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--surface-border);
+}
+
+.inc-papeles-opcional > summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.inc-papeles-opcional[open] > summary { margin-bottom: var(--space-2); }
+
+.inc-papeles-opcional .inc-papeles-form {
+  border-top: 0;
+  padding-top: var(--space-3);
+}
+
 @media (max-width: 640px) {
   .inc-ficha-card { padding: var(--space-4); }
   .inc-papeles-fila { flex-wrap: wrap; }

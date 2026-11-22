@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
     FiPlus, FiAlertTriangle, FiX, FiImage,
@@ -13,7 +14,7 @@ import type { Incident, IncidentStats, AnalyticsData, HallazgoGobernanza, Worker
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
-import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
+import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, EmptyState, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
 import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
 import { esHallazgo } from '../utils/casos';
 import { ancla } from '../ayuda/registro';
@@ -99,6 +100,10 @@ export default function Incidents() {
     const canVerHistorial = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
     const canCalificarAccidente = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
     const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
+    // Quien no tiene ni listado ni estadísticas (un trabajador) no ve nada más que el botón
+    // de reportar: se le da un bloque central que lo dice con palabras simples. El botón
+    // del encabezado se oculta en ese caso para no repetirlo.
+    const soloReporta = !canVerHistorial && !canVerEstadisticas;
 
     // Gobernanza de hallazgos (panel supervisor+)
     const [gobIncident, setGobIncident] = useState<Incident | null>(null);
@@ -495,12 +500,17 @@ export default function Incidents() {
     useEffect(() => {
         if (lightboxIndex === null) return;
         const onKey = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'Escape') setLightboxIndex(null);
-            else if (e.key === 'ArrowLeft') showPrevEvidence();
+            if (e.key === 'Escape') {
+                // El Modal escucha Escape en `document`: sin cortar la propagación acá,
+                // el mismo Escape que cierra el visor cerraría también el modal de abajo.
+                e.stopPropagation();
+                setLightboxIndex(null);
+            } else if (e.key === 'ArrowLeft') showPrevEvidence();
             else if (e.key === 'ArrowRight') showNextEvidence();
         };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
+        // En captura, para correr antes que el listener del Modal.
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lightboxIndex, viewableEvidence.length]);
 
@@ -525,7 +535,7 @@ export default function Incidents() {
                     tabsLabel="Vista de incidentes"
                     tabsAncla={ancla('incidentes.pestanas')}
                     actions={hay ? (
-                        <>
+                        soloReporta && selectedObraId ? undefined : <>
                             <button
                                 className="btn btn-secondary"
                                 disabled={!selectedObraId}
@@ -939,6 +949,68 @@ export default function Incidents() {
                     );
                 })()}
 
+                {/* Trabajador: sin listado ni estadísticas, el reporte es lo único que puede hacer.
+                    "Mis reportes" sale del mismo `GET /incidents`, que sin `incidentes.historial`
+                    devuelve solo lo que la persona reportó. */}
+                {soloReporta && (
+                    <div className="inc-solo-reporta">
+                        <EmptyState
+                            large
+                            icon={<FiShield />}
+                            title="¿Viste algo que pueda causar un accidente?"
+                            description={hay
+                                ? '¿Viste una condición o acción insegura? Repórtala aquí. Toma un minuto y ayuda a que nadie se lastime.'
+                                : 'Para reportar necesitas conexión. Cuando vuelva la señal podrás hacerlo desde aquí.'}
+                            action={hay ? {
+                                label: 'Reportar hallazgo',
+                                icon: <FiPlus />,
+                                onClick: () => navigate('/incidents/reportar', { state: { clasificacion: 'hallazgo' } }),
+                            } : undefined}
+                            secondaryAction={hay && canCreateIncidente ? {
+                                label: 'Reportar incidente',
+                                icon: <FiPlus />,
+                                onClick: () => navigate('/incidents/reportar', { state: { clasificacion: 'incidente' } }),
+                            } : undefined}
+                        />
+
+                        {!loading && incidents.length > 0 && (
+                            <div className="card inc-mis-reportes">
+                                <h3 className="inc-mis-reportes-titulo">Mis reportes</h3>
+                                <div className="incident-list">
+                                    {[...incidents]
+                                        .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+                                        .map((incident) => (
+                                            <div
+                                                key={incident.incidentId}
+                                                className="incident-row"
+                                                onClick={() => navigate(`/incidents/${incident.incidentId}`)}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={(e) => e.key === 'Enter' && navigate(`/incidents/${incident.incidentId}`)}
+                                            >
+                                                <span className="incident-row-icon inc-icon-neutro">
+                                                    {esHallazgo(incident) ? <FiShield size={17} /> : <FiZap size={17} />}
+                                                </span>
+                                                <div className="incident-row-body">
+                                                    <div className="incident-row-eyebrow">{getTipoLabel(incident.tipo)}</div>
+                                                    <p className="incident-row-desc">{incident.descripcion || 'Sin descripción registrada'}</p>
+                                                    <div className="incident-row-meta">
+                                                        <span>{new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="incident-row-status">
+                                                    {esHallazgo(incident)
+                                                        ? renderCierreBadge(incident.gobernanza?.estadoCierre || 'abierto')
+                                                        : renderEstadoBadge(incident.estado)}
+                                                </div>
+                                            </div>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Detail Modal */}
                 <Modal
                     isOpen={!!selectedIncident}
@@ -1241,7 +1313,7 @@ export default function Incidents() {
                 </Modal>
 
 
-                {lightboxItem && (
+                {lightboxItem && createPortal(
                     <div className="incident-evidence-lightbox" onClick={() => setLightboxIndex(null)}>
                         <div className="incident-evidence-lightbox-content" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -1282,11 +1354,27 @@ export default function Incidents() {
                                 )}
                             </p>
                         </div>
-                    </div>
+                    </div>,
+                    document.body,
                 )}
 
 
                 <style>{`
+                /* ── Trabajador: bloque de reporte y "Mis reportes" ── */
+                .inc-solo-reporta {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-5);
+                    max-width: 720px;
+                    margin: var(--space-6) auto 0;
+                }
+                .inc-mis-reportes-titulo {
+                    padding: var(--space-4) var(--space-4) var(--space-2);
+                    font-size: var(--text-base);
+                    font-weight: 600;
+                    color: var(--text-primary);
+                }
+
                 /* ── Barra de herramientas del listado ── */
                 .inc-toolbar {
                     display: flex;
@@ -1741,7 +1829,10 @@ export default function Incidents() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    z-index: 2000;
+                    /* Por encima de .modal-overlay (999998) y .modal (999999): el visor se
+                       abre desde el modal de detalle y con 2000 quedaba detrás. Además va
+                       en un portal a body, así no depende del apilamiento de su padre. */
+                    z-index: 1000001;
                     padding: var(--space-6);
                 }
 
