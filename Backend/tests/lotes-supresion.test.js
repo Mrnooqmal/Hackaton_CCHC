@@ -57,7 +57,7 @@ beforeEach(async () => {
     const svc = new PersonaService();
     ana = (await svc.crear(T, { rut: '9.876.543-3', nombre: 'Ana', apellidoPaterno: 'Rojas', rol: 'admin', email: 'ana@ejemplo.cl', password: 'clave-larga-1' })).persona;
     luis = (await svc.crear(T, { rut: '11.111.111-1', nombre: 'Luis', apellidoPaterno: 'Vera', rol: 'admin', email: 'luis@ejemplo.cl', password: 'clave-larga-2' })).persona;
-    juan = (await svc.crear(T, { rut: '12.345.678-5', nombre: 'Juan', rol: 'trabajador', telefono: '912345678', contactoEmergencia: { nombre: 'María', telefono: '9 1111 2222', relacion: 'esposa' } })).persona;
+    juan = (await svc.crear(T, { rut: '12.345.678-5', nombre: 'Juan', rol: 'trabajador', nivelEscolar: 'Media completa', contactoEmergencia: { nombre: 'María', telefono: '9 1111 2222', relacion: 'esposa' } })).persona;
 });
 afterEach(() => { doble.restaurar(); s3Client.send = originalS3; });
 
@@ -87,7 +87,7 @@ test('el lote de una supresión acogida trae exactamente lo de conveniencia: cam
     assert.equal(r.statusCode, 201, r.body);
     const l = datos(r);
     assert.deepEqual(l.contenido.operaciones.map((o) => `${o.tabla}:${o.accion}`), ['INBOX_TABLE:suprimir', 'PERSONAS_TABLE:quitar_campos']);
-    assert.deepEqual(l.contenido.operaciones.find((o) => o.accion === 'quitar_campos').campos, ['contactoEmergencia', 'telefono']);
+    assert.deepEqual(l.contenido.operaciones.find((o) => o.accion === 'quitar_campos').campos, ['contactoEmergencia', 'nivelEscolar']);
     assert.match(l.huella, /^[0-9a-f]{64}$/);
     assert.equal(l.estado, 'propuesto');
 });
@@ -130,7 +130,7 @@ test('quien aprobó no puede ejecutar: son dos personas', async () => {
     await lote(ana, 'POST', `/gobernanza/lotes/${l.loteId}/aprobar`, { huella: l.huella });
     const r = await lote(ana, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
     assert.equal(r.statusCode, 403);
-    assert.ok(ficha(juan).telefono, 'nada se suprimió');
+    assert.ok(ficha(juan).nivelEscolar, 'nada se suprimió');
 });
 
 test('si los datos cambian entre aprobar y ejecutar, no se ejecuta nada y hay que aprobar de nuevo', async () => {
@@ -140,7 +140,7 @@ test('si los datos cambian entre aprobar y ejecutar, no se ejecuta nada y hay qu
     await poner('INBOX_TABLE', { recipientId: juan.personaId, messageId: 'm3', senderId: 'system', createdAt: '2026-10-06' });
     const r = await lote(luis, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
     assert.equal(r.statusCode, 409);
-    assert.ok(ficha(juan).telefono, 'nada se suprimió');
+    assert.ok(ficha(juan).nivelEscolar, 'nada se suprimió');
     assert.equal(doble.items('INBOX_TABLE').filter((m) => m.recipientId === juan.personaId).length, 2);
 });
 
@@ -151,7 +151,7 @@ test('otra persona ejecuta exactamente lo aprobado: se suprime, se registra y se
     const r = await lote(luis, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
     assert.equal(r.statusCode, 200, r.body);
     const f = ficha(juan);
-    assert.ok(!('telefono' in f) && !('contactoEmergencia' in f), 'campos de conveniencia fuera');
+    assert.ok(!('nivelEscolar' in f) && !('contactoEmergencia' in f), 'campos de conveniencia fuera');
     assert.ok(f.rutCifrado && f.nombre, 'la evidencia (RUT, nombre) se conserva');
     assert.ok(!('solicitudesBloqueo' in f), 'bloqueo levantado');
     assert.equal(doble.items('INBOX_TABLE').filter((m) => m.recipientId === juan.personaId).length, 0);
@@ -238,7 +238,7 @@ test('un contenido alterado en la tabla, con la huella original, no se ejecuta',
     const r = await lote(luis, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
     assert.equal(r.statusCode, 409);
     assert.ok(ficha(ana), 'Ana sigue ahí');
-    assert.ok(ficha(juan).telefono, 'nada se ejecutó');
+    assert.ok(ficha(juan).nivelEscolar, 'nada se ejecutó');
 });
 
 test('si otra ejecución empieza entre la lectura y la escritura, esta no procede', async () => {
@@ -247,7 +247,7 @@ test('si otra ejecución empieza entre la lectura y la escritura, esta no proced
     const r = await lote(luis, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
     soltar();
     assert.equal(r.statusCode, 409);
-    assert.ok(ficha(juan).telefono, 'no se ejecutó dos veces');
+    assert.ok(ficha(juan).nivelEscolar, 'no se ejecutó dos veces');
 });
 
 test('si el lote pasa a estar aprobado por quien ejecuta, la escritura lo rechaza', async () => {
@@ -256,5 +256,5 @@ test('si el lote pasa a estar aprobado por quien ejecuta, la escritura lo rechaz
     const r = await lote(luis, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
     soltar();
     assert.equal(r.statusCode, 409);
-    assert.ok(ficha(juan).telefono);
+    assert.ok(ficha(juan).nivelEscolar);
 });

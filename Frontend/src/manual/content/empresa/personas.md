@@ -22,7 +22,7 @@ Lo que ves en **Personas** depende de dónde estás:
 1. En la vista de empresa, toca **Nueva persona**.
 2. Completa las secciones:
    - **Datos personales** — **RUT** y **Nombre** *(obligatorios)*, apellidos, fecha de
-     nacimiento, correo y teléfono.
+     nacimiento y correo.
    - **Acceso y rol** — el **Rol** *(obligatorio)*, el **Cargo** (define qué le exige el DS 44)
      y el nivel de escolaridad.
    - **Asignación a obras** *(opcional)* — al asignarla a una obra empieza su **onboarding DS

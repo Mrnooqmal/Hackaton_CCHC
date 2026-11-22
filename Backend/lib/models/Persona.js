@@ -69,7 +69,6 @@ class Persona {
         this.apellido = data.apellido || [this.apellidoPaterno, this.apellidoMaterno].filter(Boolean).join(' ');
         this.fechaNacimiento = data.fechaNacimiento || null;
         this.email = data.email || '';
-        this.telefono = data.telefono || '';
         this.fotoPerfil = data.fotoPerfil || null;
 
         // Rol y contexto laboral
@@ -353,7 +352,6 @@ class Persona {
             // DynamoDB no acepta '' en una clave de índice (`undefined` lo omite
             // el cliente, `removeUndefinedValues`).
             email: this.email || undefined,
-            telefono: this.telefono,
             fotoPerfil: this.fotoPerfil,
             rol: this.rol,
             permisos: this.permisos,
@@ -426,7 +424,6 @@ class Persona {
             apellido: this.apellido,
             fechaNacimiento: this.fechaNacimiento,
             email: this.email,
-            telefono: this.telefono,
             // La foto depende del consentimiento de la persona (finalidad
             // `foto_perfil`): sin él, o revocado, no sale en ninguna respuesta.
             fotoPerfil: consentimientoVigente(this, 'foto_perfil') ? this.fotoPerfil : null,

@@ -226,8 +226,7 @@ trabajador puede pedir que se supriman sus datos; lo que constituye **evidencia 
 cumplimiento** —firmas, actas, entregas de EPP, capacitaciones, exámenes exigidos
 por el DS 44— no se suprime hasta que vence el plazo, porque la empresa responde
 por ella ante la autoridad. Lo suprimible es lo que **no** constituye evidencia:
-preferencias, foto de perfil, teléfono de contacto, datos de contacto de
-emergencia, y cualquier dato recogido para comodidad del uso y no para acreditar
+preferencias, foto de perfil, datos de contacto de emergencia, y cualquier dato recogido para comodidad del uso y no para acreditar
 cumplimiento. Esa frontera —evidencia frente a conveniencia— es la que hay que
 sostener ante el titular y ante la agencia, y por eso queda escrita acá y no en la
 cabeza de quien responda la solicitud.
@@ -1161,7 +1160,7 @@ herramienta para registrar la solicitud y su canal de origen.
 
 | Categoría | Datos | Finalidad | Clase | Plazo | Al vencer |
 |---|---|---|---|---|---|
-| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, teléfono, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, telefono, contactoEmergencia, preferencias, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
+| Ficha de la persona | RUT (cifrado), nombre, fecha de nacimiento, correo, foto, cargo, asignaciones a obras, nivel escolar, cursos, contacto de emergencia, vigilancia de salud y restricción laboral (cifradas), credenciales (hash), historial del PIN, enrolamiento. Suprimibles a solicitud sin esperar el plazo: fotoPerfil, contactoEmergencia, preferencias, nivelEscolar. | Identificar a la persona trabajadora, asignarla a obras, acreditar su onboarding DS 44 y permitirle firmar. | evidencia | 5 años desde el término del vínculo | Se suprime |
 | Documentos, asignaciones y firmas | Documentos de onboarding, procedimientos, entregas de EPP; a quién se asignaron, quién firmó (nombre, RUT e IP cifrados), difusiones, versiones anteriores con sus firmas. | Acreditar la entrega, difusión y firma de la documentación exigida por el DS 44. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |
 | Registro de firmas | Quién firmó qué, cuándo, con qué método (PIN o vale), desde qué IP (cifrada), y los documentos firmados. | Prueba de la firma electrónica simple ante la autoridad. | evidencia | 5 años desde el término del vínculo | Se suprime |
 | Solicitudes de firma | Solicitante y trabajadores convocados (nombre, cargo, RUT cifrado), estado de cada firma. | Convocar y seguir las firmas de un documento o actividad. | evidencia | 5 años desde el término del vínculo | Se conserva completo hasta que vence el plazo del último involucrado; después se suprime |

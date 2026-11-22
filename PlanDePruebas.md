@@ -128,7 +128,7 @@ Cada caso es una historia de usuario con sus criterios de aceptación. Marca `[x
   - [ ] La foto se mantiene al recargar y en otro dispositivo.
 
 - [ ] **4.3** `[Todos]` Como desarrollador quiero editar mis datos personales, para validar la edición del perfil.
-  - [ ] "Editar" habilita los campos de correo, teléfono y fecha de nacimiento.
+  - [ ] "Editar" habilita el campo de correo; la fecha de nacimiento se muestra pero la mantiene la empresa.
   - [ ] El RUT, el cargo y el rol se muestran pero no se pueden editar.
   - [ ] Mientras se edita aparece "Edición en curso", con la cantidad de campos modificados.
   - [ ] "Cancelar" descarta los cambios; "Guardar" los conserva al recargar.

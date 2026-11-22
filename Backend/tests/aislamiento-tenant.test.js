@@ -369,10 +369,21 @@ test('cada quien puede editar su propio perfil sin permisos de gestión', async 
 
     const res = await personas.personasHandler(cuerpo(
         eventoPersonas(sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), 'PUT', '/personas/p-a'),
-        { telefono: '+56 9 1111 1111', fotoPerfil: null },
+        { fotoPerfil: null },
     ));
 
     assert.equal(res.statusCode, 200);
+});
+
+test('el teléfono ya no es un dato del perfil: no se acepta ni de la propia ficha', async () => {
+    store.personaItems = [personaItem(EMPRESA_A, 'p-a')];
+
+    const res = await personas.personasHandler(cuerpo(
+        eventoPersonas(sesionDe(EMPRESA_A, { rol: 'colaborador', permisos: '' }), 'PUT', '/personas/p-a'),
+        { telefono: '+56 9 1111 1111' },
+    ));
+
+    assert.equal(res.statusCode, 403);
 });
 
 test('cada quien puede cambiar su propio correo', async () => {

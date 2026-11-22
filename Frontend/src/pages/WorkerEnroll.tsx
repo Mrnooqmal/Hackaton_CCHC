@@ -2,7 +2,7 @@ import { useState } from 'react';
 import AvisoPrivacidad from '../components/gobernanza/AvisoPrivacidad';
 import { useNavigate } from 'react-router-dom';
 import PinInput from '../components/PinInput';
-import { FiUser, FiMail, FiPhone, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield, FiMapPin } from 'react-icons/fi';
+import { FiUser, FiMail, FiBriefcase, FiCheck, FiArrowRight, FiArrowLeft, FiLock, FiShield, FiMapPin } from 'react-icons/fi';
 import { workersApi, type CreateWorkerData } from '../api/client';
 import { useObraContext } from '../context/ObraContext';
 import { Select } from '../components/ui';
@@ -26,7 +26,6 @@ export default function WorkerEnroll() {
         nombre: '',
         apellido: '',
         email: '',
-        telefono: '',
         cargo: '',
         obraIds: [],
     });
@@ -377,21 +376,6 @@ export default function WorkerEnroll() {
                                 />
                             </div>
 
-                            <div className="form-group">
-                                <label className="form-label">
-                                    <FiPhone style={{ display: 'inline', marginRight: '8px' }} />
-                                    Teléfono
-                                </label>
-                                <input
-                                    type="tel"
-                                    name="telefono"
-                                    value={formData.telefono}
-                                    onChange={handleChange}
-                                    placeholder="+56 9 1234 5678"
-                                    className="form-input"
-                                />
-                            </div>
-
                             <div className="flex gap-3 mt-6">
                                 <button
                                     type="button"
@@ -624,7 +608,6 @@ export default function WorkerEnroll() {
                                         nombre: '',
                                         apellido: '',
                                         email: '',
-                                        telefono: '',
                                         cargo: '',
                                     });
                                     setWorkerId(null);

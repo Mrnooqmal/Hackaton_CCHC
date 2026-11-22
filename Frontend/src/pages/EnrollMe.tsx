@@ -9,7 +9,7 @@ import { privacidadApi, type FinalidadConsentimiento } from '../api/gobernanza.a
 import { LARGO_PIN } from '../utils/pin';
 import {
     FiAlertCircle, FiArrowLeft, FiArrowRight, FiCamera, FiCheck, FiClock, FiEdit2, FiEye, FiEyeOff,
-    FiChevronRight, FiKey, FiLogOut, FiPhone, FiShield, FiX,
+    FiChevronRight, FiKey, FiLogOut, FiShield, FiX,
 } from 'react-icons/fi';
 import '../css/AuthCard.css';
 import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
@@ -112,7 +112,6 @@ export default function EnrollMe() {
 
     // Profile step state
     const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
-    const [telefono, setTelefono] = useState('');
     const [profileSaving, setProfileSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,14 +136,6 @@ export default function EnrollMe() {
         setVerPin(false);
         setCurrentStep(paso);
         window.scrollTo(0, 0);
-    };
-
-    const handleTelefonoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const digits = e.target.value.replace(/\D/g, '').slice(0, 9);
-        let fmt = digits;
-        if (digits.length > 5) fmt = digits[0] + ' ' + digits.slice(1, 5) + ' ' + digits.slice(5);
-        else if (digits.length > 1) fmt = digits[0] + ' ' + digits.slice(1);
-        setTelefono(fmt);
     };
 
     // Tras un PIN que no coincide, las casillas muestran el error un momento y
@@ -254,13 +245,11 @@ export default function EnrollMe() {
             // 2. Perfil.
             const updates: Record<string, any> = {};
             if (fotoPerfil) updates.fotoPerfil = fotoPerfil;
-            const telefonoFull = telefono.replace(/\D/g, '').length >= 9 ? `+56 ${telefono}` : '';
-            if (telefonoFull) updates.telefono = telefonoFull;
 
             if (Object.keys(updates).length > 0) {
                 const r = await personasApi.update(targetTenant, targetId, updates);
                 if (!r.success) throw new Error(r.error || 'No se pudo guardar tu perfil.');
-                updateUser({ fotoPerfil: fotoPerfil || undefined, telefono: telefonoFull || undefined });
+                updateUser({ fotoPerfil: fotoPerfil || undefined });
             }
             irA('success');
         } catch (err) {
@@ -543,15 +532,6 @@ export default function EnrollMe() {
                                 <p className="enr-consent-nota">Puedes revocarlo cuando quieras en Mis datos y privacidad.</p>
                             </div>
                         )}
-
-                        <div className="lp-field enr-telefono">
-                            <label className="lp-label" htmlFor="enr-telefono">Teléfono móvil</label>
-                            <div className="enr-telefono-campo">
-                                <span className="enr-telefono-prefijo"><FiPhone size={14} /> +56</span>
-                                <input id="enr-telefono" type="tel" inputMode="tel" autoComplete="tel-national"
-                                    placeholder="9 1234 5678" value={telefono} onChange={handleTelefonoChange} />
-                            </div>
-                        </div>
 
                         {ErrorServidor}
 

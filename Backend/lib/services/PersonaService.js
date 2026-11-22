@@ -183,7 +183,6 @@ class PersonaService {
             apellido,
             fechaNacimiento: data.fechaNacimiento || null,
             email: correoONada(data.email),
-            telefono: data.telefono || '',
             rol: data.rol,
             permisos: rolConfig ? rolConfig.permisos : [],
             // El cargo es el oficio DS44 (del catálogo de /onboarding), NO el rol.
@@ -514,7 +513,7 @@ class PersonaService {
      */
     async actualizar(tenantId, personaId, updates) {
         if (updates.fechaNacimiento) exigirEdadMinima(updates.fechaNacimiento);
-        const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email', 'telefono',
+        const allowedFields = ['nombre', 'apellido', 'apellidoPaterno', 'apellidoMaterno', 'email',
             'fechaNacimiento', 'fotoPerfil',
             'rol', 'cargo', 'estado', 'preferencias', 'obraIds', 'asignaciones', 'historialAsignaciones', 'evidencias',
             'onboardingDS44', 'contactoEmergencia', 'nivelEscolar', 'cursos'];

@@ -87,7 +87,6 @@ function mergeToPersona(user, worker) {
         nombre: user?.nombre || worker?.nombre || '',
         apellido: user?.apellido || worker?.apellido || '',
         email: user?.email || worker?.email || null,
-        telefono: user?.telefono || worker?.telefono || null,
 
         // Rol y cargo
         rol,

@@ -34,22 +34,26 @@ test('una fecha escrita en la columna llega como AAAA-MM-DD al leer la carga', a
     ws.getCell(4, 1).value = '15.151.515-0';
     ws.getCell(4, 2).value = 'Ana';
     ws.getCell(4, 5).value = '1988-03-09';
-    ws.getCell(4, 8).value = 'Persona trabajadora';
+    ws.getCell(4, 7).value = 'Persona trabajadora';
     const libro = XLSX.read(Buffer.from(await wb.xlsx.writeBuffer()), { type: 'buffer' });
     const filas = XLSX.utils.sheet_to_json(libro.Sheets.Personas, { header: 1, defval: '' });
     assert.equal(String(filas[3][4]), '1988-03-09');
 });
 
-test('los teléfonos vienen en formato texto, para que Excel no les quite el + ni los convierta en número', async () => {
+test('la plantilla no pide el teléfono de la persona', async () => {
+    const ws = (await abrir()).getWorksheet('Personas');
+    assert.ok(!ws.getRow(1).values.includes('telefono'));
+});
+
+test('el teléfono del contacto de emergencia viene en formato texto, para que Excel no le quite el + ni lo convierta en número', async () => {
     const wb = await abrir();
     const ws = wb.getWorksheet('Personas');
-    for (const [col, nombre] of [[7, 'telefono'], [14, 'contactoEmergenciaTelefono']]) {
-        assert.equal(ws.getRow(1).getCell(col).value, nombre);
-        assert.equal(ws.getColumn(col).numFmt, '@', nombre);
-        assert.equal(ws.getCell(300, col).numFmt, '@', nombre);
-    }
-    ws.getCell(4, 7).value = '+56912345678';
+    const col = 13;
+    assert.equal(ws.getRow(1).getCell(col).value, 'contactoEmergenciaTelefono');
+    assert.equal(ws.getColumn(col).numFmt, '@');
+    assert.equal(ws.getCell(300, col).numFmt, '@');
+    ws.getCell(4, col).value = '+56912345678';
     const libro = XLSX.read(Buffer.from(await wb.xlsx.writeBuffer()), { type: 'buffer' });
     const filas = XLSX.utils.sheet_to_json(libro.Sheets.Personas, { header: 1, defval: '' });
-    assert.equal(String(filas[3][6]), '+56912345678');
+    assert.equal(String(filas[3][col - 1]), '+56912345678');
 });

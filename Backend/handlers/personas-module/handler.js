@@ -89,7 +89,6 @@ const TEMPLATE_HEADERS = [
     'apellidoMaterno',
     'fechaNacimiento',
     'email',
-    'telefono',
     'rol',
     'cargo',
     'obra',
@@ -109,8 +108,8 @@ const TEMPLATE_HEADERS = [
 // de onboarding). Un rol de gestión (Prevencionista, Jefe de Obra, Admin) NO lleva
 // cargo de terreno: deja la columna cargo vacía.
 const TEMPLATE_EXAMPLE_ROWS = [
-    ['12.345.678-5', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', '56912345678', 'Persona trabajadora', 'Carpintero', 'OBRA-001', '11.111.111-1', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
-    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', '56987654321', 'Supervisor', '', 'OBRA-001', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
+    ['12.345.678-5', 'Juan', 'Perez', 'Soto', '1990-05-12', 'jperez@empresa.cl', 'Persona trabajadora', 'Carpintero', 'OBRA-001', '11.111.111-1', 'Media completa', 'Ana Perez', '56911112222', 'Conyuge', 'Manejo de extintores; Trabajo en altura'],
+    ['11.111.111-1', 'Maria', 'Lopez', 'Diaz', '1985-09-30', 'mlopez@empresa.cl', 'Supervisor', '', 'OBRA-001', '', 'Universitaria', 'Pedro Lopez', '56933334444', 'Hermano', 'Uso de EPP']
 ];
 
 const TEMPLATE_INSTRUCTIONS = [
@@ -201,8 +200,6 @@ const headerAliases = {
     fechanac: 'fechaNacimiento',
     email: 'email',
     correo: 'email',
-    telefono: 'telefono',
-    phone: 'telefono',
     rol: 'rol',
     cargo: 'cargo',
     obra: 'obra',
@@ -903,7 +900,7 @@ const RELACION_EMERGENCIA_OPCIONES = [
 ];
 
 // Columnas (1-based) de la hoja Personas que llevan desplegable.
-const COL = { fechaNacimiento: 5, telefono: 7, rol: 8, cargo: 9, obra: 10, nivelEscolar: 12, telefonoEmergencia: 14, relacion: 15 };
+const COL = { fechaNacimiento: 5, rol: 7, cargo: 8, obra: 9, nivelEscolar: 11, telefonoEmergencia: 13, relacion: 14 };
 const TEMPLATE_FILAS_VALIDADAS = 500; // filas de datos con desplegable activo
 
 // Etiqueta de obra para el desplegable de la plantilla y su resolución: "Nombre
@@ -942,7 +939,7 @@ const createTemplateBuffer = async ({ roles, cargos, obras } = {}) => {
     // Encabezado en negrita.
     ws.getRow(1).font = { bold: true };
     ws.columns.forEach((col) => { col.width = 20; });
-    for (const c of [COL.fechaNacimiento, COL.telefono, COL.telefonoEmergencia]) ws.getColumn(c).numFmt = '@';
+    for (const c of [COL.fechaNacimiento, COL.telefonoEmergencia]) ws.getColumn(c).numFmt = '@';
 
     // Rangos de cada lista en la hoja oculta.
     const rango = (letra, n) => `Listas!$${letra}$1:$${letra}$${Math.max(n, 1)}`;
@@ -1002,7 +999,7 @@ const bulkRutKey = (r) => String(r || '').replace(/[.\-]/g, '').toLowerCase();
 // Lo único de una fila que se guarda en la carga (D-24): los campos de la
 // plantilla. Cualquier otra propiedad del cuerpo se ignora.
 const CAMPOS_FILA_CARGA = [
-    'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email', 'telefono',
+    'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email',
     'rol', 'cargo', 'obra', 'supervisor', 'nivelEscolar',
     'contactoEmergenciaNombre', 'contactoEmergenciaTelefono', 'contactoEmergenciaRelacion', 'cursos',
 ];
@@ -1031,7 +1028,7 @@ const parseBulkWorkbook = (buffer) => {
         filas.push({
             filaExcel: i + 1,
             rut: get('rut'), nombre: get('nombre'), apellidoPaterno, apellidoMaterno,
-            fechaNacimiento: get('fechaNacimiento'), email: get('email'), telefono: get('telefono'),
+            fechaNacimiento: get('fechaNacimiento'), email: get('email'),
             rol: get('rol'), cargo: get('cargo'), obra: get('obra'), supervisor: get('supervisor'),
             nivelEscolar: get('nivelEscolar'),
             contactoEmergenciaNombre: get('contactoEmergenciaNombre'),
@@ -1148,7 +1145,7 @@ const dependenciasCarga = () => ({
     },
     crearFicha: (tenantId, f, { personaId: id, obraIds }) => personaService.crear(tenantId, {
         rut: f.rut, nombre: f.nombre, apellidoPaterno: f.apellidoPaterno, apellidoMaterno: f.apellidoMaterno,
-        fechaNacimiento: f.fechaNacimiento, email: f.email, telefono: f.telefono,
+        fechaNacimiento: f.fechaNacimiento, email: f.email,
         rol: f.rol, cargo: f.cargo ? normalizeCargoCodigo(f.cargo) : '',
         obraIds, nivelEscolar: f.nivelEscolar,
         contactoEmergencia: { nombre: f.contactoEmergenciaNombre, telefono: f.contactoEmergenciaTelefono, relacion: f.contactoEmergenciaRelacion },
@@ -1260,7 +1257,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
     // otra, con `personas.detalle` (la pantalla de la ficha) o `personas.ver`.
     // Sin eso, lo mismo que el listado (H-16). Hasta el 8 de noviembre de 2026
     // solo el listado estaba recortado: GET /personas/{id} y /by-rut/{rut}
-    // entregaban RUT, fecha de nacimiento, teléfono y contacto de emergencia a
+    // entregaban RUT, fecha de nacimiento y contacto de emergencia a
     // cualquier sesión de la empresa (revisión de minimización, fila 7.5).
     const puedeVerFicha = (persona) => persona.personaId === sesion?.personaId
         || puede(PERMISSIONS.PERSONAS_DETALLE) || puede(PERMISSIONS.PERSONAS_VER);
@@ -1272,7 +1269,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
      * le podía cambiar el rol a `admin`, el estado a desvinculado o la ficha de
      * vigilancia de salud. Se resuelve por campo y no por ruta porque la misma
      * ruta atiende dos cosas distintas: cada quien editando su perfil (foto,
-     * teléfono, correo) y la gestión de la ficha de un tercero.
+     * correo) y la gestión de la ficha de un tercero.
      *
      * Devuelve el mensaje del rechazo, o null si todo lo enviado está permitido.
      */
@@ -1281,7 +1278,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         // porque es un dato de contacto: el ingreso es por RUT, así que cambiarlo
         // no cambia con qué se entra, solo adónde llegan avisos y recuperaciones.
         const CAMPOS_PROPIOS = new Set([
-            'fotoPerfil', 'telefono', 'email', 'preferencias', 'contactoEmergencia',
+            'fotoPerfil', 'email', 'preferencias', 'contactoEmergencia',
         ]);
         // Campos con dueño distinto de PERSONAS_CREAR (el resto exige ese permiso).
         const PERMISOS_POR_CAMPO = {

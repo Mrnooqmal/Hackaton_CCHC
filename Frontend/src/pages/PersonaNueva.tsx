@@ -111,7 +111,6 @@ const INITIAL_FORM = {
     apellidoMaterno: '',
     fechaNacimiento: '',
     email: '',
-    telefono: '',
     rol: '',
     cargo: '',
     nivelEscolar: '',
@@ -208,7 +207,6 @@ export default function PersonaNueva() {
                 apellidoMaterno: form.apellidoMaterno || undefined,
                 fechaNacimiento: form.fechaNacimiento || undefined,
                 email: form.email || undefined,
-                telefono: telToFull(form.telefono),
                 rol: form.rol,
                 cargo: form.cargo || undefined,
                 // Toda persona dada de alta accede al sistema: firma, encuestas y
@@ -402,7 +400,6 @@ export default function PersonaNueva() {
                         <label className="form-label">Fecha de nacimiento</label>
                         <input className="form-input" type="date" name="fechaNacimiento" value={form.fechaNacimiento} onChange={handleChange} />
                     </div>
-                    <PhoneField label="Teléfono" value={form.telefono} onChange={v => setForm(prev => ({ ...prev, telefono: v }))} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                         <label className="form-label">Correo</label>
                         <input className="form-input" type="email" name="email" value={form.email} onChange={handleChange} placeholder="correo@ejemplo.com" autoComplete="email" />

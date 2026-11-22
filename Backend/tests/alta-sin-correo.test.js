@@ -115,8 +115,19 @@ test('borrar el correo al editar quita el atributo; no lo deja vacío', async ()
     const { persona } = await svc.crear(tenantId, { rut: RUT_CON_CORREO, nombre: 'Rosa', rol: 'trabajador', email: 'rosa@ejemplo.cl' });
     await svc.actualizar(tenantId, persona.personaId, { email: '' });
     assert.ok(!('email' in itemDe(persona.personaId)));
-    await svc.actualizar(tenantId, persona.personaId, { email: ' nuevo@ejemplo.cl ', telefono: '912345678' });
+    await svc.actualizar(tenantId, persona.personaId, { email: ' nuevo@ejemplo.cl ', nivelEscolar: 'Media completa' });
     assert.equal(itemDe(persona.personaId).email, 'nuevo@ejemplo.cl');
+});
+
+// El teléfono de la persona no tiene finalidad en el sistema (21 de noviembre
+// de 2026): si un cliente antiguo lo manda, no se guarda ni se devuelve.
+test('el teléfono de la persona no se guarda al crear ni al editar, ni sale en la ficha', async () => {
+    const svc = new PersonaService();
+    const { persona } = await svc.crear(tenantId, { rut: RUT_CON_CORREO, nombre: 'Rosa', rol: 'trabajador', telefono: '912345678' });
+    assert.ok(!('telefono' in itemDe(persona.personaId)));
+    assert.ok(!('telefono' in persona));
+    await svc.actualizar(tenantId, persona.personaId, { telefono: '912345678', nivelEscolar: 'Media completa' });
+    assert.ok(!('telefono' in itemDe(persona.personaId)));
 });
 
 test('borrar el correo como único cambio también funciona', async () => {

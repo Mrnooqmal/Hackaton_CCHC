@@ -63,11 +63,11 @@ con él firmarás documentos, actividades y encuestas. Es distinto de tu contras
 
 ### 3. Completar tu perfil (opcional)
 
-Por último puedes subir una **foto de tu cara** y tu **teléfono móvil**, para que te reconozcan
-en las cuadrillas y te puedan contactar en obra. Toca **Guardar y terminar**, u **Omitir por
-ahora** si prefieres hacerlo después desde **Configuración**.
+Por último puedes subir una **foto de tu cara**, para que te reconozcan en las cuadrillas. Toca
+**Guardar y terminar**, u **Omitir por ahora** si prefieres hacerlo después desde
+**Configuración**.
 
-![Completa tu perfil, con foto y teléfono](/img/guia-inicio/enrolamiento-perfil.png)
+![Completa tu perfil con tu foto](/img/guia-inicio/enrolamiento-perfil.png)
 
 ## Olvidé mi contraseña
 

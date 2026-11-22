@@ -25,7 +25,7 @@ Reglas del repo que aplican (ver `docs/estado-actual.md`, sección 2):
 1. En `GET /personas` (hoy cerca de la línea 1593):
    - Con `personas.ver`: se mantiene `fichaVisible(p)` más `rolNombre` y `rolTipo`.
    - Sin `personas.ver`: se devuelve `entradaDirectorio(p)` con los campos `personaId`, `nombre`, `apellidoPaterno`, `apellidoMaterno`, `cargo`, `rol`, `rolNombre`, `rolTipo`, `obraIds`, `estado` y `asignaciones` reducidas a `{ obraId, cargos, supervisorPersonaId }`.
-   - El directorio no lleva RUT, correo, teléfono, fecha de nacimiento, contacto de emergencia, evidencias ni salud.
+   - El directorio no lleva RUT, correo, fecha de nacimiento, contacto de emergencia, evidencias ni salud.
    - El fragmento del informe (4.2 e) muestra la forma esperada; si el código final difiere, actualiza el fragmento.
 2. En `GET /personas/{id}` y `GET /personas/by-rut/{rut}`: si la persona pedida no es la de la sesión y quien pide no tiene `personas.detalle`, responder **403** ("No tienes permiso para ver la ficha de otra persona").
 3. Revisar las rutas `historial-epp` y `capacitaciones`, que ya comprueban permisos, para confirmar que siguen el mismo criterio.
@@ -45,13 +45,13 @@ Estas pantallas llaman a `workersApi.list()` o `personasApi.list()`. Para cada u
 - **Las usa un trabajador o un supervisor:** `IncidentReportar.tsx`, `SurveyNueva.tsx`, `Surveys.tsx`, `SignatureRequests.tsx`, `Activities.tsx`, `ActivityNueva.tsx`, `ActivityPlanificar.tsx`, `components/ObraEquipoPanel.tsx`, `components/obra/RepositorioDs44.tsx`, `components/obra/NuevaVersion.tsx`.
 - **Las usa la gestión, con `personas.ver`, y no deberían cambiar:** `PersonasManagement.tsx`, `PersonaNueva.tsx`, `MiEmpresa.tsx`, `EstructuraConstituir.tsx`, `ObraDetalle.tsx`, `ObraNueva.tsx`, `Incidents.tsx`, `Workers.tsx`, `UserManagement.tsx` y los paneles de gobernanza.
 
-Busca en cada pantalla los usos de `.rut`, `.email`, `.telefono` y `.fechaNacimiento` sobre elementos del listado.
+Busca en cada pantalla los usos de `.rut`, `.email` y `.fechaNacimiento` sobre elementos del listado.
 
 ### Pruebas: `Backend/tests/minimizacion-personas.test.js` (nuevo)
 
 El informe cita estos nombres exactos:
 
-- `sin personas.ver, el listado es el directorio mínimo`: el JSON no contiene `rut`, `email`, `telefono`, `fechaNacimiento`, `contactoEmergencia` ni `vigilanciaSalud`.
+- `sin personas.ver, el listado es el directorio mínimo`: el JSON no contiene `rut`, `email`, `fechaNacimiento`, `contactoEmergencia` ni `vigilanciaSalud`.
 - `con personas.ver, el listado trae la ficha completa sin salud`
 - `sin personas.detalle no se lee la ficha de otra persona`: 403.
 - Recomendado: `cada persona puede leer su propia ficha sin permisos`.
@@ -132,7 +132,6 @@ Las sesiones viejas vencen solas por TTL (6 horas). No hace falta migración.
 1. Crear `Backend/lib/validacionPersona.js` con una función que devuelva el primer problema o `null`:
    - `nivelEscolar`: vacío, o un valor de `NIVEL_ESCOLAR_OPCIONES`. Moverlo desde `personas-module/handler.js:890` a este módulo y reexportarlo.
    - `contactoEmergencia`: objeto con solo `nombre`, `telefono` y `relacion`, todos strings de 100 caracteres o menos. Cualquier otra clave se rechaza.
-   - `telefono`: vacío, o `/^\+?[0-9 ]{8,15}$/`.
 2. Llamarla en `PersonaService.crear` y `PersonaService.actualizar`, para que cubra el alta manual, la edición y la carga masiva en cola. Lanzar un error con `statusCode = 400` y verificar que el handler lo traduce a 400.
 3. Revisar que la plantilla de carga masiva ya restringe el nivel escolar a la lista. Hoy lo hace con una validación de datos del Excel (`handler.js:944`).
 4. Pruebas en `minimizacion-personas.test.js`:

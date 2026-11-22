@@ -11,7 +11,6 @@ export interface BulkRowInput {
     apellidoMaterno?: string;
     fechaNacimiento?: string;
     email?: string;
-    telefono?: string;
     rol: string;
     cargo?: string;
     obra?: string;
@@ -82,7 +81,6 @@ export const personasApi = {
         apellidoMaterno?: string;
         fechaNacimiento?: string;
         email?: string;
-        telefono?: string;
         rol: string;
         cargo?: string;
         tieneAccesoWeb?: boolean;

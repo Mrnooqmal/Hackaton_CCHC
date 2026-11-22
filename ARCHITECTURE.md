@@ -47,7 +47,6 @@ slug                S   URL-friendly, unico global
 nombre              S   Razon social
 rutEmpresa          S   RUT de la empresa
 email               S   Email de contacto
-telefono            S   Telefono corporativo
 plan                S   starter | professional | enterprise
 tamano              S   micro | pequena | mediana | grande
 cantidadTrabajadores N  Determina tamano y comportamiento del backend
@@ -173,7 +172,6 @@ rut                 S   RUT chileno formateado
 nombre              S
 apellido            S
 email               S   Opcional para trabajadores sin acceso web
-telefono            S
 
 rol                 S   admin | prevencionista | supervisor | trabajador
 permisos            L   Derivados del rol

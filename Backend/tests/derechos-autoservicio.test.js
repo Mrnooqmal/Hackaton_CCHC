@@ -48,7 +48,7 @@ beforeEach(async () => {
     const svc = new PersonaService();
     ana = (await svc.crear(T, { rut: '9.876.543-3', nombre: 'Ana', apellidoPaterno: 'Rojas', rol: 'admin', email: 'ana@ejemplo.cl', password: 'clave-larga-1' })).persona;
     berta = (await svc.crear(T, { rut: '7.654.321-6', nombre: 'Berta', apellidoPaterno: 'Soto', rol: 'admin', password: 'clave-larga-2' })).persona;
-    juan = (await svc.crear(T, { rut: RUT_JUAN, nombre: 'Juan', apellidoPaterno: 'Pérez', rol: 'trabajador', email: 'juan@ejemplo.cl', telefono: '+56 9 1234 5678', password: CLAVE_JUAN })).persona;
+    juan = (await svc.crear(T, { rut: RUT_JUAN, nombre: 'Juan', apellidoPaterno: 'Pérez', rol: 'trabajador', email: 'juan@ejemplo.cl', password: CLAVE_JUAN })).persona;
     pedro = (await svc.crear(T, { rut: '11.111.111-1', nombre: 'Pedro', apellidoPaterno: 'Lagos', rol: 'trabajador', password: 'clave-de-pedro-1' })).persona;
 });
 afterEach(() => doble.restaurar());

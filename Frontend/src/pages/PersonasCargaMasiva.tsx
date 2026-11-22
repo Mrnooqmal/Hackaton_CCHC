@@ -228,7 +228,7 @@ export default function PersonasCargaMasiva() {
             const filas: BulkRowInput[] = incluidas.map((r) => ({
                 filaExcel: r.filaExcel, rut: r.rut, nombre: r.nombre,
                 apellidoPaterno: r.apellidoPaterno, apellidoMaterno: r.apellidoMaterno,
-                fechaNacimiento: r.fechaNacimiento, email: r.email, telefono: r.telefono,
+                fechaNacimiento: r.fechaNacimiento, email: r.email,
                 rol: r.rol, cargo: r.cargo, obra: r.obra, supervisor: r.supervisor,
                 nivelEscolar: r.nivelEscolar,
                 contactoEmergenciaNombre: r.contactoEmergenciaNombre,
@@ -423,7 +423,6 @@ export default function PersonasCargaMasiva() {
                                             <th>RUT</th>
                                             <th>Fecha nac.</th>
                                             <th>Email</th>
-                                            <th>Teléfono</th>
                                             <th>Rol</th>
                                             <th>Cargo</th>
                                             <th>Obra</th>
@@ -456,7 +455,6 @@ export default function PersonasCargaMasiva() {
                                                 <td><input className={cls('rut')} style={{ width: 110, fontFamily: 'monospace' }} value={r.rut} onChange={e => updateRow(idx, { rut: e.target.value })} /></td>
                                                 <td><input className="cm-input" style={{ width: 120 }} value={r.fechaNacimiento || ''} onChange={e => updateRow(idx, { fechaNacimiento: e.target.value })} placeholder="AAAA-MM-DD" /></td>
                                                 <td><input className="cm-input" style={{ width: 170 }} value={r.email || ''} onChange={e => updateRow(idx, { email: e.target.value })} placeholder="—" /></td>
-                                                <td><input className="cm-input" style={{ width: 120 }} value={r.telefono || ''} onChange={e => updateRow(idx, { telefono: e.target.value })} placeholder="—" /></td>
                                                 <td>
                                                     <select className={cls('rol')} style={{ width: 140 }} value={r.rol} onChange={e => updateRow(idx, { rol: e.target.value })}>
                                                         <option value="">—</option>

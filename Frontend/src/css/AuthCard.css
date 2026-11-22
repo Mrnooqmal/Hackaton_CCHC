@@ -1159,45 +1159,6 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
 .enr-consent-check .custom-checkbox { margin-top: 1px; }
 .enr-consent-nota { margin: 8px 0 0; font-size: 12px; color: #64748b; }
 
-.enr-telefono { margin-top: 20px; }
-.enr-telefono-campo {
-    display: flex;
-    height: 44px;
-    box-sizing: border-box;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    overflow: hidden;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-.enr-telefono-campo:focus-within {
-    border-color: #006edc;
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(0, 110, 220, 0.12);
-}
-.enr-telefono-prefijo {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 12px;
-    border-right: 1px solid #e2e8f0;
-    font-size: 14px;
-    font-weight: 500;
-    color: #334155;
-}
-.enr-telefono-campo input {
-    flex: 1;
-    min-width: 0;
-    padding: 0 12px;
-    border: none;
-    background: transparent;
-    font-family: inherit;
-    font-size: 14px;
-    color: #0f172a;
-    outline: none;
-}
-.enr-telefono-campo input::placeholder { color: #94a3b8; }
-
 .enr-omitir {
     display: block;
     width: 100%;
@@ -1246,7 +1207,6 @@ button.onb-logo:focus-visible { outline: none; border-color: #006edc; background
     .pin-casillas { gap: 8px; }
     .enr-datos { gap: 8px; }
     .enr-datos li { padding: 12px 10px; }
-    .enr-telefono-campo input { font-size: 16px; }
     .enr-final { margin-bottom: 20px; }
 }
 

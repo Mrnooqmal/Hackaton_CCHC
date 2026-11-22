@@ -157,3 +157,17 @@ solo cuenta; con `--aplicar` borra. Es idempotente.
 AWS_PROFILE=<perfil> node scripts/quitar-notificaciones-sms.js --stage prod            # cuenta
 AWS_PROFILE=<perfil> node scripts/quitar-notificaciones-sms.js --stage prod --aplicar  # borra
 ```
+
+## quitar-telefono.js
+
+Migración puntual (2026-11-21): el sistema dejó de tratar el teléfono de la
+persona, que no tenía finalidad. El código ya no lo pide, ni lo lee, ni lo
+escribe, ni lo exporta; este script quita el atributo `telefono` de las fichas que
+lo tienen. No toca `contactoEmergencia.telefono` (número de un tercero, para
+emergencias en obra). Solo lee las claves de las fichas afectadas, nunca datos
+personales. Por omisión solo cuenta; con `--aplicar` borra. Es idempotente.
+
+```
+AWS_PROFILE=<perfil> node scripts/quitar-telefono.js --stage dev            # cuenta
+AWS_PROFILE=<perfil> node scripts/quitar-telefono.js --stage prod --aplicar  # borra
+```

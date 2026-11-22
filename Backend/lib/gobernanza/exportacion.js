@@ -34,7 +34,7 @@ const solo = (obj, campos) => Object.fromEntries(campos
     .filter((c) => obj && obj[c] !== undefined && obj[c] !== null && obj[c] !== '')
     .map((c) => [c, obj[c]]));
 
-const CAMPOS_FICHA = ['personaId', 'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email', 'telefono',
+const CAMPOS_FICHA = ['personaId', 'rut', 'nombre', 'apellidoPaterno', 'apellidoMaterno', 'fechaNacimiento', 'email',
     'rol', 'cargo', 'estado', 'nivelEscolar', 'cursos', 'createdAt', 'fechaTerminoVinculo', 'ultimoAcceso'];
 const CAMPOS_ASIGNACION = ['obraId', 'cargos', 'fechaIngreso', 'fechaEgreso', 'estado', 'motivo'];
 const CAMPOS_EVIDENCIA = ['tipo', 'nombre', 'emitidoEn', 'venceEn', 'estado'];

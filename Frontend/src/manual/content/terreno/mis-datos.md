@@ -44,7 +44,7 @@ datos personales.
 En **Solicitudes**, toca **Nueva solicitud** y elige qué quieres pedir:
 
 - **Rectificación**: corregir tu nombre, apellidos, RUT o fecha de nacimiento si están mal. Tu
-  teléfono y tu correo los corriges directamente en [Configuración](/empezar/mi-cuenta).
+  correo lo corriges directamente en [Configuración](/empezar/mi-cuenta).
 - **Supresión**: eliminar tus datos. Lo voluntario se suprime; lo que la ley obliga a conservar
   (por ejemplo, tus firmas de documentos del DS 44) se guarda bloqueado hasta que vence su plazo,
   y se te informa hasta cuándo.
