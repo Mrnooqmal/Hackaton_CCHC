@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { useBrand } from '../context/BrandContext';
 import { useObraImagenes } from '../hooks/useObraImagenes';
+import { FUNCIONES } from '../config/funciones';
 
 // Con pocas obras se ven todas de un vistazo; desde aquí conviene poder filtrar.
 const OBRAS_PARA_BUSCADOR = 6;
@@ -59,9 +60,7 @@ export default function SeleccionObra() {
     const entrarAEmpresa = () => {
         eligiendo.current = true;
         elegirEmpresa();
-        // Al inicio del ámbito, no a los ajustes: lo primero que se ve al entrar
-        // a administrar la empresa es el estado de las obras.
-        navigate('/', { replace: true });
+        navigate(FUNCIONES.panoramaEmpresa ? '/' : '/mi-empresa', { replace: true });
     };
 
     const imagenes = useObraImagenes(obras);
@@ -194,7 +193,7 @@ export default function SeleccionObra() {
                             <span className="so-empresa-icon"><FiBriefcase size={17} /></span>
                             <span className="so-option-info">
                                 <span className="so-option-name">Gestionar la empresa</span>
-                                <span className="so-option-meta">Cumplimiento de todas las obras, roles y cargos</span>
+                                <span className="so-option-meta">{FUNCIONES.panoramaEmpresa ? 'Cumplimiento de todas las obras, roles y cargos' : 'Obras, roles, cargos e identidad'}</span>
                             </span>
                             <FiChevronRight size={17} className="so-option-caret" />
                         </button>

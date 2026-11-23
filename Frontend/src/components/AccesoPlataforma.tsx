@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LuKeyRound, LuCircleAlert, LuCheck, LuMail } from 'react-icons/lu';
 import { Modal } from './ui';
 import { personasApi } from '../api/personas.api';
-import { estadoAcceso, horaCorta, textoEstadoAcceso, type DatosAcceso } from '../utils/accesoPersona';
+import { estadoAcceso, fechaCorta, horaCorta, reactivable, textoEstadoAcceso, type DatosAcceso } from '../utils/accesoPersona';
 
 interface PersonaAcceso extends DatosAcceso {
     personaId: string;
@@ -94,6 +94,7 @@ export function ModalActivacion({ tenantId, persona, onCerrar }: ModalProps) {
                     )}
                     <ul className="acceso-web__consecuencias">
                         <li>Se genera una contraseña temporal que vence en 2 horas.</li>
+                        {persona?.credencialInicial && <li>Los cuatro primeros dígitos de su RUT dejan de servir.</li>}
                         <li>{nombre} tiene que entrar ahora, desde su teléfono, y elegir su propia contraseña.</li>
                         <li>Queda registrado que tú activaste su acceso, y recibe un aviso con tu nombre.</li>
                         <li>Actívalo solo con {nombre} presente: quien tenga la temporal puede entrar como {nombre}.</li>
@@ -115,8 +116,24 @@ interface Props {
 export default function AccesoPlataforma({ tenantId, persona, puedeActivar, esLaMisma, onCambio }: Props) {
     const [abierto, setAbierto] = useState(false);
     const [enlace, setEnlace] = useState<{ estado: 'enviando' | 'enviado' | 'error'; texto?: string } | null>(null);
+    const [reactivacion, setReactivacion] = useState<{ estado: 'confirmar' | 'enviando' | 'hecho' | 'error'; texto?: string } | null>(null);
     const estado = estadoAcceso(persona);
-    const activable = estado === 'pendiente' || estado === 'temporal-vigente' || estado === 'temporal-vencida';
+    const activable = estado !== 'sin-acceso' && estado !== 'activo';
+
+    const reactivar = async () => {
+        setReactivacion({ estado: 'enviando' });
+        try {
+            const r = await personasApi.reactivarInicial(tenantId, persona.personaId);
+            if (r.success && r.data) {
+                setReactivacion({ estado: 'hecho', texto: `Puede entrar con los cuatro primeros dígitos de su RUT hasta el ${fechaCorta(r.data.vence)}.` });
+                onCambio();
+            } else {
+                setReactivacion({ estado: 'error', texto: r.error || 'No se pudo reactivar su acceso inicial.' });
+            }
+        } catch {
+            setReactivacion({ estado: 'error', texto: 'Error de conexión con el servidor.' });
+        }
+    };
 
     const enviarEnlace = async () => {
         setEnlace({ estado: 'enviando' });
@@ -143,14 +160,35 @@ export default function AccesoPlataforma({ tenantId, persona, puedeActivar, esLa
                 {activable && puedeActivar && !esLaMisma && (
                     <div className="acceso-web__acciones">
                         <button type="button" className="btn btn-primary btn-sm" onClick={() => setAbierto(true)}>
-                            {estado === 'pendiente' ? 'Activar acceso' : 'Activar de nuevo'}
+                            {estado === 'temporal-vigente' || estado === 'temporal-vencida' ? 'Activar de nuevo' : 'Activar acceso'}
                         </button>
+                        {reactivable(estado) && (
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReactivacion({ estado: 'confirmar' })} disabled={reactivacion?.estado === 'enviando'}>
+                                {reactivacion?.estado === 'enviando' ? 'Reactivando…' : 'Reactivar acceso inicial'}
+                            </button>
+                        )}
                         {persona.email && (
                             <button type="button" className="btn btn-secondary btn-sm" onClick={enviarEnlace} disabled={enlace?.estado === 'enviando'}>
                                 <LuMail size={14} aria-hidden /> {enlace?.estado === 'enviando' ? 'Enviando…' : 'Enviar enlace a su correo'}
                             </button>
                         )}
                     </div>
+                )}
+                {reactivacion?.estado === 'confirmar' && (
+                    <div className="acceso-web__confirmar" role="group" aria-label="Confirmar reactivación">
+                        <p className="acceso-web__nota">
+                            Durante 7 días podrá entrar con los cuatro primeros dígitos de su RUT, y cualquiera que conozca su RUT también.
+                            Queda registrado que tú lo reactivaste, y recibe un aviso con tu nombre.
+                        </p>
+                        <div className="acceso-web__acciones">
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReactivacion(null)}>Cancelar</button>
+                            <button type="button" className="btn btn-primary btn-sm" onClick={reactivar}>Reactivar por 7 días</button>
+                        </div>
+                    </div>
+                )}
+                {reactivacion?.estado === 'hecho' && <p className="acceso-web__nota">{reactivacion.texto}</p>}
+                {reactivacion?.estado === 'error' && (
+                    <p className="acceso-web__nota acceso-web__nota--error" role="alert">{reactivacion.texto}</p>
                 )}
                 {enlace?.estado === 'enviado' && (
                     <p className="acceso-web__nota">Enviamos a su correo un enlace para que elija su contraseña. Vence en 72 horas.</p>
@@ -185,6 +223,7 @@ export const ESTILOS_ACCESO = `
     .acceso-web__estado--ok { color: var(--text-primary); font-weight: 500; }
     .acceso-web__estado--ok svg { color: var(--success-apagado); }
     .acceso-web__acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .acceso-web__confirmar { display: flex; flex-direction: column; gap: var(--space-2); }
     .acceso-web__nota { margin: 0; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; }
     .acceso-web__nota--error { color: var(--danger-600, #b91c1c); }
     .acceso-web__pie { display: flex; justify-content: flex-end; gap: var(--space-2); width: 100%; flex-wrap: wrap; }

@@ -158,7 +158,13 @@ async function recorrer(c, empresa, personasCreadas, empresasExtra) {
     comprobar('el alta manda el enlace de activación a quien tiene correo', alta.cuerpo?.data?.enlaceActivacion === 'enviado', resumen(alta));
 
     const conInicial = await c.pedir('POST', '/auth/login', { cuerpo: { rut, password: desechable.passwordInicial(rut) } });
-    comprobar('una persona pendiente de activación no entra con los cuatro dígitos (401)', conInicial.status === 401, resumen(conInicial));
+    comprobar('la persona recién registrada entra con los cuatro dígitos y se le pide cambiarla',
+        conInicial.status === 200 && conInicial.cuerpo?.data?.requiereCambioPassword === true, resumen(conInicial));
+    const fichaNueva = await c.pedir('GET', `/personas/${personaId}`, { token: tokenAdmin });
+    const venceInicial = fichaNueva.cuerpo?.data?.passwordTemporalVence;
+    comprobar('su contraseña inicial vence en 7 días',
+        fichaNueva.cuerpo?.data?.credencialInicial === true && Math.abs(new Date(venceInicial).getTime() - (Date.now() + 7 * 24 * 3600e3)) < 10 * 60e3,
+        resumen(fichaNueva));
 
     const activacion = await c.pedir('POST', `/personas/${personaId}/activar-acceso`, { token: tokenAdmin, cuerpo: {} });
     const temporal = activacion.cuerpo?.data?.password;
@@ -167,12 +173,22 @@ async function recorrer(c, empresa, personasCreadas, empresasExtra) {
             && Math.abs(new Date(activacion.cuerpo.data.vence).getTime() - (Date.now() + 2 * 3600e3)) < 5 * 60e3,
         resumen(activacion), { detener: true });
 
+    const cuatroTrasActivar = await c.pedir('POST', '/auth/login', { cuerpo: { rut, password: desechable.passwordInicial(rut) } });
+    comprobar('activada en terreno, los cuatro dígitos dejan de servir (401)', cuatroTrasActivar.status === 401, resumen(cuatroTrasActivar));
+
     const tokenTrabajadora = await primerIngreso(c, { quien: 'trabajadora', rut, personaId, password: temporal });
 
     const reactivar = await c.pedir('POST', `/personas/${personaId}/activar-acceso`, { token: tokenAdmin, cuerpo: {} });
     comprobar('no se vuelve a activar a quien ya eligió su contraseña (409)', reactivar.status === 409, resumen(reactivar));
     const activarAjeno = await c.pedir('POST', `/personas/${empresa.adminPersonaId}/activar-acceso`, { token: tokenTrabajadora, cuerpo: {} });
     comprobar('trabajadora: no activa el acceso de nadie (403)', activarAjeno.status === 403, resumen(activarAjeno));
+    const reactivarElegida = await c.pedir('POST', `/personas/${personaId}/reactivar-inicial`, { token: tokenAdmin, cuerpo: {} });
+    comprobar('no se reactiva la inicial de quien ya eligió su contraseña (409)', reactivarElegida.status === 409, resumen(reactivarElegida));
+    const reactivarObra = await c.pedir('POST', '/personas/reactivar-inicial', { token: tokenAdmin, cuerpo: { obraId: 'obra-sin-personas' } });
+    comprobar('admin: reactivar el acceso inicial de una obra responde con su resumen',
+        reactivarObra.status === 200 && reactivarObra.cuerpo?.data?.reactivadas === 0 && reactivarObra.cuerpo?.data?.restantes === 0, resumen(reactivarObra));
+    const reactivarObraAjena = await c.pedir('POST', '/personas/reactivar-inicial', { token: tokenTrabajadora, cuerpo: { obraId: 'obra-sin-personas' } });
+    comprobar('trabajadora: no reactiva el acceso de nadie (403)', reactivarObraAjena.status === 403, resumen(reactivarObraAjena));
 
     // Sin personas.ver el listado llega recortado: nombre, cargo e identificador (H-16).
     const listaRecortada = await c.pedir('GET', '/personas', { token: tokenTrabajadora });
@@ -249,7 +265,7 @@ async function contrasenaEntreEmpresas(c, stageActual, tokenAdmin, personasCread
     empresasExtra.push({ tenantId: otra.tenantId, ids: [otra.adminPersonaId] });
 
     const entrada = await c.pedir('POST', '/auth/login', { cuerpo: { rut: otra.adminRut, password: otra.adminPassword } });
-    comprobar('otra empresa: su administrador entra con su temporal', entrada.status === 200 && entrada.cuerpo?.data?.token, resumen(entrada), { detener: true });
+    comprobar('otra empresa: su administrador entra con los cuatro dígitos', entrada.status === 200 && entrada.cuerpo?.data?.token, resumen(entrada), { detener: true });
     const propia = `Propia-${Math.random().toString(36).slice(2, 10)}`;
     const cambio = await c.pedir('POST', '/auth/change-password', {
         token: entrada.cuerpo.data.token,
@@ -264,6 +280,12 @@ async function contrasenaEntreEmpresas(c, stageActual, tokenAdmin, personasCread
     const enEsta = alta.cuerpo?.data?.persona?.personaId;
     if (enEsta) personasCreadas.push(enEsta);
     comprobar('admin: registra a una persona que ya está en otra empresa', alta.status === 201 && enEsta, resumen(alta), { detener: true });
+    const cuatroEnEsta = await c.pedir('POST', '/auth/login', { cuerpo: { rut: otra.adminRut, password: desechable.passwordInicial(otra.adminRut) } });
+    const meCuatro = cuatroEnEsta.cuerpo?.data?.token ? await c.pedir('GET', '/auth/me', { token: cuatroEnEsta.cuerpo.data.token }) : null;
+    const empresaCuatro = meCuatro?.cuerpo?.data?.user?.tenantId || meCuatro?.cuerpo?.data?.tenantId;
+    comprobar('los cuatro dígitos abren solo la empresa donde la inicial sigue vigente',
+        cuatroEnEsta.status === 200 && !cuatroEnEsta.cuerpo?.data?.requiereSeleccionTenant && empresaCuatro && empresaCuatro !== otra.tenantId,
+        resumen(cuatroEnEsta));
     const activada = await c.pedir('POST', `/personas/${enEsta}/activar-acceso`, { token: tokenAdmin, cuerpo: {} });
     comprobar('admin: activa a esa persona en esta empresa', activada.status === 200, resumen(activada), { detener: true });
     const temporalEsta = activada.cuerpo.data.password;

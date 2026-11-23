@@ -282,9 +282,123 @@ test('cambiar la contraseña de una ficha sin RUT responde 200', async () => {
     assert.ok(await coincide(p, 'Nueva-clave-1'));
 });
 
+const scanPaginado = () => {
+    const anterior = docClient.send;
+    const pedidos = [];
+    docClient.send = async function paginado(cmd) {
+        if (cmd.constructor.name !== 'ScanCommand') return anterior.call(this, cmd);
+        const { ExclusiveStartKey, ...resto } = cmd.input;
+        pedidos.push(ExclusiveStartKey || null);
+        if (pedidos.length > 20) throw new Error('El Scan no avanza de página: repite la misma.');
+        const { Items = [] } = await anterior.call(this, new cmd.constructor(resto));
+        const pagina = ExclusiveStartKey ? ExclusiveStartKey.pagina : 0;
+        const desde = Math.max(0, pagina - 1);
+        const items = pagina === 0 ? [] : Items.slice(desde, desde + 1);
+        const hayMas = pagina === 0 ? Items.length > 0 : desde + 1 < Items.length;
+        return { Items: items, ...(hayMas ? { LastEvaluatedKey: { pagina: pagina + 1 } } : {}) };
+    };
+    return pedidos;
+};
+
+test('el ingreso encuentra la ficha aunque el Scan la devuelva en una página posterior', async () => {
+    const a = await empresa('Constructora A');
+    const p = await ficha(a);
+    await fijar(p, a, 'Clave-de-a-1');
+    const pedidos = scanPaginado();
+
+    assert.deepEqual(await empresasQueAbre('Clave-de-a-1'), [a]);
+    assert.ok(pedidos.length >= 2, 'recorrió más de una página');
+});
+
+test('el ingreso junta las fichas de todas las páginas del Scan, no solo la última', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const c = await empresa('Constructora C');
+    for (const t of [a, b, c]) await fijar(await ficha(t), t, 'Misma-clave-1');
+    const pedidos = scanPaginado();
+
+    assert.deepEqual(await empresasQueAbre('Misma-clave-1'), [a, b, c].sort());
+    assert.equal(pedidos.length, 4);
+});
+
+test('la activación por enlace llega a la ficha hermana aunque esté en otra página del Scan', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const enA = await ficha(a, { email: 'juan@ejemplo.cl' });
+    const enB = await ficha(b, { email: 'juan@ejemplo.cl' });
+    await fijar(enA, a, 'Anterior-1');
+    await fijar(enB, b, 'Anterior-1');
+    scanPaginado();
+
+    await restablecerPorCorreo(enA, a, 'Nueva-clave-1');
+    assert.ok(await coincide(enA, 'Nueva-clave-1'));
+    assert.ok(await coincide(enB, 'Nueva-clave-1'));
+});
+
 test('buscar por RUT vacío no consulta DynamoDB y no encuentra a nadie', async () => {
     const svc = new PersonaService();
+    const pedidos = scanPaginado();
     assert.deepEqual(await svc.getAllByRutGlobal(undefined), []);
     assert.deepEqual(await svc.getAllByRutGlobal(''), []);
+    assert.deepEqual(await svc.getAllByRutGlobal('   '), []);
     assert.equal(await svc.getByRutGlobal(null), null);
+    assert.equal(pedidos.length, 0);
+});
+
+const propagacionQueFalla = () => {
+    const original = PersonaService.prototype.propagarPassword;
+    PersonaService.prototype.propagarPassword = async () => { throw new Error('DynamoDB no responde'); };
+    return () => { PersonaService.prototype.propagarPassword = original; };
+};
+
+test('si no se puede copiar el cambio a las otras empresas, responde 503 y cierra las sesiones propias', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const enA = await ficha(a);
+    const enB = await ficha(b);
+    await fijar(enA, a, 'Anterior-1');
+    await fijar(enB, b, 'Anterior-1');
+    const tokenA = await sesionAbierta(enA, a);
+    const tokenB = await sesionAbierta(enB, b);
+    const restaurar = propagacionQueFalla();
+    try {
+        const res = await cambiar(enA, a, 'Nueva-clave-1', 'Anterior-1');
+        assert.equal(res.statusCode, 503, res.body);
+        assert.match(JSON.parse(res.body).error, /ahí sigue la anterior/);
+    } finally { restaurar(); }
+    assert.ok(await coincide(enA, 'Nueva-clave-1'));
+    assert.ok(await coincide(enB, 'Anterior-1'));
+    assert.equal(await sesionDesdeToken(tokenA), null);
+    assert.ok(await sesionDesdeToken(tokenB));
+});
+
+test('si no se puede copiar el restablecimiento a las otras empresas, responde 503 y cierra las sesiones propias', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const enA = await ficha(a, { email: 'juan@ejemplo.cl' });
+    const enB = await ficha(b, { email: 'juan@ejemplo.cl' });
+    await fijar(enA, a, 'Anterior-1');
+    await fijar(enB, b, 'Anterior-1');
+    const tokenA = await sesionAbierta(enA, a);
+    const token = crypto.randomBytes(16).toString('hex');
+    await docClient.send(new UpdateCommand({
+        TableName: 'PERSONAS_TABLE',
+        Key: { PK: `TENANT#${a}`, SK: `PERSONA#${enA}` },
+        UpdateExpression: 'SET resetTokenHash = :h, resetTokenExpiry = :e',
+        ExpressionAttributeValues: {
+            ':h': crypto.createHash('sha256').update(token).digest('hex'),
+            ':e': new Date(Date.now() + 3600e3).toISOString(),
+        },
+    }));
+    const restaurar = propagacionQueFalla();
+    try {
+        const res = await auth.resetPassword({
+            body: JSON.stringify({ personaId: enA, token, passwordNuevo: 'Nueva-clave-1', confirmarPassword: 'Nueva-clave-1' }),
+        });
+        assert.equal(res.statusCode, 503, res.body);
+        assert.match(JSON.parse(res.body).error, /ahí sigue la anterior/);
+    } finally { restaurar(); }
+    assert.ok(await coincide(enA, 'Nueva-clave-1'));
+    assert.ok(await coincide(enB, 'Anterior-1'));
+    assert.equal(await sesionDesdeToken(tokenA), null);
 });

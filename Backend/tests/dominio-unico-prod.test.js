@@ -97,8 +97,12 @@ test('el dominio propio y cualquier otro host pasan sin tocar', () => {
 test('la función sigue asociada al viewer-request de la distribución de prod', () => {
     const plantilla = leer('infra', 'frontend.yml');
     assert.match(plantilla, /- EventType: viewer-request\n\s+FunctionARN: !GetAtt RedireccionWww\.FunctionMetadata\.FunctionARN/);
-    // Una función por evento: no puede haber una segunda en el mismo evento.
-    assert.equal((plantilla.match(/EventType: viewer-request/g) || []).length, 1);
+    // Una función por evento y por distribución: CloudFront no admite dos.
+    const prod = plantilla.slice(plantilla.indexOf('\n  Distribucion:\n'), plantilla.indexOf('\n  BucketFrontendDev:\n'));
+    const dev = plantilla.slice(plantilla.indexOf('\n  DistribucionDev:\n'), plantilla.indexOf('\n  RolPublicador:\n'));
+    assert.equal((prod.match(/EventType: viewer-request/g) || []).length, 1);
+    assert.equal((dev.match(/EventType: viewer-request/g) || []).length, 1);
+    assert.doesNotMatch(prod, /RedireccionDev/);
 });
 
 // ─── Lo que ya no puede apuntar a la URL de CloudFront ───────────────────────

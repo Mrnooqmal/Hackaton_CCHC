@@ -24,11 +24,24 @@ STAGE="${2:?uso: infra/desplegar-backend.sh <commit> <dev|prod>}"
 [[ "$STAGE" == "dev" || "$STAGE" == "prod" ]] || { echo "Ambiente inválido: $STAGE" >&2; exit 1; }
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 
+if [ "$STAGE" = prod ]; then DOMINIO_API=api.buildandserve.cl; else DOMINIO_API=api-dev.buildandserve.cl; fi
+CERTIFICADO_API=""
+for arn in $(aws acm list-certificates --certificate-statuses ISSUED --query 'CertificateSummaryList[].CertificateArn' --output text); do
+    if aws acm describe-certificate --certificate-arn "$arn" --query 'Certificate.SubjectAlternativeNames' --output text | tr '\t' '\n' | grep -qx "$DOMINIO_API"; then
+        CERTIFICADO_API="$arn"; break
+    fi
+done
+export CERTIFICADO_API
+if [ -n "$CERTIFICADO_API" ]; then echo "== dominio de la API: $DOMINIO_API con $CERTIFICADO_API"
+else echo "== AVISO: no hay certificado emitido para $DOMINIO_API; la API sigue solo en execute-api." >&2; fi
+
 RAIZ="$(git rev-parse --show-toplevel)"
 git -C "$RAIZ" fetch --quiet origin
 SHA="$(git -C "$RAIZ" rev-parse --verify "$COMMIT^{commit}")"
-git -C "$RAIZ" branch -r --contains "$SHA" | grep -q . || {
-    echo "El commit $SHA no está en ninguna rama remota: solo se despliegan commits pusheados." >&2; exit 1; }
+cmp -s "$0" <(git -C "$RAIZ" show "$SHA:infra/$(basename "$0")" 2>/dev/null) || {
+    echo "Este $(basename "$0") no es el del commit $SHA: córrelo desde un checkout de ese commit (git worktree add --detach <carpeta> $SHA)." >&2; exit 1; }
+source "$(dirname "$0")/rama-del-ambiente.sh"
+exigir_rama_del_ambiente "$RAIZ" "$SHA" "$STAGE"
 
 TMP="$(mktemp -d)"
 trap 'git -C "$RAIZ" worktree remove --force "$TMP/wt" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
@@ -80,3 +93,7 @@ echo "archivos: $total, distintos: $distintos"
 paquetes="$(aws lambda list-functions --query "Functions[?starts_with(FunctionName,'BuildAndServe-$STAGE-')].CodeSha256" --output text | tr '\t' '\n' | sort -u | wc -l)"
 [ "$paquetes" -eq 1 ] || { echo "Las funciones de $STAGE no comparten un mismo paquete ($paquetes distintos)." >&2; exit 1; }
 echo "Desplegado $SHA en $STAGE (todas las funciones con el mismo paquete)."
+if [ -n "$CERTIFICADO_API" ]; then
+    DESTINO="$(aws cloudformation describe-stacks --stack-name "BuildAndServe-$STAGE" --query "Stacks[0].Outputs[?OutputKey=='ApiDominioDestino'].OutputValue" --output text)"
+    echo "== Cloudflare: CNAME ${DOMINIO_API%%.buildandserve.cl} -> $DESTINO (solo DNS, nube gris)"
+fi

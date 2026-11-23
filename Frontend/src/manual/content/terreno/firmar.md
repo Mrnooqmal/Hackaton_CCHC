@@ -35,11 +35,7 @@ Tiene dos pestañas:
 
 1. En **Pendientes**, toca **Firmar** en el documento.
 2. Revisa el detalle: tipo, **quién lo solicitó**, **fecha límite** y los documentos
-   adjuntos. Usa **Ver documento** para leerlo antes de firmar, o toca **Escuchar documento**
-   para que la plataforma te lo lea en voz alta. La primera vez que alguien lo escucha puede
-   tardar hasta un minuto en prepararse; después sale al tiro. Se lee el documento completo, tal
-   como está escrito. Los PDF, los Word y las fotos de documentos se pueden escuchar; las
-   planillas Excel no.
+   adjuntos. Usa **Ver documento** para leerlo antes de firmar.
 3. Escribe tu **PIN**, marca **Declaro haber leído conscientemente la solicitud de firma** y
    toca **Confirmar firma**.
 

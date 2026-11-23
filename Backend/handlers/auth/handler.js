@@ -203,6 +203,8 @@ const rehashearPassword = async (persona, passwordPlano) => {
  * ficha coincide; si es una sola con acceso activo, entra directo. Si son
  * varias, se devuelve un token corto para elegir empresa (ver selectTenant).
  */
+const INGRESO_FALLIDO = 'RUT o contraseña incorrectos. Si es tu primer ingreso y tu contraseña inicial venció, pide que reactiven tu acceso.';
+
 module.exports.login = async (event) => {
     try {
         const body = JSON.parse(event.body || '{}');
@@ -260,10 +262,7 @@ module.exports.login = async (event) => {
                     origen: auditoria.origenDe(event), detalle: { fichasConAcceso: candidatas.length, ...(temporalesVencidas ? { temporalVencida: true } : {}) },
                 }).catch((err) => registrarFallo('auditoria.ingreso_fallido', err));
             }
-            if (temporalesVencidas) {
-                return error('Tu contraseña temporal venció. Pide que activen tu acceso de nuevo.', 401);
-            }
-            return error('Credenciales inválidas', 401);
+            return error(INGRESO_FALLIDO, 401);
         }
 
         const seleccionables = coinciden.filter((p) => !['desvinculado', 'suspendido', 'inactivo'].includes(p.estado));
@@ -408,15 +407,13 @@ module.exports.changePassword = async (event) => {
                 PK: `TENANT#${persona.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente, credencialInicial',
             ExpressionAttributeValues: {
                 ':passwordHash': newPasswordHash,
                 ':passwordTemporal': false,
                 ':updatedAt': now
             }
         }));
-        // La contraseña de esta ficha ya quedó guardada; copiarla a las fichas
-        // hermanas es secundario (ver resetPassword).
         let hermanas = [];
         if (!persona.passwordTemporal) {
             try {
@@ -427,6 +424,8 @@ module.exports.changePassword = async (event) => {
                 });
             } catch (propErr) {
                 registrarFallo('auth.changePassword.propagar', propErr);
+                await revocarSesionesDe([personaId]).catch((revErr) => registrarFallo('auth.revocarSesiones', revErr));
+                return error('Tu contraseña cambió en esta empresa, pero no en las otras donde trabajas: ahí sigue la anterior. Vuelve a entrar con la nueva y cámbiala también en las otras.', 503);
             }
         }
 
@@ -600,16 +599,13 @@ module.exports.resetPassword = async (event) => {
                 PK: `TENANT#${personaItem.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry, passwordTemporalVence, activacionPendiente',
+            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry, passwordTemporalVence, activacionPendiente, credencialInicial',
             ExpressionAttributeValues: {
                 ':ph': newPasswordHash,
                 ':pt': false,
                 ':u': now
             }
         }));
-        // La contraseña de esta ficha ya quedó guardada. Copiarla a las fichas
-        // hermanas es secundario: si falla, cada una conserva la suya (lo
-        // seguro) y no se le informa a la persona un error que no lo es.
         const correo = String(personaItem.email || '').trim().toLowerCase();
         let hermanas = [];
         try {
@@ -620,6 +616,8 @@ module.exports.resetPassword = async (event) => {
             }) : [];
         } catch (propErr) {
             registrarFallo('auth.resetPassword.propagar', propErr);
+            await revocarSesionesDe([personaId]).catch((revErr) => registrarFallo('auth.revocarSesiones', revErr));
+            return error('Tu contraseña cambió en esta empresa, pero no en las otras donde tienes este correo: ahí sigue la anterior. Entra con la nueva y cámbiala también en las otras.', 503);
         }
 
         // Quien recupera su cuenta la recupera entera: una sesión abierta con la

@@ -73,6 +73,14 @@ export type CargaResumen = Pick<CargaEstado, 'cargaId' | 'estado' | 'creadaEn' |
 // ========================================
 // PERSONAS API (Multi-tenant)
 // ========================================
+export interface ResumenReactivacion {
+    reactivadas: number;
+    yaReactivadas: number;
+    omitidas: { temporalVigente: number; sinPermiso: number; sinInicial: number; conflicto: number };
+    restantes: number;
+    vence: string;
+}
+
 export const personasApi = {
     create: (tenantId: string, data: {
         rut: string;
@@ -209,6 +217,18 @@ export const personasApi = {
         apiRequest<{ correo: 'enviado' | 'fallido' | 'suprimido'; vence: string }>(`/personas/${id}/enviar-activacion?tenantId=${tenantId}`, {
             method: 'POST',
             body: '{}',
+        }),
+
+    reactivarInicial: (tenantId: string, id: string) =>
+        apiRequest<{ vence: string }>(`/personas/${id}/reactivar-inicial?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: '{}',
+        }),
+
+    reactivarInicialObra: (tenantId: string, obraId: string) =>
+        apiRequest<ResumenReactivacion>(`/personas/reactivar-inicial?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ obraId }),
         }),
 
     restablecerPin: (tenantId: string, id: string, motivo: string) =>

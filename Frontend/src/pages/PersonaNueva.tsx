@@ -279,14 +279,14 @@ export default function PersonaNueva() {
                             </p>
                         </div>
                         <div className="alta-activacion" role="status">
-                            <p><strong>Su acceso queda pendiente de activación.</strong> Nadie puede entrar con su RUT hasta que se active.</p>
+                            <p><strong>Entra con su RUT y los cuatro primeros dígitos de su RUT, durante 7 días.</strong> Al entrar elige su contraseña y crea su PIN. Pídele que entre pronto: mientras no lo haga, cualquiera que conozca su RUT podría entrar como esa persona.</p>
                             {success.enlace === 'enviado' && (
                                 <p>Le enviamos a su correo un enlace para que elija su contraseña. Vence en 72 horas.</p>
                             )}
                             {(success.enlace === 'fallido' || success.enlace === 'suprimido') && (
-                                <p>No se pudo enviar el enlace a su correo. Activa su acceso en terreno.</p>
+                                <p>No se pudo enviar el enlace a su correo. Puede entrar igual con los cuatro dígitos.</p>
                             )}
-                            <p>En terreno, con la persona presente: abre su ficha y toca <strong>Activar acceso</strong>, o usa <strong>Activar accesos</strong> en Personas para activar a varias seguidas.</p>
+                            <p>Si pasan los 7 días sin que entre, abre su ficha y toca <strong>Reactivar acceso inicial</strong>. Con la persona presente también puedes tocar <strong>Activar acceso</strong> para darle una contraseña temporal de 2 horas.</p>
                         </div>
                         <style>{`
                             .alta-activacion { width: 100%; text-align: left; padding: 14px 16px; border: 1px solid var(--surface-border); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }

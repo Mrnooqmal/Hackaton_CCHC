@@ -34,7 +34,13 @@
 # política nueva, y después, que cada dominio sirva la cabecera activa.
 set -euo pipefail
 
-COMMIT="${1:?uso: infra/desplegar-infra-frontend.sh <commit>}"
+COMMIT="${1:?uso: infra/desplegar-infra-frontend.sh <commit> [--solo-dev]}"
+SOLO_DEV=""
+case "${2:-}" in
+    "") ;;
+    --solo-dev) SOLO_DEV=1 ;;
+    *) echo "Opción desconocida: $2 (solo se acepta --solo-dev)." >&2; exit 1 ;;
+esac
 CSP_MODO="${CSP_MODO:-activa}"
 [[ "$CSP_MODO" == "activa" || "$CSP_MODO" == "solo-reporte" ]] || { echo "CSP_MODO inválido: $CSP_MODO (activa o solo-reporte)." >&2; exit 1; }
 STACK_FRONTEND="${STACK_FRONTEND:-BuildAndServe-frontend}"
@@ -43,12 +49,26 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 RAIZ="$(git rev-parse --show-toplevel)"
 git -C "$RAIZ" fetch --quiet origin
 SHA="$(git -C "$RAIZ" rev-parse --verify "$COMMIT^{commit}")"
-git -C "$RAIZ" branch -r --contains "$SHA" | grep -q . || {
-    echo "El commit $SHA no está en ninguna rama remota: solo se despliegan commits pusheados." >&2; exit 1; }
+cmp -s "$0" <(git -C "$RAIZ" show "$SHA:infra/$(basename "$0")" 2>/dev/null) || {
+    echo "Este $(basename "$0") no es el del commit $SHA: córrelo desde un checkout de ese commit (git worktree add --detach <carpeta> $SHA)." >&2; exit 1; }
+source "$(dirname "$0")/rama-del-ambiente.sh"
+exigir_rama_del_ambiente "$RAIZ" "$SHA" "$([ -n "$SOLO_DEV" ] && echo dev || echo prod)"
 
 salida() { aws cloudformation describe-stacks --stack-name "$1" --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
 API_PROD="$(salida BuildAndServe-prod HttpApiUrl)"
 API_DEV="$(salida BuildAndServe-dev HttpApiUrl)"
+propia() { local v; v="$(salida "$1" ApiDominio)"; [ -n "$v" ] && [ "$v" != "None" ] && echo "$v" || true; }
+API_PROD_PROPIA="$(propia BuildAndServe-prod)"
+API_DEV_PROPIA="$(propia BuildAndServe-dev)"
+
+CERT_DEV=""
+for arn in $(aws acm list-certificates --certificate-statuses ISSUED --query "CertificateSummaryList[].CertificateArn" --output text); do
+    if aws acm describe-certificate --certificate-arn "$arn" --query 'Certificate.SubjectAlternativeNames' --output text | tr '\t' '\n' | grep -qx "dev.buildandserve.cl"; then
+        CERT_DEV="$arn"; break
+    fi
+done
+if [ -n "$CERT_DEV" ]; then echo "== dominio de dev: dev.buildandserve.cl con $CERT_DEV"
+else echo "== AVISO: no hay certificado emitido para dev.buildandserve.cl; la distribución de dev queda sin dominio propio." >&2; fi
 for v in API_PROD API_DEV; do
     [ -n "${!v}" ] && [ "${!v}" != "None" ] || { echo "Falta HttpApiUrl ($v)." >&2; exit 1; }
 done
@@ -68,7 +88,12 @@ else echo "== AVISO: no hay certificado emitido para $DOMINIO_PROD y www; la dis
 # Dónde se mira lo que sirve cada distribución. En producción, el dominio propio:
 # la URL de CloudFront redirige todo a él desde D-34.
 dominio_de() {
-    if [ "$1" = DominioDistribucion ] && [ -n "$CERT" ]; then echo "$DOMINIO_PROD"; else salida "$STACK_FRONTEND" "$1"; fi
+    if [ "$1" = DominioDistribucion ] && [ -n "$CERT" ]; then echo "$DOMINIO_PROD"; return; fi
+    if [ "$1" = DominioDistribucionDev ]; then
+        local propio; propio="$(salida "$STACK_FRONTEND" DominioPropioDev)"
+        if [ -n "$propio" ] && [ "$propio" != "None" ]; then echo "$propio"; return; fi
+    fi
+    salida "$STACK_FRONTEND" "$1"
 }
 
 TMP="$(mktemp -d)"
@@ -80,17 +105,47 @@ npm ci --no-audit --no-fund --silent
 # Una CSP por ambiente: cada distribución autoriza solo la API de su backend, y
 # los hashes salen del build hecho contra esa API.
 csp_para() {
-    local API_URL="$1"
-    VITE_API_URL="$API_URL" npm run build --silent >/dev/null
+    local API_URL="$1" API_PROPIA="${2:-}"
+    VITE_API_URL="${API_PROPIA:-$API_URL}" npm run build --silent >/dev/null
     # Hashes de los scripts en línea: los del index.html construido y el de los informes.
     local HASHES
     HASHES="$(node "$TMP/wt/infra/hashes-csp.js" dist/index.html src/utils/informesHtml.ts)"
     [ -n "$HASHES" ] || { echo "No se encontraron scripts en línea: revisar antes de publicar una CSP." >&2; exit 1; }
     local S3='https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com'
-    echo "default-src 'self'; script-src 'self' $HASHES; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: $S3; media-src 'self' data: blob: $S3; connect-src 'self' $API_URL $S3 https://nominatim.openstreetmap.org; frame-src 'self' blob: $S3; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri $API_URL/csp/reporte; report-to csp"
+    echo "default-src 'self'; script-src 'self' $HASHES; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: $S3; media-src 'self' data: blob: $S3; connect-src 'self' $API_URL${API_PROPIA:+ $API_PROPIA} $S3 https://nominatim.openstreetmap.org; frame-src 'self' blob: $S3; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri $API_URL/csp/reporte; report-to csp"
 }
-CSP="$(csp_para "$API_PROD")"
-CSP_DEV="$(csp_para "$API_DEV")"
+if [ -n "$SOLO_DEV" ]; then
+    CSP_DEV="$(csp_para "$API_DEV" "$API_DEV_PROPIA")"
+    echo "== CSP dev:"; echo "$CSP_DEV" | tr ';' '\n' | sed 's/^ */   /'
+    MODO_ACTUAL="$(aws cloudformation describe-stacks --stack-name "$STACK_FRONTEND" --query "Stacks[0].Parameters[?ParameterKey=='CspModo'].ParameterValue" --output text)"
+    if [ "$MODO_ACTUAL" = activa ]; then
+        DOMINIO_DEV="$(dominio_de DominioDistribucionDev)"
+        curl -fsS "https://$DOMINIO_DEV/index.html" -o "$TMP/servido.html" \
+            || { echo "No se pudo leer el index.html de https://$DOMINIO_DEV." >&2; exit 1; }
+        node "$TMP/wt/infra/hashes-csp.js" --verificar "$CSP_DEV" "$TMP/servido.html" src/utils/informesHtml.ts \
+            || { echo "El frontend que sirve dev no pasa la política nueva: publica antes un frontend de este commit." >&2; exit 1; }
+    fi
+    REPORTE_DEV="${API_DEV_PROPIA:-$API_DEV}"
+    NOMBRE="solo-dev-$(date -u +%Y%m%d%H%M%S)"
+    CSP_DEV="$CSP_DEV" REPORTE_DEV="$REPORTE_DEV" CERT_DEV="$CERT_DEV" node "$TMP/wt/infra/parametros-solo-dev.js" > "$TMP/parametros.json"
+    aws cloudformation create-change-set --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE" \
+        --template-body "file://$TMP/wt/infra/frontend.yml" --capabilities CAPABILITY_NAMED_IAM \
+        --parameters "file://$TMP/parametros.json" >/dev/null
+    aws cloudformation wait change-set-create-complete --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE" || true
+    aws cloudformation describe-change-set --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE" --output json > "$TMP/cambios.json"
+    echo "== change set $NOMBRE (sin ejecutar):"
+    if ! node "$TMP/wt/infra/cambios-solo-dev.js" "$TMP/cambios.json"; then
+        aws cloudformation delete-change-set --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE"
+        echo "Se borró el change set. No se aplicó nada." >&2; exit 1
+    fi
+    echo ""
+    echo "   Solo toca recursos de dev. Para aplicarlo:"
+    echo "   aws cloudformation execute-change-set --stack-name $STACK_FRONTEND --change-set-name $NOMBRE"
+    exit 0
+fi
+
+CSP="$(csp_para "$API_PROD" "$API_PROD_PROPIA")"
+CSP_DEV="$(csp_para "$API_DEV" "$API_DEV_PROPIA")"
 
 for par in "prod:$CSP" "dev:$CSP_DEV"; do
     echo "== CSP ${par%%:*} ($CSP_MODO):"
@@ -112,7 +167,7 @@ fi
 aws cloudformation deploy \
     --stack-name "$STACK_FRONTEND" \
     --template-file "$TMP/wt/infra/frontend.yml" \
-    --parameter-overrides "CertificadoProd=$CERT" "Csp=$CSP" "CspModo=$CSP_MODO" "ReportingEndpoints=csp=\"$API_PROD/csp/reporte\"" \
+    --parameter-overrides "CertificadoProd=$CERT" "CertificadoDev=$CERT_DEV" "Csp=$CSP" "CspModo=$CSP_MODO" "ReportingEndpoints=csp=\"$API_PROD/csp/reporte\"" \
         "CspDev=$CSP_DEV" "ReportingEndpointsDev=csp=\"$API_DEV/csp/reporte\"" \
     --capabilities CAPABILITY_NAMED_IAM \
     --no-fail-on-empty-changeset

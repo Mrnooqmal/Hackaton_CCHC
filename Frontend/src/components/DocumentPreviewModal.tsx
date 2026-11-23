@@ -4,6 +4,7 @@ import { FiDownload, FiFile, FiVolume2 } from 'react-icons/fi';
 import type { Document } from '../api/documents.api';
 import { ultimaDifusion, descripcionDifusion } from '../utils/difusion';
 import LecturaEnVoz from './LecturaEnVoz';
+import { FUNCIONES } from '../config/funciones';
 
 interface DocumentPreviewModalProps {
     isOpen: boolean;
@@ -63,7 +64,8 @@ export default function DocumentPreviewModal({
     const escuchando = !!fileKey && escuchandoDe === fileKey;
     const setEscuchando = (si: boolean) => setEscuchandoDe(si ? fileKey ?? null : null);
 
-    const hayPie = !!fileKey || !!onDownload;
+    const conLectura = FUNCIONES.lecturaEnVoz && !!fileKey;
+    const hayPie = conLectura || !!onDownload;
 
     return (
         <Modal
@@ -75,11 +77,11 @@ export default function DocumentPreviewModal({
             footer={hayPie && (
                 <div className={`dpv-pie${escuchando ? ' is-escuchando' : ''}`}>
                     {/* `key`: al cambiar de documento, el reproductor parte de cero. */}
-                    {fileKey && escuchando && (
+                    {conLectura && escuchando && (
                         <LecturaEnVoz key={fileKey} fileKey={fileKey} variante="barra" autoIniciar onCerrar={() => setEscuchando(false)} />
                     )}
                     <div className="dpv-acciones">
-                        {fileKey && !escuchando && (
+                        {conLectura && !escuchando && (
                             <button type="button" className="btn btn-primary" onClick={() => setEscuchando(true)}>
                                 <FiVolume2 /> Escuchar
                             </button>

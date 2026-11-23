@@ -33,14 +33,19 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 RAIZ="$(git rev-parse --show-toplevel)"
 git -C "$RAIZ" fetch --quiet origin
 SHA="$(git -C "$RAIZ" rev-parse --verify "$COMMIT^{commit}")"
-if ! git -C "$RAIZ" branch -r --contains "$SHA" | grep -q .; then
-    echo "El commit $SHA no está en ninguna rama remota: solo se despliegan commits pusheados." >&2
-    exit 1
-fi
+cmp -s "$0" <(git -C "$RAIZ" show "$SHA:infra/$(basename "$0")" 2>/dev/null) || {
+    echo "Este $(basename "$0") no es el del commit $SHA: córrelo desde un checkout de ese commit (git worktree add --detach <carpeta> $SHA)." >&2; exit 1; }
+source "$(dirname "$0")/rama-del-ambiente.sh"
+exigir_rama_del_ambiente "$RAIZ" "$SHA" "$AMBIENTE"
 
 salida() { aws cloudformation describe-stacks --stack-name "$1" --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
-API_URL="$(salida "$STACK_BACKEND" HttpApiUrl)"
-API_OTRO="$(salida "BuildAndServe-$OTRO" HttpApiUrl)"
+api_de() {
+    local propio; propio="$(salida "$1" ApiDominio)"
+    if [ -n "$propio" ] && [ "$propio" != "None" ]; then echo "$propio"; else salida "$1" HttpApiUrl; fi
+}
+API_URL="$(api_de "$STACK_BACKEND")"
+API_OTRO="$(api_de "BuildAndServe-$OTRO")"
+API_OTRO_GATEWAY="$(salida "BuildAndServe-$OTRO" HttpApiUrl)"
 if [ "$AMBIENTE" = prod ]; then
     BUCKET="$(salida "$STACK_FRONTEND" Bucket)"
     DISTRIBUCION="$(salida "$STACK_FRONTEND" DistribucionId)"
@@ -50,7 +55,8 @@ if [ "$AMBIENTE" = prod ]; then
 else
     BUCKET="$(salida "$STACK_FRONTEND" BucketDev)"
     DISTRIBUCION="$(salida "$STACK_FRONTEND" DistribucionDevId)"
-    DOMINIO="$(salida "$STACK_FRONTEND" DominioDistribucionDev)"
+    DOMINIO="$(salida "$STACK_FRONTEND" DominioPropioDev)"
+    [ -n "$DOMINIO" ] && [ "$DOMINIO" != "None" ] || DOMINIO="$(salida "$STACK_FRONTEND" DominioDistribucionDev)"
 fi
 for v in API_URL API_OTRO BUCKET DISTRIBUCION DOMINIO; do
     [ -n "${!v}" ] && [ "${!v}" != "None" ] || { echo "Falta $v en las salidas de los stacks." >&2; exit 1; }
@@ -70,10 +76,12 @@ VITE_AMBIENTE="$AMBIENTE" VITE_API_URL="$API_URL" npm run build --silent >/dev/n
 # El bundle tiene que apuntar a esta API y a ninguna otra: ni la del otro
 # ambiente, ni otra API Gateway cualquiera, ni localhost.
 grep -rq "$API_URL" dist || { echo "El build no contiene $API_URL." >&2; exit 1; }
-if grep -rqF "$API_OTRO" dist; then
-    echo "El build para $AMBIENTE contiene la API de $OTRO ($API_OTRO)." >&2; exit 1
-fi
-APIS="$(grep -rhoE 'https://[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com' dist | sort -u)"
+for otra in "$API_OTRO" "$API_OTRO_GATEWAY"; do
+    if grep -rqF "$otra" dist; then
+        echo "El build para $AMBIENTE contiene la API de $OTRO ($otra)." >&2; exit 1
+    fi
+done
+APIS="$(grep -rhoE 'https://([a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com|api(-dev)?\.buildandserve\.cl)' dist | sort -u)"
 if [ "$APIS" != "$API_URL" ]; then
     echo "El build apunta a APIs distintas de $API_URL:" >&2; echo "$APIS" >&2; exit 1
 fi

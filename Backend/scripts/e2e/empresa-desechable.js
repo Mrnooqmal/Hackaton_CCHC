@@ -102,7 +102,6 @@ function rutAlAzar(min, max) {
     return `${conPuntos(cuerpo)}-${digitoVerificador(cuerpo)}`;
 }
 
-/** La contraseña inicial de D-13: los cuatro primeros dígitos del RUT. */
 const passwordInicial = (rut) => rut.replace(/\D/g, '').slice(0, 4);
 
 // ─── Pendientes ──────────────────────────────────────────────────────────────
@@ -175,7 +174,7 @@ async function crearEmpresa(stage, { perfil = PERFILES.E2E, admin: adminPedido =
         let fallo = null;
         try {
             const r = await ejecutar(process.execPath,
-                [path.join(__dirname, '..', 'crear-empresa.js'), '--stage', stage, '--datos', archivo, '--confirmar', '--temporal-en-terminal'],
+                [path.join(__dirname, '..', 'crear-empresa.js'), '--stage', stage, '--datos', archivo, '--confirmar'],
                 { cwd: path.join(__dirname, '..', '..'), env: process.env, maxBuffer: 1024 * 1024 });
             salida = r.stdout + r.stderr;
         } catch (err) {
@@ -187,7 +186,7 @@ async function crearEmpresa(stage, { perfil = PERFILES.E2E, admin: adminPedido =
 
         const tenantId = salida.match(/Empresa creada:\s+(\S+)/)?.[1] || null;
         const adminPersonaId = salida.match(/Administrador creado:\s+(\S+)/)?.[1] || null;
-        const adminPassword = salida.match(/Contraseña temporal:\s+(\S+)/)?.[1] || null;
+        const adminPassword = /cuatro primeros dígitos de su RUT hasta/.test(salida) ? passwordInicial(adminRut) : null;
         if (tenantId) anotarPendiente(stage, tenantId, perfil);
 
         if (!fallo && tenantId && adminPersonaId && adminPassword) {

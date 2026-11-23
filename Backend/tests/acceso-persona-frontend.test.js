@@ -14,9 +14,17 @@ test('el estado de acceso que muestra la ficha y la lista', () => {
     assert.equal(estadoAcceso({ tieneAccesoWeb: true, activacionPendiente: true }, ahora), 'pendiente');
     assert.equal(estadoAcceso({ tieneAccesoWeb: true, activacionPendiente: true, passwordTemporal: true, passwordTemporalVence: despues }, ahora), 'temporal-vigente');
     assert.equal(estadoAcceso({ tieneAccesoWeb: true, activacionPendiente: true, passwordTemporal: true, passwordTemporalVence: antes }, ahora), 'temporal-vencida');
+    assert.equal(estadoAcceso({ tieneAccesoWeb: true, activacionPendiente: true, credencialInicial: true, passwordTemporal: true, passwordTemporalVence: despues }, ahora), 'inicial-vigente');
+    assert.equal(estadoAcceso({ tieneAccesoWeb: true, activacionPendiente: true, credencialInicial: true, passwordTemporal: true, passwordTemporalVence: antes }, ahora), 'inicial-vencida');
     assert.equal(estadoAcceso({ tieneAccesoWeb: true, passwordTemporal: true }, ahora), 'pendiente', 'una ficha vieja con los cuatro dígitos se activa como pendiente');
     assert.equal(estadoAcceso({ tieneAccesoWeb: true, passwordTemporal: false }, ahora), 'activo');
     assert.equal(pendienteDeActivacion({ passwordTemporal: true, passwordTemporalVence: despues }), false, 'una temporal con vencimiento sin la marca no es una activación');
+});
+
+test('se ofrece reactivar el acceso inicial salvo con una temporal de 2 horas vigente', () => {
+    const { reactivable } = cargarTs('accesoPersona.ts');
+    for (const e of ['pendiente', 'inicial-vigente', 'inicial-vencida', 'temporal-vencida']) assert.equal(reactivable(e), true, e);
+    for (const e of ['temporal-vigente', 'activo', 'sin-acceso']) assert.equal(reactivable(e), false, e);
 });
 
 test('la pantalla de activación no guarda la contraseña temporal en el navegador', () => {
@@ -27,13 +35,16 @@ test('la pantalla de activación no guarda la contraseña temporal en el navegad
     }
 });
 
-test('ninguna pantalla promete los cuatro dígitos del RUT como contraseña', () => {
+test('toda pantalla que habla de los cuatro dígitos del RUT dice también que vencen a los 7 días', () => {
     const malos = [];
     const recorrer = (dir) => {
         for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
             const p = path.join(dir, e.name);
             if (e.isDirectory()) recorrer(p);
-            else if (/\.(tsx?|md)$/.test(e.name) && /cuatro primeros d[ií]gitos|primeros 4 d[ií]gitos|4 primeros d[ií]gitos/i.test(fs.readFileSync(p, 'utf8'))) malos.push(path.relative(FRONTEND, p));
+            else if (/\.(tsx?|md)$/.test(e.name)) {
+                const texto = fs.readFileSync(p, 'utf8');
+                if (/cuatro primeros d[ií]gitos|primeros 4 d[ií]gitos|4 primeros d[ií]gitos/i.test(texto) && !/7 d[ií]as|siete d[ií]as/i.test(texto)) malos.push(path.relative(FRONTEND, p));
+            }
         }
     };
     recorrer(path.join(FRONTEND, 'src'));
