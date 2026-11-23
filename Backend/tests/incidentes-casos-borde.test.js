@@ -446,21 +446,23 @@ test('las rutas antiguas responden 404 a quien tiene el permiso pero no puede le
 
 // ─── 11. Medidas antiguas ────────────────────────────────────────────────────
 
-test('una medida con el plazo en ISO completo y ya vencido se puede editar sin cambiar el plazo', async () => {
+test('una medida antigua con el plazo en ISO completo sigue leyéndose por obra (vencida por día) y se le cambia el estado', async () => {
     const id = await crearAccidente();
     guardado(id).medidasCorrectivas = [{
         numero: 1, medida: 'Instalar baranda', responsableId: responsable, responsableNombre: 'Ana Rojas',
         fechaMaxEjecucion: '2020-01-05T10:00:00.000Z', estado: 'pendiente',
     }];
-    // El formulario recorta a 10 caracteres y manda el mismo día.
-    const ok = await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1/datos`, { medida: 'Instalar baranda perimetral', fechaMaxEjecucion: '2020-01-05' });
-    assert.equal(ok.statusCode, 200, ok.body);
-    assert.equal(guardado(id).medidasCorrectivas[0].medida, 'Instalar baranda perimetral');
-    // Un plazo distinto y vencido sigue rechazado, y uno futuro se acepta.
-    const malo = await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1/datos`, { fechaMaxEjecucion: '2020-02-01' });
-    assert.equal(malo.statusCode, 400);
-    assert.match(cuerpo(malo).error, /anterior a hoy/);
-    assert.equal((await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1/datos`, { fechaMaxEjecucion: hoyMas(5) })).statusCode, 200);
+    const { IncidentsRepository } = require('../handlers/incidents-module/incidents.repository');
+    const lectura = await new IncidentsRepository().getMedidasByObra(A, obraA);
+    assert.equal(lectura.medidas.length, 1);
+    assert.equal(lectura.medidas[0].medida, 'Instalar baranda');
+    assert.equal(lectura.medidas[0].vencida, true);
+    assert.equal(lectura.resumen.vencidas, 1);
+    const res = await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1`, { estado: 'completada' });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal((await new IncidentsRepository().getMedidasByObra(A, obraA)).resumen.vencidas, 0, 'una medida completada ya no está vencida');
+    // Editar el texto o el plazo ya no es posible: la ruta no existe.
+    assert.equal((await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1/datos`, { medida: 'Otro' })).statusCode, 404);
 });
 
 test('medidas sin número: salen numeradas sin chocar con las existentes, y una acción afecta solo a la suya', async () => {
@@ -481,9 +483,6 @@ test('medidas sin número: salen numeradas sin chocar con las existentes, y una 
     const res = await pedir(gest(), 'PUT', `/incidents/${id}/medidas/5`, { estado: 'completada' });
     assert.equal(res.statusCode, 200, res.body);
     assert.deepEqual(guardado(id).medidasCorrectivas.map((m) => [m.numero, m.estado]), [[4, 'pendiente'], [3, 'pendiente'], [5, 'completada']]);
-    // Y la que nace después sigue al mayor.
-    const nueva = await pedir(gest(), 'POST', `/incidents/${id}/medidas`, { medida: 'Nueva', responsableId: responsable, fechaMaxEjecucion: hoyMas(5) });
-    assert.equal(datos(nueva).medida.numero, 6);
 });
 
 // ─── 14. Cortes de texto ─────────────────────────────────────────────────────
@@ -506,24 +505,6 @@ test('las medidas inmediatas se cortan en su tope sin partir un emoji', async ()
     const guardada = guardado(id).medidasInmediatas;
     assert.equal(Array.from(guardada).length, 1000);
     assert.doesNotMatch(guardada, solitaria);
-});
-
-test('el resumen de una medida en lo que falta para cerrar no parte un emoji', () => {
-    const faltas = pendientesDeCierre({ triaje: {}, tipo: 'incidente', medidasCorrectivas: [{ numero: 1, medida: `${'a'.repeat(56)}${'😀'.repeat(8)}`, estado: 'pendiente' }] }, '');
-    const frase = faltas.find((f) => f.startsWith('Una medida'));
-    assert.ok(frase.endsWith('….'), frase);
-    assert.doesNotMatch(frase, solitaria);
-});
-
-test('el aviso al responsable de una medida resume su texto sin partir un emoji', async () => {
-    const id = await crearAccidente();
-    const largo = `${'a'.repeat(137)}${'😀'.repeat(5)}`;
-    const res = await pedir(gest(), 'POST', `/incidents/${id}/medidas`, { medida: largo, responsableId: responsable, fechaMaxEjecucion: hoyMas(5) });
-    assert.equal(res.statusCode, 201, res.body);
-    const aviso = doble.items('INBOX_TABLE').find((m) => /medida correctiva/.test(m.subject || ''));
-    assert.ok(aviso, 'el aviso llegó a la bandeja');
-    assert.doesNotMatch(aviso.content, solitaria);
-    assert.match(aviso.content, /…/);
 });
 
 test('el nombre del archivo de un papel se corta por caracteres completos', async () => {

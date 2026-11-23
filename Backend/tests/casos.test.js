@@ -32,14 +32,26 @@ const CASOS = {
     incidenteAltoPotencialTexto: { clasificacion: 'incidente', tipo: 'incidente', altoPotencial: 'true' },
     accidenteLeve: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve' },
     accidenteLeveCompleto: {
-        clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', medidasCorrectivas: [{ numero: 1 }],
+        clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve',
+        papeles: [papel('diat'), papel('informe_investigacion'), papel('plan_medidas')],
+    },
+    // Medidas guardadas antes de que se definieran con el plan: cuentan como el plan cumplido.
+    accidenteConMedidasAntiguas: {
+        clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', medidasCorrectivas: [{ numero: 1, medida: 'Instalar baranda', estado: 'pendiente' }],
         papeles: [papel('diat'), papel('informe_investigacion')],
+    },
+    accidenteConListaDeMedidasVacia: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', medidasCorrectivas: [] },
+    incidenteConPlan: { clasificacion: 'incidente', tipo: 'incidente', papeles: [papel('plan_medidas')] },
+    incidenteAltoPotencialConPlan: { clasificacion: 'incidente', tipo: 'incidente', altoPotencial: true, papeles: [papel('plan_medidas')] },
+    hallazgoConPlan: {
+        clasificacion: 'hallazgo', tipo: 'condicion_subestandar', evidencias: ['k1'], papeles: [papel('plan_medidas')],
+        gobernanza: { responsableId: 'p-1', plazoRespuestaISO: '2026-12-01', comentarioCierre: null },
     },
     accidenteGrave: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'grave', papeles: [papel('diat')] },
     accidenteFatal: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'fatal' },
     accidenteFatalCompleto: {
-        clasificacion: 'incidente', tipo: 'accidente', gravedad: 'fatal', medidasCorrectivas: [{ numero: 1 }],
-        papeles: [papel('diat'), papel('informe_investigacion'), papel('constancia_aviso_autoridad'), papel('diep'), papel('otro')],
+        clasificacion: 'incidente', tipo: 'accidente', gravedad: 'fatal',
+        papeles: [papel('diat'), papel('informe_investigacion'), papel('plan_medidas'), papel('constancia_aviso_autoridad'), papel('diep'), papel('otro')],
     },
     accidenteConOtroNoCuenta: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', papeles: [papel('otro'), papel('diep')] },
     vacio: {},
@@ -70,11 +82,18 @@ test('incidente: el informe de investigación solo si es de alto potencial; el c
     assert.deepEqual(claves({ tipo: 'incidente', altoPotencial: false }), []);
 });
 
-test('accidente: DIAT, informe de investigación y al menos una medida correctiva', () => {
-    assert.deepEqual(claves(CASOS.accidenteLeve), ['diat', 'informe_investigacion', 'medida_correctiva']);
+test('accidente: DIAT, informe de investigación y plan de medidas correctivas', () => {
+    assert.deepEqual(claves(CASOS.accidenteLeve), ['diat', 'informe_investigacion', 'plan_medidas']);
     assert.deepEqual(C.papelesRequeridos(CASOS.accidenteLeve).map((p) => p.cumplido), [false, false, false]);
     assert.deepEqual(C.papelesRequeridos(CASOS.accidenteLeveCompleto).map((p) => p.cumplido), [true, true, true]);
-    assert.deepEqual(C.papelesRequeridos(CASOS.accidenteLeve).map((p) => p.tipoDocumento), ['diat', 'informe_investigacion', null]);
+    assert.deepEqual(C.papelesRequeridos(CASOS.accidenteLeve).map((p) => p.tipoDocumento), ['diat', 'informe_investigacion', 'plan_medidas']);
+    assert.equal(C.papelesRequeridos(CASOS.accidenteLeve)[2].etiqueta, 'Plan de medidas correctivas');
+    // Sin el plan, el accidente no está completo (ya no basta con "una medida" como dato del caso).
+    assert.equal(cumplido(CASOS.accidenteLeve, 'plan_medidas'), false);
+    assert.equal(cumplido(CASOS.accidenteLeveCompleto, 'plan_medidas'), true);
+    assert.equal(cumplido(CASOS.accidenteConListaDeMedidasVacia, 'plan_medidas'), false);
+    // Otro papel (la DIAT, el informe, un respaldo libre) no cumple el plan.
+    assert.equal(cumplido({ ...CASOS.accidenteLeve, papeles: [papel('diat'), papel('informe_investigacion'), papel('otro')] }, 'plan_medidas'), false);
     // Un respaldo libre y la DIEP no cumplen la DIAT.
     assert.equal(cumplido(CASOS.accidenteConOtroNoCuenta, 'diat'), false);
     // La DIEP no se exige en ningún caso.
@@ -83,7 +102,7 @@ test('accidente: DIAT, informe de investigación y al menos una medida correctiv
 
 test('accidente grave o fatal: además la constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud', () => {
     for (const inc of [CASOS.accidenteGrave, CASOS.accidenteFatal]) {
-        assert.deepEqual(claves(inc), ['diat', 'informe_investigacion', 'medida_correctiva', 'constancia_aviso_autoridad']);
+        assert.deepEqual(claves(inc), ['diat', 'informe_investigacion', 'plan_medidas', 'constancia_aviso_autoridad']);
     }
     assert.equal(cumplido(CASOS.accidenteGrave, 'diat'), true);
     assert.equal(cumplido(CASOS.accidenteGrave, 'constancia_aviso_autoridad'), false);
@@ -92,15 +111,40 @@ test('accidente grave o fatal: además la constancia del aviso a la Inspección 
     assert.deepEqual(claves({ tipo: 'incidente', gravedad: 'grave' }), []);
 });
 
+test('accidente con medidas guardadas antes: cuenta como el plan cumplido, para no trabar los casos existentes', () => {
+    assert.equal(cumplido(CASOS.accidenteConMedidasAntiguas, 'plan_medidas'), true);
+    assert.deepEqual(C.papelesRequeridos(CASOS.accidenteConMedidasAntiguas).map((p) => p.cumplido), [true, true, true]);
+    assert.deepEqual(C.avanceDelCaso(CASOS.accidenteConMedidasAntiguas), { cumplidos: 3, total: 3, porcentaje: 100 });
+    // El estado de esas medidas no importa: ya no hay "medidas por terminar".
+    assert.equal(cumplido({ ...CASOS.accidenteConMedidasAntiguas, medidasCorrectivas: [{ numero: 1, estado: 'en_proceso' }] }, 'plan_medidas'), true);
+});
+
+test('el plan de medidas no se exige en incidentes ni en hallazgos: se puede subir como respaldo, sin exigirse', () => {
+    assert.deepEqual(claves(CASOS.incidenteConPlan), []);
+    assert.deepEqual(claves(CASOS.incidenteAltoPotencialConPlan), ['informe_investigacion']);
+    assert.deepEqual(claves(CASOS.hallazgoConPlan), ['foto', 'responsable_plazo', 'comentario_cierre']);
+    for (const inc of [CASOS.incidente, CASOS.incidenteAltoPotencial, CASOS.hallazgoVacio, CASOS.hallazgoCompleto]) {
+        assert.ok(!claves(inc).includes('plan_medidas'), JSON.stringify(inc));
+    }
+    // Subirlo no cambia el avance de un caso que no lo exige.
+    assert.deepEqual(C.avanceDelCaso(CASOS.incidenteConPlan), { cumplidos: 0, total: 0, porcentaje: 100 });
+    assert.deepEqual(C.avanceDelCaso(CASOS.hallazgoConPlan), { cumplidos: 2, total: 3, porcentaje: 67 });
+    // El tipo existe en el catálogo, sin datos de salud, y se acepta como papel.
+    assert.equal(C.esTipoPapel('plan_medidas'), true);
+    assert.equal(C.tipoPapelConSalud('plan_medidas'), false);
+    assert.equal(C.etiquetaTipoPapel('plan_medidas'), 'Plan de medidas correctivas');
+});
+
 test('avance: sin papeles requeridos el total es 0 y el porcentaje 100 (no se divide por cero)', () => {
     assert.deepEqual(C.avanceDelCaso(CASOS.incidente), { cumplidos: 0, total: 0, porcentaje: 100 });
     assert.deepEqual(C.avanceDelCaso(null), { cumplidos: 0, total: 0, porcentaje: 100 });
     assert.deepEqual(C.avanceDelCaso(CASOS.accidenteGrave), { cumplidos: 1, total: 4, porcentaje: 25 });
     assert.deepEqual(C.avanceDelCaso(CASOS.accidenteLeveCompleto), { cumplidos: 3, total: 3, porcentaje: 100 });
+    assert.deepEqual(C.avanceDelCaso(CASOS.accidenteLeve), { cumplidos: 0, total: 3, porcentaje: 0 });
 });
 
-test('el catálogo: cinco tipos, la DIAT y la DIEP con datos de salud, "otro" nunca obligatorio', () => {
-    assert.deepEqual(C.ORDEN_TIPOS_PAPEL, ['diat', 'diep', 'informe_investigacion', 'constancia_aviso_autoridad', 'otro']);
+test('el catálogo: seis tipos, la DIAT y la DIEP con datos de salud, "otro" nunca obligatorio', () => {
+    assert.deepEqual(C.ORDEN_TIPOS_PAPEL, ['diat', 'diep', 'informe_investigacion', 'plan_medidas', 'constancia_aviso_autoridad', 'otro']);
     assert.deepEqual(Object.keys(C.TIPOS_PAPEL).sort(), [...C.ORDEN_TIPOS_PAPEL].sort());
     for (const t of C.ORDEN_TIPOS_PAPEL) assert.ok(C.TIPOS_PAPEL[t].etiqueta.length > 3, t);
     assert.deepEqual(C.ORDEN_TIPOS_PAPEL.filter(C.tipoPapelConSalud), ['diat', 'diep']);
@@ -130,7 +174,7 @@ test('el espejo del frontend (utils/casos.ts) da lo mismo que lib/casos.js, caso
     }
 });
 
-// ── Fase 3: siguiente paso, cierre y medidas ─────────────────────────────────
+// ── Fase 3: siguiente paso y cierre ─────────────────────────────────
 
 const { PERMISSIONS } = require('../lib/permissions');
 
@@ -148,32 +192,35 @@ const ETAPAS = {
     hallazgoSinFoto: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: [], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso' } },
     // El comentario de cierre solo se cumple al cerrar: no puede trabar el paso de cerrar.
     hallazgoListoParaCerrar: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso', comentarioCierre: null } },
-    hallazgoConMedidaPendiente: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso' }, medidasCorrectivas: [med('completada'), med('en_proceso', 2)] },
+    // Las medidas guardadas antes ya no tienen estado que cumplir: una "en proceso" no frena el cierre.
+    hallazgoConMedidaAntigua: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { responsableId: 'p', plazoRespuestaISO: '2026-12-01', estadoCierre: 'en_proceso' }, medidasCorrectivas: [med('completada'), med('en_proceso', 2)] },
     hallazgoCerrado: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, evidencias: ['k'], gobernanza: { estadoCierre: 'cerrado', comentarioCierre: 'Listo' } },
     incidenteListoParaCerrar: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, altoPotencial: false, estado: 'en_investigacion' },
     incidenteAltoPotencialSinInforme: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, altoPotencial: true, estado: 'en_investigacion' },
     incidenteAltoPotencialCompleto: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, altoPotencial: true, estado: 'en_investigacion', papeles: [papel('informe_investigacion')] },
     incidenteCerrado: { clasificacion: 'incidente', tipo: 'incidente', triaje: { tipo: 'incidente' }, estado: 'cerrado' },
     accidenteSinDiat: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion' },
-    accidenteSinMedidas: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')] },
-    accidenteMedidaSinTerminar: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('pendiente')] },
-    accidenteListoParaCerrar: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('completada'), med('verificada', 2)] },
-    graveSinConstancia: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'grave', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('completada')] },
+    accidenteSinPlan: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')] },
+    accidenteConMedidaAntiguaSinTerminar: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion')], medidasCorrectivas: [med('pendiente')] },
+    accidenteListoParaCerrar: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion'), papel('plan_medidas')] },
+    graveSinConstancia: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'grave', triaje: { tipo: 'accidente' }, estado: 'en_investigacion', papeles: [papel('diat'), papel('informe_investigacion'), papel('plan_medidas')] },
     accidenteCerrado: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', triaje: { tipo: 'accidente' }, estado: 'cerrado' },
     // Un hallazgo con `estado` cerrado también cuenta como cerrado.
     hallazgoCerradoPorEstado: { clasificacion: 'hallazgo', tipo: 'condicion_subestandar', triaje: CLASIFICADO, estado: 'cerrado' },
 };
 
-test('siguientePaso: clasificar, papeles, medidas, cerrar y cerrado, para cada tipo de caso', () => {
+test('siguientePaso: clasificar, papeles, cerrar y cerrado (sin paso de medidas), para cada tipo de caso', () => {
     const esperado = {
         sinClasificarHallazgo: 'clasificar', sinClasificarIncidente: 'clasificar', sinClasificarAccidente: 'clasificar',
         hallazgoSinResponsable: 'papeles', hallazgoSinFoto: 'papeles', hallazgoListoParaCerrar: 'cerrar',
-        hallazgoConMedidaPendiente: 'medidas', hallazgoCerrado: 'cerrado', hallazgoCerradoPorEstado: 'cerrado',
+        hallazgoConMedidaAntigua: 'cerrar', hallazgoCerrado: 'cerrado', hallazgoCerradoPorEstado: 'cerrado',
         incidenteListoParaCerrar: 'cerrar', incidenteAltoPotencialSinInforme: 'papeles', incidenteAltoPotencialCompleto: 'cerrar', incidenteCerrado: 'cerrado',
-        accidenteSinDiat: 'papeles', accidenteSinMedidas: 'medidas', accidenteMedidaSinTerminar: 'medidas', accidenteListoParaCerrar: 'cerrar',
+        accidenteSinDiat: 'papeles', accidenteSinPlan: 'papeles', accidenteConMedidaAntiguaSinTerminar: 'cerrar', accidenteListoParaCerrar: 'cerrar',
         graveSinConstancia: 'papeles', accidenteCerrado: 'cerrado',
     };
     for (const [nombre, p] of Object.entries(esperado)) assert.equal(paso(ETAPAS[nombre]), p, nombre);
+    // Ningún tipo de caso pasa por un paso de medidas.
+    for (const [nombre, inc] of Object.entries(ETAPAS)) assert.notEqual(paso(inc), 'medidas', nombre);
     assert.deepEqual(Object.keys(esperado).sort(), Object.keys(ETAPAS).sort(), 'cada etapa de la tabla tiene su caso');
 });
 
@@ -182,15 +229,20 @@ test('siguientePaso: devuelve paso, título, detalle y el permiso de quien lo ha
         const s = C.siguientePaso(inc);
         assert.deepEqual(Object.keys(s).sort(), ['detalle', 'paso', 'permiso', 'titulo'], nombre);
         assert.ok(s.titulo.length > 3 && s.detalle.length > 3, nombre);
-        const permiso = { clasificar: 'incidentes.calificar_accidente', papeles: 'incidentes.reportar', medidas: 'incidentes.reportar', cerrar: 'incidentes.calificar_accidente', cerrado: null }[s.paso];
+        const permiso = { clasificar: 'incidentes.calificar_accidente', papeles: 'incidentes.reportar', cerrar: 'incidentes.calificar_accidente', cerrado: null }[s.paso];
         assert.equal(s.permiso, permiso, nombre);
     }
     assert.match(C.siguientePaso(ETAPAS.sinClasificarHallazgo).detalle, /hallazgo/i);
     assert.match(C.siguientePaso(ETAPAS.graveSinConstancia).detalle, /Constancia del aviso/);
     assert.match(C.siguientePaso(ETAPAS.hallazgoSinResponsable).detalle, /Responsable y plazo/);
-    assert.match(C.siguientePaso(ETAPAS.accidenteMedidaSinTerminar).detalle, /1 medida sin completar/);
-    assert.match(C.siguientePaso(ETAPAS.hallazgoConMedidaPendiente).detalle, /1 medida sin completar/);
-    assert.match(C.siguientePaso({ ...ETAPAS.accidenteListoParaCerrar, medidasCorrectivas: [med('pendiente'), med('pendiente', 2)] }).detalle, /2 medidas sin completar/);
+    // El plan de medidas de un accidente es un papel más: se pide en el paso de papeles.
+    assert.match(C.siguientePaso(ETAPAS.accidenteSinPlan).detalle, /Plan de medidas correctivas/);
+    assert.equal(C.siguientePaso(ETAPAS.accidenteSinPlan).paso, 'papeles');
+    assert.match(C.siguientePaso(ETAPAS.accidenteListoParaCerrar).detalle, /plan de medidas correctivas/);
+    assert.doesNotMatch(C.siguientePaso(ETAPAS.incidenteListoParaCerrar).detalle, /medidas/);
+    assert.doesNotMatch(C.siguientePaso(ETAPAS.hallazgoListoParaCerrar).detalle, /medidas/);
+    // Una medida antigua sin terminar ya no se pide completar.
+    assert.doesNotMatch(C.siguientePaso(ETAPAS.accidenteConMedidaAntiguaSinTerminar).detalle, /sin completar/);
     // Sin datos: no se cae.
     assert.equal(paso(null), 'clasificar');
     assert.equal(paso({}), 'clasificar');
@@ -210,11 +262,19 @@ test('pendientesDeCierre: lista legible de lo que falta; el comentario de la pet
     const faltas = C.pendientesDeCierre(ETAPAS.sinClasificarAccidente, 'x');
     assert.ok(faltas.includes('Clasificar el reporte (tipo y gravedad).'));
     assert.ok(faltas.includes('Falta: DIAT.'));
-    assert.ok(faltas.includes('Falta: Al menos una medida correctiva.'));
+    assert.ok(faltas.includes('Falta: Plan de medidas correctivas.'));
     assert.ok(faltas.some((f) => /Constancia del aviso/.test(f)));
-    assert.deepEqual(C.pendientesDeCierre(ETAPAS.accidenteMedidaSinTerminar, 'x'), ['Una medida sigue sin completar: Instalar baranda.']);
-    // Las medidas anteriores a la fase (sin estado) cuentan como pendientes.
-    assert.deepEqual(C.pendientesDeCierre({ ...ETAPAS.accidenteListoParaCerrar, medidasCorrectivas: [{ numero: 1, medida: 'Antigua' }] }, 'x'), ['Una medida sigue sin completar: Antigua.']);
+    // Un accidente sin plan no cierra; con el plan, sí.
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.accidenteSinPlan, 'x'), ['Falta: Plan de medidas correctivas.']);
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.accidenteListoParaCerrar, 'x'), []);
+    // Las medidas guardadas antes cuentan como el plan, y su estado ya no frena el cierre.
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.accidenteConMedidaAntiguaSinTerminar, 'x'), []);
+    assert.deepEqual(C.pendientesDeCierre({ ...ETAPAS.accidenteListoParaCerrar, medidasCorrectivas: [{ numero: 1, medida: 'Antigua' }] }, 'x'), []);
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.hallazgoConMedidaAntigua, 'Se reparó'), []);
+    // Incidente y hallazgo no exigen el plan, pero lo aceptan.
+    assert.deepEqual(C.pendientesDeCierre(ETAPAS.incidenteListoParaCerrar, 'x'), []);
+    assert.deepEqual(C.pendientesDeCierre({ ...ETAPAS.incidenteListoParaCerrar, papeles: [papel('plan_medidas')] }, 'x'), []);
+    assert.deepEqual(C.pendientesDeCierre({ ...ETAPAS.hallazgoListoParaCerrar, papeles: [papel('plan_medidas')] }, 'Se reparó'), []);
 });
 
 test('estaCerrado: el hallazgo por su gobernanza (o su estado), el incidente por su estado', () => {
@@ -228,10 +288,11 @@ test('estaCerrado: el hallazgo por su gobernanza (o su estado), el incidente por
     assert.equal(C.estaCerrado(null), false);
 });
 
-test('los permisos del siguiente paso son los de PERMISSIONS, y el catálogo de medidas es el esperado', () => {
+test('los permisos del siguiente paso son los de PERMISSIONS, y los estados de las medidas antiguas son los esperados', () => {
     assert.equal(C.PERMISO_CLASIFICAR, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
     assert.equal(C.PERMISO_GESTIONAR, PERMISSIONS.INCIDENTES_REPORTAR);
-    assert.deepEqual(C.JERARQUIA_CONTROL, ['eliminacion', 'sustitucion', 'ingenieria', 'administrativa', 'epp']);
+    // Las medidas ya no se crean: no hay catálogo de jerarquía ni topes de medidas.
+    for (const sobrante of ['JERARQUIA_CONTROL', 'MAX_MEDIDAS_POR_CASO', 'MAX_TEXTO_MEDIDA']) assert.equal(C[sobrante], undefined, sobrante);
     assert.deepEqual(C.ESTADOS_MEDIDA, ['pendiente', 'en_proceso', 'completada', 'verificada']);
     assert.equal(C.medidaTerminada({ estado: 'completada' }), true);
     assert.equal(C.medidaTerminada({ estado: 'verificada' }), true);
@@ -253,10 +314,7 @@ test('el espejo del frontend da lo mismo en siguientePaso, pendientesDeCierre y 
     }
     assert.equal(E.PERMISO_CLASIFICAR, C.PERMISO_CLASIFICAR);
     assert.equal(E.PERMISO_GESTIONAR, C.PERMISO_GESTIONAR);
-    assert.deepEqual(E.JERARQUIA_CONTROL, C.JERARQUIA_CONTROL);
     assert.deepEqual(E.ESTADOS_MEDIDA, C.ESTADOS_MEDIDA);
-    assert.equal(E.MAX_MEDIDAS_POR_CASO, C.MAX_MEDIDAS_POR_CASO);
-    assert.equal(E.MAX_TEXTO_MEDIDA, C.MAX_TEXTO_MEDIDA);
     for (const e of [...C.ESTADOS_MEDIDA, 'zzz', undefined]) assert.equal(E.medidaTerminada({ estado: e }), C.medidaTerminada({ estado: e }), String(e));
 });
 
@@ -271,7 +329,7 @@ test('tipos, gravedades y topes: una sola definición en lib/casos.js, y el espe
     assert.deepEqual(E.TIPOS_INCIDENTE, C.TIPOS_INCIDENTE);
     assert.deepEqual(E.GRAVEDADES, C.GRAVEDADES);
     for (const tope of ['MAX_MEDIDAS_INMEDIATAS', 'MAX_COMENTARIO_CIERRE', 'MAX_MOTIVO_REAPERTURA', 'MAX_EVIDENCIAS_POR_ENVIO', 'MAX_EVIDENCIAS_TOTAL',
-        'MAX_MEDIDAS_POR_CASO', 'MAX_TEXTO_MEDIDA', 'MAX_PAPELES_POR_CASO', 'MAX_BYTES_PAPEL']) {
+        'MAX_PAPELES_POR_CASO', 'MAX_BYTES_PAPEL']) {
         assert.equal(typeof C[tope], 'number', tope);
         assert.equal(E[tope], C[tope], `${tope}: el frontend y el backend tienen que coincidir`);
     }
@@ -297,7 +355,7 @@ test('ningún otro archivo del módulo redefine esas reglas: todos usan lib/caso
         ['Backend', 'handlers', 'incidents-module', 'incidents.repository.js'],
         ['Frontend', 'src', 'api', 'incidents.api.ts'],
         ['Frontend', 'src', 'components', 'CierreDelCaso.tsx'],
-        ['Frontend', 'src', 'components', 'MedidasDelCaso.tsx'],
+        ['Frontend', 'src', 'components', 'MedidasAnteriores.tsx'],
         ['Frontend', 'src', 'components', 'ClasificacionDelCaso.tsx'],
         ['Frontend', 'src', 'components', 'PapelesDelCaso.tsx'],
         ['Frontend', 'src', 'components', 'AgregarFotosAlCaso.tsx'],

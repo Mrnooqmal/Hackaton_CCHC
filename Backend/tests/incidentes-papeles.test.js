@@ -404,7 +404,7 @@ test('GET: la lista trae un enlace firmado de 15 minutos, nunca una URL directa 
     assert.ok(!('s3Key' in a) && !('huella' in a));
     // Lo que exige el caso, calculado con las reglas compartidas.
     assert.deepEqual(requeridos.map((r) => [r.clave, r.cumplido]), [
-        ['diat', false], ['informe_investigacion', true], ['medida_correctiva', false], ['constancia_aviso_autoridad', false],
+        ['diat', false], ['informe_investigacion', true], ['plan_medidas', false], ['constancia_aviso_autoridad', false],
     ]);
     assert.deepEqual(avance, { cumplidos: 1, total: 4, porcentaje: 25 });
 });
@@ -451,4 +451,66 @@ test('si el registro de auditoría no se puede escribir, la DIAT no se entrega (
     }
     assert.equal(res.statusCode, 503, res.body);
     assert.ok(!res.body.includes('X-Amz-Signature') && !res.body.includes(s3Key) && !res.body.includes('DIAT.pdf'));
+});
+
+// ─── Plan de medidas correctivas: un papel más ───────────────────────────────
+
+const creaHallazgo = async () => {
+    const res = await pedir(como(gestora, GESTION), 'POST', '/incidents', {
+        clasificacion: 'hallazgo', tipo: 'condicion_subestandar', descripcion: 'Baranda suelta', obraId: 'o-1',
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    return datos(res).incidentId;
+};
+
+test('el plan de medidas correctivas se sube por el mismo flujo de papeles, sin datos de salud, y cumple el requisito del accidente', async () => {
+    const id = await accidente();
+    const faltaba = datos(await pedir(como(gestora, GESTION), 'GET', `/incidents/${id}/documents`)).requeridos.find((r) => r.clave === 'plan_medidas');
+    assert.equal(faltaba.cumplido, false);
+    assert.equal(faltaba.tipoDocumento, 'plan_medidas');
+
+    const { res, s3Key } = await subirPapel(como(gestora, GESTION), id, { tipo: 'plan_medidas', fileName: 'Plan de medidas.pdf', fecha: '2026-11-12' });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.ok(s3Key.includes('/papeles/plan_medidas-'), s3Key);
+    const [p] = guardado(id).papeles;
+    assert.equal(p.tipo, 'plan_medidas');
+    assert.equal(p.subidoPor, gestora);
+    assert.equal(p.fechaDocumento, '2026-11-12');
+
+    const lista = datos(await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents`));
+    assert.equal(lista.requeridos.find((r) => r.clave === 'plan_medidas').cumplido, true);
+    const archivo = lista.archivos.find((a) => a.tipo === 'plan_medidas');
+    assert.equal(archivo.contieneSalud, false);
+    assert.ok(archivo.url);
+    // No es un dato de salud: bajarlo no deja registro de acceso a salud.
+    assert.equal(doble.items('AUDITORIA_ACCESOS_TABLE').filter((r) => Array.isArray(r.tipos) && r.tipos.includes('descarga_documento_salud')).length, 0);
+});
+
+test('el plan de medidas respeta las reglas de los demás papeles: archivos aceptados, tamaño y permisos', async () => {
+    const id = await accidente();
+    // Mismos tipos de archivo.
+    for (const mime of ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']) {
+        const { res } = await subirPapel(como(gestora, GESTION), id, { tipo: 'plan_medidas', fileType: mime, fileName: 'plan' });
+        assert.equal(res.statusCode, 201, `${mime}: ${res.body}`);
+    }
+    const noAceptado = await pedirSubida(como(gestora, GESTION), id, { tipo: 'plan_medidas', fileType: 'application/zip' });
+    assert.equal(noAceptado.statusCode, 400, noAceptado.body);
+    // Mismo tope de tamaño.
+    const grande = await pedirSubida(como(gestora, GESTION), id, { tipo: 'plan_medidas', tamano: 15 * 1024 * 1024 + 1 });
+    assert.equal(grande.statusCode, 413, grande.body);
+    // Mismos permisos: quien solo ve el historial no sube (403), el caso de otra empresa responde 404.
+    assert.equal((await pedirSubida(como(soloHistorial, SOLO_HISTORIAL), id, { tipo: 'plan_medidas' })).statusCode, 403);
+    assert.equal((await pedirSubida(como(ajena, GESTION, B), id, { tipo: 'plan_medidas' })).statusCode, 404);
+    assert.equal((await pedirSubida(como(trabajadora, TRABAJADOR), id, { tipo: 'plan_medidas' })).statusCode, 404);
+});
+
+test('en un hallazgo el plan de medidas se acepta como respaldo, pero no se exige', async () => {
+    const id = await creaHallazgo();
+    const antes = datos(await pedir(como(gestora, GESTION), 'GET', `/incidents/${id}/documents`)).requeridos.map((r) => r.clave);
+    assert.ok(!antes.includes('plan_medidas'));
+    const { res } = await subirPapel(como(gestora, GESTION), id, { tipo: 'plan_medidas', fileName: 'plan.pdf' });
+    assert.equal(res.statusCode, 201, res.body);
+    const despues = datos(await pedir(como(gestora, GESTION), 'GET', `/incidents/${id}/documents`));
+    assert.deepEqual(despues.requeridos.map((r) => r.clave), antes);
+    assert.equal(despues.archivos.filter((a) => a.tipo === 'plan_medidas').length, 1);
 });

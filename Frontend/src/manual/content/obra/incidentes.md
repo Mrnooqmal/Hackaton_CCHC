@@ -30,6 +30,16 @@ medidas correctivas (Art. 71). Se registran desde **Detalle de obra → Cumplimi
 Verificar → Investigaciones AT/EP**, y sus medidas se siguen en **Actuar → Medidas
 correctivas**. Ver [Obras](/obra/cumplimiento#módulos-de-cada-fase).
 
+### Medidas correctivas de un caso
+
+Las medidas correctivas de un accidente **ya no se escriben una por una** en la página del caso:
+se definen en un documento, el **Plan de medidas correctivas**, que se sube junto a los demás
+papeles del caso (la DIAT, el informe de investigación). Para cerrar un **accidente** hace falta
+ese plan. En un incidente o un hallazgo no se exige, pero se puede subir como respaldo.
+
+Los casos que ya tenían medidas registradas siguen mostrándolas, solo para consulta, bajo
+**Medidas registradas antes**; con ellas, el accidente cuenta como si ya tuviera su plan.
+
 :::: solo incidentes.estadisticas
 ## Estadísticas
 

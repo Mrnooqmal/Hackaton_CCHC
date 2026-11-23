@@ -1,18 +1,17 @@
 const { Router } = require('itty-router');
 const { sinCache } = require('../../lib/utils/response');
 const { IncidentsRepository } = require('./incidents.repository');
-const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS } = require('../../lib/permissions');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
 const { personaDeLaEmpresa, personasDeLaEmpresa, obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
-const { tenantParaPermisos } = require('../../lib/auth/permisos-empresa');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { cortar } = require('../../lib/utils/texto');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const {
     ORDEN_TIPOS_PAPEL, esTipoPapel, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     papelesRequeridos, avanceDelCaso,
-    PERMISO_CLASIFICAR, PERMISO_GESTIONAR, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
+    PERMISO_CLASIFICAR, PERMISO_GESTIONAR,
     medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
     TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo, esHallazgo,
     MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL, MIME_FOTOS, EXTENSION_POR_MIME_FOTO,
@@ -88,8 +87,7 @@ const rechazoParaEvidencia = (incidente, sesion) => {
 /**
  * Rechazo para quien quiere gestionar un caso con `permiso`, o null si puede.
  * Lo que no puede leer ni sabe que existe: el mismo 404 que `get`. Lo que puede
- * leer pero no gestionar: 403. Sirve para clasificar, cerrar, reabrir, las medidas y
- * subir papeles.
+ * leer pero no gestionar: 403. Sirve para clasificar, cerrar, reabrir y subir papeles.
  */
 const rechazoParaGestionar = (incidente, sesion, permiso, mensaje) => {
     if (!puedeLeer(incidente, sesion)) return noEncontrado();
@@ -98,7 +96,7 @@ const rechazoParaGestionar = (incidente, sesion, permiso, mensaje) => {
 };
 
 /**
- * Un caso cerrado no acepta cambios (clasificación, medidas nuevas, papeles,
+ * Un caso cerrado no acepta cambios (clasificación, papeles,
  * fotos, investigaciones, gobernanza): el cierre es lo que se mostraría ante una
  * fiscalización, y no puede moverse por una ruta lateral. Para volver a trabajarlo
  * está `PUT /incidents/{id}/reabrir`, que exige un motivo y queda registrado.
@@ -147,10 +145,8 @@ router
     .put('/incidents/:id/gobernanza', updateGobernanza)
     .put('/incidents/:id/flash-completar', completarFlash)
     .put('/incidents/:id/medidas/:numero', updateMedidaEstado)
-    // Clasificación, medidas y cierre del caso (fase 3).
+    // Clasificación y cierre del caso (fase 3).
     .put('/incidents/:id/triaje', clasificar)
-    .post('/incidents/:id/medidas', crearMedida)
-    .put('/incidents/:id/medidas/:numero/datos', editarMedida)
     .put('/incidents/:id/cerrar', cerrar)
     .put('/incidents/:id/reabrir', reabrir)
     // Papeles del caso (fase 2): subir en dos pasos y listar con descarga firmada.
@@ -240,9 +236,9 @@ async function create(request) {
         // valida cada clave. Las que vengan acá no se guardan: con una clave de otra
         // empresa, `get` firmaría la descarga de un archivo ajeno.
         delete body.evidencias;
-        // Las medidas correctivas se crean con `POST /incidents/{id}/medidas` (texto, plazo
-        // y responsable validados) y la gobernanza la arma este handler para los hallazgos:
-        // lo que llegue en la creación no se guarda, ni en un hallazgo ni en un incidente.
+        // Las medidas correctivas ya no son datos del caso (se definen subiendo el plan de medidas)
+        // y la gobernanza la arma este handler para los hallazgos: lo que llegue en la creación
+        // no se guarda, ni en un hallazgo ni en un incidente.
         delete body.medidasCorrectivas;
         delete body.gobernanza;
 
@@ -411,10 +407,10 @@ async function update(request) {
         if (body.tipo !== undefined || body.clasificacion !== undefined) {
             return jsonResponse({ success: false, error: 'El tipo y la clasificación no se editan por acá: usa la clasificación del caso (PUT /incidents/{id}/triaje).' }, 400);
         }
-        // El cierre tiene sus reglas (clasificado, papeles y medidas completos, con
+        // El cierre tiene sus reglas (clasificado y papeles completos, con
         // comentario): por acá no se cierra.
         if (body.estado === 'cerrado') {
-            return jsonResponse({ success: false, error: 'Para cerrar el caso usa el cierre del caso: exige papeles y medidas completos.' }, 400);
+            return jsonResponse({ success: false, error: 'Para cerrar el caso usa el cierre del caso: exige papeles completos.' }, 400);
         }
         // El estado tampoco se edita por acá: cambia solo al clasificar (pasa a investigación),
         // al cerrar y al reabrir, que dejan quién y cuándo. Ninguna pantalla lo manda.
@@ -765,10 +761,10 @@ async function updateMedidaEstado(request) {
     }
 }
 
-// ─── Clasificación, medidas y cierre (fase 3 del rediseño) ───────────────────
+// ─── Clasificación y cierre (fase 3 del rediseño) ────────────────────────────
 //
 // Clasificar y cerrar son de quien tiene `incidentes.calificar_accidente` (el
-// prevencionista); medidas, de quien gestiona incidentes (`incidentes.reportar`).
+// prevencionista).
 // Lo que no puede leer ni sabe que existe: el mismo 404 que `get`. Lo que puede
 // leer pero no gestionar: 403. Un caso cerrado no acepta nada de esto (409) salvo
 // reabrirlo.
@@ -799,24 +795,6 @@ const responsableActivo = async (personaId, sesion) => {
         return { respuesta: jsonResponse({ success: false, error: 'La persona responsable tiene que estar activa.' }, 400) };
     }
     return { persona, nombre: `${persona.nombre || ''} ${persona.apellido || ''}`.trim() };
-};
-
-/**
- * La persona responsable de una MEDIDA: además de lo anterior, tiene que poder abrir
- * el caso (`incidentes.historial`). El aviso que recibe lo lleva al caso, y sin ese
- * permiso `GET /incidents/{id}` le responde 404: la medida quedaría a cargo de alguien
- * que no puede verla. Los permisos se resuelven como en el aviso de un reporte nuevo
- * (`lib/auth/permisos-empresa`): la definición de roles de la empresa, y los permisos
- * por defecto del rol si no se pudo leer.
- */
-const responsableDeMedida = async (personaId, sesion) => {
-    const r = await responsableActivo(personaId, sesion);
-    if (r.respuesta) return r;
-    const tenantSafe = await tenantParaPermisos(sesion.tenantId, 'incidente.medida.roles');
-    if (!personaPuede(r.persona, tenantSafe, PERMISSIONS.INCIDENTES_HISTORIAL)) {
-        return { respuesta: solicitudInvalida('La persona responsable tiene que poder ver el caso (permiso de historial de incidentes): si no, el aviso de la medida no le abriría nada.') };
-    }
-    return r;
 };
 
 /**
@@ -918,138 +896,9 @@ async function clasificar(request) {
 }
 
 /**
- * Valida los datos de una medida. Al crear (`actual` null) son obligatorios la
- * medida y el plazo; al editar solo se mira lo que viene. Devuelve `{ error }` o `{ datos }`.
- * El responsable se valida aparte (hay que ir a buscarlo).
- */
-const validarDatosMedida = (body, actual) => {
-    const datos = {};
-    for (const [campo, etiqueta, obligatoria] of [['medida', 'La medida', true], ['causaRaiz', 'La causa raíz', false]]) {
-        const v = body[campo];
-        if (v === undefined) {
-            if (obligatoria && !actual) return { error: `${etiqueta} es obligatoria.` };
-            continue;
-        }
-        if (typeof v !== 'string') return { error: `${etiqueta} no es válida.` };
-        const t = v.trim();
-        if (!t && obligatoria) return { error: `${etiqueta} es obligatoria.` };
-        if (t.length > MAX_TEXTO_MEDIDA) return { error: `${etiqueta} admite hasta ${MAX_TEXTO_MEDIDA} caracteres.` };
-        datos[campo] = t;
-    }
-    const plazo = body.fechaMaxEjecucion;
-    if (plazo === undefined) {
-        if (!actual) return { error: 'El plazo es obligatorio.' };
-    } else {
-        if (!diaValido(plazo)) return { error: 'El plazo debe ser una fecha válida (AAAA-MM-DD).' };
-        // Un plazo ya vencido al crearla (o al cambiarlo) suele ser un error de tipeo.
-        // "Hoy" es el de Chile: el plazo es el día que escribe una persona en Chile.
-        // Las medidas antiguas guardaron el plazo como fecha y hora (ISO completo): se compara
-        // el día, o el formulario (que recorta a 10 caracteres) lo tomaría por un plazo nuevo
-        // y rechazaría editar el texto de una medida cuyo plazo ya venció.
-        const plazoActual = actual ? String(actual.fechaMaxEjecucion ?? '').slice(0, 10) : null;
-        if ((!actual || plazo !== plazoActual) && plazo < hoyChile()) return { error: 'El plazo no puede ser anterior a hoy.' };
-        datos.fechaMaxEjecucion = plazo;
-    }
-    if (body.jerarquia !== undefined) {
-        if (body.jerarquia === null || body.jerarquia === '') {
-            if (actual) datos.jerarquia = null;
-        } else if (!JERARQUIA_CONTROL.includes(body.jerarquia)) {
-            return { error: `Nivel de control inválido. Valores válidos: ${JERARQUIA_CONTROL.join(', ')}` };
-        } else {
-            datos.jerarquia = body.jerarquia;
-        }
-    }
-    return { datos };
-};
-
-const medidaSinResponsable = () => solicitudInvalida('Elige la persona responsable de la medida.');
-
-// Crea una medida correctiva y avisa a su responsable.
-async function crearMedida(request) {
-    try {
-        const ses = sesionDe(request);
-        if (!ses.ok) return ses.respuesta;
-        const sesion = ses.sesion;
-        const incidente = await incidenteDelTenant(request.params.id, sesion);
-        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_GESTIONAR, 'Solo quien gestiona incidentes puede definir medidas.');
-        if (rechazo) return rechazo;
-        const cerrado = rechazoSiCerrado(incidente);
-        if (cerrado) return cerrado;
-
-        const body = parseBody(request.event);
-        const validado = validarDatosMedida(body, null);
-        if (validado.error) return solicitudInvalida(validado.error);
-        if (typeof body.responsableId !== 'string' || !body.responsableId) return medidaSinResponsable();
-        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
-        if (previas.length >= MAX_MEDIDAS_POR_CASO) {
-            return solicitudInvalida(`El caso admite hasta ${MAX_MEDIDAS_POR_CASO} medidas.`);
-        }
-        // El nombre de la persona responsable lo pone el servidor, desde su ficha.
-        const r = await responsableDeMedida(body.responsableId, sesion);
-        if (r.respuesta) return r.respuesta;
-
-        const { medida, medidas } = await incidentsRepo.agregarMedida(
-            incidente,
-            { ...validado.datos, responsableId: body.responsableId, responsableNombre: r.nombre },
-            sesion.personaId
-        );
-        await incidentsRepo.avisarResponsableMedida(incidente, medida, sesion.personaId);
-        return jsonResponse({ success: true, data: { medida, medidas }, message: 'Medida creada.' }, 201);
-    } catch (err) {
-        return errorResponse(err);
-    }
-}
-
-// Edita texto, responsable, plazo o nivel de control mientras la medida no esté completada.
-async function editarMedida(request) {
-    try {
-        const ses = sesionDe(request);
-        if (!ses.ok) return ses.respuesta;
-        const sesion = ses.sesion;
-        const incidente = await incidenteDelTenant(request.params.id, sesion);
-        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_GESTIONAR, 'Solo quien gestiona incidentes puede editar medidas.');
-        if (rechazo) return rechazo;
-        const cerrado = rechazoSiCerrado(incidente);
-        if (cerrado) return cerrado;
-
-        const numero = decodeURIComponent(request.params.numero);
-        const actual = (Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [])
-            .find((m) => String(m.numero) === String(numero));
-        if (!actual) return jsonResponse({ success: false, error: 'Medida no encontrada' }, 404);
-        if (medidaTerminada(actual)) {
-            return jsonResponse({ success: false, error: 'Una medida completada no se edita. Vuelve a ponerla en proceso si hay que corregirla.' }, 409);
-        }
-
-        const body = parseBody(request.event);
-        const validado = validarDatosMedida(body, actual);
-        if (validado.error) return solicitudInvalida(validado.error);
-        const cambios = { ...validado.datos };
-        let cambioResponsable = false;
-        if (body.responsableId !== undefined) {
-            if (typeof body.responsableId !== 'string' || !body.responsableId) return medidaSinResponsable();
-            if (body.responsableId !== actual.responsableId) {
-                const r = await responsableDeMedida(body.responsableId, sesion);
-                if (r.respuesta) return r.respuesta;
-                cambios.responsableId = body.responsableId;
-                cambios.responsableNombre = r.nombre;
-                cambioResponsable = true;
-            }
-        }
-        if (Object.keys(cambios).length === 0) return solicitudInvalida('No hay cambios que guardar.');
-
-        const { medida, medidas } = await incidentsRepo.editarMedida(incidente, numero, cambios, sesion.personaId);
-        // A quien recibe la medida se le avisa; a quien conserva la suya, no.
-        if (cambioResponsable) await incidentsRepo.avisarResponsableMedida(incidente, medida, sesion.personaId);
-        return jsonResponse({ success: true, data: { medida, medidas }, message: 'Medida actualizada.' });
-    } catch (err) {
-        return errorResponse(err);
-    }
-}
-
-/**
  * Cierra el caso. Exige el comentario de cierre, que el caso esté clasificado, que
  * los papeles estén completos (contando el comentario de esta petición, que en un
- * hallazgo es uno de ellos) y que todas las medidas estén completadas o verificadas.
+ * hallazgo es uno de ellos, y el plan de medidas correctivas de un accidente).
  * Si falta algo, 409 con la lista, en frases listas para mostrar.
  */
 async function cerrar(request) {
@@ -1111,8 +960,8 @@ async function reabrir(request) {
 // `incidentes.historial`. Lo que no puede leer ni sabe que existe: el mismo 404
 // que `get`. Lo que puede leer pero no gestionar: 403 (`rechazoParaGestionar`).
 //
-// Subir un papel SÍ se permite en un caso cerrado, a diferencia de las fotos, las
-// medidas y la clasificación. Completar el respaldo documental de un caso ya cerrado
+// Subir un papel SÍ se permite en un caso cerrado, a diferencia de las fotos y la
+// clasificación. Completar el respaldo documental de un caso ya cerrado
 // es justo lo que pide el repositorio (por ejemplo, el informe de investigación de un
 // accidente anterior al rediseño): exigir reabrirlo obligaba a deshacer un cierre
 // verdadero para agregar un archivo. Los papeles solo se agregan (nada se pisa ni se

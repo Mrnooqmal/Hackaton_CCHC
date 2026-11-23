@@ -146,7 +146,7 @@ const subirPapel = async (quien, id, tipo) => {
 
 /** Casos completos por todas las rutas que escriben en el incidente. */
 async function crearCasos() {
-    // 1. Un accidente con todo: clasificación, medida creada y editada, papeles, foto,
+    // 1. Un accidente con todo: clasificación, medidas antiguas (ya no se crean), papeles, foto,
     //    investigación, vistas, edición, cierre y reapertura.
     const a = datos(ok(await pedir(gest(), 'POST', '/incidents', {
         tipo: 'accidente', gravedad: 'grave', descripcion: 'Caída desde el andamio', obraId: obraA, centroTrabajo: 'Torre A',
@@ -156,10 +156,15 @@ async function crearCasos() {
     }))).incidentId;
     ok(await pedir(prev(), 'PUT', `/incidents/${a}/triaje`, { tipo: 'accidente', gravedad: 'grave' }));
     ok(await pedir(prev(), 'PUT', `/incidents/${a}/triaje`, { tipo: 'accidente', gravedad: 'fatal' })); // deja `anteriores`
-    ok(await pedir(gest(), 'POST', `/incidents/${a}/medidas`, { medida: 'Instalar baranda', causaRaiz: 'Sin protección', responsableId: personas.responsable, fechaMaxEjecucion: hoyMas(10) }));
-    ok(await pedir(gest(), 'PUT', `/incidents/${a}/medidas/1/datos`, { medida: 'Instalar baranda y red', responsableId: personas.otraResponsable }));
+    // Las medidas ya no se crean por ninguna ruta, pero los casos anteriores las conservan (con su responsable
+    // y quién las creó o editó) y el inventario tiene que seguir anonimizándolas y contando a esas personas.
+    doble.items('INCIDENTS_TABLE').find((i) => i.incidentId === a).medidasCorrectivas = [{
+        numero: 1, medida: 'Instalar baranda y red', causaRaiz: 'Sin protección', responsableId: personas.otraResponsable, responsableNombre: 'Luis',
+        fechaMaxEjecucion: hoyMas(10), estado: 'pendiente', creadaPor: personas.gestora, creadaEn: '2026-11-01T12:00:00.000Z',
+        editadaPor: personas.gestora, editadaEn: '2026-11-02T12:00:00.000Z',
+    }];
     ok(await pedir(gest(), 'PUT', `/incidents/${a}/medidas/1`, { estado: 'completada' }));
-    for (const tipo of ['diat', 'informe_investigacion', 'constancia_aviso_autoridad']) await subirPapel(gest(), a, tipo);
+    for (const tipo of ['diat', 'informe_investigacion', 'plan_medidas', 'constancia_aviso_autoridad']) await subirPapel(gest(), a, tipo);
     ok(await pedir(gest(), 'POST', `/incidents/${a}/evidencias`, { evidencias: [`tenants/${A}/incidentes/${a}/${UUID}.jpg`] }));
     ok(await pedir(gest(), 'POST', `/incidents/${a}/investigations`, { tipo: 'prevencionista', hallazgos: 'Sin arnés', recomendaciones: 'Capacitar', medidas: ['Arnés obligatorio'] }));
     await pedir(prev(), 'POST', `/incidents/${a}/viewed`, {});

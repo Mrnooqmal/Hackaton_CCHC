@@ -136,8 +136,8 @@ const FUENTES = [
         // el incidente es borrar esa traza entera.
         traza: 'incidentId',
         nombre: 'Incidentes, accidentes y hallazgos',
-        datos: 'Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas y evidencia. '
-            + 'Papeles del caso (DIAT, DIEP, informe de investigación, constancia del aviso a la autoridad y respaldos): '
+        datos: 'Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas inmediatas y evidencia. '
+            + 'Papeles del caso (DIAT, DIEP, informe de investigación, plan de medidas correctivas, constancia del aviso a la autoridad y respaldos): '
             + 'el incidente guarda su tipo, nombre de archivo, fecha, quién lo subió y la clave del archivo; la DIAT y la DIEP '
             + 'traen RUT y datos de salud y se guardan en el bucket de evidencia, con descarga auditada.',
         finalidad: 'Registro de AT/EP e incidentes peligrosos (Arts. 71 a 73) e indicadores de accidentabilidad.',
@@ -145,7 +145,7 @@ const FUENTES = [
         // Se conserva el hecho (tipo, fecha, gravedad, días perdidos, obra) para
         // los indicadores; se quitan los datos de las personas y todo texto libre, que
         // puede nombrar a alguien (el relato, las medidas inmediatas, las medidas
-        // correctivas, el comentario de cierre, los motivos de reapertura) o dejar quién
+        // correctivas de los casos anteriores al plan de medidas, el comentario de cierre, los motivos de reapertura) o dejar quién
         // hizo qué (la clasificación, el cierre, las reaperturas, la gobernanza).
         // Una prueba (tests/inventario-datos.test.js) crea casos por todas las rutas y
         // falla si el repositorio escribe un campo que no está clasificado acá.
@@ -174,6 +174,8 @@ const FUENTES = [
             ...uno(it.cierre?.cerradoPor),
             ...ids(it.reaperturas, 'reabiertoPor'),
             ...(Array.isArray(it.reaperturas) ? it.reaperturas.flatMap((r) => uno(r?.cierreAnterior?.cerradoPor)) : []),
+            // Las medidas correctivas ya no se crean (se sube el plan de medidas), pero los casos
+            // anteriores las conservan con su responsable y quién las creó o editó: siguen contando.
             ...ids(it.medidasCorrectivas, 'responsableId'), ...ids(it.medidasCorrectivas, 'creadaPor'), ...ids(it.medidasCorrectivas, 'editadaPor'),
             ...ids(it.papeles, 'subidoPor'),
         ].filter(esPersona),

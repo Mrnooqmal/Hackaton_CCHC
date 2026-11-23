@@ -444,12 +444,8 @@
   .inc-ficha-datos { gap: var(--space-4); }
 }
 
-/* Clasificación, medidas y cierre del caso (components/ClasificacionDelCaso.tsx,
-   MedidasDelCaso.tsx y CierreDelCaso.tsx). Reusan la lista y el formulario de los papeles. */
-
-.inc-medidas-estado {
-  min-width: 150px;
-}
+/* Clasificación y cierre del caso (components/ClasificacionDelCaso.tsx y
+   CierreDelCaso.tsx). Reusan la lista y el formulario de los papeles. */
 
 .inc-medidas-acciones {
   display: flex;

@@ -35,7 +35,7 @@ Origen: el artefacto "Gestión de Casos SST" (propuesta de diseño de octubre de
 |---|---|
 | Hallazgo | Reporte con foto, responsable y plazo, comentario de cierre |
 | Incidente | Informe de investigación, solo si es de alto potencial |
-| Accidente | DIAT, informe de investigación, medidas correctivas |
+| Accidente | DIAT, informe de investigación, plan de medidas correctivas (documento) |
 | Accidente grave o fatal | Lo anterior, más la constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud |
 | Enfermedad profesional | DIEP e informe de investigación |
 
@@ -151,9 +151,9 @@ Riesgos conocidos de la fase 2, sin resolver:
 
 - **Alto potencial:** se decide con las dos preguntas de la guía de Mutual: ¿pudo causar un daño mayor o la muerte? y ¿generó un gran susto en los testigos? Basta un sí.
 - **Plazos internos:** no se imponen. Cada medida lleva el plazo que define quien la crea.
-- **Siguiente paso:** clasificar → papeles → medidas → cerrar. Lo calcula `siguientePaso` en `lib/casos.js`. El detalle del reporte dice a quién le toca.
-- **Clasificar y cerrar** exigen `incidentes.calificar_accidente`. **Crear y editar medidas** exige `incidentes.reportar`. El responsable de una medida debe ser una persona activa de la empresa, y recibe un aviso sin datos del afectado.
-- **Cerrar** exige el caso clasificado, los papeles completos y todas las medidas completadas o verificadas. Cerrar un hallazgo desde la gobernanza exige el mismo permiso (`incidentes.calificar_accidente`), pasa por la misma función de cierre y evalúa los mismos pendientes. Editar el responsable, el plazo o pasar a "en proceso" sigue con `incidentes.reportar`.
+- **Siguiente paso:** clasificar → papeles → cerrar (desde el 23 de noviembre ya no hay paso de medidas). Lo calcula `siguientePaso` en `lib/casos.js`. El detalle del reporte dice a quién le toca.
+- **Clasificar y cerrar** exigen `incidentes.calificar_accidente`. Las medidas ya no se crean como datos: ver "Medidas como documento" más abajo.
+- **Cerrar** exige el caso clasificado, los papeles completos (en accidentes, incluido el plan de medidas correctivas) y el comentario de cierre. Cerrar un hallazgo desde la gobernanza exige el mismo permiso (`incidentes.calificar_accidente`), pasa por la misma función de cierre y evalúa los mismos pendientes. Editar el responsable, el plazo o pasar a "en proceso" sigue con `incidentes.reportar`.
 - **Un caso cerrado no acepta cambios**, salvo terminar sus medidas y agregar papeles. Los papeles se pueden subir a un caso cerrado para completar su respaldo documental sin reabrirlo (por ejemplo, el informe de un accidente antiguo).
 - **Reabrir** existe, con motivo obligatorio.
 - **Sin estados nuevos:** se siguen usando `reportado | en_investigacion | cerrado` y `abierto | en_proceso | cerrado`.
@@ -214,7 +214,11 @@ Sin verificar: si las DIAT de 2025 y 2026 siguen en el bucket de evidencia actua
 
 ## 10. Pendientes de decisión
 
-- **Medidas como documento (decidido el 22 de noviembre, sin implementar):** las medidas correctivas se definirán subiendo un documento al caso, en vez de guardarse como datos dentro de la plataforma. Antes de implementarlo hay que planificar qué reemplaza a la sección Medidas, al paso "medidas" del siguiente paso y del cierre, al requisito "Al menos una medida correctiva", a los avisos a responsables, a las medidas que muestra la obra, y qué pasa con las medidas ya guardadas.
+- **Medidas como documento (implementado el 23 de noviembre):** las medidas correctivas ya no se guardan como datos (texto, responsable, plazo y estado). Se definen subiendo el papel "Plan de medidas correctivas" (`plan_medidas`) al caso.
+    - Se exige solo en accidentes, en lugar de "Al menos una medida correctiva". En hallazgos e incidentes es un respaldo opcional.
+    - Se eliminaron crear y editar medidas, el aviso al responsable y la sección Medidas. El flujo queda clasificar → papeles → cerrar.
+    - Las medidas guardadas antes se ven de solo lectura en el caso ("Medidas registradas antes"), y un accidente que las tiene cuenta como cumplido.
+    - **Por coordinar con Adrean:** la fase ACTUAR de la obra (`GET /obras/{id}/medidas-correctivas` y el cambio de estado de una medida) y los indicadores de `RegistroService` (medidas implementadas, verificadas y vencidas) siguen leyendo `medidasCorrectivas`, así que solo muestran las medidas antiguas y los casos nuevos no suman. Hay que decidir si pasan a basarse en el plan de medidas o se dejan así.
 
 - Plazos internos para clasificar e investigar: no son normativos.
 - Indicadores por sexo: tocan `RegistroService`, compartido con los ítems 46 y 47. Acordarlo antes de cambiarlo.

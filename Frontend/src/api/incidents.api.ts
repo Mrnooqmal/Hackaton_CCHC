@@ -1,7 +1,7 @@
 import { apiRequest } from './client';
 import { huellaSha256, headersDeSubida } from '../utils/huellaArchivo';
 import type { Worker } from './workers.api';
-import type { AvanceDelCaso, EstadoMedida, JerarquiaControl, PapelRequerido, SiguientePaso, TipoPapel } from '../utils/casos';
+import type { AvanceDelCaso, EstadoMedida, PapelRequerido, SiguientePaso, TipoPapel } from '../utils/casos';
 
 export interface IncidentLocation {
     lat: number;
@@ -41,7 +41,11 @@ export interface ReporteFlash {
     editadoEn: string | null;
 }
 
-/** Una medida correctiva del caso (Art. 71). Las anteriores a la fase 3 pueden no traer `jerarquia`. */
+/**
+ * Una medida correctiva guardada antes de que se definieran con el plan de medidas correctivas
+ * (Art. 71). Ya no se crean: el caso las muestra solo para consulta, y la obra sigue listándolas.
+ * Las anteriores a la fase 3 pueden no traer `jerarquia`.
+ */
 export interface MedidaCorrectiva {
     numero: number | string;
     causaRaiz: string;
@@ -50,7 +54,7 @@ export interface MedidaCorrectiva {
     responsableNombre: string;
     fechaMaxEjecucion: string | null;
     estado: EstadoMedida;
-    jerarquia?: JerarquiaControl | null;
+    jerarquia?: string | null;
 }
 
 /** La clasificación del caso: lo que confirmó quien la hizo, y las anteriores. */
@@ -266,16 +270,6 @@ export interface ClasificarData {
     plazoRespuestaISO?: string;
 }
 
-/** Lo que se pide para una medida. El nombre del responsable lo pone el servidor. */
-export interface DatosMedida {
-    medida: string;
-    causaRaiz?: string;
-    responsableId: string;
-    /** AAAA-MM-DD */
-    fechaMaxEjecucion: string;
-    jerarquia?: JerarquiaControl | null;
-}
-
 export interface AnalyticsData {
     periodo: string;
     distribucionPorTipo: {
@@ -459,21 +453,9 @@ export const incidentsApi = {
             body: JSON.stringify({ estado }),
         }),
 
-    // Fase 3: clasificar, definir medidas y cerrar el caso.
+    // Fase 3: clasificar y cerrar el caso.
     clasificar: (id: string, data: ClasificarData) =>
         apiRequest<{ incident: Incident; siguientePaso: SiguientePaso }>(`/incidents/${id}/triaje`, {
-            method: 'PUT',
-            body: JSON.stringify(data),
-        }),
-
-    crearMedida: (id: string, data: DatosMedida) =>
-        apiRequest<{ medida: MedidaCorrectiva; medidas: MedidaCorrectiva[] }>(`/incidents/${id}/medidas`, {
-            method: 'POST',
-            body: JSON.stringify(data),
-        }),
-
-    editarMedida: (id: string, numero: string | number, data: Partial<DatosMedida>) =>
-        apiRequest<{ medida: MedidaCorrectiva; medidas: MedidaCorrectiva[] }>(`/incidents/${id}/medidas/${encodeURIComponent(String(numero))}/datos`, {
             method: 'PUT',
             body: JSON.stringify(data),
         }),
@@ -494,15 +476,10 @@ export const incidentsApi = {
     /**
      * Las personas ACTIVAS de la empresa a quienes se puede dejar a cargo de algo (el servidor las
      * filtra: `estado=activo`, y el listado recortado de quien no tiene `personas.ver` ni trae el
-     * estado, así que no se puede filtrar acá). Con `soloQuienVeElCaso`, además, solo las que tienen
-     * `incidentes.historial`: es lo que acepta el servidor para el responsable de una medida, porque
-     * el aviso de la medida las lleva al caso y sin ese permiso el caso les responde 404. Lo resuelve
-     * el servidor con la misma lógica de roles de la empresa (`GET /personas?conPermiso=`).
+     * estado, así que no se puede filtrar acá).
      */
-    personasACargo: async (opciones?: { soloQuienVeElCaso?: boolean }) => {
-        const res = await apiRequest<{ total: number; personas: Worker[] }>(
-            `/personas?estado=activo${opciones?.soloQuienVeElCaso ? '&conPermiso=incidentes.historial' : ''}`
-        );
+    personasACargo: async () => {
+        const res = await apiRequest<{ total: number; personas: Worker[] }>('/personas?estado=activo');
         if (res.success && res.data) return { success: true as const, data: res.data.personas };
         return { success: false as const, data: undefined, error: res.error };
     },

@@ -8,7 +8,7 @@ import { PERMISSIONS } from '../permissions';
 import { PageHeader, AlertBanner, LoadingSpinner } from '../components/ui';
 import PapelesDelCaso from '../components/PapelesDelCaso';
 import ClasificacionDelCaso from '../components/ClasificacionDelCaso';
-import MedidasDelCaso from '../components/MedidasDelCaso';
+import MedidasAnteriores from '../components/MedidasAnteriores';
 import CierreDelCaso from '../components/CierreDelCaso';
 import AgregarFotosAlCaso from '../components/AgregarFotosAlCaso';
 import {
@@ -56,14 +56,12 @@ const QUE_SIGUE: Record<'hallazgo' | 'incidente', Record<PasoDelCaso, string>> =
     hallazgo: {
         clasificar: 'Tu reporte está siendo revisado por prevención de riesgos.',
         papeles: 'Prevención de riesgos está reuniendo lo necesario para resolverlo.',
-        medidas: 'Se está corrigiendo lo que reportaste.',
         cerrar: 'Ya está corregido. Falta que prevención de riesgos cierre el caso.',
         cerrado: 'Lo que reportaste fue corregido y revisado. Gracias por avisar.',
     },
     incidente: {
         clasificar: 'Tu reporte está siendo revisado por prevención de riesgos.',
-        papeles: 'Prevención de riesgos está reuniendo los documentos del caso.',
-        medidas: 'Se están definiendo las medidas para que no vuelva a ocurrir.',
+        papeles: 'Prevención de riesgos está reuniendo los documentos del caso, incluido el plan de medidas correctivas cuando corresponde.',
         cerrar: 'Ya está todo listo. Falta que prevención de riesgos cierre el caso.',
         cerrado: 'La investigación terminó y el caso está cerrado.',
     },
@@ -114,7 +112,7 @@ export default function IncidentDetalle() {
     // `incidentes.reportar`. El servidor aplica las mismas reglas.
     const verPapeles = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
     const puedeSubirPapeles = hasPermission(PERMISSIONS.INCIDENTES_REPORTAR);
-    // Clasificar y cerrar son de quien tiene `incidentes.calificar_accidente`; medidas y
+    // Clasificar y cerrar son de quien tiene `incidentes.calificar_accidente`; los
     // papeles, de quien gestiona (`incidentes.reportar`). El servidor aplica las mismas reglas.
     const puedeClasificar = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
 
@@ -122,7 +120,7 @@ export default function IncidentDetalle() {
     // llegó la respuesta de ESTE id, sin un setState síncrono dentro del efecto.
     const [cargado, setCargado] = useState<{ id: string; incidente: Incident | null; error: string } | null>(null);
     const [avisoFotos, setAvisoFotos] = useState((navegacion.fotosSinAdjuntar ?? 0) > 0);
-    // Cada acción sobre el caso (clasificar, medidas, cierre, papeles) cambia lo que
+    // Cada acción sobre el caso (clasificar, cierre, papeles) cambia lo que
     // sigue: se vuelve a pedir el caso. Mientras llega, se sigue mostrando el anterior.
     const [recarga, setRecarga] = useState(0);
     const recargar = () => setRecarga((n) => n + 1);
@@ -185,7 +183,7 @@ export default function IncidentDetalle() {
     // y no se puede cerrar sin una.
     const puedeAgregarFotos = !cerrado && (incidente.reportadoPor === user?.personaId || puedeSubirPapeles);
     // "Te toca" solo para quien puede hacer el paso DESDE ESTA PANTALLA: los pasos (clasificar,
-    // papeles, medidas, cerrar) se hacen en secciones que solo ve quien tiene el historial
+    // papeles, cerrar) se hacen en secciones que solo ve quien tiene el historial
     // (`verPapeles`). Con el permiso del paso pero sin esas secciones, el mensaje mandaba a
     // hacer algo que la pantalla no ofrece; esa persona ve solo el texto simple de "Qué sigue".
     const meToca = Boolean(siguiente.permiso) && verPapeles && hasPermission(siguiente.permiso as string);
@@ -300,9 +298,7 @@ export default function IncidentDetalle() {
 
                 {verPapeles && <PapelesDelCaso incidente={incidente} puedeSubir={puedeSubirPapeles} onCambio={recargar} />}
 
-                {verPapeles && (
-                    <MedidasDelCaso incidente={incidente} puedeGestionar={puedeSubirPapeles} cerrado={cerrado} onCambio={recargar} />
-                )}
+                {verPapeles && <MedidasAnteriores incidente={incidente} />}
 
                 {verPapeles && puedeClasificar && (cerrado || siguiente.paso !== 'clasificar') && (
                     <CierreDelCaso key={`cierre-${incidente.updatedAt}`} incidente={incidente} cerrado={cerrado} onCambio={recargar} />

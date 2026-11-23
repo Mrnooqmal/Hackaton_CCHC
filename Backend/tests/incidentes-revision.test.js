@@ -5,8 +5,7 @@
 //   - cerrar un hallazgo por la gobernanza exige el permiso de cierre y escribe `cierre`;
 //   - `PUT /incidents/{id}` ya no cambia el tipo ni la clasificación;
 //   - `create` no acepta medidas correctivas ni gobernanza del cliente;
-//   - el responsable de una medida tiene que poder ver el caso (`incidentes.historial`);
-//   - cambiar el estado de una medida y la gobernanza escriben con bloqueo optimista;
+//   - cambiar el estado de una medida antigua y la gobernanza escriben con bloqueo optimista;
 //   - `casos-resumen` lee todas las páginas de la consulta;
 //   - papeles en un caso cerrado, y papeles guardados con el contrato anterior;
 //   - reabrir un hallazgo limpia el comentario de cierre.
@@ -32,7 +31,6 @@ const { TenantService } = require('../lib/services/TenantService');
 const { ObraService } = require('../lib/services/ObraService');
 const { eventBus } = require('../lib/events/EventBus');
 const { papelesRequeridos, avanceDelCaso } = require('../lib/casos');
-const { DEFAULT_ROLE_PRESETS } = require('../lib/permissions');
 const incidentes = require('../handlers/incidents-module/handler');
 
 let doble; let emitir; let consola; let enviarS3; let objetos;
@@ -119,8 +117,11 @@ const crearHallazgo = async (quien = dePersona(), extra = {}) => {
 };
 const triaje = (id, body, quien = prev()) => pedir(quien, 'PUT', `/incidents/${id}/triaje`, body);
 const cerrar = (id, body = { comentarioCierre: 'Se corrigió y se verificó en terreno' }, quien = prev()) => pedir(quien, 'PUT', `/incidents/${id}/cerrar`, body);
-const medida = (extra = {}) => ({ medida: 'Instalar baranda perimetral', responsableId: responsable, fechaMaxEjecucion: hoyMas(10), ...extra });
-const crearMedida = (id, body = medida(), quien = gest()) => pedir(quien, 'POST', `/incidents/${id}/medidas`, body);
+/** Las medidas ya no se crean: un caso antiguo las trae guardadas. */
+const conMedidaAntigua = (id) => {
+    guardado(id).medidasCorrectivas = [{ numero: 1, medida: 'Instalar baranda perimetral', responsableId: responsable, fechaMaxEjecucion: hoyMas(10), estado: 'pendiente' }];
+    return id;
+};
 
 /** Simula otra escritura sobre el incidente entre la lectura del handler y su escritura. */
 const conCarrera = async (id, fn) => {
@@ -246,7 +247,7 @@ test('PUT /incidents/{id} rechaza tipo y clasificacion con 400 y manda a la clas
     }
     assert.equal(JSON.stringify(guardado(id)), antes);
     // El accidente grave sigue exigiendo sus papeles.
-    assert.deepEqual(papelesRequeridos(guardado(id)).map((p) => p.clave), ['diat', 'informe_investigacion', 'medida_correctiva', 'constancia_aviso_autoridad']);
+    assert.deepEqual(papelesRequeridos(guardado(id)).map((p) => p.clave), ['diat', 'informe_investigacion', 'plan_medidas', 'constancia_aviso_autoridad']);
     // Lo demás se edita como siempre.
     assert.equal((await pedir(gest(), 'PUT', `/incidents/${id}`, { diasPerdidos: 4 })).statusCode, 200);
     assert.equal(guardado(id).diasPerdidos, 4);
@@ -261,16 +262,16 @@ test('calificar-accidente sigue funcionando por su ruta', async () => {
 
 // ─── Hallazgo 5: create no acepta medidas ni gobernanza del cliente ──────────
 
-test('create fuerza medidasCorrectivas: [] y no acepta la gobernanza del cliente, en incidentes ni en hallazgos', async () => {
+test('create no guarda medidasCorrectivas ni acepta la gobernanza del cliente, en incidentes ni en hallazgos', async () => {
     const falsa = { responsableId: 'p-falso', responsableNombre: 'Nombre falso', plazoRespuestaISO: 'nunca', estadoCierre: 'cerrado', comentarioCierre: 'ya está', verificadoPor: 'p-falso' };
     const medidas = [{ numero: 1, medida: 'Se hizo', responsableId: 'p-falso', estado: 'verificada' }];
 
     const incidente = await crearAccidente({ medidasCorrectivas: medidas, gobernanza: falsa });
-    assert.deepEqual(guardado(incidente).medidasCorrectivas, []);
+    assert.equal(guardado(incidente).medidasCorrectivas, undefined);
     assert.equal(guardado(incidente).gobernanza, null);
 
     const hallazgo = await crearHallazgo(dePersona(), { medidasCorrectivas: medidas, gobernanza: falsa });
-    assert.deepEqual(guardado(hallazgo).medidasCorrectivas, []);
+    assert.equal(guardado(hallazgo).medidasCorrectivas, undefined);
     assert.deepEqual(guardado(hallazgo).gobernanza, {
         responsableId: null, responsableNombre: null, plazoRespuestaISO: null,
         estadoCierre: 'abierto', verificadoPor: null, fechaVerificacion: null, comentarioCierre: null,
@@ -281,7 +282,7 @@ test('create fuerza medidasCorrectivas: [] y no acepta la gobernanza del cliente
         afectados: [{ nombre: 'Juan Pérez', rut: '17.777.777-3' }], medidasCorrectivas: medidas, gobernanza: falsa,
     });
     assert.equal(flash.statusCode, 201, flash.body);
-    assert.deepEqual(guardado(datos(flash).incidentId).medidasCorrectivas, []);
+    assert.equal(guardado(datos(flash).incidentId).medidasCorrectivas, undefined);
     assert.equal(guardado(datos(flash).incidentId).gobernanza, null);
 });
 
@@ -314,59 +315,11 @@ test('responsable y plazo de un hallazgo se validan igual al crear, al clasifica
     assert.equal(doble.items('INCIDENTS_TABLE').filter((i) => i.clasificacion === 'hallazgo' && !String(i.incidentId).endsWith('#traza')).length, 2);
 });
 
-// ─── Hallazgo 6: el responsable de una medida puede ver el caso ──────────────
-
-test('el responsable de una medida tiene que tener incidentes.historial: sin él, 400 y sin aviso', async () => {
-    const id = await crearAccidente();
-    const sin = await crearMedida(id, medida({ responsableId: sinHistorial }));
-    assert.equal(sin.statusCode, 400, sin.body);
-    assert.match(cuerpo(sin).error, /poder ver el caso/);
-    assert.deepEqual(guardado(id).medidasCorrectivas, []);
-    assert.equal(doble.items('INBOX_TABLE').filter((m) => m.recipientId === sinHistorial).length, 0, 'ningún aviso a quien no puede abrir el caso');
-
-    // El supervisor (rol por defecto, con historial) y el prevencionista sí.
-    assert.equal((await crearMedida(id, medida({ responsableId: responsable }))).statusCode, 201);
-    assert.equal((await crearMedida(id, medida({ responsableId: prevencionista }))).statusCode, 201);
-});
-
-test('al editar una medida, el nuevo responsable también tiene que poder ver el caso', async () => {
-    const id = await crearAccidente();
-    assert.equal((await crearMedida(id)).statusCode, 201);
-    const editar = (body) => pedir(gest(), 'PUT', `/incidents/${id}/medidas/1/datos`, body);
-    const res = await editar({ responsableId: sinHistorial });
-    assert.equal(res.statusCode, 400, res.body);
-    assert.equal(guardado(id).medidasCorrectivas[0].responsableId, responsable);
-    assert.equal((await editar({ responsableId: prevencionista })).statusCode, 200);
-    assert.equal(guardado(id).medidasCorrectivas[0].responsableId, prevencionista);
-});
-
-test('si no se puede leer la empresa, el permiso se resuelve con los roles por defecto (no con nadie ni con todos)', async () => {
-    const id = await crearAccidente();
-    const original = TenantService.prototype.getById;
-    TenantService.prototype.getById = async () => { throw new Error('DynamoDB no responde'); };
-    try {
-        assert.equal((await crearMedida(id, medida({ responsableId: sinHistorial }))).statusCode, 400);
-        assert.equal((await crearMedida(id, medida({ responsableId: responsable }))).statusCode, 201);
-    } finally {
-        TenantService.prototype.getById = original;
-    }
-});
-
-test('una empresa que le quitó el historial al rol supervisor: su supervisor ya no puede quedar a cargo de una medida', async () => {
-    const id = await crearAccidente();
-    const sinHistorialElSupervisor = DEFAULT_ROLE_PRESETS.supervisor.filter((p) => p !== 'incidentes.historial');
-    await new TenantService().updateConfig(A, { roles: [
-        { id: 'supervisor', tipo: 'supervisor', nombre: 'Supervisor', permisos: sinHistorialElSupervisor },
-    ] });
-    const res = await crearMedida(id, medida({ responsableId: responsable }));
-    assert.equal(res.statusCode, 400, res.body);
-});
-
 // ─── Hallazgo 7: bloqueo optimista en el estado de una medida y en la gobernanza ─
+// (las medidas ya no se crean; el cambio de estado sigue sirviendo a las que un caso antiguo guarda)
 
-test('cambiar el estado de una medida mantiene su respuesta ({ incident, medidas }) y 404 si no existe', async () => {
-    const id = await crearAccidente();
-    await crearMedida(id);
+test('cambiar el estado de una medida antigua mantiene su respuesta ({ incident, medidas }) y 404 si no existe', async () => {
+    const id = conMedidaAntigua(await crearAccidente());
     const res = await pedir(gest(), 'PUT', `/incidents/${id}/medidas/1`, { estado: 'en_proceso' });
     assert.equal(res.statusCode, 200, res.body);
     assert.equal(datos(res).medidas[0].estado, 'en_proceso');
@@ -377,9 +330,8 @@ test('cambiar el estado de una medida mantiene su respuesta ({ incident, medidas
     assert.equal((await pedir(gest(), 'PUT', `/incidents/${id}/medidas/99`, { estado: 'en_proceso' })).statusCode, 404);
 });
 
-test('cambiar el estado de una medida con una escritura concurrente responde 409 y no pisa lo que se guardó', async () => {
-    const id = await crearAccidente();
-    await crearMedida(id);
+test('cambiar el estado de una medida antigua con una escritura concurrente responde 409 y no pisa lo que se guardó', async () => {
+    const id = conMedidaAntigua(await crearAccidente());
     const res = await conCarrera(id, () => pedir(gest(), 'PUT', `/incidents/${id}/medidas/1`, { estado: 'completada' }));
     assert.equal(res.statusCode, 409, res.body);
     assert.equal(guardado(id).medidasCorrectivas[0].estado, 'pendiente', 'no se escribió el estado');
@@ -433,10 +385,13 @@ test('casos-resumen entrega TODOS los casos de la obra aunque la consulta venga 
 });
 
 test('el listado, las estadísticas y las medidas de la obra también leen todas las páginas', async () => {
-    for (let i = 0; i < 5; i++) await crearAccidente({ fecha: `2026-11-0${i + 1}` });
+    for (let i = 0; i < 5; i++) conMedidaAntigua(await crearAccidente({ fecha: `2026-11-0${i + 1}` }));
     await conPaginas(2, async () => {
         const lista = await pedir(gest(), 'GET', '/incidents');
         assert.equal(datos(lista).length, 5);
+        // Las medidas antiguas de las cinco páginas llegan a la fase ACTUAR de la obra.
+        const { IncidentsRepository } = require('../handlers/incidents-module/incidents.repository');
+        assert.equal((await new IncidentsRepository().getMedidasByObra(A, obraA)).resumen.total, 5);
         const stats = await pedir(gest(), 'GET', '/incidents/stats', undefined, { mes: '2026-11' });
         assert.equal(datos(stats).numeroAccidentes, 5);
     });
@@ -502,14 +457,13 @@ test('a un caso cerrado se le puede subir un papel (con incidentes.reportar); el
     assert.equal(papelesRequeridos(g).find((p) => p.clave === 'informe_investigacion').cumplido, true);
 });
 
-test('en un caso cerrado, subir papeles sigue pidiendo incidentes.reportar (403) y las fotos y las medidas siguen cerradas (409)', async () => {
+test('en un caso cerrado, subir papeles sigue pidiendo incidentes.reportar (403) y las fotos siguen cerradas (409)', async () => {
     const id = await accidenteCerrado();
     const soloHistorial = como(prevencionista, 'incidentes.historial');
     assert.equal((await subirPapel(soloHistorial, id)).paso1.statusCode, 403);
     assert.equal((await subirPapel(como(ajena, GESTION, B), id)).paso1.statusCode, 404);
     assert.equal((await subirPapel(como(trabajadora, TRABAJADOR), id)).paso1.statusCode, 404);
     assert.equal((await pedir(gest(), 'POST', `/incidents/${id}/evidencias`, { evidencias: [`tenants/${A}/incidentes/${id}/${UUID}.jpg`] })).statusCode, 409);
-    assert.equal((await crearMedida(id)).statusCode, 409);
     assert.equal(guardado(id).papeles.length, 0);
 });
 
@@ -573,35 +527,12 @@ const listarPersonas = (quien, query) => personasHandler({
     },
 });
 
-test('GET /personas?conPermiso=incidentes.historial ofrece solo a quien puede ver el caso (lo mismo que acepta una medida)', async () => {
-    const res = await listarPersonas(gest(), { conPermiso: 'incidentes.historial' });
-    assert.equal(res.statusCode, 200, res.body);
-    const ids = datos(res).personas.map((p) => p.personaId);
-    for (const quien of [gestora, responsable, prevencionista]) assert.ok(ids.includes(quien), `falta ${quien}`);
-    for (const nadie of [sinHistorial, trabajadora, ajena]) assert.ok(!ids.includes(nadie), `sobra ${nadie}`);
-    // Y cada una de las ofrecidas es aceptada como responsable de una medida.
-    const id = await crearAccidente();
-    for (const personaId of ids.filter((x) => [gestora, responsable, prevencionista].includes(x))) {
-        assert.equal((await crearMedida(id, medida({ responsableId: personaId }))).statusCode, 201, personaId);
-    }
-});
-
-test('el filtro por permiso solo existe para incidentes.historial y solo para quien gestiona incidentes', async () => {
-    assert.equal((await listarPersonas(gest(), { conPermiso: 'obras.crear' })).statusCode, 400);
-    assert.equal((await listarPersonas(gest(), { conPermiso: '__proto__' })).statusCode, 400);
-    assert.equal((await listarPersonas(dePersona(), { conPermiso: 'incidentes.historial' })).statusCode, 400);
-    // Sin el filtro, el listado sigue igual.
-    assert.equal((await listarPersonas(dePersona(), null)).statusCode, 200);
-});
-
-test('lo que ofrece el selector (estado=activo y conPermiso) excluye a quien no terminó de enrolarse, aunque su rol tenga el permiso', async () => {
-    const pendiente = (await new PersonaService().crear(A, { rut: '13.333.333-9', nombre: 'Nora', rol: 'supervisor' })).persona.personaId;
+test('GET /personas ya no filtra por permiso: el selector de responsable es el de un hallazgo y ofrece a todas las personas activas', async () => {
+    // `conPermiso` existía para el responsable de una medida; las medidas ya no se asignan a nadie.
     const res = await listarPersonas(gest(), { estado: 'activo', conPermiso: 'incidentes.historial' });
     assert.equal(res.statusCode, 200, res.body);
-    const ids = datos(res).personas.map((p) => p.personaId);
-    assert.ok(ids.includes(responsable));
-    assert.ok(!ids.includes(pendiente), 'una persona pendiente no se ofrece');
-    // Y el servidor tampoco la acepta como responsable.
-    const id = await crearAccidente();
-    assert.equal((await crearMedida(id, medida({ responsableId: pendiente }))).statusCode, 400);
+    const ids = datos(res).personas.map((x) => x.personaId);
+    for (const quien of [gestora, responsable, prevencionista, sinHistorial]) assert.ok(ids.includes(quien), `falta ${quien}`);
+    assert.ok(!ids.includes(ajena), 'nunca una persona de otra empresa');
+    assert.equal((await listarPersonas(dePersona(), null)).statusCode, 200);
 });

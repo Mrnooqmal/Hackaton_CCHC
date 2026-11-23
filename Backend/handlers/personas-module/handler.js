@@ -15,7 +15,7 @@ const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { normalizeRol, validateRut } = require('../../lib/utils/validation');
-const { PERMISSIONS, resolvePersonaPermisos, personaPuede } = require('../../lib/permissions');
+const { PERMISSIONS, resolvePersonaPermisos } = require('../../lib/permissions');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const auditoria = require('../../lib/gobernanza/auditoria');
 const credenciales = require('../../lib/credenciales');
@@ -74,17 +74,6 @@ const tenantSafe = async (tenantId) => {
     if (!tenantId) return null;
     const tenant = await tenantService.getById(tenantId).catch(() => null);
     return tenant ? tenant.toSafeFormat() : null;
-};
-
-// `GET /personas?conPermiso=…`: deja solo a quienes tienen ese permiso efectivo. Existe
-// para los selectores que ofrecen a una persona "que pueda hacer X" (el responsable de una
-// medida de un incidente tiene que poder abrir el caso: `incidentes.historial`), de modo
-// que la pantalla ofrezca lo mismo que el servidor acepta, sin que el navegador tenga que
-// replicar la resolución de roles de la empresa. Revela quién tiene un permiso, así que
-// cada filtro permitido exige a quien pregunta el permiso de quien lo necesita (la lista
-// blanca: permiso filtrado → permiso que hay que tener).
-const FILTROS_POR_PERMISO = {
-    [PERMISSIONS.INCIDENTES_HISTORIAL]: PERMISSIONS.INCIDENTES_REPORTAR,
 };
 
 // Resuelve el rol de la empresa (def. del tenant) que corresponde a persona.rol,
@@ -1673,20 +1662,13 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         // GET /personas — Listar personas del tenant
         if (method === 'GET' && !personaId) {
             if (!sesion) return sesionRes.respuesta;
-            const { rol, estado, obraId, incluirBloqueadas, conPermiso } = event.queryStringParameters || {};
-            if (conPermiso !== undefined && !(Object.prototype.hasOwnProperty.call(FILTROS_POR_PERMISO, conPermiso) && puede(FILTROS_POR_PERMISO[conPermiso]))) {
-                return error('Filtro por permiso no disponible', 400);
-            }
+            const { rol, estado, obraId, incluirBloqueadas } = event.queryStringParameters || {};
             // Quien gestiona los derechos de los titulares o las supresiones
             // necesita ver también a las personas con el tratamiento bloqueado
             // (para registrar, responder o aprobar lo que les concierne). Para el resto siguen fuera: es tratamiento nuevo.
             const verBloqueadas = incluirBloqueadas === '1'
                 && (puede(PERMISSIONS.EMPRESA_DERECHOS_TITULARES) || puede(PERMISSIONS.EMPRESA_SUPRESION_DATOS));
             let personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
-            if (conPermiso) {
-                const def = await tenantSafe(tenantId);
-                personas = personas.filter((p) => personaPuede(p, def, conPermiso));
-            }
 
             // Sin `personas.ver`, el listado se recorta a lo necesario para elegir
             // a alguien (reportar un hallazgo, ver quién está citado a una

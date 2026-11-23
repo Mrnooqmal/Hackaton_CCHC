@@ -375,12 +375,9 @@ class IncidentsRepository {
                 cargo: data.realizadoPor?.cargo || '',
             },
 
-            // Medidas correctivas (Art. 71) — read-model de la Fase ACT en ObraDetalle.
-            // [{ numero, causaRaiz, medida, responsableId, responsableNombre, fechaMaxEjecucion, estado:'pendiente'|'en_proceso'|'completada'|'verificada' }]
-            // Nacen vacías: se crean con `POST /incidents/{id}/medidas`, que valida el
-            // texto, el plazo y a la persona responsable, y le asigna el número. Las que
-            // vengan en la creación no se guardan (llegarían sin ninguna de esas comprobaciones).
-            medidasCorrectivas: [],
+            // Las medidas correctivas ya no son datos del caso: se definen subiendo el plan de
+            // medidas correctivas (un papel). `medidasCorrectivas` solo existe en los casos
+            // guardados antes del cambio y se lee, no se escribe: ver `getMedidasByObra`.
 
             reportadoPor: data.reportadoPor || 'sistema',
             // El frontend envía tenantId; empresaId se acepta como alias legacy.
@@ -899,13 +896,13 @@ class IncidentsRepository {
         };
     }
 
-    // ─── CLASIFICACIÓN, MEDIDAS Y CIERRE (fase 3 del rediseño) ───────────────────
+    // ─── CLASIFICACIÓN Y CIERRE (fase 3 del rediseño) ────────────────────────────
     //
     // Todas escriben con la condición de que el incidente no haya cambiado desde
     // que el handler lo leyó (`updatedAt`), como `agregarEvidencias` y
-    // `registrarPapel`: las reglas que el handler comprobó (tope de medidas, número
-    // correlativo, caso abierto, nada pendiente al cerrar) siguen siendo ciertas al
-    // guardar aunque lleguen dos peticiones a la vez. Si cambió, 409.
+    // `registrarPapel`: las reglas que el handler comprobó (caso abierto, nada
+    // pendiente al cerrar) siguen siendo ciertas al guardar aunque lleguen dos
+    // peticiones a la vez. Si cambió, 409.
 
     /** Escribe `campos` en el incidente leído, o 409 si cambió desde la lectura. Devuelve el elemento guardado. */
     async actualizarCaso(incidente, campos) {
@@ -1003,91 +1000,6 @@ class IncidentsRepository {
 
         console.log('[TRIAJE] incidente', incidente.incidentId, '| tipo', datos.tipo, '| altoPotencial', campos.altoPotencial);
         return this.actualizarCaso(incidente, campos);
-    }
-
-    /**
-     * Agrega una medida correctiva con el siguiente número correlativo. El número
-     * lo asigna el servidor sobre las medidas que ya tiene el caso (también las
-     * anteriores a esta fase, cuyo número puede ser texto).
-     */
-    async agregarMedida(incidente, datos, personaId) {
-        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
-        const numero = previas.reduce((mayor, m) => Math.max(mayor, Number(m?.numero) || 0), 0) + 1;
-        const medida = {
-            numero,
-            causaRaiz: datos.causaRaiz || '',
-            medida: datos.medida,
-            responsableId: datos.responsableId,
-            responsableNombre: datos.responsableNombre,
-            fechaMaxEjecucion: datos.fechaMaxEjecucion,
-            estado: 'pendiente',
-            ...(datos.jerarquia ? { jerarquia: datos.jerarquia } : {}),
-            creadaPor: personaId,
-            creadaEn: new Date().toISOString(),
-        };
-        const medidas = [...previas, medida];
-        await this.actualizarCaso(incidente, { medidasCorrectivas: medidas, medidasVerificadas: false });
-        console.log('[MEDIDAS] incidente', incidente.incidentId, '| medida', numero, 'creada');
-        return { medida, medidas };
-    }
-
-    /** Cambia texto, responsable, plazo o jerarquía de una medida. `cambios` ya viene validado. */
-    async editarMedida(incidente, numero, cambios, personaId) {
-        const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
-        let editada = null;
-        const medidas = previas.map((m) => {
-            if (String(m.numero) !== String(numero)) return m;
-            editada = { ...m, ...cambios, editadaPor: personaId, editadaEn: new Date().toISOString() };
-            return editada;
-        });
-        await this.actualizarCaso(incidente, { medidasCorrectivas: medidas });
-        console.log('[MEDIDAS] incidente', incidente.incidentId, '| medida', numero, 'editada | campos:', Object.keys(cambios).join(','));
-        return { medida: editada, medidas };
-    }
-
-    /**
-     * Avisa a la persona responsable que se le asignó una medida (bandeja). Solo lo
-     * justo para abrir el caso: qué medida, de qué obra, el plazo y el enlace. Nunca
-     * el relato ni quién es el afectado: la bandeja no está detrás del permiso de
-     * historial. No avisa a quien se la asigna a sí misma. Nunca lanza: la medida ya
-     * está guardada y un aviso caído no la deshace.
-     */
-    async avisarResponsableMedida(incidente, medida, asignadaPor) {
-        try {
-            if (!medida?.responsableId || medida.responsableId === asignadaPor) return false;
-            const obra = incidente.obraId
-                ? await obraDeLaEmpresa(incidente.obraId, { tenantId: incidente.tenantId })
-                : null;
-            const lugar = obra?.nombre || incidente.centroTrabajo || 'obra sin especificar';
-            const [a, m, d] = String(medida.fechaMaxEjecucion || '').split('-');
-            const plazo = a && m && d ? `${d}-${m}-${a}` : String(medida.fechaMaxEjecucion || '');
-            // Por caracteres completos: un corte a mitad de un emoji dejaba una mitad suelta.
-            const letras = Array.from(String(medida.medida || '').trim());
-            const resumen = letras.length > 140 ? `${letras.slice(0, 137).join('')}…` : letras.join('');
-            const ahora = new Date().toISOString();
-            return await conNeutro('incidente.medida.aviso', async () => {
-                await this.dynamo.send(new PutCommand({
-                    TableName: this.inboxTable,
-                    Item: construirMensaje({
-                        recipientId: medida.responsableId,
-                        baseMessageId: uuidv4(),
-                        now: ahora,
-                        senderId: 'sistema',
-                        senderName: 'Sistema de Incidentes',
-                        senderRol: 'system',
-                        type: 'task',
-                        priority: 'normal',
-                        subject: 'Se te asignó una medida correctiva',
-                        content: `Tienes una medida correctiva en ${lugar}: "${resumen}". Plazo: ${plazo}. Abre el caso desde este aviso para verla.`,
-                        linkedEntity: { type: 'incident', id: incidente.incidentId },
-                    }),
-                }));
-                return true;
-            }, false, { incidentId: incidente.incidentId, destinatario: medida.responsableId });
-        } catch (err) {
-            registrarFallo('incidente.medida.aviso', err, { incidentId: incidente?.incidentId });
-            return false;
-        }
     }
 
     /**

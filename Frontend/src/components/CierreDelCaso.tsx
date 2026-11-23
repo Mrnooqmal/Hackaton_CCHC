@@ -17,8 +17,8 @@ interface Props {
  * Se monta solo para quien tiene `incidentes.calificar_accidente` (el padre
  * decide; el servidor lo exige igual).
  *
- * El servidor cierra solo si el caso está clasificado, con sus papeles y medidas
- * completos. Si falta algo responde con la lista, en frases ya escritas para
+ * El servidor cierra solo si el caso está clasificado, con sus papeles completos
+ * (en un accidente, el plan de medidas correctivas). Si falta algo responde con la lista, en frases ya escritas para
  * quien la lee, y esta pantalla la muestra tal cual: el criterio de "completo"
  * vive en un solo lugar (`lib/casos.js`) y no se repite acá.
  *
@@ -123,7 +123,7 @@ export default function CierreDelCaso({ incidente, cerrado, onCambio }: Props) {
             <div>
                 <h2 className="inc-papeles-titulo">Cerrar el caso</h2>
                 <p className="inc-ficha-texto inc-papeles-ayuda">
-                    Se puede cerrar cuando está clasificado, con sus papeles y medidas completos. Un caso cerrado ya no admite cambios.
+                    Se puede cerrar cuando está clasificado, con sus papeles completos. Un caso cerrado ya no admite cambios.
                 </p>
             </div>
             <form className="inc-papeles-form" onSubmit={cerrar}>

@@ -7,19 +7,20 @@
  * den lo mismo. Las reglas y su porqué están explicadas en el original.
  */
 
-export type TipoPapel = 'diat' | 'diep' | 'informe_investigacion' | 'constancia_aviso_autoridad' | 'otro';
+export type TipoPapel = 'diat' | 'diep' | 'informe_investigacion' | 'plan_medidas' | 'constancia_aviso_autoridad' | 'otro';
 
 /** `salud`: el documento trae datos de salud; su descarga queda auditada. */
 export const TIPOS_PAPEL: Record<TipoPapel, { etiqueta: string; salud: boolean }> = {
     diat: { etiqueta: 'DIAT (denuncia individual de accidente del trabajo)', salud: true },
     diep: { etiqueta: 'DIEP (denuncia individual de enfermedad profesional)', salud: true },
     informe_investigacion: { etiqueta: 'Informe de investigación', salud: false },
+    plan_medidas: { etiqueta: 'Plan de medidas correctivas', salud: false },
     constancia_aviso_autoridad: { etiqueta: 'Constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud', salud: false },
     otro: { etiqueta: 'Otro respaldo', salud: false },
 };
 
 /** Orden en que se ofrecen en pantalla. */
-export const ORDEN_TIPOS_PAPEL: TipoPapel[] = ['diat', 'diep', 'informe_investigacion', 'constancia_aviso_autoridad', 'otro'];
+export const ORDEN_TIPOS_PAPEL: TipoPapel[] = ['diat', 'diep', 'informe_investigacion', 'plan_medidas', 'constancia_aviso_autoridad', 'otro'];
 
 export const esTipoPapel = (tipo: unknown): tipo is TipoPapel =>
     typeof tipo === 'string' && Object.prototype.hasOwnProperty.call(TIPOS_PAPEL, tipo);
@@ -156,7 +157,8 @@ const hayPapel = (inc: CasoParaPapeles, tipo: TipoPapel) => papelesDelCaso(inc).
  *
  * Hallazgo: foto, responsable y plazo, comentario de cierre. Incidente: informe
  * de investigación solo si `altoPotencial === true`. Accidente: DIAT, informe y
- * una medida correctiva; si es grave o fatal, además la constancia del aviso a
+ * plan de medidas correctivas (cuenta como cumplido si el caso tiene medidas guardadas
+ * antes del cambio); si es grave o fatal, además la constancia del aviso a
  * la autoridad. La DIEP no se exige en ningún caso (no existe el tipo
  * "enfermedad profesional" en el modelo): queda disponible para subir.
  */
@@ -178,7 +180,7 @@ export function papelesRequeridos(incidente?: CasoParaPapeles | null): PapelRequ
     if (inc.tipo === 'accidente') {
         exigir('diat', 'DIAT', hayPapel(inc, 'diat'), 'diat');
         informe();
-        exigir('medida_correctiva', 'Al menos una medida correctiva', hayLista(inc.medidasCorrectivas));
+        exigir('plan_medidas', etiquetaTipoPapel('plan_medidas'), hayPapel(inc, 'plan_medidas') || hayLista(inc.medidasCorrectivas), 'plan_medidas');
         if (inc.gravedad === 'grave' || inc.gravedad === 'fatal') {
             exigir('constancia_aviso_autoridad', 'Constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud',
                 hayPapel(inc, 'constancia_aviso_autoridad'), 'constancia_aviso_autoridad');
@@ -202,24 +204,18 @@ export function avanceDelCaso(incidente?: CasoParaPapeles | null): AvanceDelCaso
     return { cumplidos, total, porcentaje: total === 0 ? 100 : Math.round((cumplidos / total) * 100) };
 }
 
-// ── Clasificación, medidas y cierre (fase 3) ──
+// ── Clasificación y cierre (fase 3) ──
 
 /** Quien clasifica y cierra el caso. Es el valor de `PERMISSIONS`; una prueba del backend lo comprueba. */
 export const PERMISO_CLASIFICAR = 'incidentes.calificar_accidente';
-/** Quien reúne papeles y define medidas. */
+/** Quien reúne los papeles del caso. */
 export const PERMISO_GESTIONAR = 'incidentes.reportar';
 
 export type EstadoMedida = 'pendiente' | 'en_proceso' | 'completada' | 'verificada';
 export const ESTADOS_MEDIDA: EstadoMedida[] = ['pendiente', 'en_proceso', 'completada', 'verificada'];
 export const medidaTerminada = (m?: { estado?: string } | null): boolean => m?.estado === 'completada' || m?.estado === 'verificada';
 
-export type JerarquiaControl = 'eliminacion' | 'sustitucion' | 'ingenieria' | 'administrativa' | 'epp';
-/** Niveles de la jerarquía de controles, del más eficaz al menos eficaz. */
-export const JERARQUIA_CONTROL: JerarquiaControl[] = ['eliminacion', 'sustitucion', 'ingenieria', 'administrativa', 'epp'];
-export const MAX_MEDIDAS_POR_CASO = 30;
-export const MAX_TEXTO_MEDIDA = 500;
-
-export type PasoDelCaso = 'clasificar' | 'papeles' | 'medidas' | 'cerrar' | 'cerrado';
+export type PasoDelCaso = 'clasificar' | 'papeles' | 'cerrar' | 'cerrado';
 
 export interface SiguientePaso {
     paso: PasoDelCaso;
@@ -229,7 +225,7 @@ export interface SiguientePaso {
     permiso: string | null;
 }
 
-/** Lo que las reglas de clasificación, medidas y cierre leen del incidente (además de `CasoParaPapeles`). */
+/** Lo que las reglas de clasificación y cierre leen del incidente (además de `CasoParaPapeles`). */
 export interface CasoParaPasos extends Omit<CasoParaPapeles, 'medidasCorrectivas'> {
     estado?: string;
     triaje?: unknown;
@@ -237,19 +233,10 @@ export interface CasoParaPasos extends Omit<CasoParaPapeles, 'medidasCorrectivas
     gobernanza?: { responsableId?: string | null; plazoRespuestaISO?: string | null; comentarioCierre?: string | null; estadoCierre?: string | null } | null;
 }
 
-const medidasDe = (inc: CasoParaPasos) => (Array.isArray(inc?.medidasCorrectivas) ? inc.medidasCorrectivas : []);
-const medidasSinTerminar = (inc: CasoParaPasos) => medidasDe(inc).filter((m) => !medidaTerminada(m));
-
 /** Un hallazgo se cierra por su gobernanza y un incidente por su estado (como `utils/incidentes.ts`). */
 export const estaCerrado = (inc?: CasoParaPasos | null): boolean => (esHallazgo(inc)
     ? inc?.gobernanza?.estadoCierre === 'cerrado' || inc?.estado === 'cerrado'
     : inc?.estado === 'cerrado');
-
-const resumenMedida = (m?: { medida?: string } | null) => {
-    // Por caracteres completos: `slice` podía partir un emoji por la mitad.
-    const letras = Array.from(String(m?.medida || '').trim());
-    return letras.length > 60 ? `${letras.slice(0, 57).join('')}…` : letras.join('');
-};
 
 /**
  * Lo que falta para poder cerrar el caso, en frases listas para mostrar. Vacío = se
@@ -266,16 +253,12 @@ export function pendientesDeCierre(incidente?: CasoParaPasos | null, comentarioC
     for (const p of papelesRequeridos(evaluado as CasoParaPapeles)) {
         if (!p.cumplido) faltas.push(`Falta: ${p.etiqueta}.`);
     }
-    for (const m of medidasSinTerminar(inc)) {
-        const resumen = resumenMedida(m);
-        faltas.push(`Una medida sigue sin completar${resumen ? `: ${resumen}` : ''}.`);
-    }
     return faltas;
 }
 
 /**
  * Qué toca hacer ahora con el caso y a quién le toca: clasificar → papeles →
- * medidas → cerrar. Las razones del orden están en el original (lib/casos.js).
+ * cerrar. Las razones del orden están en el original (lib/casos.js).
  */
 export function siguientePaso(incidente?: CasoParaPasos | null): SiguientePaso {
     const inc: CasoParaPasos = incidente || {};
@@ -293,8 +276,7 @@ export function siguientePaso(incidente?: CasoParaPasos | null): SiguientePaso {
             permiso: PERMISO_CLASIFICAR,
         };
     }
-    const requeridos = papelesRequeridos(inc as CasoParaPapeles);
-    const faltantes = requeridos.filter((p) => !p.cumplido && p.clave !== 'comentario_cierre' && p.clave !== 'medida_correctiva');
+    const faltantes = papelesRequeridos(inc as CasoParaPapeles).filter((p) => !p.cumplido && p.clave !== 'comentario_cierre');
     if (faltantes.length > 0) {
         return {
             paso: 'papeles',
@@ -303,27 +285,10 @@ export function siguientePaso(incidente?: CasoParaPasos | null): SiguientePaso {
             permiso: PERMISO_GESTIONAR,
         };
     }
-    if (requeridos.some((p) => p.clave === 'medida_correctiva' && !p.cumplido)) {
-        return {
-            paso: 'medidas',
-            titulo: 'Definir las medidas correctivas',
-            detalle: 'Agregar al menos una medida con responsable y plazo.',
-            permiso: PERMISO_GESTIONAR,
-        };
-    }
-    const sinTerminar = medidasSinTerminar(inc).length;
-    if (sinTerminar > 0) {
-        return {
-            paso: 'medidas',
-            titulo: 'Completar las medidas',
-            detalle: sinTerminar === 1 ? 'Queda 1 medida sin completar.' : `Quedan ${sinTerminar} medidas sin completar.`,
-            permiso: PERMISO_GESTIONAR,
-        };
-    }
     return {
         paso: 'cerrar',
         titulo: 'Cerrar el caso',
-        detalle: hallazgo ? 'Todo está al día. Falta cerrarlo con un comentario de cierre.' : 'Papeles y medidas completos. Falta cerrarlo con un comentario de cierre.',
+        detalle: hallazgo ? 'Todo está al día. Falta cerrarlo con un comentario de cierre.' : inc.tipo === 'accidente' ? 'Papeles y plan de medidas correctivas completos. Falta cerrarlo con un comentario de cierre.' : 'Papeles completos. Falta cerrarlo con un comentario de cierre.',
         permiso: PERMISO_CLASIFICAR,
     };
 }

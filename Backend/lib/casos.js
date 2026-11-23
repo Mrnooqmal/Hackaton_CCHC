@@ -19,7 +19,7 @@
  * ── Qué lee del incidente ────────────────────────────────────────────────────
  *   tipo, clasificacion, gravedad, altoPotencial (lo agrega la fase 3),
  *   evidencias (claves de las fotos), gobernanza.{responsableId, plazoRespuestaISO,
- *   comentarioCierre}, medidasCorrectivas y papeles (los archivos subidos al
+ *   comentarioCierre}, medidasCorrectivas (solo las guardadas antes: ya no se crean) y papeles (los archivos subidos al
  *   caso: `[{ tipo, … }]`, ver `incidents.repository.js`).
  */
 
@@ -37,12 +37,13 @@ const TIPOS_PAPEL = {
     diat: { etiqueta: 'DIAT (denuncia individual de accidente del trabajo)', salud: true },
     diep: { etiqueta: 'DIEP (denuncia individual de enfermedad profesional)', salud: true },
     informe_investigacion: { etiqueta: 'Informe de investigación', salud: false },
+    plan_medidas: { etiqueta: 'Plan de medidas correctivas', salud: false },
     constancia_aviso_autoridad: { etiqueta: 'Constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud', salud: false },
     otro: { etiqueta: 'Otro respaldo', salud: false },
 };
 
 /** Orden en que se ofrecen en pantalla. */
-const ORDEN_TIPOS_PAPEL = ['diat', 'diep', 'informe_investigacion', 'constancia_aviso_autoridad', 'otro'];
+const ORDEN_TIPOS_PAPEL = ['diat', 'diep', 'informe_investigacion', 'plan_medidas', 'constancia_aviso_autoridad', 'otro'];
 
 const esTipoPapel = (tipo) => typeof tipo === 'string' && Object.prototype.hasOwnProperty.call(TIPOS_PAPEL, tipo);
 const etiquetaTipoPapel = (tipo) => (esTipoPapel(tipo) ? TIPOS_PAPEL[tipo].etiqueta : 'Documento');
@@ -174,14 +175,18 @@ const investigacionAnterior = (inc) => INVESTIGADORES_ANTERIORES.some((quien) =>
  * Cada elemento: `{ clave, etiqueta, cumplido, tipoDocumento }`. `tipoDocumento`
  * es el tipo de archivo que lo cumple (para ofrecer "subir" en pantalla) y es
  * null cuando se cumple con un dato del reporte (foto, responsable y plazo,
- * comentario de cierre, medidas) y no con un archivo subido al caso.
+ * comentario de cierre) y no con un archivo subido al caso.
  *
  * | Caso                    | Papeles                                                        |
  * |-------------------------|----------------------------------------------------------------|
  * | Hallazgo                | foto, responsable y plazo, comentario de cierre                |
  * | Incidente               | informe de investigación, solo si `altoPotencial === true`     |
- * | Accidente               | DIAT, informe de investigación, una medida correctiva          |
+ * | Accidente               | DIAT, informe de investigación, plan de medidas correctivas    |
  * | Accidente grave o fatal | lo del accidente + constancia del aviso a la autoridad         |
+ *
+ * Las medidas correctivas ya no son datos del caso: se definen subiendo el "Plan de
+ * medidas correctivas" (`plan_medidas`), un papel más. Solo el accidente lo exige; en un
+ * incidente o un hallazgo se puede subir como respaldo, sin exigirse.
  *
  * La DIEP no se exige en ningún caso: el modelo no tiene el tipo "enfermedad
  * profesional" (hoy los tipos son accidente, incidente y los dos de hallazgo),
@@ -208,7 +213,10 @@ function papelesRequeridos(incidente) {
     if (inc.tipo === 'accidente') {
         exigir('diat', 'DIAT', hayPapel(inc, 'diat'), 'diat');
         informe();
-        exigir('medida_correctiva', 'Al menos una medida correctiva', hayLista(inc.medidasCorrectivas));
+        // Un accidente con medidas guardadas antes del cambio (`medidasCorrectivas`, que ya no
+        // se crean) cuenta como cumplido: si no, esos casos quedarían trabados sin poder
+        // cerrarse por un papel que cuando se abrieron no existía.
+        exigir('plan_medidas', etiquetaTipoPapel('plan_medidas'), hayPapel(inc, 'plan_medidas') || hayLista(inc.medidasCorrectivas), 'plan_medidas');
         if (inc.gravedad === 'grave' || inc.gravedad === 'fatal') {
             exigir('constancia_aviso_autoridad', 'Constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud',
                 hayPapel(inc, 'constancia_aviso_autoridad'), 'constancia_aviso_autoridad');
@@ -236,21 +244,20 @@ function avanceDelCaso(incidente) {
     return { cumplidos, total, porcentaje: total === 0 ? 100 : Math.round((cumplidos / total) * 100) };
 }
 
-// ── Clasificación, medidas y cierre (fase 3) ─────────────────────────────────
+// ── Clasificación y cierre (fase 3) ─────────────────────────────────
 
 /** Quien clasifica y cierra el caso (el prevencionista). Es el valor de `PERMISSIONS`; una prueba lo comprueba. */
 const PERMISO_CLASIFICAR = 'incidentes.calificar_accidente';
-/** Quien reúne papeles y define medidas. */
+/** Quien reúne los papeles del caso. */
 const PERMISO_GESTIONAR = 'incidentes.reportar';
 
-/** Estados de una medida. Una medida "terminada" es una completada o verificada. */
+/**
+ * Estados de una medida guardada antes del cambio (las nuevas ya no son datos del caso). Una
+ * medida "terminada" es una completada o verificada; la usa el cambio de estado que sigue
+ * sirviendo a la fase ACTUAR de la obra.
+ */
 const ESTADOS_MEDIDA = ['pendiente', 'en_proceso', 'completada', 'verificada'];
 const medidaTerminada = (m) => m?.estado === 'completada' || m?.estado === 'verificada';
-
-/** Niveles de la jerarquía de controles, del más eficaz al menos eficaz. */
-const JERARQUIA_CONTROL = ['eliminacion', 'sustitucion', 'ingenieria', 'administrativa', 'epp'];
-const MAX_MEDIDAS_POR_CASO = 30;
-const MAX_TEXTO_MEDIDA = 500;
 
 /**
  * Las medidas anteriores a la fase 3 pueden no traer `numero`, y todo lo que actúa sobre
@@ -269,9 +276,6 @@ function conMedidasNumeradas(inc) {
     return { ...inc, medidasCorrectivas: medidas.map((m) => (m && typeof m === 'object' && sinNumero(m) ? { ...m, numero: ++siguiente } : m)) };
 }
 
-const listaDeMedidas = (inc) => (Array.isArray(inc?.medidasCorrectivas) ? inc.medidasCorrectivas : []);
-const medidasSinTerminar = (inc) => listaDeMedidas(inc).filter((m) => !medidaTerminada(m));
-
 /**
  * ¿Está cerrado el caso? Un hallazgo se cierra por su gobernanza y un incidente por
  * su estado: el mismo criterio de `utils/incidentes.ts` (`incidenteCerrado`), que
@@ -280,12 +284,6 @@ const medidasSinTerminar = (inc) => listaDeMedidas(inc).filter((m) => !medidaTer
 const estaCerrado = (inc) => (esHallazgo(inc)
     ? inc?.gobernanza?.estadoCierre === 'cerrado' || inc?.estado === 'cerrado'
     : inc?.estado === 'cerrado');
-
-const resumenMedida = (m) => {
-    // Por caracteres completos: `slice` podía partir un emoji por la mitad.
-    const letras = Array.from(String(m?.medida || '').trim());
-    return letras.length > 60 ? `${letras.slice(0, 57).join('')}…` : letras.join('');
-};
 
 /**
  * Lo que falta para poder cerrar el caso, en frases listas para mostrar tal cual.
@@ -305,10 +303,6 @@ function pendientesDeCierre(incidente, comentarioCierre) {
     for (const p of papelesRequeridos(evaluado)) {
         if (!p.cumplido) faltas.push(`Falta: ${p.etiqueta}.`);
     }
-    for (const m of medidasSinTerminar(inc)) {
-        const resumen = resumenMedida(m);
-        faltas.push(`Una medida sigue sin completar${resumen ? `: ${resumen}` : ''}.`);
-    }
     return faltas;
 }
 
@@ -317,14 +311,13 @@ function pendientesDeCierre(incidente, comentarioCierre) {
  * Devuelve `{ paso, titulo, detalle, permiso }`; `permiso` es el que necesita
  * quien lo hace (null cuando ya no hay nada que hacer).
  *
- * Orden: clasificar → papeles → medidas → cerrar. Dos ajustes frente al orden
- * "papeles requeridos primero":
- *  - El comentario de cierre de un hallazgo no cuenta en el paso de papeles: solo se
- *    cumple al cerrar, y si bloqueara, el paso `cerrar` no llegaría nunca.
- *  - La medida correctiva que exige un accidente tampoco: es el paso de medidas.
+ * Orden: clasificar → papeles → cerrar. Un ajuste frente al orden "papeles requeridos
+ * primero": el comentario de cierre de un hallazgo no cuenta en el paso de papeles: solo
+ * se cumple al cerrar, y si bloqueara, el paso `cerrar` no llegaría nunca.
  * Lo demás que el caso exige y no es un archivo (la foto y el responsable con plazo
  * de un hallazgo) queda en el paso de papeles, porque cerrar exige el 100 % y si no
- * el caso se trabaría sin que ningún paso lo dijera.
+ * el caso se trabaría sin que ningún paso lo dijera. El plan de medidas de un accidente
+ * es un papel más.
  */
 function siguientePaso(incidente) {
     const inc = incidente || {};
@@ -342,7 +335,7 @@ function siguientePaso(incidente) {
             permiso: PERMISO_CLASIFICAR,
         };
     }
-    const faltantes = papelesRequeridos(inc).filter((p) => !p.cumplido && p.clave !== 'comentario_cierre' && p.clave !== 'medida_correctiva');
+    const faltantes = papelesRequeridos(inc).filter((p) => !p.cumplido && p.clave !== 'comentario_cierre');
     if (faltantes.length > 0) {
         return {
             paso: 'papeles',
@@ -351,28 +344,10 @@ function siguientePaso(incidente) {
             permiso: PERMISO_GESTIONAR,
         };
     }
-    const exigeMedida = papelesRequeridos(inc).some((p) => p.clave === 'medida_correctiva' && !p.cumplido);
-    if (exigeMedida) {
-        return {
-            paso: 'medidas',
-            titulo: 'Definir las medidas correctivas',
-            detalle: 'Agregar al menos una medida con responsable y plazo.',
-            permiso: PERMISO_GESTIONAR,
-        };
-    }
-    const sinTerminar = medidasSinTerminar(inc).length;
-    if (sinTerminar > 0) {
-        return {
-            paso: 'medidas',
-            titulo: 'Completar las medidas',
-            detalle: sinTerminar === 1 ? 'Queda 1 medida sin completar.' : `Quedan ${sinTerminar} medidas sin completar.`,
-            permiso: PERMISO_GESTIONAR,
-        };
-    }
     return {
         paso: 'cerrar',
         titulo: 'Cerrar el caso',
-        detalle: hallazgo ? 'Todo está al día. Falta cerrarlo con un comentario de cierre.' : 'Papeles y medidas completos. Falta cerrarlo con un comentario de cierre.',
+        detalle: hallazgo ? 'Todo está al día. Falta cerrarlo con un comentario de cierre.' : inc.tipo === 'accidente' ? 'Papeles y plan de medidas correctivas completos. Falta cerrarlo con un comentario de cierre.' : 'Papeles completos. Falta cerrarlo con un comentario de cierre.',
         permiso: PERMISO_CLASIFICAR,
     };
 }
@@ -423,6 +398,6 @@ module.exports = {
     MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
     EXTENSION_POR_MIME_FOTO, MIME_FOTOS,
     esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso, conMedidasNumeradas,
-    PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA, JERARQUIA_CONTROL, MAX_MEDIDAS_POR_CASO, MAX_TEXTO_MEDIDA,
+    PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA,
     medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
 };

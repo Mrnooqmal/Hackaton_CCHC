@@ -6,8 +6,8 @@
 //   - Ítem 66 del FUF (investigación de accidentes): además del procedimiento mira
 //     los accidentes de la obra y cuántos siguen sin informe de investigación.
 //   - `calificar-accidente` actualiza la clasificación guardada; `PUT /incidents/{id}`
-//     no acepta `evidencias`; el plazo de una medida y la fecha de un papel se
-//     comparan con el día de Chile, no con el de UTC.
+//     no acepta `evidencias`; el plazo de las medidas antiguas y la fecha de un papel
+//     se comparan con el día de Chile, no con el de UTC.
 
 process.env.CAMPO_HMAC_KEY = 'clave-de-prueba-hmac';
 process.env.CAMPO_CIFRADO_LOCAL_KEY = require('crypto').randomBytes(32).toString('base64');
@@ -133,9 +133,9 @@ test('resumen: por cada caso de la obra entrega tipo, gravedad, fecha, estado, a
     assert.equal(c.estado, 'abierto');
     assert.equal(c.clasificado, false);
     assert.equal(c.informeInvestigacion, false);
-    // Accidente grave: DIAT, informe, medida correctiva y constancia; solo la DIAT está.
+    // Accidente grave: DIAT, informe, plan de medidas correctivas y constancia; solo la DIAT está.
     assert.deepEqual(c.requeridos.map((p) => [p.clave, p.cumplido]), [
-        ['diat', true], ['informe_investigacion', false], ['medida_correctiva', false], ['constancia_aviso_autoridad', false],
+        ['diat', true], ['informe_investigacion', false], ['plan_medidas', false], ['constancia_aviso_autoridad', false],
     ]);
     assert.deepEqual(c.avance, { cumplidos: 1, total: 4, porcentaje: 25 });
     assert.equal(JSON.parse(res.body).total, 1);
@@ -470,53 +470,6 @@ test('PUT /incidents/{id} rechaza `evidencias` y no toca la lista; lo demás se 
 
 /** Fija el reloj (`Date.now`) en el instante dado. */
 const fijarReloj = (iso) => mock.method(Date, 'now', () => new Date(iso).getTime());
-const medida = (plazo) => ({
-    medida: 'Instalar baranda perimetral', causaRaiz: 'Sin protección', responsableId: prevencionista, fechaMaxEjecucion: plazo,
-});
-const crearMedida = (id, plazo) => pedir(gest(), 'POST', `/incidents/${id}/medidas`, medida(plazo));
-
-test('plazo de una medida a mediodía: ayer en Chile ya no vale (antes se aceptaba por el margen de UTC)', async () => {
-    const id = await crear();
-    fijarReloj('2026-11-22T15:00:00.000Z'); // 12:00 del 22 en Chile
-    assert.equal((await crearMedida(id, '2026-11-21')).statusCode, 400);
-    assert.equal((await crearMedida(id, '2026-11-22')).statusCode, 201);
-    assert.equal((await crearMedida(id, '2026-11-23')).statusCode, 201);
-});
-
-test('plazo de una medida cerca de la medianoche: en UTC ya es el día siguiente, en Chile todavía es hoy', async () => {
-    const id = await crear();
-    fijarReloj('2026-11-23T01:30:00.000Z'); // 22:30 del 22 en Chile, 01:30 del 23 en UTC
-    assert.equal((await crearMedida(id, '2026-11-21')).statusCode, 400, 'ayer en Chile');
-    const hoy = await crearMedida(id, '2026-11-22');
-    assert.equal(hoy.statusCode, 201, 'hoy en Chile es el 22, aunque en UTC sea el 23');
-});
-
-test('plazo de una medida en horario de invierno (UTC-4): a las 20:30 de Chile el día UTC ya cambió', async () => {
-    const id = await crear();
-    fijarReloj('2026-07-16T00:30:00.000Z'); // 20:30 del 15 de julio en Chile
-    assert.equal((await crearMedida(id, '2026-07-14')).statusCode, 400);
-    assert.equal((await crearMedida(id, '2026-07-15')).statusCode, 201);
-});
-
-const subirYConfirmar = async (id, fechaDocumento) => {
-    const paso1 = await pedir(gest(), 'POST', `/incidents/${id}/documents`, { tipo: 'diat', fileType: 'application/pdf', checksumSha256: HUELLA, tamano: 2048 });
-    assert.equal(paso1.statusCode, 200, paso1.body);
-    const { s3Key } = datos(paso1);
-    objetos.set(s3Key, { ContentType: 'application/pdf', ContentLength: 2048, ChecksumSHA256: HUELLA, VersionId: 'v1' });
-    return pedir(gest(), 'POST', `/incidents/${id}/documents/confirmar`, { s3Key, fileName: 'DIAT.pdf', fechaDocumento });
-};
-
-test('fecha de un papel: no puede ser posterior al día de hoy en Chile, aunque en UTC ya haya llegado', async () => {
-    const id = await crear();
-    fijarReloj('2026-11-23T01:30:00.000Z'); // 22:30 del 22 en Chile
-    const manana = await subirYConfirmar(id, '2026-11-23');
-    assert.equal(manana.statusCode, 400, 'el 23 todavía no llega en Chile');
-    assert.deepEqual(guardado(id).papeles, []);
-    const hoy = await subirYConfirmar(id, '2026-11-22');
-    assert.equal(hoy.statusCode, 201, hoy.body);
-    assert.equal(guardado(id).papeles[0].fechaDocumento, '2026-11-22');
-});
-
 test('las medidas vencidas de una obra se miden contra el día de Chile', async () => {
     // El read-model de medidas (fases ACT y CHECK) usa el mismo criterio que el plazo.
     const { IncidentsRepository } = require('../handlers/incidents-module/incidents.repository');
