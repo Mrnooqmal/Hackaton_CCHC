@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import InicioEmpresa from './pages/InicioEmpresa';
+import { FUNCIONES } from './config/funciones';
 import PersonasManagement from './pages/PersonasManagement';
 import PersonaNueva from './pages/PersonaNueva';
 import PersonasCargaMasiva from './pages/PersonasCargaMasiva';
@@ -90,7 +91,7 @@ import './css/panorama.css';
  */
 function Inicio() {
   const { modoEmpresa } = useObraContext();
-  return modoEmpresa ? <InicioEmpresa /> : <Dashboard />;
+  return modoEmpresa && FUNCIONES.panoramaEmpresa ? <InicioEmpresa /> : <Dashboard />;
 }
 
 function SessionExpiredModal() {

@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import LecturaEnVoz from '../components/LecturaEnVoz';
+import { FUNCIONES } from '../config/funciones';
 import { useLecturaActiva } from '../components/lecturaActiva';
 import { avisarFirmasCambiaron } from '../utils/firmasPendientes';
 import { useOfflineSignature } from '../hooks/useOfflineSignature';
@@ -177,7 +178,7 @@ function DocPreviewCards({ documentos, onVer }: { documentos: DocumentoAdjunto[]
                             <FiExternalLink size={13} />
                         </button>
                     </div>
-                    {doc.url && <LecturaEnVoz fileKey={doc.url} compacto />}
+                    {FUNCIONES.lecturaEnVoz && doc.url && <LecturaEnVoz fileKey={doc.url} compacto />}
                 </div>
             ))}
         </div>
