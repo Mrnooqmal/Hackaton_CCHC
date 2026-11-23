@@ -341,15 +341,23 @@ class PersonaService {
      */
     async getAllByRutGlobal(rut) {
         const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
+        if (!rut || !String(rut).trim()) return [];
         const rutValidation = validateRut(rut);
-        const rutFormatted = rutValidation.valid ? rutValidation.formatted : rut;
+        const rutFormatted = rutValidation.valid ? rutValidation.formatted : String(rut).trim();
         const rutHmac = await cifradoCampo.hmacRut(rutFormatted);
-        const result = await this.dynamo.send(new ScanCommand({
-            TableName: this.table,
-            FilterExpression: '(rutHmac = :h OR rut = :rut) AND begins_with(SK, :prefix)',
-            ExpressionAttributeValues: { ':h': rutHmac, ':rut': rutFormatted, ':prefix': 'PERSONA#' }
-        }));
-        return this._hidratar((result.Items || []).map((item) => Persona.fromDynamoItem(item)));
+        const items = [];
+        let desde;
+        do {
+            const result = await this.dynamo.send(new ScanCommand({
+                TableName: this.table,
+                FilterExpression: '(rutHmac = :h OR rut = :rut) AND begins_with(SK, :prefix)',
+                ExpressionAttributeValues: { ':h': rutHmac, ':rut': rutFormatted, ':prefix': 'PERSONA#' },
+                ...(desde ? { ExclusiveStartKey: desde } : {}),
+            }));
+            items.push(...(result.Items || []));
+            desde = result.LastEvaluatedKey;
+        } while (desde);
+        return this._hidratar(items.map((item) => Persona.fromDynamoItem(item)));
     }
 
     /**
