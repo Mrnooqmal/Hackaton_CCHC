@@ -340,18 +340,10 @@ class PersonaService {
      */
     async getAllByRutGlobal(rut) {
         const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
-        // Sin RUT no hay a quién buscar. Antes, un RUT vacío dejaba `:rut` en
-        // `undefined`; el cliente lo quita (removeUndefinedValues) y DynamoDB
-        // rechaza el Scan con "An expression attribute value used in
-        // expression is not defined; attribute value: :rut". Pasó al
-        // restablecer la contraseña de una ficha sin RUT: la clave ya estaba
-        // cambiada y la pantalla mostraba el error igual.
         if (!rut || !String(rut).trim()) return [];
         const rutValidation = validateRut(rut);
         const rutFormatted = rutValidation.valid ? rutValidation.formatted : String(rut).trim();
         const rutHmac = await cifradoCampo.hmacRut(rutFormatted);
-        // Scan paginado: un Scan devuelve como mucho 1 MB por página, y la
-        // ficha buscada puede estar en cualquiera.
         const items = [];
         let desde;
         do {
@@ -359,7 +351,7 @@ class PersonaService {
                 TableName: this.table,
                 FilterExpression: '(rutHmac = :h OR rut = :rut) AND begins_with(SK, :prefix)',
                 ExpressionAttributeValues: { ':h': rutHmac, ':rut': rutFormatted, ':prefix': 'PERSONA#' },
-                ExclusiveStartKey: desde,
+                ...(desde ? { ExclusiveStartKey: desde } : {}),
             }));
             items.push(...(result.Items || []));
             desde = result.LastEvaluatedKey;

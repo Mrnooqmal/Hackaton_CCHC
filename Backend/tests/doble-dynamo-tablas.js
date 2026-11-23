@@ -141,21 +141,14 @@ function crearDobleTablas(docClient, esquemas, { proyecciones = false } = {}) {
         return Object.fromEntries(Object.entries(item).filter(([k]) => permitidos.has(k)));
     };
 
-    // Como DynamoDB: un `:valor` usado en una expresión que no viene en
-    // ExpressionAttributeValues (o viene `undefined`, que el cliente real
-    // descarta) es un ValidationException. Sin esto, un `:rut` indefinido en un
-    // Scan pasaba las pruebas y fallaba recién en AWS.
     const exigirValoresDefinidos = (input) => {
         const valores = input.ExpressionAttributeValues || {};
-        const expresiones = ['KeyConditionExpression', 'FilterExpression', 'ConditionExpression', 'UpdateExpression']
-            .map((k) => input[k]).filter(Boolean);
-        for (const expr of expresiones) {
+        for (const campo of ['KeyConditionExpression', 'FilterExpression', 'ConditionExpression', 'UpdateExpression']) {
+            const expr = input[campo];
+            if (!expr) continue;
             for (const [ref] of expr.matchAll(/:[A-Za-z0-9_]+/g)) {
                 if (valores[ref] === undefined) {
-                    const tipo = expr === input.FilterExpression ? 'FilterExpression'
-                        : expr === input.KeyConditionExpression ? 'KeyConditionExpression'
-                            : expr === input.ConditionExpression ? 'ConditionExpression' : 'UpdateExpression';
-                    throw Object.assign(new Error(`Invalid ${tipo}: An expression attribute value used in expression is not defined; attribute value: ${ref}`), { name: 'ValidationException' });
+                    throw Object.assign(new Error(`Invalid ${campo}: An expression attribute value used in expression is not defined; attribute value: ${ref}`), { name: 'ValidationException' });
                 }
             }
         }
