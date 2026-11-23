@@ -62,6 +62,7 @@ export interface PersonaResponse {
     estado: 'pendiente' | 'activo' | 'inactivo' | 'suspendido' | 'desvinculado';
     tieneAccesoWeb: boolean;
     activacionPendiente?: boolean;
+    credencialInicial?: boolean;
     passwordTemporal?: boolean;
     passwordTemporalVence?: string | null;
     habilitado: boolean;

@@ -57,7 +57,6 @@ const valorDe = (flag) => {
 const stage = valorDe('--stage');
 const archivoDatos = valorDe('--datos');
 const confirmar = args.includes('--confirmar');
-const temporalEnTerminal = args.includes('--temporal-en-terminal');
 
 const salir = (mensaje) => { console.error(`\n  ${mensaje}\n`); process.exit(1); };
 
@@ -65,7 +64,7 @@ if (args.includes('--help') || args.includes('-h') || !stage || !archivoDatos) {
     console.log(`
   Alta de una empresa y su administrador.
 
-    AWS_PROFILE=<perfil> node scripts/crear-empresa.js --stage <dev|prod> --datos <archivo.json> [--confirmar] [--temporal-en-terminal]
+    AWS_PROFILE=<perfil> node scripts/crear-empresa.js --stage <dev|prod> --datos <archivo.json> [--confirmar]
 
   Sin --confirmar hace un ENSAYO: valida los datos, comprueba que el nombre, el
   RUT de la empresa y el RUT del administrador estén libres, y no escribe nada.
@@ -188,31 +187,15 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
 
     const actor = { id: require('./entorno').operadorActual(), tipo: 'operador', nombre: 'Soporte de Build & Serve' };
     const origen = { canal: 'operador' };
-    if (!temporalEnTerminal) {
+    const vence = (await personaService.getItemById(persona.personaId)).passwordTemporalVence;
+    if (persona.email) {
         const r = await personaService.enviarEnlaceActivacion(tenant.tenantId, persona.personaId, { actor, origen });
-        if (r.correo === 'enviado') {
-            console.log(`  Enlace de activación enviado a ${persona.email} (vence ${r.vence})`);
-            console.log('\n  Listo. El administrador elige su contraseña desde el enlace.\n');
-            return;
-        }
-        console.log(`\n  El enlace NO se envió (${r.correo}).`);
+        console.log(r.correo === 'enviado'
+            ? `  Enlace de activación enviado a ${persona.email} (vence ${r.vence})`
+            : `  El enlace NO se envió (${r.correo}).`);
     }
-    const r = await personaService.emitirTemporal(tenant.tenantId, persona.personaId, {
-        horas: 2,
-        actor,
-        operacion: 'credencial.acceso_activado',
-        exigir: 'pendiente',
-        origen,
-        aviso: {
-            asunto: 'Tu acceso a Build & Serve fue activado',
-            contenido: 'Soporte de Build & Serve activó tu acceso al crear tu empresa. Si no lo pediste, escribe a contacto@buildandserve.cl.',
-        },
-    });
-    console.log('\n  Entrega esta contraseña temporal por un canal seguro y bórrala de tu terminal:');
-    console.log(`    RUT:                 ${persona.rut}`);
-    console.log(`    Contraseña temporal: ${r.password}`);
-    console.log(`    Vence:               ${r.vence}`);
-    console.log('  Se cambia obligatoriamente en el primer ingreso.\n');
+    console.log(`\n  Listo. El administrador entra con su RUT (${persona.rut}) y los cuatro primeros dígitos de su RUT hasta ${vence},`);
+    console.log('  o elige su contraseña desde el enlace. Se le pide cambiarla y crear su PIN en el primer ingreso.\n');
 })().catch((err) => {
     console.error(`\n  Falló el alta: ${err.message}\n`);
     process.exit(1);

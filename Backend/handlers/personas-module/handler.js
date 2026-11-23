@@ -18,6 +18,7 @@ const { normalizeRol, validateRut } = require('../../lib/utils/validation');
 const { PERMISSIONS, resolvePersonaPermisos } = require('../../lib/permissions');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const auditoria = require('../../lib/gobernanza/auditoria');
+const credenciales = require('../../lib/credenciales');
 const { consentimientoVigente } = require('../../lib/gobernanza/consentimiento');
 const { seOpone } = require('../../lib/gobernanza/derechos');
 const { eventBus } = require('../../lib/events/EventBus');
@@ -49,6 +50,17 @@ const ESTADO_POR_ERROR_DE_PIN = {
     TEMPORAL_CONFLICTO: 409,
     SIN_ACCESO_WEB: 409,
     SIN_CORREO: 409,
+    TEMPORAL_VIGENTE: 409,
+    SIN_INICIAL: 409,
+};
+
+const PLAZO_REACTIVACION_MS = 4000;
+const RECIEN_REACTIVADA_MS = 10 * 60 * 1000;
+const OMISION_POR_CODIGO = {
+    TEMPORAL_VIGENTE: 'temporalVigente',
+    SIN_INICIAL: 'sinInicial',
+    TEMPORAL_CONFLICTO: 'conflicto',
+    SIN_ACCESO_WEB: 'conflicto',
 };
 
 const personaService = new PersonaService();
@@ -119,7 +131,7 @@ const TEMPLATE_INSTRUCTIONS = [
     '4. obra: elige la obra del desplegable (muestra "Nombre (CODIGO)"). Tambien puedes escribir el codigo (ej. OBRA-001). Para asignar a varias obras, separalas por coma. Si se deja vacio, la persona se crea en la empresa sin obra (se vincula despues); si la carga se hace desde una obra, se asigna a esa obra.',
     '5. supervisor: RUT del supervisor de la cuadrilla. Puede venir en este mismo Excel con rol "Supervisor". Si se deja vacio, la persona queda sin cuadrilla y se le asigna un supervisor despues.',
     '6. fechaNacimiento: formato AAAA-MM-DD (ej. 1990-05-12). Opcional. La columna viene en formato texto para que Excel no la convierta en fecha: escribela tal cual, con guiones.',
-    '7. El email es opcional. Las personas quedan pendientes de activacion: el acceso se activa en terreno desde su ficha o desde la lista de pendientes. Si tiene email y se marca la opcion al cargar, se le envia un enlace para que elija su contrasena.',
+    '7. El email es opcional. La primera vez, cada persona entra con su RUT y los 4 primeros digitos de su RUT como contrasena, y se le pide cambiarla y crear su PIN. Esa contrasena inicial vence a los 7 dias si no entra: despues se reactiva desde su ficha, o para toda la obra desde Activar accesos. Si tiene email y se marca la opcion al cargar, tambien se le envia un enlace para que elija su contrasena.',
     '8. cursos: separar varios por punto y coma (;). Ej: Manejo de extintores; Trabajo en altura.',
     '9. nivelEscolar y contacto de emergencia son opcionales pero recomendados para la ficha.',
     '10. Reemplaza los datos de ejemplo por los de tus trabajadores antes de importar.',
@@ -2221,6 +2233,74 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
                 throw err;
             }
+        }
+
+        const reactivarObra = personaId === 'reactivar-inicial' && !action;
+        if (method === 'POST' && (reactivarObra || (personaId && action === 'reactivar-inicial'))) {
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONA_ACTIVAR_ACCESO)) {
+                return error('No tienes permiso para reactivar el acceso de otras personas', 403);
+            }
+            const nombre = await nombreDeSesion();
+            if (!nombre) return error('No se pudo identificar a quien reactiva. Intenta de nuevo.', 503);
+            const actor = { id: sesion.personaId, tipo: 'persona', nombre, rol: sesion.rol };
+            const origen = auditoria.origenDe(event);
+            const tenant = await tenantService.getById(tenantId);
+            const puedeConSusPermisos = (p) => resolvePersonaPermisos(p, tenant).every((x) => puede(x));
+
+            if (!reactivarObra) {
+                const objetivo = await personaDelTenant(personaId);
+                if (!objetivo) return error('Persona no encontrada', 404);
+                if (objetivo.personaId === sesion.personaId) return error('No puedes reactivar tu propio acceso', 403);
+                if (!puedeConSusPermisos(objetivo)) {
+                    return error('No puedes reactivar el acceso de alguien que tiene permisos que tú no tienes', 403);
+                }
+                try {
+                    return success(await personaService.reactivarInicial(tenantId, personaId, { actor, origen }));
+                } catch (err) {
+                    const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                    if (estado) return error(err.message, estado);
+                    throw err;
+                }
+            }
+
+            const body = JSON.parse(event.body || '{}');
+            const obraId = typeof body.obraId === 'string' ? body.obraId.trim() : '';
+            if (!obraId) return error('Falta la obra', 400);
+            const hasta = Date.now() + PLAZO_REACTIVACION_MS;
+            const ahora = new Date();
+            const recien = Date.parse(credenciales.venceInicial(ahora)) - RECIEN_REACTIVADA_MS;
+            const resumen = {
+                reactivadas: 0,
+                yaReactivadas: 0,
+                omitidas: { temporalVigente: 0, sinPermiso: 0, sinInicial: 0, conflicto: 0 },
+                restantes: 0,
+            };
+            const pendientes = await personaService.pendientesDeActivacionEnObra(tenantId, obraId);
+            for (let i = 0; i < pendientes.length; i += 1) {
+                if (Date.now() > hasta) {
+                    resumen.restantes = pendientes.length - i;
+                    break;
+                }
+                const p = pendientes[i];
+                if (p.personaId === sesion.personaId || !puedeConSusPermisos(p)) {
+                    resumen.omitidas.sinPermiso += 1;
+                    continue;
+                }
+                if (p.credencialInicial && p.passwordTemporalVence && Date.parse(p.passwordTemporalVence) >= recien) {
+                    resumen.yaReactivadas += 1;
+                    continue;
+                }
+                try {
+                    await personaService.reactivarInicial(tenantId, p.personaId, { actor, origen, ahora });
+                    resumen.reactivadas += 1;
+                } catch (err) {
+                    const omision = OMISION_POR_CODIGO[err.codigo];
+                    if (!omision) throw err;
+                    resumen.omitidas[omision] += 1;
+                }
+            }
+            return success({ ...resumen, vence: credenciales.venceInicial(ahora) });
         }
 
         if (method === 'POST' && personaId && (action === 'activar-acceso' || action === 'enviar-activacion')) {

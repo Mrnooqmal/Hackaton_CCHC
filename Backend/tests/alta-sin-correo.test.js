@@ -98,11 +98,14 @@ test('con correo vacío o solo espacios, igual: sin atributo', async () => {
     assert.ok(!('email' in itemDe(b.personaId)));
 });
 
-test('sin correo, la persona queda pendiente de activación y sin contraseña', async () => {
+test('sin correo, la persona queda con la contraseña inicial de los cuatro dígitos, que vence en 7 días', async () => {
     const { persona } = await new PersonaService().crear(tenantId, { rut: RUT_SIN_CORREO, nombre: 'Juan', rol: 'trabajador' });
     const item = itemDe(persona.personaId);
-    assert.ok(!item.passwordHash, 'no hay contraseña que alguien pueda adivinar');
     assert.equal(item.activacionPendiente, true);
+    assert.equal(item.credencialInicial, true);
+    assert.equal(item.passwordTemporal, true);
+    assert.ok(Math.abs(Date.parse(item.passwordTemporalVence) - (Date.now() + 7 * 24 * 3600e3)) < 60e3);
+    assert.ok((await require('../lib/credenciales').verificar('1234', item.passwordHash, persona.personaId)).valido);
 });
 
 test('con correo, se guarda sin espacios alrededor', async () => {
@@ -176,18 +179,22 @@ test('carga masiva con filas sin correo: se crean todas', async () => {
 
 // ─── Entrar y recuperar ──────────────────────────────────────────────────────
 
-test('alguien sin correo no entra con los cuatro dígitos; activado en terreno, entra con la temporal y se le pide cambiarla', async () => {
+test('alguien sin correo entra con los cuatro dígitos y se le pide cambiarla; activado en terreno, los cuatro dígitos dejan de servir', async () => {
     const { persona } = await new PersonaService().crear(tenantId, { rut: RUT_SIN_CORREO, nombre: 'Juan', rol: 'trabajador' });
-    const antes = await auth.login({ body: JSON.stringify({ rut: RUT_SIN_CORREO, password: '1234' }), requestContext: { http: { sourceIp: '127.0.0.1' } } });
-    assert.equal(antes.statusCode, 401);
+    const ingresar = (password) => auth.login({ body: JSON.stringify({ rut: RUT_SIN_CORREO, password }), requestContext: { http: { sourceIp: '127.0.0.1' } } });
+    const inicial = await ingresar('1234');
+    assert.equal(inicial.statusCode, 200, inicial.body);
+    assert.equal(JSON.parse(inicial.body).data.requiereCambioPassword, true);
     const activacion = await pedirComo(adminId, 'POST', `/personas/${persona.personaId}/activar-acceso`, {});
     assert.equal(activacion.statusCode, 200, activacion.body);
     const { password } = JSON.parse(activacion.body).data;
-    const res = await auth.login({ body: JSON.stringify({ rut: RUT_SIN_CORREO, password }), requestContext: { http: { sourceIp: '127.0.0.1' } } });
+    assert.equal((await ingresar('1234')).statusCode, 401);
+    const res = await ingresar(password);
     assert.equal(res.statusCode, 200, res.body);
     const d = JSON.parse(res.body).data;
     assert.ok(d.token, 'tiene sesión');
-    assert.equal(d.user?.passwordTemporal ?? d.passwordTemporal ?? d.persona?.passwordTemporal, true);
+    assert.equal(d.requiereCambioPassword, true);
+    assert.ok(!('credencialInicial' in itemDe(persona.personaId)));
 });
 
 test('recuperar la contraseña sin correo: respuesta genérica, nada enviado ni guardado, y le dice a quién recurrir', async () => {

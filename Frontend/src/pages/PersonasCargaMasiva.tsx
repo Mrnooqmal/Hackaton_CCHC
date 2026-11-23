@@ -541,9 +541,9 @@ export default function PersonasCargaMasiva() {
                                 </div>
                                 {carga.creadas > 0 && (
                                     <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--text-secondary)', maxWidth: '72ch' }}>
-                                        Las personas quedan pendientes de activación: nadie puede entrar con su RUT hasta que se active.
-                                        Actívalas en terreno, con cada una presente, desde <strong>Activar accesos</strong> en Personas.
-                                        Quien tiene correo también puede activarse con el enlace, si lo marcaste.
+                                        Cada persona entra con su RUT y los cuatro primeros dígitos de su RUT durante 7 días, y al entrar elige su contraseña y crea su PIN.
+                                        Si a alguien se le vencen, en <strong>Activar accesos</strong> elige la obra y toca <strong>Reactivar acceso inicial</strong>.
+                                        Quien tiene correo también puede elegir su contraseña con el enlace, si lo marcaste.
                                     </p>
                                 )}
                                 {carga.filasFallidas.length > 0 && (

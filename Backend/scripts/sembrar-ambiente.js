@@ -172,27 +172,14 @@ if (!rutAdmin.valid) salir(`El RUT del administrador no es válido: ${datos.admi
     }
     const actor = { id: require('./entorno').operadorActual(), tipo: 'operador', nombre: 'Soporte de Build & Serve' };
     const origen = { canal: 'operador' };
-    const enlace = await personaService.enviarEnlaceActivacion(tenant.tenantId, persona.personaId, { actor, origen });
-    if (enlace.correo === 'enviado') {
-        console.log(`  Enlace de activación enviado a ${persona.email} (vence ${enlace.vence}).\n`);
-        return;
+    const vence = (await personaService.getItemById(persona.personaId)).passwordTemporalVence;
+    if (persona.email) {
+        const enlace = await personaService.enviarEnlaceActivacion(tenant.tenantId, persona.personaId, { actor, origen });
+        console.log(enlace.correo === 'enviado'
+            ? `  Enlace de activación enviado a ${persona.email} (vence ${enlace.vence}).`
+            : `  El enlace NO se envió (${enlace.correo}).`);
     }
-    const r = await personaService.emitirTemporal(tenant.tenantId, persona.personaId, {
-        horas: 2,
-        actor,
-        operacion: 'credencial.acceso_activado',
-        exigir: 'pendiente',
-        origen,
-        aviso: {
-            asunto: 'Tu acceso a Build & Serve fue activado',
-            contenido: 'Soporte de Build & Serve activó tu acceso al crear tu empresa. Si no lo pediste, escribe a contacto@buildandserve.cl.',
-        },
-    });
-    console.log(`\n  El enlace NO se envió (${enlace.correo}). Entrega esta contraseña temporal por un canal seguro y bórrala de tu terminal:`);
-    console.log(`    RUT:                 ${persona.rut}`);
-    console.log(`    Contraseña temporal: ${r.password}`);
-    console.log(`    Vence:               ${r.vence}`);
-    console.log('  Se cambia obligatoriamente en el primer ingreso.\n');
+    console.log(`  El administrador entra con su RUT y los cuatro primeros dígitos de su RUT hasta ${vence}; se le pide cambiarla y crear su PIN en el primer ingreso.\n`);
 })().catch((err) => {
     console.error(`\n  Falló la siembra: ${err.message}\n`);
     process.exit(1);

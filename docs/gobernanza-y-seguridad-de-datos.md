@@ -1972,7 +1972,7 @@ encargo con cada constructora. Sin ella, la plataforma puede informar y redactar
 pero no firmar por la responsable.
 
 ### D-40. Las cuentas nuevas se activan en terreno, con una contraseña temporal que vence
-**Estado: decidido el 20 de noviembre de 2026 por Adrean; implementado en `pruebas`, por desplegar antes de la visita del 3 de diciembre. Reemplaza D-13.**
+**Estado: decidido el 20 de noviembre de 2026 por Adrean. Reemplaza D-13. Modificada por D-41 el 22 de noviembre de 2026: las altas vuelven a entrar con los cuatro dígitos, ahora con vencimiento; la activación con temporal de 2 horas y el enlace por correo siguen.**
 
 **Qué lo motivó.** Con D-13, quien conocía el RUT de un trabajador podía entrar antes que él con los cuatro primeros dígitos, crear el PIN y firmar a su nombre. La firma es el centro del sistema: ese riesgo ya no se acepta.
 
@@ -1989,6 +1989,25 @@ pero no firmar por la responsable.
 **Riesgo que queda.** Quien activa conoce la temporal durante 2 horas. Lo acotan la presencia de la persona, el registro con su nombre, el aviso en la bandeja y el cambio obligatorio; si alguien entra primero y crea el PIN, la persona lo nota porque ya no puede crear el suyo.
 
 **Verificación.** `Backend/tests/contrasena-temporal.test.js`, `activar-acceso.test.js`, `alta-sin-correo.test.js`, `credencial-entre-empresas.test.js` y `acceso-persona-frontend.test.js`; 31 sabotajes atrapados entre la parte a (16) y la b (15). La prueba de punta a punta activa a la trabajadora por la API y comprueba que los cuatro dígitos no abren nada.
+
+### D-41. La contraseña inicial vuelve a los cuatro dígitos del RUT, con vencimiento de 7 días
+**Estado: decidido el 22 de noviembre de 2026 por Adrean. Modifica D-40.**
+
+**Qué lo motivó.** Activar a cada persona en terreno, una por una y con ella presente, es demasiado trabajo para las obras antes de la visita del 3 de diciembre.
+
+**Qué se decidió.**
+- **Las altas quedan con la contraseña inicial:** los cuatro primeros dígitos del número del RUT (sin el dígito verificador). Vale para el alta individual, la carga masiva, `crear-empresa.js` y `sembrar-ambiente.js`. En el primer ingreso se cambia la contraseña y se crea el PIN, como antes de D-40. La ficha queda con `credencialInicial`, `passwordTemporal`, `passwordTemporalVence` y `activacionPendiente`.
+- **La contraseña inicial vence a los 7 días** del alta si la persona no ha entrado. Vencida, el ingreso responde exactamente lo mismo que con una contraseña equivocada: «RUT o contraseña incorrectos. Si es tu primer ingreso y tu contraseña inicial venció, pide que reactiven tu acceso.» Un mensaje propio de «vencida» le confirmaría a quien prueba un RUT ajeno que esa persona existe y todavía no entra, o sea a quién apuntar en la próxima reactivación.
+- **Reactivar acceso inicial** (`POST /personas/{id}/reactivar-inicial` y, por obra, `POST /personas/reactivar-inicial` con `{ obraId }`), con el permiso `persona.activar_acceso` y la misma regla de D-40: nadie se reactiva a sí mismo ni a quien tiene permisos que él no tiene. Da otros 7 días con los cuatro dígitos a quien todavía no eligió su contraseña, incluidas las fichas pendientes de D-40 sin contraseña. No toca a quien tiene una temporal de 2 horas vigente. Cada reactivación va en una transacción condicionada con el aviso en la bandeja de la persona y el registro sellado de la auditoría (`credencial.inicial_reactivada`), y no borra un enlace de activación por correo pendiente. Por obra, cada petición trabaja como mucho 4 segundos (la Lambda corta a los 6) y dice cuántas quedan; la pantalla repite hasta terminar, y una reactivación de los últimos 10 minutos no se repite ni vuelve a avisar.
+- **Se mantienen** «Activar acceso» con la temporal de 2 horas (que reemplaza a los cuatro dígitos desde ese momento) y el enlace por correo de 72 horas.
+- **D1 no cambia:** cada ficha tiene su propia contraseña inicial, y los cuatro dígitos abren solo las empresas donde la inicial de esa ficha sigue vigente.
+- **Migración** (`scripts/migrar-acceso-inicial.js --stage <dev|prod> [--aplicar]`): quien todavía no entra queda con la inicial vigente por 7 días desde que se corre, por el mismo camino que el botón, con el operador como actor. Cubre las fichas de D-13 sin vencimiento (prod), las pendientes de D-40 (dev) y las temporales vencidas. Por omisión solo cuenta, y es idempotente. Se corre justo después de desplegar el backend: entre una cosa y la otra, las fichas de D-13 no entran.
+
+**Riesgo aceptado.** Vuelve el riesgo que D-40 había cerrado: durante 7 días, cualquiera que conozca el RUT de una persona que todavía no entra puede entrar antes que ella, elegir la contraseña, crear el PIN y firmar a su nombre. Cada reactivación abre esa ventana de nuevo, y por obra la abre para todo un grupo a la vez. Lo acotan el vencimiento, el registro de quién reactivó, el aviso en la bandeja y que la persona nota que ya no puede crear su PIN. El manual y las pantallas piden entrar pronto y lo dicen con estas palabras.
+
+**Opción que queda para después:** pedir además la fecha de nacimiento en el primer ingreso cuando la ficha la tiene. Cierra buena parte del riesgo (la fecha de nacimiento no es tan pública como el RUT), a cambio de fricción en terreno. No se adopta por ahora.
+
+**Verificación.** `Backend/tests/reactivar-acceso-inicial.test.js` (17 pruebas: por ficha, por obra, corte por tiempo, D1, migración), y las de `contrasena-temporal`, `alta-sin-correo`, `activar-acceso`, `acceso-persona-frontend` y `plantilla-personas` actualizadas; `Frontend/tests/e2e/reactivar-acceso.spec.mjs` (4). 22 sabotajes atrapados (19 de backend, 3 de pantalla). La prueba de punta a punta comprueba que el alta entra con los cuatro dígitos y vence en 7 días, que la activación en terreno los anula, que la reactivación rechaza a quien ya eligió su contraseña y que los cuatro dígitos abren solo la empresa donde siguen vigentes.
 
 ## 4. Hallazgos priorizados
 

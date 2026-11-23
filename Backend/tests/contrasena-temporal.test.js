@@ -196,7 +196,7 @@ test('no emite para una persona de otra empresa', async () => {
     assert.equal((await todo()).INBOX_TABLE.length, 0);
 });
 
-test('una temporal vencida no abre la cuenta y lo dice', async () => {
+test('una temporal vencida no abre la cuenta y responde igual que una contraseña equivocada', async () => {
     const r = await emitir();
     await docClient.send(new UpdateCommand({
         TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
@@ -204,12 +204,12 @@ test('una temporal vencida no abre la cuenta y lo dice', async () => {
     }));
     const entrada = await ingresar(r.password);
     assert.equal(entrada.status, 401);
-    assert.match(entrada.cuerpo.error, /venció/);
     assert.ok(!entrada.cuerpo.data?.token);
+    assert.match(entrada.cuerpo.error, /pide que reactiven tu acceso/);
 
     const otra = await ingresar('Equivocada-1');
     assert.equal(otra.status, 401);
-    assert.doesNotMatch(otra.cuerpo.error, /venció/, 'una contraseña equivocada no revela nada');
+    assert.deepEqual(otra.cuerpo, entrada.cuerpo, 'una vencida no se distingue de una equivocada');
 });
 
 test('al cambiar la temporal se borra el vencimiento', async () => {
@@ -232,22 +232,30 @@ test('al cambiar la temporal se borra el vencimiento', async () => {
     assert.equal(item.activacionPendiente, undefined, 'elegir su contraseña termina la activación');
 });
 
-test('una ficha nueva queda pendiente de activación, sin contraseña que adivinar', async () => {
+test('una ficha nueva entra con los cuatro dígitos durante 7 días; vencidos, responde igual que una contraseña equivocada', async () => {
     const item = await new PersonaService().getItemById(personaId);
     assert.equal(item.activacionPendiente, true);
-    assert.ok(!item.passwordHash);
-    assert.equal((await ingresar('1234')).status, 401);
-});
+    assert.equal(item.credencialInicial, true);
+    assert.equal((await ingresar('1234')).status, 200);
 
-test('una ficha vieja con los cuatro dígitos no entra, y se puede activar como una pendiente', async () => {
     await docClient.send(new UpdateCommand({
         TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
-        UpdateExpression: 'SET passwordHash = :h, passwordTemporal = :si REMOVE activacionPendiente',
+        UpdateExpression: 'SET passwordTemporalVence = :v', ExpressionAttributeValues: { ':v': new Date(Date.now() - 1000).toISOString() },
+    }));
+    const vencida = await ingresar('1234');
+    assert.equal(vencida.status, 401);
+    assert.deepEqual(vencida.cuerpo, (await ingresar('9999')).cuerpo);
+});
+
+test('una ficha vieja con los cuatro dígitos y sin vencimiento no entra, y se puede activar como una pendiente', async () => {
+    await docClient.send(new UpdateCommand({
+        TableName: 'PERSONAS_TABLE', Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+        UpdateExpression: 'SET passwordHash = :h, passwordTemporal = :si REMOVE activacionPendiente, passwordTemporalVence, credencialInicial',
         ExpressionAttributeValues: { ':h': await credenciales.hashear('1234', personaId), ':si': true },
     }));
     const vieja = await ingresar('1234');
     assert.equal(vieja.status, 401);
-    assert.match(vieja.cuerpo.error, /venció/);
+    assert.match(vieja.cuerpo.error, /pide que reactiven tu acceso/);
 
     const r = await emitir();
     assert.equal((await ingresar(r.password)).status, 200);

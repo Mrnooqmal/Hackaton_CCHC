@@ -10,13 +10,15 @@ const abrir = async () => {
     return wb;
 };
 
-test('las instrucciones no prometen los cuatro dígitos y explican la activación', async () => {
+test('las instrucciones explican la contraseña inicial, que vence a los 7 días y cómo reactivarla', async () => {
     const wb = await abrir();
     const texto = [];
     wb.getWorksheet('Instrucciones').eachRow((r) => texto.push(String(r.getCell(1).value || '')));
-    const todo = texto.join('\n');
-    assert.ok(!/4 digitos|4 dígitos|cuatro|primeros\s+\d|contrase[nñ]a temporal/i.test(todo), todo);
-    assert.match(todo, /pendientes de activacion/);
+    const siete = texto.find((t) => t.startsWith('7.'));
+    assert.match(siete, /4 primeros digitos de su RUT/);
+    assert.match(siete, /vence a los 7 dias/);
+    assert.match(siete, /reactiva/);
+    assert.match(siete, /cambiarla y crear su PIN/);
 });
 
 test('fechaNacimiento viene en formato texto en la columna y en las filas con desplegable', async () => {
