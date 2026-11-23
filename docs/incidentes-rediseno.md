@@ -214,6 +214,8 @@ Sin verificar: si las DIAT de 2025 y 2026 siguen en el bucket de evidencia actua
 
 ## 10. Pendientes de decisión
 
+- **Medidas como documento (decidido el 22 de noviembre, sin implementar):** las medidas correctivas se definirán subiendo un documento al caso, en vez de guardarse como datos dentro de la plataforma. Antes de implementarlo hay que planificar qué reemplaza a la sección Medidas, al paso "medidas" del siguiente paso y del cierre, al requisito "Al menos una medida correctiva", a los avisos a responsables, a las medidas que muestra la obra, y qué pasa con las medidas ya guardadas.
+
 - Plazos internos para clasificar e investigar: no son normativos.
 - Indicadores por sexo: tocan `RegistroService`, compartido con los ítems 46 y 47. Acordarlo antes de cambiarlo.
 - Qué criterios marcan un incidente como de alto potencial: el artefacto propone las dos preguntas de la guía de Mutual.
