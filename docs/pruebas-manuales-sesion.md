@@ -1,6 +1,6 @@
 # Pruebas manuales de la sesión en cookie
 
-Para el equipo, en `https://dev.buildandserve.cl`, con la versión candidata a prod (`sesion-cookie`). Cada persona vuelve a entrar una vez: la sesión anterior, guardada en el navegador, deja de servir.
+Para el equipo, en `https://dev.buildandserve.cl`, una vez desplegada la cookie (se hace en `sesion-cookie` y llega a `pruebas` con cherry-pick). Cada persona vuelve a entrar una vez: la sesión anterior, guardada en el navegador, deja de servir.
 
 Cada caso se hace en tres lugares, porque las cookies se comportan distinto en cada uno:
 
