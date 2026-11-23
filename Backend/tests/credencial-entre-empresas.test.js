@@ -251,3 +251,66 @@ test('H-A: ya no existe el restablecimiento con contraseña devuelta en la respu
     assert.equal((await new PersonaService().getItemById(enA)).passwordHash, antes);
     assert.equal(typeof PersonaService.prototype.resetPassword, 'undefined');
 });
+
+const scanPaginado = () => {
+    const anterior = docClient.send;
+    const pedidos = [];
+    docClient.send = async function paginado(cmd) {
+        if (cmd.constructor.name !== 'ScanCommand') return anterior.call(this, cmd);
+        const { ExclusiveStartKey, ...resto } = cmd.input;
+        pedidos.push(ExclusiveStartKey || null);
+        if (pedidos.length > 20) throw new Error('El Scan no avanza de página: repite la misma.');
+        const { Items = [] } = await anterior.call(this, new cmd.constructor(resto));
+        const pagina = ExclusiveStartKey ? ExclusiveStartKey.pagina : 0;
+        const desde = Math.max(0, pagina - 1);
+        const items = pagina === 0 ? [] : Items.slice(desde, desde + 1);
+        const hayMas = pagina === 0 ? Items.length > 0 : desde + 1 < Items.length;
+        return { Items: items, ...(hayMas ? { LastEvaluatedKey: { pagina: pagina + 1 } } : {}) };
+    };
+    return pedidos;
+};
+
+test('el ingreso encuentra la ficha aunque el Scan la devuelva en una página posterior', async () => {
+    const a = await empresa('Constructora A');
+    const p = await ficha(a);
+    await fijar(p, a, 'Clave-de-a-1');
+    const pedidos = scanPaginado();
+
+    assert.deepEqual(await empresasQueAbre('Clave-de-a-1'), [a]);
+    assert.ok(pedidos.length >= 2, 'recorrió más de una página');
+});
+
+test('el ingreso junta las fichas de todas las páginas del Scan, no solo la última', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const c = await empresa('Constructora C');
+    for (const t of [a, b, c]) await fijar(await ficha(t), t, 'Misma-clave-1');
+    const pedidos = scanPaginado();
+
+    assert.deepEqual(await empresasQueAbre('Misma-clave-1'), [a, b, c].sort());
+    assert.equal(pedidos.length, 4);
+});
+
+test('la activación por enlace llega a la ficha hermana aunque esté en otra página del Scan', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const enA = await ficha(a, { email: 'juan@ejemplo.cl' });
+    const enB = await ficha(b, { email: 'juan@ejemplo.cl' });
+    await fijar(enA, a, 'Anterior-1');
+    await fijar(enB, b, 'Anterior-1');
+    scanPaginado();
+
+    await restablecerPorCorreo(enA, a, 'Nueva-clave-1');
+    assert.ok(await coincide(enA, 'Nueva-clave-1'));
+    assert.ok(await coincide(enB, 'Nueva-clave-1'));
+});
+
+test('buscar por RUT vacío no consulta DynamoDB y no encuentra a nadie', async () => {
+    const svc = new PersonaService();
+    const pedidos = scanPaginado();
+    assert.deepEqual(await svc.getAllByRutGlobal(undefined), []);
+    assert.deepEqual(await svc.getAllByRutGlobal(''), []);
+    assert.deepEqual(await svc.getAllByRutGlobal('   '), []);
+    assert.equal(await svc.getByRutGlobal(null), null);
+    assert.equal(pedidos.length, 0);
+});
