@@ -307,6 +307,15 @@ const pendienteDeActivacion = (persona) => Boolean(persona?.activacionPendiente)
 
 const CONDICION_PENDIENTE = '(activacionPendiente = :si OR (passwordTemporal = :si AND attribute_not_exists(passwordTemporalVence)))';
 
+const DIAS_INICIAL = 7;
+
+const passwordInicialDeRut = (rut) => {
+    const digitos = String(rut || '').replace(/[^0-9kK]/g, '').slice(0, -1).replace(/[^0-9]/g, '');
+    return digitos.length >= 4 ? digitos.slice(0, 4) : null;
+};
+
+const venceInicial = (ahora = new Date()) => new Date(ahora.getTime() + DIAS_INICIAL * 24 * 3600 * 1000).toISOString();
+
 const hashTokenEnlace = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
 module.exports = {
@@ -315,6 +324,9 @@ module.exports = {
     temporalVencida,
     pendienteDeActivacion,
     CONDICION_PENDIENTE,
+    DIAS_INICIAL,
+    passwordInicialDeRut,
+    venceInicial,
     hashTokenEnlace,
     ALFABETO_TEMPORAL,
     // Solo para pruebas: la caché es por contenedor y no se vacía en producción.

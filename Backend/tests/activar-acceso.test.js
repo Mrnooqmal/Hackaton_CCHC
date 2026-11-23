@@ -100,10 +100,11 @@ test('sin el permiso, 403 y nada escrito', async () => {
 });
 
 test('una persona de otra empresa: 404 y nada escrito', async () => {
+    const antes = await new PersonaService().getItemById(ids.deOtraEmpresa);
     const r = await pedir('admin', 'activar-acceso', ids.deOtraEmpresa);
     assert.equal(r.status, 404);
     assert.equal((await filas('INBOX_TABLE')).length, 0);
-    assert.ok(!(await new PersonaService().getItemById(ids.deOtraEmpresa)).passwordHash);
+    assert.deepEqual(await new PersonaService().getItemById(ids.deOtraEmpresa), antes);
 });
 
 test('nadie activa su propio acceso', async () => {
@@ -180,7 +181,7 @@ test('el alta individual con correo manda el enlace, nunca una contraseña', asy
     assert.equal(correos[0].email, 'luis@ejemplo.cl');
 });
 
-test('la carga masiva con correo manda enlaces de activación, nunca una contraseña', async () => {
+test('la carga masiva con correo manda enlaces de activación, y todas quedan con la contraseña inicial que vence en 7 días', async () => {
     const cola = require('./doble-cola').crearDobleCola();
     try {
         const s = SESIONES.admin();
@@ -202,7 +203,9 @@ test('la carga masiva con correo manda enlaces de activación, nunca una contras
         assert.match(correos[0].enlace, /activar=1/);
         const nuevas = (await filas('PERSONAS_TABLE')).filter((i) => i.rol === 'Persona trabajadora');
         assert.equal(nuevas.length, 2);
-        assert.ok(nuevas.every((i) => i.activacionPendiente === true && !i.passwordHash));
+        assert.ok(nuevas.every((i) => i.activacionPendiente === true && i.credencialInicial === true && i.passwordTemporal === true));
+        assert.ok(nuevas.every((i) => Math.abs(Date.parse(i.passwordTemporalVence) - (Date.now() + 7 * 24 * 3600e3)) < 60e3));
+        assert.ok(correos.every((c) => !/\b1717\b/.test(JSON.stringify(c))));
     } finally {
         cola.restaurar();
     }

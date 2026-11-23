@@ -42,6 +42,9 @@ const SIN_RESTABLECIMIENTO = '(attribute_not_exists(pinRestablecido) OR pinResta
 /** Error de PIN con un código estable, para que la ruta responda el estado HTTP
  *  correcto sin interpretar mensajes. */
 const errorPin = (mensaje, codigo) => Object.assign(new Error(mensaje), { codigo });
+
+const temporalDeActivacionVigente = (item, ahora) => Boolean(item.passwordTemporal) && !item.credencialInicial
+    && Boolean(item.passwordTemporalVence) && !credenciales.temporalVencida(item, ahora);
 const { fechaHoraChile } = require('../utils/fechaChile');
 const { Persona, ROLES } = require('../models/Persona');
 const cifradoCampo = require('../cifradoCampo');
@@ -212,7 +215,15 @@ class PersonaService {
             personaData.passwordTemporal = false;
         } else if (tieneAccesoWeb) {
             personaData.activacionPendiente = true;
-            personaData.passwordTemporal = false;
+            const inicial = credenciales.passwordInicialDeRut(rutValidation.formatted);
+            if (inicial) {
+                personaData.passwordHash = await hashPassword(inicial, resolvedPersonaId);
+                personaData.passwordTemporal = true;
+                personaData.passwordTemporalVence = credenciales.venceInicial(new Date(now));
+                personaData.credencialInicial = true;
+            } else {
+                personaData.passwordTemporal = false;
+            }
         }
 
         await this._cifrarCamposSensibles(tenantId, personaData);
@@ -393,7 +404,7 @@ class PersonaService {
         await Promise.all(hermanas.map((h, i) => this.dynamo.send(new UpdateCommand({
             TableName: this.table,
             Key: { PK: `TENANT#${h.tenantId}`, SK: `PERSONA#${h.personaId}` },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente, credencialInicial',
             ExpressionAttributeValues: {
                 ':passwordHash': hashes[i],
                 ':passwordTemporal': passwordTemporal,
@@ -999,7 +1010,7 @@ class PersonaService {
                             UpdateExpression: 'SET passwordHash = :hash, passwordTemporal = :si, passwordTemporalVence = :vence, updatedAt = :en,'
                                 + (exigir === 'pendiente' ? ' activacionPendiente = :si,' : '')
                                 + ' credencialHistorial = list_append(if_not_exists(credencialHistorial, :vacia), :evento)'
-                                + ' REMOVE resetTokenHash, resetTokenExpiry',
+                                + ' REMOVE resetTokenHash, resetTokenExpiry, credencialInicial',
                             ConditionExpression: condiciones.join(' AND '),
                             ExpressionAttributeValues: {
                                 ':hash': passwordHash,
@@ -1101,6 +1112,120 @@ class PersonaService {
         const r = await sendActivacionEmail(item.email, item.nombre, enlace, horas).catch((err) => ({ sent: false, err }));
         if (!r.sent) registrarFallo('correo.activacion', r.err || new Error(r.error || 'no enviado'), { personaId });
         return { correo: r.sent ? 'enviado' : (r.code === 'DIRECCION_SUPRIMIDA' ? 'suprimido' : 'fallido'), vence };
+    }
+
+    async reactivarInicial(tenantId, personaId, { actor, origen = null, ahora = new Date() }) {
+        if (!actor?.id || !actor?.nombre) throw errorPin('Falta quién reactiva el acceso inicial', 'TEMPORAL_SIN_ACTOR');
+        const auditoria = require('../gobernanza/auditoria');
+
+        const item = await this.getItemById(personaId);
+        if (!item || item.tenantId !== tenantId) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
+        if (!item.tieneAccesoWeb) throw errorPin('Esta persona no tiene acceso web.', 'SIN_ACCESO_WEB');
+        if (!credenciales.pendienteDeActivacion(item)) {
+            throw errorPin('Esta persona ya eligió su contraseña: su acceso está activado.', 'TEMPORAL_CONFLICTO');
+        }
+        if (temporalDeActivacionVigente(item, ahora)) {
+            throw errorPin('Esta persona tiene una contraseña temporal vigente: que entre con ella, o espera a que venza.', 'TEMPORAL_VIGENTE');
+        }
+        const ficha = await this.getById(personaId);
+        const inicial = credenciales.passwordInicialDeRut(ficha?.rut);
+        if (!inicial) throw errorPin('El RUT de esta persona no da una contraseña inicial: activa su acceso.', 'SIN_INICIAL');
+
+        const en = ahora.toISOString();
+        const vence = credenciales.venceInicial(ahora);
+        const passwordHash = item.credencialInicial && item.passwordHash ? item.passwordHash : await hashPassword(inicial, personaId);
+        const evento = { evento: 'credencial.inicial_reactivada', por: actor.id, tipo: actor.tipo || 'persona', nombre: actor.nombre, en, vence };
+
+        const mensaje = construirMensaje({
+            recipientId: personaId,
+            baseMessageId: uuidv4(),
+            now: en,
+            senderId: actor.id,
+            senderName: actor.nombre,
+            senderRol: 'system',
+            type: 'alert',
+            priority: 'high',
+            subject: 'Tu acceso inicial a Build & Serve fue reactivado',
+            content: `${actor.nombre} reactivó tu acceso inicial. Puedes entrar con los cuatro primeros dígitos de tu RUT durante ${credenciales.DIAS_INICIAL} días. `
+                + 'Si ya habías entrado o no lo pediste, avisa a tu empresa o al prevencionista de tu obra.',
+            linkedEntity: { type: 'persona', id: personaId },
+        });
+
+        const registro = await auditoria.sellar(auditoria.construir({
+            tenantId,
+            operacion: 'credencial.inicial_reactivada',
+            actor: { id: actor.id, tipo: actor.tipo || 'persona', ...(actor.rol ? { rol: actor.rol } : {}) },
+            recurso: { tipo: 'persona', id: personaId },
+            titulares: [personaId],
+            origen,
+            detalle: { vigenciaDias: credenciales.DIAS_INICIAL },
+        }, { ahora }));
+
+        try {
+            await this.dynamo.send(new TransactWriteCommand({
+                TransactItems: [
+                    {
+                        Update: {
+                            TableName: this.table,
+                            Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
+                            UpdateExpression: 'SET passwordHash = :hash, passwordTemporal = :si, passwordTemporalVence = :vence, activacionPendiente = :si,'
+                                + ' credencialInicial = :si, updatedAt = :en,'
+                                + ' credencialHistorial = list_append(if_not_exists(credencialHistorial, :vacia), :evento)',
+                            ConditionExpression: [
+                                item.passwordHash ? 'passwordHash = :anterior' : '(attribute_not_exists(passwordHash) OR passwordHash = :nulo)',
+                                credenciales.CONDICION_PENDIENTE,
+                            ].join(' AND '),
+                            ExpressionAttributeValues: {
+                                ':hash': passwordHash,
+                                ':si': true,
+                                ':vence': vence,
+                                ':en': en,
+                                ':vacia': [],
+                                ':evento': [evento],
+                                ...(item.passwordHash ? { ':anterior': item.passwordHash } : { ':nulo': null }),
+                            },
+                        },
+                    },
+                    { Put: { TableName: INBOX_TABLE, Item: mensaje, ConditionExpression: 'attribute_not_exists(messageId)' } },
+                    { Put: { TableName: process.env.AUDITORIA_ACCESOS_TABLE, Item: registro, ConditionExpression: 'attribute_not_exists(sk)' } },
+                ],
+            }));
+        } catch (err) {
+            const razones = err.CancellationReasons || [];
+            if (err.name === 'TransactionCanceledException' && razones[0]?.Code === 'ConditionalCheckFailed') {
+                throw errorPin('La cuenta de esta persona cambió mientras se procesaba la solicitud. Revisa su estado y vuelve a intentar.', 'TEMPORAL_CONFLICTO');
+            }
+            throw err;
+        }
+
+        try {
+            await auditoria.detectar(registro, { ahora });
+        } catch (err) {
+            registrarFallo('auditoria.deteccion', err, { operacion: 'credencial.inicial_reactivada' });
+        }
+
+        return { vence };
+    }
+
+    async pendientesDeActivacionEnObra(tenantId, obraId) {
+        const items = [];
+        let desde;
+        do {
+            const r = await this.dynamo.send(new QueryCommand({
+                TableName: this.table,
+                KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+                FilterExpression: `contains(obraIds, :obra) AND tieneAccesoWeb = :si AND #estado <> :desv AND #estado <> :susp AND ${credenciales.CONDICION_PENDIENTE}`,
+                ExpressionAttributeNames: { '#estado': 'estado' },
+                ExpressionAttributeValues: {
+                    ':pk': `TENANT#${tenantId}`, ':prefix': 'PERSONA#', ':obra': obraId, ':si': true,
+                    ':desv': 'desvinculado', ':susp': 'suspendido',
+                },
+                ...(desde ? { ExclusiveStartKey: desde } : {}),
+            }));
+            items.push(...(r.Items || []));
+            desde = r.LastEvaluatedKey;
+        } while (desde);
+        return items.map((item) => Persona.fromDynamoItem(item));
     }
 
     /**

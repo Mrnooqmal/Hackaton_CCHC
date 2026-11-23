@@ -34,12 +34,17 @@ Lo que ves en **Personas** depende de dónde estás:
 ![Formulario de nueva persona](/img/personas/nueva-persona.png)
 
 ::: info Su primer acceso
-Toda persona registrada queda **pendiente de activación**: nadie puede entrar con su RUT hasta
-que se active su acceso. Si tiene correo, le llega un enlace para elegir su contraseña (vence en
-72 horas). En terreno, con la persona presente, abre su ficha y toca **Activar acceso**, o usa
-**Activar accesos** en Personas para activar a varias seguidas: aparece una **contraseña
-temporal** que vence en **2 horas**. La persona entra en ese momento desde su teléfono, elige su
-contraseña y crea su PIN de firma.
+Toda persona registrada entra la primera vez con su RUT y los **cuatro primeros dígitos de su
+RUT** como contraseña, durante **7 días**. Al entrar elige su contraseña y crea su PIN de firma.
+Si pasan los 7 días sin que entre, abre su ficha y toca **Reactivar acceso inicial**, o en
+**Activar accesos** elige la obra y toca **Reactivar acceso inicial** para darles otros 7 días a
+todas las personas de esa obra que todavía no entran. Queda registrado quién lo hizo, y cada
+persona recibe un aviso.
+
+Mientras tanto, cualquiera que conozca su RUT puede entrar como esa persona: pídeles que entren
+pronto. Si prefieres no esperar, con la persona presente toca **Activar acceso**: aparece una
+**contraseña temporal** que vence en **2 horas** y los cuatro dígitos dejan de servir. Si tiene
+correo, también le llega un enlace para elegir su contraseña (vence en 72 horas).
 :::
 
 > **Rol ≠ Cargo.** El **rol** es el nivel de acceso en la plataforma. El **cargo** es su oficio
@@ -117,7 +122,8 @@ El **rol** define qué puede hacer en la plataforma. El **cargo** define su trab
 con eso, qué documentos y capacitaciones necesita.
 
 **Creé a la persona, pero no puede entrar.**
-Su acceso está pendiente de activación: actívalo desde su ficha con la persona presente. Si la
+Si no ha entrado nunca, entra con los cuatro primeros dígitos de su RUT. Si pasaron los 7 días,
+toca **Reactivar acceso inicial** en su ficha, o activa su acceso con la persona presente. Si la
 contraseña temporal venció sin usarse, toca **Activar de nuevo**. Si ya eligió su contraseña y no
 la recuerda, puede usar **¿Olvidaste tu contraseña?** (si tiene correo registrado).
 
