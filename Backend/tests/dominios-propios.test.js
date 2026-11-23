@@ -72,13 +72,79 @@ test('el change set de solo dev se rechaza si toca cualquier recurso que no sea 
 
 test('el modo --solo-dev conserva cada parámetro de prod y fija solo los de dev', () => {
     const script = leer('infra', 'desplegar-infra-frontend.sh');
-    const parametros = [...plantilla().split('\nConditions:')[0].matchAll(/\n {2}([A-Za-z]+):\n {4}Type:/g)].map((m) => m[1]);
-    const previos = (/\$\(previo ([A-Za-z ]+)\)/.exec(script) || [])[1].trim().split(/\s+/);
-    const fijados = [...script.matchAll(/"ParameterKey=([A-Za-z]+),ParameterValue=/g)].map((m) => m[1]);
-    assert.deepEqual([...previos, ...fijados].sort(), [...parametros].sort());
-    assert.deepEqual(fijados.sort(), ['CertificadoDev', 'CspDev', 'ReportingEndpointsDev']);
-    assert.match(script, /create-change-set/);
+    const { parametros } = require(path.join(RAIZ, 'infra', 'parametros-solo-dev.js'));
+    const lista = parametros({ cspDev: "default-src 'self'", reporteDev: 'https://api-dev.buildandserve.cl', certificadoDev: '' });
+    const nombres = [...plantilla().split('\nConditions:')[0].matchAll(/\n {2}([A-Za-z]+):\n {4}Type:/g)].map((m) => m[1]);
+    assert.deepEqual(lista.map((p) => p.ParameterKey).sort(), [...nombres].sort());
+    assert.deepEqual(lista.filter((p) => !p.UsePreviousValue).map((p) => p.ParameterKey).sort(), ['CertificadoDev', 'CspDev', 'ReportingEndpointsDev']);
+    for (const p of lista) assert.ok(p.UsePreviousValue === true ? !('ParameterValue' in p) : typeof p.ParameterValue === 'string', p.ParameterKey);
+    assert.match(script, /node "\$TMP\/wt\/infra\/parametros-solo-dev\.js" > "\$TMP\/parametros\.json"/);
+    assert.match(script, /create-change-set[\s\S]*--parameters "file:\/\/\$TMP\/parametros\.json"/);
+    assert.doesNotMatch(script, /ParameterKey=[A-Za-z]+,/);
     assert.doesNotMatch(script.slice(script.indexOf('if [ -n "$SOLO_DEV" ]'), script.indexOf('CSP="$(csp_para "$API_PROD"')), /^\s*aws cloudformation (execute-change-set|deploy)\b/m);
+});
+
+test('la CLI de AWS acepta los parámetros de --solo-dev con una CSP real y los envía sin alterar', async () => {
+    const { spawn, spawnSync } = require('child_process');
+    const http = require('http');
+    const os = require('os');
+    assert.equal(spawnSync('aws', ['--version']).status, 0, 'esta prueba necesita la CLI de AWS instalada');
+
+    const hashes = "'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=' 'sha256-Ab/c+D=='";
+    const S3 = 'https://*.s3.amazonaws.com https://*.s3.us-east-1.amazonaws.com';
+    const cspDev = `default-src 'self'; script-src 'self' ${hashes}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: ${S3}; connect-src 'self' https://n2waslgjca.execute-api.us-east-1.amazonaws.com https://api-dev.buildandserve.cl ${S3}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; report-uri https://n2waslgjca.execute-api.us-east-1.amazonaws.com/csp/reporte; report-to csp`;
+    const certificadoDev = 'arn:aws:acm:us-east-1:772706200162:certificate/f95061c0-9096-4713-b530-e8ef8381aa4a';
+    const r = spawnSync('node', [path.join(RAIZ, 'infra', 'parametros-solo-dev.js')], {
+        encoding: 'utf8', env: { ...process.env, CSP_DEV: cspDev, REPORTE_DEV: 'https://api-dev.buildandserve.cl', CERT_DEV: certificadoDev },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parametros-solo-dev-'));
+    const archivo = path.join(dir, 'parametros.json');
+    fs.writeFileSync(archivo, r.stdout);
+    fs.writeFileSync(path.join(dir, 'plantilla.yml'), 'Resources: {}\n');
+
+    let cuerpo = '';
+    const servidor = http.createServer((req, res) => {
+        req.on('data', (d) => { cuerpo += d; });
+        req.on('end', () => { res.writeHead(400, { 'Content-Type': 'text/xml' }); res.end('<ErrorResponse><Error><Code>Prueba</Code><Message>prueba</Message></Error></ErrorResponse>'); });
+    });
+    await new Promise((ok) => servidor.listen(0, '127.0.0.1', ok));
+    try {
+        const salida = await new Promise((ok) => {
+            const p = spawn('aws', ['cloudformation', 'create-change-set', '--stack-name', 'BuildAndServe-frontend',
+                '--change-set-name', 'solo-dev-prueba', '--template-body', `file://${path.join(dir, 'plantilla.yml')}`,
+                '--capabilities', 'CAPABILITY_NAMED_IAM', '--parameters', `file://${archivo}`,
+                '--endpoint-url', `http://127.0.0.1:${servidor.address().port}`, '--region', 'us-east-1'], {
+                env: { PATH: process.env.PATH, HOME: dir, AWS_ACCESS_KEY_ID: 'PRUEBA', AWS_SECRET_ACCESS_KEY: 'PRUEBA', AWS_MAX_ATTEMPTS: '1', AWS_CONFIG_FILE: '/dev/null', AWS_SHARED_CREDENTIALS_FILE: '/dev/null' },
+            });
+            let err = '';
+            p.stderr.on('data', (d) => { err += d; });
+            p.on('close', (codigo) => ok({ codigo, err }));
+        });
+        assert.doesNotMatch(salida.err, /ParamValidation|Error parsing parameter/, salida.err);
+        assert.ok(cuerpo.length > 0, `la CLI no llegó a enviar la petición: ${salida.err}`);
+        const enviados = {};
+        const datos = cuerpo.trim().startsWith('{') ? JSON.parse(cuerpo).Parameters : null;
+        if (datos) {
+            for (const p of datos) enviados[p.ParameterKey] = p;
+        } else {
+            const q = new URLSearchParams(cuerpo);
+            for (let n = 1; q.has(`Parameters.member.${n}.ParameterKey`); n++) {
+                const clave = q.get(`Parameters.member.${n}.ParameterKey`);
+                enviados[clave] = { ParameterKey: clave, ParameterValue: q.get(`Parameters.member.${n}.ParameterValue`), UsePreviousValue: q.get(`Parameters.member.${n}.UsePreviousValue`) };
+            }
+        }
+        assert.equal(enviados.CspDev.ParameterValue, cspDev);
+        assert.equal(enviados.ReportingEndpointsDev.ParameterValue, 'csp="https://api-dev.buildandserve.cl/csp/reporte"');
+        assert.equal(enviados.CertificadoDev.ParameterValue, certificadoDev);
+        for (const clave of ['NombreBucket', 'Csp', 'CspModo', 'ReportingEndpoints', 'CertificadoProd', 'Publicadores', 'ExigirRolPublicador', 'NombreBucketDev']) {
+            assert.ok([true, 'true'].includes(enviados[clave].UsePreviousValue), clave);
+            assert.ok(enviados[clave].ParameterValue == null, clave);
+        }
+    } finally {
+        servidor.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 });
 
 test('cada ambiente tiene su dominio de API, condicionado a que exista el certificado', () => {

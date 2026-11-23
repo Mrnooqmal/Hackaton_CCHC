@@ -127,13 +127,10 @@ if [ -n "$SOLO_DEV" ]; then
     fi
     REPORTE_DEV="${API_DEV_PROPIA:-$API_DEV}"
     NOMBRE="solo-dev-$(date -u +%Y%m%d%H%M%S)"
-    previo() { printf 'ParameterKey=%s,UsePreviousValue=true ' "$@"; }
+    CSP_DEV="$CSP_DEV" REPORTE_DEV="$REPORTE_DEV" CERT_DEV="$CERT_DEV" node "$TMP/wt/infra/parametros-solo-dev.js" > "$TMP/parametros.json"
     aws cloudformation create-change-set --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE" \
         --template-body "file://$TMP/wt/infra/frontend.yml" --capabilities CAPABILITY_NAMED_IAM \
-        --parameters $(previo NombreBucket Csp CspModo ReportingEndpoints CertificadoProd Publicadores ExigirRolPublicador NombreBucketDev) \
-            "ParameterKey=CspDev,ParameterValue=$CSP_DEV" \
-            "ParameterKey=ReportingEndpointsDev,ParameterValue=csp=\"$REPORTE_DEV/csp/reporte\"" \
-            "ParameterKey=CertificadoDev,ParameterValue=$CERT_DEV" >/dev/null
+        --parameters "file://$TMP/parametros.json" >/dev/null
     aws cloudformation wait change-set-create-complete --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE" || true
     aws cloudformation describe-change-set --stack-name "$STACK_FRONTEND" --change-set-name "$NOMBRE" --output json > "$TMP/cambios.json"
     echo "== change set $NOMBRE (sin ejecutar):"
