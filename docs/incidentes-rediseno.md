@@ -120,9 +120,9 @@ Cada fase termina con sus pruebas pasando.
 
 ## 8. Cómo se trabaja
 
-- La implementación la hace un agente (Opus 5.5, esfuerzo medio como máximo). Claude orquesta y verifica cada entrega.
+- Cada entrega se revisa y se verifica antes de integrarse.
 - Las pruebas del backend se corren en Linux (WSL) con finales de línea LF: en Windows fallan por CRLF y por las barras de las rutas.
-- Se despliega solo desde commits pusheados, con los scripts de `infra/`.
+- Esta rama entra a `pruebas` por pull request revisado y no se despliega sola en dev (ver `docs/flujo-de-trabajo.md`). Mientras tanto, el backend se prueba con el servidor local (`npm run local` en `Backend/`, ver `SETUP_GUIDE.md`).
 
 ## 9. Estado
 

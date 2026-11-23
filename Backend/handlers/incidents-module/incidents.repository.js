@@ -6,7 +6,7 @@ const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3')
 const almacenamiento = require('../../lib/almacenamiento');
 const {
     EXTENSION_POR_MIME, EXTENSION_POR_MIME_FOTO, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_MEDIDAS_INMEDIATAS,
-    tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso, conMedidasNumeradas,
+    tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso, conMedidasNumeradas, conVistoPor,
 } = require('../../lib/casos');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
@@ -20,6 +20,8 @@ const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { cortar } = require('../../lib/utils/texto');
 const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
 const { tenantParaPermisos } = require('../../lib/auth/permisos-empresa');
+
+const leido = (item) => conVistoPor(conMedidasNumeradas(item));
 
 // Quién recibe el aviso de un reporte nuevo: quien puede clasificarlo, que es
 // justo lo que el aviso le pide hacer, y además SIEMPRE el prevencionista
@@ -434,7 +436,7 @@ class IncidentsRepository {
                     ExpressionAttributeValues: { ':tenantId': tenantId },
                     ...(desde ? { ExclusiveStartKey: desde } : {})
                 }));
-                items.push(...(result.Items || []).map(conMedidasNumeradas));
+                items.push(...(result.Items || []).map(leido));
                 desde = result.LastEvaluatedKey;
             } while (desde);
             return items;
@@ -446,7 +448,7 @@ class IncidentsRepository {
             }));
             // Un `Scan` recorre la tabla entera y ve también los elementos con la
             // parte sensible, que no son incidentes.
-            items.push(...(result.Items || []).filter((i) => !esTraza(i, 'incidentId')).map(conMedidasNumeradas));
+            items.push(...(result.Items || []).filter((i) => !esTraza(i, 'incidentId')).map(leido));
             desde = result.LastEvaluatedKey;
         } while (desde);
         return items;
@@ -645,7 +647,7 @@ class IncidentsRepository {
             Key: { incidentId }
         }));
         // Las medidas antiguas sin número salen numeradas (ver `conMedidasNumeradas`).
-        return result.Item ? conMedidasNumeradas(result.Item) : null;
+        return result.Item ? leido(result.Item) : null;
     }
 
     /**
@@ -661,7 +663,7 @@ class IncidentsRepository {
                 TableName: this.incidentsTable,
                 Key: { incidentId: id }
             }));
-            item = result.Item ? conMedidasNumeradas(result.Item) : result.Item;
+            item = result.Item ? leido(result.Item) : result.Item;
         }
 
         if (!item) {
@@ -1254,21 +1256,43 @@ class IncidentsRepository {
     }
 
     // MARK AS VIEWED
+    // La forma guardada es una lista. Se agrega con `list_append` solo si el campo falta o
+    // no lo contiene ya (idempotente) y sin tocar `updatedAt`: el bloqueo optimista del
+    // caso no debe fallar por una marca de lectura. Si el campo es un conjunto de texto
+    // (casos antiguos), `list_append` falla con ValidationException y se reescribe como lista.
     async markAsViewed(id, userId) {
         if (!id || !userId) return;
 
         console.log(`[MARK_AS_VIEWED] Incident ${id} by user ${userId}`);
 
+        const base = {
+            TableName: this.incidentsTable,
+            Key: { incidentId: id },
+        };
         try {
-            await this.dynamo.send(new UpdateCommand({
-                TableName: this.incidentsTable,
-                Key: { incidentId: id },
-                UpdateExpression: 'ADD viewedBy :userId',
-                ExpressionAttributeValues: {
-                    ':userId': new Set([userId])
-                }
-            }));
+            try {
+                await this.dynamo.send(new UpdateCommand({
+                    ...base,
+                    UpdateExpression: 'SET viewedBy = list_append(if_not_exists(viewedBy, :vacia), :uno)',
+                    ConditionExpression: 'attribute_exists(incidentId) AND (attribute_not_exists(viewedBy) OR NOT contains(viewedBy, :userId))',
+                    ExpressionAttributeValues: { ':vacia': [], ':uno': [userId], ':userId': userId }
+                }));
+            } catch (error) {
+                if (error.name === 'ConditionalCheckFailedException') return;
+                if (error.name !== 'ValidationException') throw error;
+                const { Item } = await this.dynamo.send(new GetCommand({ ...base }));
+                if (!Item) return;
+                const previos = Item.viewedBy instanceof Set ? [...Item.viewedBy] : (Array.isArray(Item.viewedBy) ? Item.viewedBy : []);
+                if (previos.includes(userId)) return;
+                await this.dynamo.send(new UpdateCommand({
+                    ...base,
+                    UpdateExpression: 'SET viewedBy = :lista',
+                    ConditionExpression: 'attribute_exists(incidentId)',
+                    ExpressionAttributeValues: { ':lista': [...previos, userId] }
+                }));
+            }
         } catch (error) {
+            if (error.name === 'ConditionalCheckFailedException') return;
             console.error('[ERROR] markAsViewed failed:', error);
         }
     }

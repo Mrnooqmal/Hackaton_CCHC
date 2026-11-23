@@ -277,6 +277,19 @@ function conMedidasNumeradas(inc) {
 }
 
 /**
+ * Quién ha visto el caso (`viewedBy`) llega al frontend siempre como arreglo. En la tabla
+ * conviven listas (la forma actual), conjuntos de texto (los casos en que el primer
+ * `ADD` creó el campo) y el campo ausente; un conjunto, que el cliente de DynamoDB
+ * entrega como `Set` de JS, `JSON.stringify` lo serializa como `{}`.
+ * Devuelve el mismo objeto si ya es un arreglo.
+ */
+function conVistoPor(inc) {
+    if (!inc || Array.isArray(inc.viewedBy)) return inc;
+    const v = inc.viewedBy;
+    return { ...inc, viewedBy: v instanceof Set ? [...v] : [] };
+}
+
+/**
  * ¿Está cerrado el caso? Un hallazgo se cierra por su gobernanza y un incidente por
  * su estado: el mismo criterio de `utils/incidentes.ts` (`incidenteCerrado`), que
  * usan los contadores.
@@ -397,7 +410,7 @@ module.exports = {
     TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo,
     MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
     EXTENSION_POR_MIME_FOTO, MIME_FOTOS,
-    esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso, conMedidasNumeradas,
+    esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso, conMedidasNumeradas, conVistoPor,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA,
     medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
 };

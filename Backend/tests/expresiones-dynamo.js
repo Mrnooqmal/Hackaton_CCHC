@@ -139,6 +139,9 @@ function aplicar(item, expresion, valores = {}, nombres = {}) {
         if (texto.startsWith(':')) return structuredClone(valores[texto]);
         if ((m = /^list_append\((.*)\)$/.exec(texto))) {
             const [a, b] = partirNivelCero(m[1]).map(valorDe);
+            if (!Array.isArray(a) || !Array.isArray(b)) {
+                throw Object.assign(new Error('An operand in the update expression has an incorrect data type'), { name: 'ValidationException' });
+            }
             return [...a, ...b];
         }
         if ((m = /^if_not_exists\((.*)\)$/.exec(texto))) {
@@ -163,6 +166,9 @@ function aplicar(item, expresion, valores = {}, nombres = {}) {
             } else if (accion === 'ADD') {
                 const [ruta, val] = parte.split(/\s+/);
                 const previo = resolverRuta(nuevo, ruta, nombres);
+                if (valores[val] instanceof Set && previo !== ausente && !(previo instanceof Set)) {
+                    throw Object.assign(new Error('An operand in the update expression has an incorrect data type'), { name: 'ValidationException' });
+                }
                 if (valores[val] instanceof Set) {
                     // Conjunto: unión.
                     fijarRuta(nuevo, ruta, new Set([...(previo === ausente ? [] : previo), ...valores[val]]), nombres);

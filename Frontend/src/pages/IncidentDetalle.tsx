@@ -165,6 +165,9 @@ export default function IncidentDetalle() {
     }
 
     const clase = esHallazgo(incidente) ? 'hallazgo' : 'incidente';
+    // El título sigue la clasificación ACTUAL del caso, no la del reporte recién hecho: si se
+    // reclasifica en esta misma pantalla, cambia.
+    const nombreDelCaso = clase === 'hallazgo' ? 'Hallazgo' : incidente.tipo === 'accidente' ? 'Accidente' : 'Incidente';
     const etapa = etapaDe(incidente);
     const obra = obras.find((o) => o.obraId === incidente.obraId);
     // Las fotos llegan con URL firmada en `evidencePreviews`; sin URL (no se pudo
@@ -193,9 +196,7 @@ export default function IncidentDetalle() {
             <PageHeader
                 banner
                 breadcrumb={breadcrumb}
-                title={navegacion.recienReportado
-                    ? (clase === 'hallazgo' ? 'Hallazgo reportado' : 'Incidente reportado')
-                    : (clase === 'hallazgo' ? 'Detalle del hallazgo' : 'Detalle del incidente')}
+                title={navegacion.recienReportado ? `${nombreDelCaso} reportado` : `Detalle del ${nombreDelCaso.toLowerCase()}`}
                 actions={
                     <Link to="/incidents/reportar" state={{ clasificacion: clase }} className="btn btn-secondary">
                         Reportar otro
