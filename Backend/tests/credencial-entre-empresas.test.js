@@ -344,3 +344,61 @@ test('buscar por RUT vacío no consulta DynamoDB y no encuentra a nadie', async 
     assert.equal(await svc.getByRutGlobal(null), null);
     assert.equal(pedidos.length, 0);
 });
+
+const propagacionQueFalla = () => {
+    const original = PersonaService.prototype.propagarPassword;
+    PersonaService.prototype.propagarPassword = async () => { throw new Error('DynamoDB no responde'); };
+    return () => { PersonaService.prototype.propagarPassword = original; };
+};
+
+test('si no se puede copiar el cambio a las otras empresas, responde 503 y cierra las sesiones propias', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const enA = await ficha(a);
+    const enB = await ficha(b);
+    await fijar(enA, a, 'Anterior-1');
+    await fijar(enB, b, 'Anterior-1');
+    const tokenA = await sesionAbierta(enA, a);
+    const tokenB = await sesionAbierta(enB, b);
+    const restaurar = propagacionQueFalla();
+    try {
+        const res = await cambiar(enA, a, 'Nueva-clave-1', 'Anterior-1');
+        assert.equal(res.statusCode, 503, res.body);
+        assert.match(JSON.parse(res.body).error, /ahí sigue la anterior/);
+    } finally { restaurar(); }
+    assert.ok(await coincide(enA, 'Nueva-clave-1'));
+    assert.ok(await coincide(enB, 'Anterior-1'));
+    assert.equal(await sesionDesdeToken(tokenA), null);
+    assert.ok(await sesionDesdeToken(tokenB));
+});
+
+test('si no se puede copiar el restablecimiento a las otras empresas, responde 503 y cierra las sesiones propias', async () => {
+    const a = await empresa('Constructora A');
+    const b = await empresa('Constructora B');
+    const enA = await ficha(a, { email: 'juan@ejemplo.cl' });
+    const enB = await ficha(b, { email: 'juan@ejemplo.cl' });
+    await fijar(enA, a, 'Anterior-1');
+    await fijar(enB, b, 'Anterior-1');
+    const tokenA = await sesionAbierta(enA, a);
+    const token = crypto.randomBytes(16).toString('hex');
+    await docClient.send(new UpdateCommand({
+        TableName: 'PERSONAS_TABLE',
+        Key: { PK: `TENANT#${a}`, SK: `PERSONA#${enA}` },
+        UpdateExpression: 'SET resetTokenHash = :h, resetTokenExpiry = :e',
+        ExpressionAttributeValues: {
+            ':h': crypto.createHash('sha256').update(token).digest('hex'),
+            ':e': new Date(Date.now() + 3600e3).toISOString(),
+        },
+    }));
+    const restaurar = propagacionQueFalla();
+    try {
+        const res = await auth.resetPassword({
+            body: JSON.stringify({ personaId: enA, token, passwordNuevo: 'Nueva-clave-1', confirmarPassword: 'Nueva-clave-1' }),
+        });
+        assert.equal(res.statusCode, 503, res.body);
+        assert.match(JSON.parse(res.body).error, /ahí sigue la anterior/);
+    } finally { restaurar(); }
+    assert.ok(await coincide(enA, 'Nueva-clave-1'));
+    assert.ok(await coincide(enB, 'Anterior-1'));
+    assert.equal(await sesionDesdeToken(tokenA), null);
+});

@@ -415,8 +415,6 @@ module.exports.changePassword = async (event) => {
                 ':updatedAt': now
             }
         }));
-        // La contraseña de esta ficha ya quedó guardada; copiarla a las fichas
-        // hermanas es secundario (ver resetPassword).
         let hermanas = [];
         if (!persona.passwordTemporal) {
             try {
@@ -427,6 +425,8 @@ module.exports.changePassword = async (event) => {
                 });
             } catch (propErr) {
                 registrarFallo('auth.changePassword.propagar', propErr);
+                await revocarSesionesDe([personaId]).catch((revErr) => registrarFallo('auth.revocarSesiones', revErr));
+                return error('Tu contraseña cambió en esta empresa, pero no en las otras donde trabajas: ahí sigue la anterior. Vuelve a entrar con la nueva y cámbiala también en las otras.', 503);
             }
         }
 
@@ -607,9 +607,6 @@ module.exports.resetPassword = async (event) => {
                 ':u': now
             }
         }));
-        // La contraseña de esta ficha ya quedó guardada. Copiarla a las fichas
-        // hermanas es secundario: si falla, cada una conserva la suya (lo
-        // seguro) y no se le informa a la persona un error que no lo es.
         const correo = String(personaItem.email || '').trim().toLowerCase();
         let hermanas = [];
         try {
@@ -620,6 +617,8 @@ module.exports.resetPassword = async (event) => {
             }) : [];
         } catch (propErr) {
             registrarFallo('auth.resetPassword.propagar', propErr);
+            await revocarSesionesDe([personaId]).catch((revErr) => registrarFallo('auth.revocarSesiones', revErr));
+            return error('Tu contraseña cambió en esta empresa, pero no en las otras donde tienes este correo: ahí sigue la anterior. Entra con la nueva y cámbiala también en las otras.', 503);
         }
 
         // Quien recupera su cuenta la recupera entera: una sesión abierta con la
