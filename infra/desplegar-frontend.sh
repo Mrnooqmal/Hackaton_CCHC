@@ -35,10 +35,8 @@ git -C "$RAIZ" fetch --quiet origin
 SHA="$(git -C "$RAIZ" rev-parse --verify "$COMMIT^{commit}")"
 cmp -s "$0" <(git -C "$RAIZ" show "$SHA:infra/$(basename "$0")" 2>/dev/null) || {
     echo "Este $(basename "$0") no es el del commit $SHA: córrelo desde un checkout de ese commit (git worktree add --detach <carpeta> $SHA)." >&2; exit 1; }
-if ! git -C "$RAIZ" branch -r --contains "$SHA" | grep -q .; then
-    echo "El commit $SHA no está en ninguna rama remota: solo se despliegan commits pusheados." >&2
-    exit 1
-fi
+source "$(dirname "$0")/rama-del-ambiente.sh"
+exigir_rama_del_ambiente "$RAIZ" "$SHA" "$AMBIENTE"
 
 salida() { aws cloudformation describe-stacks --stack-name "$1" --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
 api_de() {
