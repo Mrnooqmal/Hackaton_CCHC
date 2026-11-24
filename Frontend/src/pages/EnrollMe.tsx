@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { mensajeDeError } from '../api/client';
+import { mensajeDeError, type User } from '../api/client';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { personasApi } from '../api/client';
@@ -77,6 +77,11 @@ function Tarjeta({ children, fija = false }: { children: React.ReactNode; fija?:
     );
 }
 
+// Lo que la sesión trae de más sobre el PIN, y que `User` no declara.
+type UsuarioConPin = User & { pinConfigurado?: boolean; pinRestablecido?: string | null };
+
+type DatosEnrolamiento = { firma?: { fecha?: string; horario?: string; token?: string } };
+
 export default function EnrollMe() {
     const { user, updateUser, logout } = useAuth();
     const navigate = useNavigate();
@@ -86,10 +91,10 @@ export default function EnrollMe() {
 
     // Modo "cambio de PIN": el usuario ya está enrolado y sólo quiere actualizar su PIN.
     // Llega desde Configuración → "Cambiar PIN". Omite la bienvenida y el paso de perfil.
-    const isChangePin = Boolean((location.state as any)?.changePin);
+    const isChangePin = Boolean((location.state as { changePin?: boolean } | null)?.changePin);
     // Cambiar un PIN existente exige el actual (lo verifica el servidor, con
     // límite de intentos). Sin PIN —porque se lo restablecieron— se crea directo.
-    const tienePin = Boolean((user as any)?.pinConfigurado);
+    const tienePin = Boolean((user as UsuarioConPin | null)?.pinConfigurado);
     const pasoInicialCambio: EnrollmentStep = tienePin ? 'current-pin' : 'create-pin';
 
     const [currentStep, setCurrentStep] = useState<EnrollmentStep>(isChangePin ? pasoInicialCambio : 'welcome');
@@ -100,12 +105,12 @@ export default function EnrollMe() {
     const [error, setError] = useState('');
     const [noCoincide, setNoCoincide] = useState(false);
     const [procesando, setProcesando] = useState(false);
-    const [enrollmentData, setEnrollmentData] = useState<any>(null);
+    const [enrollmentData, setEnrollmentData] = useState<DatosEnrolamiento | null>(null);
 
     // Si el usuario ya está enrolado (ej. recargó en el paso de perfil), saltar directo ahí.
     // En modo cambio de PIN NO redirigimos: el usuario debe poder fijar un nuevo PIN.
     useEffect(() => {
-        if (!isChangePin && (user as any)?.habilitado === true) {
+        if (!isChangePin && user?.habilitado === true) {
             setCurrentStep('profile');
         }
     }, [user, isChangePin]);
@@ -147,8 +152,8 @@ export default function EnrollMe() {
     const [verificandoActual, setVerificandoActual] = useState(false);
     const verificarPinActual = async () => {
         if (pinActual.length !== LARGO_PIN || verificandoActual) return;
-        const targetId = (user as any)?.personaId || user?.userId;
-        const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
+        const targetId = user?.personaId || user?.userId;
+        const targetTenant = user?.tenantId || user?.empresaId;
         setError('');
         setVerificandoActual(true);
         try {
@@ -180,8 +185,8 @@ export default function EnrollMe() {
         setProcesando(true);
 
         try {
-            const targetId = (user as any)?.personaId || user?.userId;
-            const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
+            const targetId = user?.personaId || user?.userId;
+            const targetTenant = user?.tenantId || user?.empresaId;
 
             if (!targetId || !targetTenant) throw new Error('Usuario o Tenant no encontrado en la sesión');
 
@@ -193,7 +198,7 @@ export default function EnrollMe() {
             // perfil y completarEnrolamiento; vamos directo a la confirmación de éxito.
             if (isChangePin) {
                 setPin('');
-                updateUser({ pinConfigurado: true, pinRestablecido: null } as any);
+                updateUser({ pinConfigurado: true, pinRestablecido: null } as Partial<UsuarioConPin>);
                 irA('success');
                 setTimeout(() => navigate('/configuracion', { replace: true }), 3000);
                 return;
@@ -203,7 +208,7 @@ export default function EnrollMe() {
             if (!enrollResponse.success || !enrollResponse.data) throw new Error(enrollResponse.error || 'Error al completar el enrolamiento');
 
             updateUser({ habilitado: true });
-            setEnrollmentData(enrollResponse.data);
+            setEnrollmentData(enrollResponse.data as DatosEnrolamiento);
             irA('profile');
         } catch (err) {
             console.error('Error en enrolamiento:', err);
@@ -236,8 +241,8 @@ export default function EnrollMe() {
     const saveProfileAndContinue = async (skip = false) => {
         if (skip) { irA('success'); return; }
 
-        const targetId = (user as any)?.personaId || user?.userId;
-        const targetTenant = (user as any)?.tenantId || (user as any)?.empresaId;
+        const targetId = user?.personaId || user?.userId;
+        const targetTenant = user?.tenantId || user?.empresaId;
         if (!targetId || !targetTenant) { irA('success'); return; }
 
         if (fotoRequiereConsentimiento && !autorizaFoto) {
@@ -265,7 +270,7 @@ export default function EnrollMe() {
             }
 
             // 2. Perfil.
-            const updates: Record<string, any> = {};
+            const updates: { fotoPerfil?: string } = {};
             if (fotoPerfil) updates.fotoPerfil = fotoPerfil;
 
             if (Object.keys(updates).length > 0) {

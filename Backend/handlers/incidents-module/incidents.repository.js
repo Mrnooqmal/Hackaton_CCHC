@@ -6,8 +6,9 @@ const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3')
 const almacenamiento = require('../../lib/almacenamiento');
 const {
     EXTENSION_POR_MIME, EXTENSION_POR_MIME_FOTO, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_MEDIDAS_INMEDIATAS,
-    tipoPapelConSalud, esHallazgo, clasificacionDelTipo, papelesDelCaso, conMedidasNumeradas, conVistoPor,
+    tipoPapelConSalud, esTipoPapel, esHallazgo, clasificacionDelTipo, papelesDelCaso, ESTADOS_MEDIDA,
 } = require('../../lib/casos');
+const { leido, casosDeLaEmpresa } = require('../../lib/incidentes-lectura');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 const { v4: uuidv4 } = require('uuid');
 const { guardarTraza, conTraza, esTraza } = require('../../lib/traza-sensible');
@@ -21,7 +22,50 @@ const { cortar } = require('../../lib/utils/texto');
 const { personaPuede, PERMISSIONS } = require('../../lib/permissions');
 const { tenantParaPermisos } = require('../../lib/auth/permisos-empresa');
 
-const leido = (item) => conVistoPor(conMedidasNumeradas(item));
+/** RFC 5987: `encodeURIComponent` deja sin codificar `'()*!`, que en un valor de cabecera sí hay que escapar. */
+const codificarRfc5987 = (texto) => encodeURIComponent(texto).replace(/['()*!]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/** Cabecera de descarga con el nombre en las dos formas (la simple, solo ASCII, y la RFC 5987). */
+const contentDispositionAdjunto = (nombre) => {
+    const ascii = nombre.replace(/[^A-Za-z0-9._-]/g, '_');
+    return `attachment; filename="${ascii}"; filename*=UTF-8''${codificarRfc5987(nombre)}`;
+};
+
+/** Nombre con que se descarga un papel: su tipo, su fecha (la del documento o la de subida) y la extensión de la clave. */
+const nombreDeDescarga = (papel) => {
+    const tipo = esTipoPapel(papel.tipo) ? papel.tipo : 'documento';
+    const fecha = [papel.fechaDocumento, papel.subidoEn].map((f) => String(f || '').slice(0, 10)).find((f) => /^\d{4}-\d{2}-\d{2}$/.test(f)) || 'sin-fecha';
+    const extension = (/\.([A-Za-z0-9]{1,5})$/.exec(String(papel.s3Key || '')) || [])[1] || 'pdf';
+    return `${tipo}-${fecha}.${extension.toLowerCase()}`;
+};
+
+/**
+ * Condición de las escrituras con bloqueo optimista: el caso no cambió desde que se leyó.
+ * Un elemento sin `updatedAt` (anterior al campo) usa `attribute_not_exists`: con `:leido`
+ * indefinido, DynamoDB rechaza la escritura. Agrega `:leido` a `valores` cuando hace falta.
+ */
+const condicionDeLectura = (incidente, valores) => {
+    if (!incidente.updatedAt) return 'attribute_not_exists(updatedAt)';
+    valores[':leido'] = incidente.updatedAt;
+    return 'updatedAt = :leido';
+};
+
+/** Avisos a la bandeja que se escriben a la vez: lo justo para no esperar de a uno ni saturar la tabla. */
+const AVISOS_EN_PARALELO = 5;
+
+/** Corre `tarea` sobre cada elemento con a lo más `limite` a la vez; devuelve los resultados en el orden de la lista. */
+async function enParalelo(lista, limite, tarea) {
+    const resultados = new Array(lista.length);
+    let siguiente = 0;
+    const trabajador = async () => {
+        while (siguiente < lista.length) {
+            const i = siguiente++;
+            resultados[i] = await tarea(lista[i]);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(limite, lista.length) }, trabajador));
+    return resultados;
+}
 
 // Quién recibe el aviso de un reporte nuevo: quien puede clasificarlo, que es
 // justo lo que el aviso le pide hacer, y además SIEMPRE el prevencionista
@@ -217,29 +261,27 @@ class IncidentsRepository {
 
             const now = new Date().toISOString();
             const baseMessageId = uuidv4();
-            let enviados = 0;
-            for (const { personaId } of destinatarios) {
-                const ok = await conNeutro('incidente.aviso.bandeja', async () => {
-                    await this.dynamo.send(new PutCommand({
-                        TableName: this.inboxTable,
-                        Item: construirMensaje({
-                            recipientId: personaId,
-                            baseMessageId,
-                            now,
-                            senderId: 'sistema',
-                            senderName: 'Sistema de Incidentes',
-                            senderRol: 'system',
-                            type: 'alert',
-                            priority: resumen.prioridad,
-                            subject: resumen.asunto,
-                            content: resumen.contenido,
-                            linkedEntity: { type: 'incident', id: incident.incidentId },
-                        }),
-                    }));
-                    return true;
-                }, false, { incidentId: incident.incidentId, destinatario: personaId });
-                if (ok) enviados++;
-            }
+            // En paralelo acotado: cada aviso es una escritura independiente y un fallo no detiene a los demás.
+            const resultados = await enParalelo(destinatarios, AVISOS_EN_PARALELO, ({ personaId }) => conNeutro('incidente.aviso.bandeja', async () => {
+                await this.dynamo.send(new PutCommand({
+                    TableName: this.inboxTable,
+                    Item: construirMensaje({
+                        recipientId: personaId,
+                        baseMessageId,
+                        now,
+                        senderId: 'sistema',
+                        senderName: 'Sistema de Incidentes',
+                        senderRol: 'system',
+                        type: 'alert',
+                        priority: resumen.prioridad,
+                        subject: resumen.asunto,
+                        content: resumen.contenido,
+                        linkedEntity: { type: 'incident', id: incident.incidentId },
+                    }),
+                }));
+                return true;
+            }, false, { incidentId: incident.incidentId, destinatario: personaId }));
+            const enviados = resultados.filter(Boolean).length;
             console.log('[AVISO] incidente', incident.incidentId, '| avisos', enviados, 'de', destinatarios.length);
         } catch (err) {
             registrarFallo('incidente.aviso', err, { incidentId: incident?.incidentId });
@@ -291,7 +333,11 @@ class IncidentsRepository {
     }
 
     // CREATE
-    async create(data, context) {
+    /**
+     * @param {object} [sesion] `{ personaIdDeSesion }`: quien hace el informe es quien tiene la sesión. El
+     *   cliente solo aporta su nombre y cargo; el `personaId` que mande no cuenta.
+     */
+    async create(data, context, sesion = {}) {
         const incidentId = uuidv4();
         // Solo identificadores. Esto registraba el incidente completo con
         // `JSON.stringify(data)`: el RUT, el nombre y el género del trabajador, y
@@ -372,7 +418,7 @@ class IncidentsRepository {
             // Solo quién es, nunca su RUT: el navegador lo mandaba y quedaba en
             // claro en la tabla, por fuera del cifrado de campo (D-10).
             realizadoPor: {
-                personaId: data.realizadoPor?.personaId || null,
+                personaId: sesion.personaIdDeSesion || data.realizadoPor?.personaId || null,
                 nombre: data.realizadoPor?.nombre || '',
                 cargo: data.realizadoPor?.cargo || '',
             },
@@ -425,22 +471,9 @@ class IncidentsRepository {
      * falla: quien llama decide si degrada (el FUF, por ejemplo, a "no verificado").
      */
     async itemsDeLaEmpresa(tenantId) {
+        if (tenantId) return casosDeLaEmpresa(this.dynamo, this.incidentsTable, tenantId);
         const items = [];
         let desde;
-        if (tenantId) {
-            do {
-                const result = await this.dynamo.send(new QueryCommand({
-                    TableName: this.incidentsTable,
-                    IndexName: 'tenantId-fecha-index',
-                    KeyConditionExpression: 'tenantId = :tenantId',
-                    ExpressionAttributeValues: { ':tenantId': tenantId },
-                    ...(desde ? { ExclusiveStartKey: desde } : {})
-                }));
-                items.push(...(result.Items || []).map(leido));
-                desde = result.LastEvaluatedKey;
-            } while (desde);
-            return items;
-        }
         do {
             const result = await this.dynamo.send(new ScanCommand({
                 TableName: this.incidentsTable,
@@ -607,9 +640,8 @@ class IncidentsRepository {
      * como siempre: lo lee `ObraDetalle`.
      */
     async updateMedidaEstado(incidente, numero, estado) {
-        const estadosValidos = ['pendiente', 'en_proceso', 'completada', 'verificada'];
-        if (!estadosValidos.includes(estado)) {
-            throw Object.assign(new Error(`Estado inválido. Válidos: ${estadosValidos.join(', ')}`), { statusCode: 400 });
+        if (!ESTADOS_MEDIDA.includes(estado)) {
+            throw Object.assign(new Error(`Estado inválido. Válidos: ${ESTADOS_MEDIDA.join(', ')}`), { statusCode: 400 });
         }
         const previas = Array.isArray(incidente.medidasCorrectivas) ? incidente.medidasCorrectivas : [];
         if (!previas.some((m) => String(m.numero) === String(numero))) {
@@ -691,8 +723,7 @@ class IncidentsRepository {
     }
 
     /**
-     * @param {object|string} ref el elemento leído por el handler, o un id (lo usa el cierre de
-     *   la investigación de la obra, que no lo lee antes). La escritura exige que el caso no
+     * @param {object|string} ref el elemento leído por el handler, o un id. La escritura exige que el caso no
      *   haya cambiado desde la lectura: 409 si cambió (antes escribía sin condición, y pisaba lo
      *   que otra persona acababa de guardar).
      */
@@ -705,7 +736,6 @@ class IncidentsRepository {
 
         if (data.tipo) campos.tipo = data.tipo;
         if (data.clasificacion) campos.clasificacion = data.clasificacion;
-        if (data.estado) campos.estado = data.estado;
         const investigaciones = { ...(incidente.investigaciones || {}) };
         let conInvestigacion = false;
         for (const [campoData, campo] of [
@@ -722,8 +752,6 @@ class IncidentsRepository {
         // `evidencias` no se edita acá: se agregan con `agregarEvidencias`, que el
         // handler valida clave por clave. Esta función reemplazaba la lista entera.
         if (data.medidasInmediatas !== undefined) campos.medidasInmediatas = textoMedidasInmediatas(data.medidasInmediatas);
-        if (data.fechaCierre !== undefined) campos.fechaCierre = data.fechaCierre;
-        if (data.informeDocumentId !== undefined) campos.informeDocumentId = data.informeDocumentId;
 
         const incident = await this.actualizarCaso(incidente, campos);
         return {
@@ -741,23 +769,20 @@ class IncidentsRepository {
      * cambiado desde que el handler lo leyó: así el tope de cantidad que contó
      * sigue siendo cierto al guardar, aunque lleguen dos envíos a la vez.
      */
-    async agregarEvidencias(incidentId, nuevas, updatedAtLeido) {
+    async agregarEvidencias(incidente, nuevas) {
+        const { incidentId } = incidente;
         console.log('[EVIDENCIAS] incidente', incidentId, '| agregadas', nuevas.length);
-        const res = await this.dynamo.send(new GetCommand({
-            TableName: this.incidentsTable,
-            Key: { incidentId }
-        }));
-        if (!res.Item) throw new Error('Incidente no encontrado');
-        const previas = Array.isArray(res.Item.evidencias) ? res.Item.evidencias : [];
+        const previas = Array.isArray(incidente.evidencias) ? incidente.evidencias : [];
         if (nuevas.length === 0) return { evidencias: previas };
         const evidencias = [...previas, ...nuevas.filter((k) => !previas.includes(k))];
+        const valores = { ':e': evidencias, ':u': new Date().toISOString() };
         try {
             const result = await this.dynamo.send(new UpdateCommand({
                 TableName: this.incidentsTable,
                 Key: { incidentId },
                 UpdateExpression: 'SET evidencias = :e, updatedAt = :u',
-                ConditionExpression: 'updatedAt = :leido',
-                ExpressionAttributeValues: { ':e': evidencias, ':u': new Date().toISOString(), ':leido': updatedAtLeido },
+                ConditionExpression: condicionDeLectura(incidente, valores),
+                ExpressionAttributeValues: valores,
                 ReturnValues: 'ALL_NEW'
             }));
             return { evidencias: result.Attributes?.evidencias || evidencias };
@@ -907,21 +932,25 @@ class IncidentsRepository {
     // peticiones a la vez. Si cambió, 409.
 
     /** Escribe `campos` en el incidente leído, o 409 si cambió desde la lectura. Devuelve el elemento guardado. */
-    async actualizarCaso(incidente, campos) {
+    async actualizarCaso(incidente, campos, quitar = []) {
         const nombres = {};
-        const valores = { ':u': new Date().toISOString(), ':leido': incidente.updatedAt };
+        const valores = { ':u': new Date().toISOString() };
         const sets = ['updatedAt = :u'];
         Object.entries(campos).forEach(([campo, valor], i) => {
             nombres[`#c${i}`] = campo;
             valores[`:v${i}`] = valor;
             sets.push(`#c${i} = :v${i}`);
         });
+        const quitados = quitar.map((campo, i) => {
+            nombres[`#q${i}`] = campo;
+            return `#q${i}`;
+        });
         try {
             const result = await this.dynamo.send(new UpdateCommand({
                 TableName: this.incidentsTable,
                 Key: { incidentId: incidente.incidentId },
-                UpdateExpression: `SET ${sets.join(', ')}`,
-                ConditionExpression: 'updatedAt = :leido',
+                UpdateExpression: `SET ${sets.join(', ')}${quitados.length ? ` REMOVE ${quitados.join(', ')}` : ''}`,
+                ConditionExpression: condicionDeLectura(incidente, valores),
                 ExpressionAttributeNames: nombres,
                 ExpressionAttributeValues: valores,
                 ReturnValues: 'ALL_NEW'
@@ -982,7 +1011,11 @@ class IncidentsRepository {
             altoPotencial: esIncidentePeligroso && (datos.danoMayor === true || datos.granSusto === true),
             triaje,
         };
+        // La gravedad es de los incidentes: un hallazgo no la tiene. Al pasar un incidente o un
+        // accidente a hallazgo se quita (la anterior queda en `triaje.anteriores`); dejarla haría
+        // que se cuente como investigación pendiente.
         if (!esHallazgoNuevo) campos.gravedad = datos.gravedad;
+        const quitar = esHallazgoNuevo && !esHallazgo(incidente) && incidente.gravedad !== undefined ? ['gravedad'] : [];
         // Un reporte recién llegado pasa a investigación al clasificarlo; el hallazgo
         // lo hace por su gobernanza (no se inventan estados nuevos).
         if (!esHallazgoNuevo && incidente.estado === 'reportado') campos.estado = 'en_investigacion';
@@ -1001,7 +1034,7 @@ class IncidentsRepository {
         }
 
         console.log('[TRIAJE] incidente', incidente.incidentId, '| tipo', datos.tipo, '| altoPotencial', campos.altoPotencial);
-        return this.actualizarCaso(incidente, campos);
+        return this.actualizarCaso(incidente, campos, quitar);
     }
 
     /**
@@ -1010,11 +1043,14 @@ class IncidentsRepository {
      * = 'cerrado'` con el comentario, quién verificó y cuándo. En los dos queda
      * `cierre` con el comentario, quién cerró y cuándo. Es la ÚNICA vía de cierre:
      * `PUT /incidents/{id}/cerrar` y `PUT /incidents/{id}/gobernanza` con `estadoCierre =
-     * 'cerrado'` llegan acá, así que `cierre` y la reapertura siempre tienen de dónde leer.
+     * 'cerrado'` y el cierre de la investigación desde la obra llegan acá, así que `cierre` y la
+     * reapertura siempre tienen de dónde leer.
+     *
+     * `camposExtra`: lo propio de la ruta de la obra (`fechaCierre`, `informeDocumentId`).
      */
-    async cerrar(incidente, comentarioCierre, personaId, gobernanzaExtra = {}) {
+    async cerrar(incidente, comentarioCierre, personaId, gobernanzaExtra = {}, camposExtra = {}) {
         const ahora = new Date().toISOString();
-        const campos = { cierre: { comentario: comentarioCierre, cerradoPor: personaId, cerradoEn: ahora } };
+        const campos = { ...camposExtra, cierre: { comentario: comentarioCierre, cerradoPor: personaId, cerradoEn: ahora } };
         if (esHallazgo(incidente)) {
             campos.gobernanza = {
                 ...(incidente.gobernanza || {}),
@@ -1148,12 +1184,13 @@ class IncidentsRepository {
                 : null,
         };
         try {
+            const valores = { ':vacia': [], ':nuevo': [papel], ':u': new Date().toISOString() };
             await this.dynamo.send(new UpdateCommand({
                 TableName: this.incidentsTable,
                 Key: { incidentId: incidente.incidentId },
                 UpdateExpression: 'SET papeles = list_append(if_not_exists(papeles, :vacia), :nuevo), updatedAt = :u',
-                ConditionExpression: 'updatedAt = :leido',
-                ExpressionAttributeValues: { ':vacia': [], ':nuevo': [papel], ':u': new Date().toISOString(), ':leido': incidente.updatedAt },
+                ConditionExpression: condicionDeLectura(incidente, valores),
+                ExpressionAttributeValues: valores,
             }));
         } catch (err) {
             if (err?.name === 'ConditionalCheckFailedException') {
@@ -1167,34 +1204,57 @@ class IncidentsRepository {
 
     /**
      * Bucket de un papel. Las claves actuales (`tenants/{empresa}/{carpeta}/…`) lo dicen en
-     * su carpeta (`almacenamiento.bucketDeClave`). Las del contrato de diciembre de 2025 a
-     * septiembre de 2026 (`{id}/documents/{tipo}-….pdf`, sin empresa) no tienen carpeta: ese
-     * segundo tramo es `documents`, y `bucketDeClave` las mandaría al bucket de trabajo.
-     * Los papeles de incidentes siempre se guardaron en el bucket de evidencia del módulo,
-     * así que ahí se buscan.
+     * su carpeta; las del formato anterior (`{id}/documents/{tipo}-….pdf`, sin empresa) están
+     * siempre en el bucket de evidencia. Las dos las resuelve `almacenamiento.bucketDeClave`,
+     * la misma resolución que usa la retención.
      */
     bucketDelPapel(s3Key) {
-        return String(s3Key).startsWith('tenants/') ? almacenamiento.bucketDeClave(s3Key) : this.incidentEvidenceBucket;
+        return almacenamiento.bucketDeClave(s3Key);
     }
 
-    // Los papeles del caso con un enlace de descarga FIRMADO de 15 minutos (como
-    // las fotos). Nunca una URL directa al bucket: no abre y, si abriera, no
-    // dejaría constancia de quién la pidió.
-    async getDocuments(incidente) {
-        // Incluye los papeles del contrato anterior (`documentos.diat`/`diep`): con
-        // la misma firma y la misma auditoría que los demás.
-        const papeles = papelesDelCaso(incidente);
-        const archivos = await Promise.all(papeles.map(async (p) => {
+    // La lista de papeles del caso, sin enlaces: listar no entrega los archivos. Incluye los
+    // papeles del contrato anterior (`documentos.diat`/`diep`).
+    getDocuments(incidente) {
+        const archivos = papelesDelCaso(incidente).map((p) => {
             const { s3Key, huella, ...visible } = p;
-            const url = await getSignedUrl(s3Client, new GetObjectCommand({
-                Bucket: this.bucketDelPapel(s3Key),
-                Key: s3Key,
-                // El navegador descarga con el nombre original, no con la clave.
-                ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(p.nombreArchivo || 'documento')}`,
-            }), { expiresIn: 900 });
-            return { ...visible, contieneSalud: tipoPapelConSalud(p.tipo), url };
+            return { ...visible, contieneSalud: tipoPapelConSalud(p.tipo) };
+        });
+        return { archivos };
+    }
+
+    /**
+     * Enlace de descarga FIRMADO, de 15 minutos, de UN papel (`papelDelCaso`, tal como lo
+     * devuelve `papelesDelCaso`). Nunca una URL directa al bucket: no abre y, si abriera, no
+     * dejaría constancia de quién la pidió.
+     *
+     * El archivo se descarga con un nombre neutro (tipo de papel y fecha), no con el original:
+     * ese nombre lo escribe quien sube el archivo y suele traer el de una persona, y la URL
+     * firmada viaja en el historial del navegador y en los registros de quien la reciba.
+     */
+    async enlaceDePapel(papelDelCaso) {
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({
+            Bucket: this.bucketDelPapel(papelDelCaso.s3Key),
+            Key: papelDelCaso.s3Key,
+            ResponseContentDisposition: contentDispositionAdjunto(nombreDeDescarga(papelDelCaso)),
+        }), { expiresIn: 900 });
+        return { url };
+    }
+
+    /**
+     * La persona afectada de un caso, como personaId de la empresa, o null (no se identificó, o
+     * no está en Personas). Se vincula por el HMAC de su RUT, el mismo de su ficha: es el
+     * titular de los datos de salud de la DIAT.
+     */
+    async personaDelAfectado(tenantId, afectadoRutHmac) {
+        if (!tenantId || !afectadoRutHmac) return null;
+        const r = await this.dynamo.send(new QueryCommand({
+            TableName: this.personasTable,
+            IndexName: 'tenantRutHmac-index',
+            KeyConditionExpression: 'tenantId = :t AND rutHmac = :h',
+            ExpressionAttributeValues: { ':t': tenantId, ':h': afectadoRutHmac },
         }));
-        return { archivos, clavesConSalud: papeles.filter((p) => tipoPapelConSalud(p.tipo)).map((p) => p.s3Key) };
+        const ficha = (r.Items || []).find((it) => String(it.SK || '').startsWith('PERSONA#'));
+        return ficha ? String(ficha.SK).slice('PERSONA#'.length) : null;
     }
 
     // GET ANALYTICS
@@ -1298,4 +1358,4 @@ class IncidentsRepository {
     }
 }
 
-module.exports = { IncidentsRepository };
+module.exports = { IncidentsRepository, _interno: { codificarRfc5987, contentDispositionAdjunto, nombreDeDescarga } };

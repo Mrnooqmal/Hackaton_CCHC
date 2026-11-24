@@ -32,7 +32,8 @@ const { TenantService } = require('../lib/services/TenantService');
 const { ObraService } = require('../lib/services/ObraService');
 const { eventBus } = require('../lib/events/EventBus');
 const { FUENTES } = require('../lib/gobernanza/inventario');
-const { resumenDelCaso, pendientesDeCierre, papelesDelCaso } = require('../lib/casos');
+const { pendientesDeCierre, papelesDelCaso } = require('../lib/casos');
+const { resumenDelCaso } = require('../lib/casos-servidor');
 const { evaluarItem66 } = require('../lib/completitud-operacion');
 const { ESTADO_REQUISITO: E } = require('../lib/completitud');
 const { cortar } = require('../lib/utils/texto');
@@ -276,9 +277,15 @@ test('un papel guardado con la clave anterior ({id}/documents/…) se lee, se fi
     assert.equal(archivos[0].legado, true);
     assert.equal(archivos[0].contieneSalud, true);
     assert.equal(archivos[0].s3Key, undefined, 'la clave no sale');
-    assert.match(archivos[0].url, /evidencia-de-prueba/, 'el bucket es el de evidencia, no el de trabajo');
-    assert.match(archivos[0].url, new RegExp(`${id}/documents/diat-`));
+    assert.equal(archivos[0].url, undefined, 'la lista no trae enlaces');
     assert.equal(requeridos.find((r) => r.clave === 'diat').cumplido, true);
+
+    // El enlace se pide aparte, y se firma contra el bucket de evidencia, no el de trabajo.
+    const enlace = await pedir(prev(), 'GET', `/incidents/${id}/documents/${archivos[0].papelId}/enlace`);
+    assert.equal(enlace.statusCode, 200, enlace.body);
+    const { url } = datos(enlace);
+    assert.match(url, /evidencia-de-prueba/, 'el bucket es el de evidencia, no el de trabajo');
+    assert.match(url, new RegExp(`${id}/documents/diat-`));
 
     // Las claves de otro incidente o con `..` siguen sin aceptarse.
     for (const mala of [`OTRO/documents/diat-${UUID}.pdf`, `${id}/documents/../${id}/x.pdf`, `${id}/otra-carpeta/diat.pdf`]) {
@@ -299,6 +306,8 @@ test('inventario: los archivos del contrato anterior (documentos.diat y diep) en
     const archivos = fuente.archivosDe({
         evidencias: ['tenants/A/incidentes/I1/foto.png'],
         papeles: [{ s3Key: 'tenants/A/incidentes/I1/papeles/informe_investigacion-x.pdf' }],
+        incidentId: 'I1',
+        tenantId: 'A',
         documentos: {
             diat: { s3Key: 'I1/documents/diat-x.pdf' },
             diep: { s3Key: 'tenants/A/incidentes/I1/diep-x.pdf' },
@@ -309,6 +318,12 @@ test('inventario: los archivos del contrato anterior (documentos.diat y diep) en
         'I1/documents/diat-x.pdf', 'tenants/A/incidentes/I1/diep-x.pdf',
         'tenants/A/incidentes/I1/foto.png', 'tenants/A/incidentes/I1/papeles/informe_investigacion-x.pdf',
     ].sort());
+    // La clave de OTRO incidente (el contrato anterior dejaba escribir `documentos` desde el cliente) no entra:
+    // se suprimiría con este caso un archivo que no es suyo.
+    assert.deepEqual(fuente.archivosDe({
+        incidentId: 'I1', tenantId: 'A',
+        documentos: { diat: { s3Key: 'I2/documents/diat-x.pdf' }, diep: { s3Key: 'tenants/B/incidentes/I2/diep-x.pdf' } },
+    }), []);
     // Sin ellos, o con valores raros, no falla ni agrega nada.
     assert.deepEqual(fuente.archivosDe({ documentos: { diat: null, diep: { s3Key: 42 } } }), []);
     assert.deepEqual(fuente.archivosDe({}), []);

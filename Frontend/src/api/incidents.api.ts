@@ -94,7 +94,8 @@ export interface Incident {
         cargo: string;
     };
     realizadoPor?: {
-        personaId: string | null;
+        /** Lo pone el servidor desde la sesión; si el cliente lo manda, se ignora. */
+        personaId?: string | null;
         nombre: string;
         cargo: string;
     };
@@ -200,7 +201,7 @@ export interface AddInvestigationData {
     medidas: string[];
 }
 
-/** Un archivo subido a la carpeta del caso (DIAT, DIEP, informe…). Sin la clave de S3: se descarga con `url`. */
+/** Un archivo subido a la carpeta del caso (DIAT, DIEP, informe…). Sin la clave de S3 ni enlace: el enlace se pide aparte (`getEnlacePapel`). */
 export interface PapelDelCaso {
     papelId: string;
     tipo: TipoPapel;
@@ -217,8 +218,6 @@ export interface PapelDelCaso {
     legado?: boolean;
     /** La DIAT y la DIEP traen datos de salud: su descarga queda auditada. */
     contieneSalud: boolean;
-    /** Enlace firmado de 15 minutos. */
-    url: string;
 }
 
 export interface PapelesDelCaso {
@@ -413,14 +412,18 @@ export const incidentsApi = {
     },
 
     confirmarPapel: (incidentId: string, data: { s3Key: string; fileName: string; fechaDocumento?: string }) =>
-        apiRequest<{ papel: Omit<PapelDelCaso, 'url' | 'contieneSalud'> }>(`/incidents/${incidentId}/documents/confirmar`, {
+        apiRequest<{ papel: Omit<PapelDelCaso, 'contieneSalud'> }>(`/incidents/${incidentId}/documents/confirmar`, {
             method: 'POST',
             body: JSON.stringify(data),
         }),
 
-    /** Papeles subidos con su descarga firmada, lo que el caso exige y el avance. Exige `incidentes.historial`. */
+    /** Papeles subidos (sin enlaces), lo que el caso exige y el avance. Exige `incidentes.historial`. */
     getDocuments: (incidentId: string) =>
         apiRequest<PapelesDelCaso>(`/incidents/${incidentId}/documents`),
+
+    /** Enlace firmado de 15 minutos de UN papel. Pedirlo es lo que queda en la auditoría de la DIAT y la DIEP. Exige `incidentes.historial`. */
+    getEnlacePapel: (incidentId: string, papelId: string) =>
+        apiRequest<{ url: string }>(`/incidents/${incidentId}/documents/${encodeURIComponent(papelId)}/enlace`),
 
     /** Casos de una obra sin datos personales ni archivos, del más reciente al más antiguo. Exige `incidentes.historial`. */
     getCasosResumen: (obraId: string) =>

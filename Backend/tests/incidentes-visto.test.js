@@ -23,7 +23,7 @@ const { PersonaService } = require('../lib/services/PersonaService');
 const { TenantService } = require('../lib/services/TenantService');
 const { ObraService } = require('../lib/services/ObraService');
 const { eventBus } = require('../lib/events/EventBus');
-const { conVistoPor } = require('../lib/casos');
+const { conVistoPor } = require('../lib/casos-servidor');
 const incidentes = require('../handlers/incidents-module/handler');
 const { IncidentsRepository } = require('../handlers/incidents-module/incidents.repository');
 

@@ -9,13 +9,14 @@ const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { cortar } = require('../../lib/utils/texto');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const {
-    ORDEN_TIPOS_PAPEL, esTipoPapel, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
+    ORDEN_TIPOS_PAPEL, esTipoPapel, tipoPapelConSalud, papelesDelCaso, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR,
-    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
+    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
     TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo, esHallazgo,
     MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL, MIME_FOTOS, EXTENSION_POR_MIME_FOTO,
 } = require('../../lib/casos');
+const { resumenDelCaso, evaluarCierre } = require('../../lib/casos-servidor');
 
 const incidentsRepo = new IncidentsRepository();
 const router = Router();
@@ -152,7 +153,8 @@ router
     // Papeles del caso (fase 2): subir en dos pasos y listar con descarga firmada.
     .post('/incidents/:id/documents', pedirSubidaDocumento)
     .post('/incidents/:id/documents/confirmar', confirmarDocumento)
-    .get('/incidents/:id/documents', getDocuments);
+    .get('/incidents/:id/documents', getDocuments)
+    .get('/incidents/:id/documents/:papelId/enlace', getEnlacePapel);
 
 router.all('*', () => jsonResponse({ error: 'Not Found' }, 404));
 
@@ -164,8 +166,6 @@ const parseBody = (event) => {
         return {};
     }
 };
-
-// ... existing code ...
 
 // Response helpers
 const jsonResponse = (data, status = 200) => ({
@@ -313,7 +313,7 @@ async function create(request) {
             body.centroTrabajo = body.centroTrabajo || body.ubicacionReferencia || 'Por definir';
         }
 
-        const result = await incidentsRepo.create(body, request.event);
+        const result = await incidentsRepo.create(body, request.event, { personaIdDeSesion: sesion.personaId });
         console.log('[HANDLER] Create result:', result.incident?.incidentId);
         // Return incident data directly for frontend compatibility
         return jsonResponse({
@@ -486,7 +486,7 @@ async function agregarEvidencias(request) {
         if (previas.length + nuevas.length > MAX_EVIDENCIAS_TOTAL) {
             return jsonResponse({ success: false, error: `El caso admite hasta ${MAX_EVIDENCIAS_TOTAL} archivos de evidencia` }, 400);
         }
-        const result = await incidentsRepo.agregarEvidencias(incidente.incidentId, nuevas, incidente.updatedAt);
+        const result = await incidentsRepo.agregarEvidencias(incidente, nuevas);
         return jsonResponse({ success: true, data: { evidencias: result.evidencias } });
     } catch (err) {
         return errorResponse(err);
@@ -588,11 +588,6 @@ async function addInvestigation(request) {
         return errorResponse(err);
     }
 }
-
-// Gestionar la gobernanza de un hallazgo o completar un reporte flash es cosa de
-// supervisor hacia arriba. El actor sale de la SESIÓN: antes venía en `actorId`
-// del cuerpo, así que bastaba con escribir el id de un supervisor.
-const esSupervisorOSuperior = (sesion) => sesionPuede(sesion, PERMISSIONS.INCIDENTES_REPORTAR);
 
 async function updateGobernanza(request) {
     try {
@@ -909,20 +904,12 @@ async function cerrar(request) {
         const incidente = await incidenteDelTenant(request.params.id, sesion);
         const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_CLASIFICAR, 'Solo quien clasifica incidentes puede cerrar el caso.');
         if (rechazo) return rechazo;
-        if (estaCerrado(incidente)) {
-            return jsonResponse({ success: false, error: 'El caso ya está cerrado.' }, 409);
-        }
-
         const body = parseBody(request.event);
-        const comentario = typeof body.comentarioCierre === 'string' ? body.comentarioCierre.trim() : '';
-        if (!comentario) return solicitudInvalida('El comentario de cierre es obligatorio.');
-        if (comentario.length > MAX_COMENTARIO_CIERRE) {
-            return solicitudInvalida(`El comentario de cierre admite hasta ${MAX_COMENTARIO_CIERRE} caracteres.`);
-        }
-        const pendientes = pendientesDeCierre(incidente, comentario);
-        if (pendientes.length > 0) return respuestaPendientes(pendientes);
+        const cierre = evaluarCierre(incidente, body.comentarioCierre);
+        if (cierre.pendientes) return respuestaPendientes(cierre.pendientes);
+        if (cierre.error) return jsonResponse({ success: false, error: cierre.error }, cierre.estado);
 
-        const incident = await incidentsRepo.cerrar(incidente, comentario, sesion.personaId);
+        const incident = await incidentsRepo.cerrar(incidente, cierre.comentario, sesion.personaId);
         return jsonResponse({ success: true, data: { incident, siguientePaso: siguientePaso(incident) }, message: 'Caso cerrado.' });
     } catch (err) {
         return errorResponse(err);
@@ -1073,10 +1060,8 @@ async function confirmarDocumento(request) {
     }
 }
 
-// Lista de papeles con enlace de descarga firmado (15 minutos) y lo que el caso
-// exige. La DIAT y la DIEP traen datos de salud: su entrega queda en la
-// auditoría de acceso a datos de salud, y si el registro no se puede escribir la
-// respuesta no sale (`conAuditoriaSalud`, en `incidentsHandler`).
+// Lista de papeles y lo que el caso exige. No entrega archivos ni enlaces: eso es
+// `getEnlacePapel`, que es lo que se audita. Abrir la página del caso lista, y no es una descarga.
 async function getDocuments(request) {
     try {
         const ses = sesionDe(request);
@@ -1087,14 +1072,44 @@ async function getDocuments(request) {
         // Quien reportó el caso lo ve, pero sus papeles son del historial.
         if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los papeles del caso.');
 
-        const { archivos, clavesConSalud } = await incidentsRepo.getDocuments(incidente);
-        if (clavesConSalud.length) {
-            anotarAccesoSalud({ tipo: TIPOS_ACCESO_SALUD.DESCARGA, documentos: [incidente.incidentId], claves: clavesConSalud });
-        }
+        const { archivos } = incidentsRepo.getDocuments(incidente);
         return jsonResponse({
             success: true,
             data: { archivos, requeridos: papelesRequeridos(incidente), avance: avanceDelCaso(incidente) },
         });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
+// Enlace de descarga firmado (15 minutos) de UN papel. La DIAT y la DIEP traen datos de
+// salud: pedir su enlace queda en la auditoría de acceso a datos de salud, con la persona
+// afectada como titular, y si el registro no se puede escribir la respuesta no sale
+// (`conAuditoriaSalud`, en `incidentsHandler`). Los demás papeles se firman sin auditoría.
+async function getEnlacePapel(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        if (!puedeLeer(incidente, sesion)) return noEncontrado();
+        if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los papeles del caso.');
+
+        const papelId = decodeURIComponent(request.params.papelId);
+        const papel = papelesDelCaso(incidente).find((p) => p.papelId === papelId);
+        if (!papel) return jsonResponse({ success: false, error: 'Papel no encontrado' }, 404);
+
+        const { url } = await incidentsRepo.enlaceDePapel(papel);
+        if (tipoPapelConSalud(papel.tipo)) {
+            const titular = await incidentsRepo.personaDelAfectado(sesion.tenantId, incidente.afectadoRutHmac);
+            anotarAccesoSalud({
+                tipo: TIPOS_ACCESO_SALUD.DESCARGA,
+                titulares: titular ? [titular] : [],
+                documentos: [incidente.incidentId],
+                claves: [papel.s3Key],
+            });
+        }
+        return jsonResponse({ success: true, data: { url } });
     } catch (err) {
         return errorResponse(err);
     }

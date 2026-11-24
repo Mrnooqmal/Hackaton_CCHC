@@ -4,23 +4,24 @@ import { incidentsApi, type ClasificarData, type Incident } from '../api/client'
 import { useToast } from '../context/ToastContext';
 import { Select, SegmentedControl } from './ui';
 import SelectorResponsable from './SelectorResponsable';
-import { esHallazgo } from '../utils/casos';
+import { esHallazgo, GRAVEDADES, TIPOS_HALLAZGO, TIPOS_INCIDENTE } from '../utils/casos';
 
 type Tipo = Incident['tipo'];
 type Gravedad = 'leve' | 'grave' | 'fatal';
 
-const TIPOS: { value: Tipo; label: string }[] = [
-    { value: 'condicion_subestandar', label: 'Hallazgo: condición subestándar' },
-    { value: 'accion_subestandar', label: 'Hallazgo: acción subestándar' },
-    { value: 'incidente', label: 'Incidente (sin lesión, pudo ser grave)' },
-    { value: 'accidente', label: 'Accidente (hubo lesión)' },
-];
+// Los valores salen de `utils/casos` (las listas que valida el servidor); acá solo se les pone el texto.
+const ETIQUETA_TIPO: Record<string, string> = {
+    condicion_subestandar: 'Hallazgo: condición subestándar',
+    accion_subestandar: 'Hallazgo: acción subestándar',
+    incidente: 'Incidente (sin lesión, pudo ser grave)',
+    accidente: 'Accidente (hubo lesión)',
+};
+const ETIQUETA_GRAVEDAD: Record<string, string> = { leve: 'Leve', grave: 'Grave', fatal: 'Fatal' };
 
-const GRAVEDADES: { value: Gravedad; label: string }[] = [
-    { value: 'leve', label: 'Leve' },
-    { value: 'grave', label: 'Grave' },
-    { value: 'fatal', label: 'Fatal' },
-];
+const OPCIONES_TIPO: { value: Tipo; label: string }[] = [...TIPOS_HALLAZGO, ...TIPOS_INCIDENTE]
+    .map((v) => ({ value: v as Tipo, label: ETIQUETA_TIPO[v] ?? v }));
+const OPCIONES_GRAVEDAD: { value: Gravedad; label: string }[] = GRAVEDADES
+    .map((v) => ({ value: v as Gravedad, label: ETIQUETA_GRAVEDAD[v] ?? v }));
 
 const SI_NO = [{ value: 'si', label: 'Sí' }, { value: 'no', label: 'No' }];
 
@@ -50,8 +51,8 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
     // vacío, y hay que elegir: antes el selector no mostraba nada y enviaba el valor viejo.
     const tipoGuardado = previo?.tipo ?? incidente.tipo;
     const gravedadGuardada = previo?.gravedad ?? incidente.gravedad;
-    const [tipo, setTipo] = useState<Tipo | ''>(TIPOS.some((t) => t.value === tipoGuardado) ? tipoGuardado : '');
-    const [gravedad, setGravedad] = useState<Gravedad | ''>(GRAVEDADES.some((g) => g.value === gravedadGuardada) ? (gravedadGuardada as Gravedad) : '');
+    const [tipo, setTipo] = useState<Tipo | ''>(OPCIONES_TIPO.some((t) => t.value === tipoGuardado) ? tipoGuardado : '');
+    const [gravedad, setGravedad] = useState<Gravedad | ''>(OPCIONES_GRAVEDAD.some((g) => g.value === gravedadGuardada) ? (gravedadGuardada as Gravedad) : '');
     // Sin respuesta previa, vacío: las dos preguntas hay que contestarlas a conciencia.
     const [danoMayor, setDanoMayor] = useState<string>(previo?.danoMayor == null ? '' : previo.danoMayor ? 'si' : 'no');
     const [granSusto, setGranSusto] = useState<string>(previo?.granSusto == null ? '' : previo.granSusto ? 'si' : 'no');
@@ -118,7 +119,7 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
                         placeholder="Elegir…"
                         value={tipo}
                         onChange={(v) => setTipo(v as Tipo)}
-                        options={TIPOS}
+                        options={OPCIONES_TIPO}
                         disabled={guardando}
                     />
                 </div>
@@ -130,7 +131,7 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
                             ariaLabel="Gravedad"
                             value={gravedad}
                             onChange={(v) => setGravedad(v as Gravedad)}
-                            options={GRAVEDADES}
+                            options={OPCIONES_GRAVEDAD}
                             disabled={guardando}
                         />
                     </div>

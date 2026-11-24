@@ -34,7 +34,7 @@ const C = require('../lib/completitud');
 const { definicionesOperacionPara, evaluarItem66 } = require('../lib/completitud-operacion');
 const { definicionesDocumentalesPara } = require('../lib/completitud-documental');
 const { definicionesPara } = require('../lib/completitud-estructura');
-const { resumenDelCaso } = require('../lib/casos');
+const { resumenDelCaso } = require('../lib/casos-servidor');
 const incidentes = require('../handlers/incidents-module/handler');
 const estructura = require('../handlers/estructura-module/handler');
 

@@ -384,24 +384,31 @@ test('no se pueden escribir papeles ni documentos por el PUT ni al crear el inci
 
 // ─── Descarga firmada y auditada ─────────────────────────────────────────────
 
-test('GET: la lista trae un enlace firmado de 15 minutos, nunca una URL directa ni la clave de S3', async () => {
+test('GET: la lista no trae enlaces ni la clave de S3; el enlace de UN papel es firmado, de 15 minutos y con un nombre neutro', async () => {
     const id = await accidente();
-    const { s3Key } = await subirPapel(como(gestora, GESTION), id, { tipo: 'informe_investigacion', fileName: 'informe.pdf', fecha: '2026-11-11' });
+    const { s3Key } = await subirPapel(como(gestora, GESTION), id, { tipo: 'informe_investigacion', fileName: 'informe de Pedro Soto.pdf', fecha: '2026-11-11' });
     const res = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents`);
     assert.equal(res.statusCode, 200, res.body);
     const { archivos, requeridos, avance } = datos(res);
     assert.equal(archivos.length, 1);
     const [a] = archivos;
     assert.equal(a.tipo, 'informe_investigacion');
-    assert.equal(a.nombreArchivo, 'informe.pdf');
+    assert.equal(a.nombreArchivo, 'informe de Pedro Soto.pdf');
     assert.equal(a.fechaDocumento, '2026-11-11');
     assert.equal(a.contieneSalud, false);
-    const url = new URL(a.url);
+    assert.ok(!('url' in a) && !('s3Key' in a) && !('huella' in a));
+    assert.ok(!res.body.includes('X-Amz-Signature') && !res.body.includes(s3Key));
+
+    const enlace = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/${a.papelId}/enlace`);
+    assert.equal(enlace.statusCode, 200, enlace.body);
+    const url = new URL(datos(enlace).url);
     assert.equal(url.searchParams.get('X-Amz-Expires'), '900');
     assert.ok(url.searchParams.get('X-Amz-Signature'));
     assert.ok(url.pathname.endsWith(s3Key) || decodeURIComponent(url.pathname).endsWith(s3Key));
-    assert.match(url.searchParams.get('response-content-disposition'), /attachment; filename\*=UTF-8''informe\.pdf/);
-    assert.ok(!('s3Key' in a) && !('huella' in a));
+    // El archivo se baja con el tipo de papel y su fecha, no con el nombre que escribió quien lo subió.
+    const disposicion = url.searchParams.get('response-content-disposition');
+    assert.match(disposicion, /^attachment; filename="informe_investigacion-2026-11-11\.pdf"; filename\*=UTF-8''informe_investigacion-2026-11-11\.pdf$/);
+    assert.ok(!url.toString().includes('Pedro') && !url.toString().includes('Soto'), 'ni el nombre del archivo ni el de la persona van en el enlace');
     // Lo que exige el caso, calculado con las reglas compartidas.
     assert.deepEqual(requeridos.map((r) => [r.clave, r.cumplido]), [
         ['diat', false], ['informe_investigacion', true], ['plan_medidas', false], ['constancia_aviso_autoridad', false],
@@ -411,20 +418,42 @@ test('GET: la lista trae un enlace firmado de 15 minutos, nunca una URL directa 
 
 const filasDeSalud = () => doble.items('AUDITORIA_ACCESOS_TABLE').filter((r) => Array.isArray(r.tipos) && r.tipos.includes('descarga_documento_salud'));
 
-test('descargar la DIAT queda en la auditoría de acceso a salud, con la huella de la clave y no la clave', async () => {
+test('pedir el enlace de la DIAT queda en la auditoría de acceso a salud, con la persona afectada como titular y la huella de la clave, no la clave', async () => {
+    const pedro = (await new PersonaService().crear(A, { rut: '15.555.555-6', nombre: 'Pedro', apellido: 'Soto', rol: 'trabajador' })).persona.personaId;
     const id = await accidente();
     const diat = await subirPapel(como(gestora, GESTION), id, { fileName: 'DIAT Pedro Soto.pdf' });
-    await subirPapel(como(gestora, GESTION), id, { tipo: 'informe_investigacion' });
-    const res = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents`);
+    const informe = await subirPapel(como(gestora, GESTION), id, { tipo: 'informe_investigacion' });
+    const papelDiat = guardado(id).papeles.find((p) => p.s3Key === diat.s3Key).papelId;
+    const papelInforme = guardado(id).papeles.find((p) => p.s3Key === informe.s3Key).papelId;
+
+    // Abrir la página del caso (la lista) no es una descarga: no deja registro.
+    assert.equal((await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents`)).statusCode, 200);
+    assert.equal(filasDeSalud().length, 0, 'listar no audita');
+    // El enlace de un papel sin salud tampoco.
+    assert.equal((await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/${papelInforme}/enlace`)).statusCode, 200);
+    assert.equal(filasDeSalud().length, 0, 'el informe no trae salud');
+
+    const res = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/${papelDiat}/enlace`);
     assert.equal(res.statusCode, 200, res.body);
     const [fila] = filasDeSalud();
     assert.ok(fila, 'hay un registro de acceso');
     assert.equal(fila.actorId, soloHistorial);
     assert.equal(fila.ip, '200.1.2.3');
+    assert.deepEqual(fila.titulares, [pedro], 'el titular es la persona afectada');
     assert.deepEqual(fila.documentos, [id]);
     assert.deepEqual(fila.claves, [huellaClave(diat.s3Key)], 'solo la DIAT, que es la que trae salud');
     const texto = JSON.stringify(fila);
     assert.ok(!texto.includes(diat.s3Key) && !texto.includes('Pedro Soto'), 'ni la clave ni el nombre del archivo');
+});
+
+test('el enlace de un papel: otra empresa y un papel que no existe responden 404; sin historial, 403', async () => {
+    const id = await accidente();
+    await subirPapel(como(gestora, GESTION), id, { tipo: 'informe_investigacion' });
+    const papelId = guardado(id).papeles[0].papelId;
+    assert.equal((await pedir(como(ajena, SOLO_HISTORIAL, B), 'GET', `/incidents/${id}/documents/${papelId}/enlace`)).statusCode, 404);
+    assert.equal((await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/no-existe/enlace`)).statusCode, 404);
+    assert.equal((await pedir(como(trabajadora, TRABAJADOR), 'GET', `/incidents/${id}/documents/${papelId}/enlace`)).statusCode, 404, 'quien no puede leer el caso no sabe que existe');
+    assert.equal((await pedir(como(gestora, 'incidentes.reportar'), 'GET', `/incidents/${id}/documents/${papelId}/enlace`)).statusCode, 403);
 });
 
 test('un caso sin DIAT ni DIEP no deja registro de acceso a salud', async () => {
@@ -435,9 +464,21 @@ test('un caso sin DIAT ni DIEP no deja registro de acceso a salud', async () => 
     assert.equal(filasDeSalud().length, 0);
 });
 
+test('una DIAT sin persona afectada en Personas se audita igual, sin titular', async () => {
+    const id = await accidente();
+    const diat = await subirPapel(como(gestora, GESTION), id);
+    const papelId = guardado(id).papeles.find((p) => p.s3Key === diat.s3Key).papelId;
+    const res = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/${papelId}/enlace`);
+    assert.equal(res.statusCode, 200, res.body);
+    const [fila] = filasDeSalud();
+    assert.deepEqual(fila.titulares, []);
+    assert.deepEqual(fila.claves, [huellaClave(diat.s3Key)]);
+});
+
 test('si el registro de auditoría no se puede escribir, la DIAT no se entrega (503)', async () => {
     const id = await accidente();
     const { s3Key } = await subirPapel(como(gestora, GESTION), id);
+    const papelId = guardado(id).papeles[0].papelId;
     const enviar = DynamoDBDocumentClient.prototype.send;
     DynamoDBDocumentClient.prototype.send = async function (cmd) {
         if (cmd.input?.TableName === 'AUDITORIA_ACCESOS_TABLE') throw Object.assign(new Error('caída'), { name: 'InternalServerError' });
@@ -445,7 +486,7 @@ test('si el registro de auditoría no se puede escribir, la DIAT no se entrega (
     };
     let res;
     try {
-        res = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents`);
+        res = await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/${papelId}/enlace`);
     } finally {
         DynamoDBDocumentClient.prototype.send = enviar;
     }
@@ -481,7 +522,8 @@ test('el plan de medidas correctivas se sube por el mismo flujo de papeles, sin 
     assert.equal(lista.requeridos.find((r) => r.clave === 'plan_medidas').cumplido, true);
     const archivo = lista.archivos.find((a) => a.tipo === 'plan_medidas');
     assert.equal(archivo.contieneSalud, false);
-    assert.ok(archivo.url);
+    assert.ok(!('url' in archivo));
+    assert.equal((await pedir(como(soloHistorial, SOLO_HISTORIAL), 'GET', `/incidents/${id}/documents/${archivo.papelId}/enlace`)).statusCode, 200);
     // No es un dato de salud: bajarlo no deja registro de acceso a salud.
     assert.equal(doble.items('AUDITORIA_ACCESOS_TABLE').filter((r) => Array.isArray(r.tipos) && r.tipos.includes('descarga_documento_salud')).length, 0);
 });

@@ -1668,7 +1668,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             // (para registrar, responder o aprobar lo que les concierne). Para el resto siguen fuera: es tratamiento nuevo.
             const verBloqueadas = incluirBloqueadas === '1'
                 && (puede(PERMISSIONS.EMPRESA_DERECHOS_TITULARES) || puede(PERMISSIONS.EMPRESA_SUPRESION_DATOS));
-            let personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
+            const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
 
             // Sin `personas.ver`, el listado se recorta a lo necesario para elegir
             // a alguien (reportar un hallazgo, ver quién está citado a una

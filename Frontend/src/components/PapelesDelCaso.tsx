@@ -52,6 +52,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
 
     // Lo cargado queda junto al id y a la recarga que se pidió (como en el detalle).
     const [recarga, setRecarga] = useState(0);
+    const [descargando, setDescargando] = useState<string | null>(null);
     const [cargado, setCargado] = useState<{ clave: string; archivos: PapelDelCaso[]; error: string } | null>(null);
     const clave = `${id}:${recarga}`;
 
@@ -93,6 +94,25 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
     const cambiarArchivo = (nuevo: File | null) => {
         setArchivo(nuevo);
         setSinConfirmar(null);
+    };
+
+    // El enlace se pide al hacer clic, no al abrir la página: pedirlo es lo que queda registrado
+    // (y firma uno nuevo de 15 minutos), y listar los papeles no es descargarlos.
+    const handleDescargar = async (p: PapelDelCaso) => {
+        if (descargando) return;
+        setDescargando(p.papelId);
+        try {
+            const res = await incidentsApi.getEnlacePapel(id, p.papelId);
+            if (!res.success || !res.data?.url) { toast.error(res.error || 'No se pudo preparar la descarga.'); return; }
+            const enlace = document.createElement('a');
+            enlace.href = res.data.url;
+            enlace.rel = 'noopener noreferrer';
+            enlace.click();
+        } catch {
+            toast.error('Error de conexión al preparar la descarga.');
+        } finally {
+            setDescargando(null);
+        }
     };
 
     const subir = async (e: React.FormEvent) => {
@@ -300,9 +320,9 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                                                 <Badge variant="info" size="sm"><FiLock size={11} /> Datos de salud</Badge>
                                             </span>
                                         )}
-                                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
-                                            <FiDownload size={14} /> Descargar
-                                        </a>
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleDescargar(p)} disabled={descargando !== null}>
+                                            <FiDownload size={14} /> {descargando === p.papelId ? 'Preparando…' : 'Descargar'}
+                                        </button>
                                     </li>
                                 ))}
                             </ul>

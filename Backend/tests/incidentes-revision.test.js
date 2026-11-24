@@ -483,7 +483,10 @@ test('la DIAT guardada como documentos.diat cuenta, se ve en la lista de papeles
     assert.equal(archivos[0].tipo, 'diat');
     assert.equal(archivos[0].nombreArchivo, 'DIAT-Juan-Perez.pdf');
     assert.equal(archivos[0].contieneSalud, true, 'la DIAT anterior queda en la auditoría de salud igual que las nuevas');
-    assert.match(archivos[0].url, /X-Amz-Signature=/, 'descarga firmada, no una URL directa');
+    assert.equal(archivos[0].url, undefined, 'la lista no entrega enlaces');
+    const enlace = await pedir(gest(), 'GET', `/incidents/${id}/documents/${archivos[0].papelId}/enlace`);
+    assert.equal(enlace.statusCode, 200, enlace.body);
+    assert.match(datos(enlace).url, /X-Amz-Signature=/, 'descarga firmada, no una URL directa');
     assert.equal(archivos[0].s3Key, undefined, 'la clave de S3 no sale como dato (solo dentro del enlace firmado)');
     assert.equal(archivos[0].huella, undefined);
     assert.ok(!lista.body.includes('"documentos"'));

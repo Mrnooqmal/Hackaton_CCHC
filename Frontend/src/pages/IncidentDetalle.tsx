@@ -56,7 +56,7 @@ const QUE_SIGUE: Record<'hallazgo' | 'incidente', Record<PasoDelCaso, string>> =
     hallazgo: {
         clasificar: 'Tu reporte está siendo revisado por prevención de riesgos.',
         papeles: 'Prevención de riesgos está reuniendo lo necesario para resolverlo.',
-        cerrar: 'Ya está corregido. Falta que prevención de riesgos cierre el caso.',
+        cerrar: 'Hay una persona a cargo de corregirlo. Falta que prevención de riesgos cierre el caso.',
         cerrado: 'Lo que reportaste fue corregido y revisado. Gracias por avisar.',
     },
     incidente: {
@@ -77,6 +77,12 @@ const IconoEtapa = ({ etapa }: { etapa: Etapa }) => {
     if (etapa === 'cerrado') return <FiCheckCircle size={11} />;
     if (etapa === 'en_curso') return <FiClock size={11} />;
     return <FiCircle size={10} />;
+};
+
+/** El plazo de un hallazgo (AAAA-MM-DD, un día de Chile) como fecha legible; sin zona, para que no se corra un día. */
+const plazoLegible = (iso?: string | null) => {
+    const [a, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+    return a && m && d ? new Date(a, m - 1, d).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 };
 
 const fechaHora = (inc: Incident) => {
@@ -219,6 +225,9 @@ export default function IncidentDetalle() {
                     <div>
                         <div className="inc-ficha-label">Qué sigue</div>
                         <p>{QUE_SIGUE[clase][siguiente.paso]}</p>
+                        {clase === 'hallazgo' && siguiente.paso === 'cerrar' && plazoLegible(incidente.gobernanza?.plazoRespuestaISO) && (
+                            <p className="inc-ficha-sigue-nota">Plazo para corregirlo: {plazoLegible(incidente.gobernanza?.plazoRespuestaISO)}.</p>
+                        )}
                         {siguiente.permiso && (meToca
                             ? <p className="inc-ficha-sigue-turno">Te toca: {siguiente.titulo}. {siguiente.detalle}</p>
                             : verPapeles && <p className="inc-ficha-sigue-nota">Le toca a {QUIEN_HACE[siguiente.permiso] ?? 'otra persona'}: {siguiente.titulo.charAt(0).toLowerCase()}{siguiente.titulo.slice(1)}.</p>)}

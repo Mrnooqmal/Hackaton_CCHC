@@ -251,12 +251,12 @@ test('los valores de sistema (sistema, QR-Publico) no cuentan como persona invol
     const personasDe = (it) => fuente.personasDe(it, {});
     assert.deepEqual(personasDe({ reportadoPor: 'QR-Publico' }), []);
     assert.deepEqual(personasDe({ reportadoPor: 'sistema', triaje: { clasificadoPor: 'sistema', anteriores: [{ clasificadoPor: 'QR-Publico' }] } }), []);
-    assert.deepEqual(personasDe({ reportadoPor: 'p-1' }), ['p-1']);
+    assert.deepEqual(personasDe({ reportadoPor: 'p-1', createdAt: '2026-11-01T10:00:00.000Z' }), ['p-1']);
 });
 
 test('personasDe reúne a quienes actuaron sobre el caso: clasificó, cerró, reabrió, verificó, medidas y papeles', () => {
     const it = {
-        reportadoPor: 'p-rep', realizadoPor: { personaId: 'p-real' },
+        reportadoPor: 'p-rep', createdAt: '2026-11-01T10:00:00.000Z', realizadoPor: { personaId: 'p-real' },
         gobernanza: { responsableId: 'p-resp', verificadoPor: 'p-verif' },
         triaje: { clasificadoPor: 'p-clas', anteriores: [{ clasificadoPor: 'p-clas-ant' }] },
         cierre: { cerradoPor: 'p-cierra' },

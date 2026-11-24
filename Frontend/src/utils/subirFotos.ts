@@ -11,6 +11,9 @@ import { incidentsApi } from '../api/client';
  * valida cada clave y agrega sin pisar).
  */
 
+/** Espera antes de reintentar un adjunto que chocó con otro cambio del caso. */
+const REINTENTO_ADJUNTAR_MS = 400;
+
 export interface ResultadoSubidaFotos {
     /** Claves de S3 de las fotos que llegaron al bucket. */
     claves: string[];
@@ -57,7 +60,14 @@ export async function subirYAdjuntarFotos(incidentId: string, fotos: File[]): Pr
     let adjuntas: string[] = [];
     if (claves.length > 0) {
         try {
-            const adjunto = await incidentsApi.agregarEvidencias(incidentId, claves);
+            let adjunto = await incidentsApi.agregarEvidencias(incidentId, claves);
+            // 409: el caso cambió justo en ese momento (otra persona guardó algo). Adjuntar con las mismas
+            // claves es seguro (agrega sin duplicar) y la segunda vez ya lee el caso nuevo: se reintenta una vez,
+            // para no dejar las fotos ya subidas sin dueño en el bucket (que no deja borrar).
+            if (!adjunto.success && adjunto.codigo === 'CONFLICTO') {
+                await new Promise((resolver) => setTimeout(resolver, REINTENTO_ADJUNTAR_MS));
+                adjunto = await incidentsApi.agregarEvidencias(incidentId, claves);
+            }
             if (adjunto.success) adjuntas = claves;
             else sinAdjuntar += claves.length;
         } catch {

@@ -26,6 +26,8 @@
  *     completo por una solicitud formal, que revisa una persona.
  */
 
+const { fuente } = require('./inventario');
+
 const FORMATO = 'buildandserve.datos-titular';
 const VERSION = 1;
 
@@ -91,14 +93,23 @@ function construirExportacion({
             miRespuesta: { ...solo(mio(e.recipients, yo), CAMPOS_PROPIOS), respuestas: respuestasEncuestas.get(e.surveyId) || null },
         }));
 
+    // Los incidentes donde el titular figura en cualquier rol que reconoce el inventario
+    // (`personasDe`: reportó, clasificó, cerró, reabrió, verificó, es responsable o subió un
+    // papel), con la misma función que usa la retención para que no se desvíen. Los días
+    // perdidos son un dato de salud de la persona afectada: solo salen si el titular lo es.
+    const personasDeIncidente = fuente('INCIDENTS_TABLE').personasDe;
     const incidentes = r('INCIDENTS_TABLE')
         .filter((i) => !String(i.incidentId || '').endsWith('#traza'))
-        .filter((i) => incidentesAfectado.has(i.incidentId) || i.realizadoPor?.personaId === yo)
-        .map((i) => ({
-            incidentId: i.incidentId,
-            ...solo(i, ['tipo', 'fecha', 'gravedad', 'diasPerdidos', 'obraId', 'estado']),
-            participacion: incidentesAfectado.has(i.incidentId) ? 'persona afectada' : 'reportado por ti',
-        }));
+        .filter((i) => incidentesAfectado.has(i.incidentId) || personasDeIncidente(i).includes(yo))
+        .map((i) => {
+            const afectado = incidentesAfectado.has(i.incidentId);
+            const reporto = i.realizadoPor?.personaId === yo || personasDeIncidente({ reportadoPor: i.reportadoPor, createdAt: i.createdAt }).includes(yo);
+            return {
+                incidentId: i.incidentId,
+                ...solo(i, afectado ? ['tipo', 'fecha', 'gravedad', 'diasPerdidos', 'obraId', 'estado'] : ['tipo', 'fecha', 'gravedad', 'obraId', 'estado']),
+                participacion: afectado ? 'persona afectada' : reporto ? 'reportado por ti' : 'participaste en el caso',
+            };
+        });
 
     const ausencias = r('AUSENCIAS_TABLE')
         .filter((a) => a.personaId === yo)

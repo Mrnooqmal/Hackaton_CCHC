@@ -9,8 +9,8 @@ import {
     FiPieChart, FiList, FiBarChart2,
     FiChevronLeft, FiChevronRight, FiCheckCircle, FiClock, FiCircle
 } from 'react-icons/fi';
-import { incidentsApi, workersApi } from '../api/client';
-import type { Incident, IncidentStats, AnalyticsData, HallazgoGobernanza, Worker } from '../api/client';
+import { incidentsApi } from '../api/client';
+import type { Incident, IncidentStats, AnalyticsData, HallazgoGobernanza } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
@@ -20,6 +20,7 @@ import { esHallazgo } from '../utils/casos';
 import { ancla } from '../ayuda/registro';
 import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
 import SinConexion from '../components/SinConexion';
+import SelectorResponsable from '../components/SelectorResponsable';
 import { abrirHtmlEnPestana, htmlImpresionIncidentes } from '../utils/informesHtml';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -42,10 +43,6 @@ const buildEvidenceUrl = (s3Key: string) => {
     }
     return '';
 };
-
-// Lo que trae `GET /personas` para elegir responsable: `Worker` más campos que
-// solo algunas fichas tienen.
-type PersonaListada = Worker & { workerId?: string; puesto?: string };
 
 // Una celda del calendario: vacía (antes del día 1) o un día con su resumen.
 interface DiaCalendario {
@@ -110,9 +107,8 @@ export default function Incidents() {
     const [gobForm, setGobForm] = useState({ responsableId: '', plazoRespuestaISO: '', estadoCierre: 'abierto', comentarioCierre: '' });
     const [gobSaving, setGobSaving] = useState(false);
     const [gobError, setGobError] = useState('');
-    const [personasTenant, setPersonasTenant] = useState<PersonaListada[]>([]);
 
-    const openGobernanza = async (inc: Incident) => {
+    const openGobernanza = (inc: Incident) => {
         const g: Partial<HallazgoGobernanza> = inc.gobernanza || {};
         setGobForm({
             responsableId: g.responsableId || '',
@@ -122,10 +118,6 @@ export default function Incidents() {
         });
         setGobError('');
         setGobIncident(inc);
-        if (personasTenant.length === 0) {
-            const res = await workersApi.list();
-            if (res.success && res.data) setPersonasTenant(res.data as PersonaListada[]);
-        }
     };
 
     const handleSaveGobernanza = async () => {
@@ -1950,12 +1942,7 @@ export default function Incidents() {
                     )}
                     <div className="form-group">
                         <label className="form-label">Responsable de cierre</label>
-                        <select className="form-input form-select" value={gobForm.responsableId} onChange={(e) => setGobForm({ ...gobForm, responsableId: e.target.value })}>
-                            <option value="">Selecciona…</option>
-                            {personasTenant.filter((p) => p.estado === 'activo' || p.personaId === gobForm.responsableId).map((p) => (
-                                <option key={p.personaId} value={p.personaId}>{p.nombre} {p.apellido || ''} {p.cargo ? `- ${p.cargo}` : ''}</option>
-                            ))}
-                        </select>
+                        <SelectorResponsable value={gobForm.responsableId} onChange={(personaId) => setGobForm({ ...gobForm, responsableId: personaId })} placeholder="Selecciona…" />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="form-group">

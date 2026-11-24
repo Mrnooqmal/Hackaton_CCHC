@@ -258,3 +258,31 @@ test('si el lote pasa a estar aprobado por quien ejecuta, la escritura lo rechaz
     assert.equal(r.statusCode, 409);
     assert.ok(ficha(juan).nivelEscolar);
 });
+
+test('un lote de retención con la clave del formato anterior de un papel (`{id}/documents/…`) no se bloquea: la lista y la borra en el bucket de evidencia', async () => {
+    const venc = (await new PersonaService().crear(T, { rut: '13.131.313-6', nombre: 'Pedro', rol: 'trabajador' })).persona;
+    const it = doble.items('PERSONAS_TABLE').find((x) => x.personaId === venc.personaId);
+    await poner('PERSONAS_TABLE', { ...it, estado: 'desvinculado', fechaTerminoVinculo: '2020-01-01T00:00:00Z' });
+    const anterior = 'i-viejo/documents/diat-x.pdf';
+    await poner('INCIDENTS_TABLE', {
+        incidentId: 'i-viejo', tenantId: T, fecha: '2020-02-01', tipo: 'accidente', afectadoRutHmac: ficha(venc).rutHmac,
+        documentos: { diat: { s3Key: anterior } },
+    });
+    versiones.set(anterior, ['v1']);
+    const buckets = [];
+    const enviar = s3Client.send;
+    s3Client.send = async (cmd) => {
+        if (['ListObjectVersionsCommand', 'DeleteObjectCommand'].includes(cmd.constructor.name)) buckets.push(cmd.input.Bucket);
+        return enviar(cmd);
+    };
+
+    const r = await lote(ana, 'POST', '/gobernanza/lotes', { origen: 'retencion' }, { ahora: new Date('2026-10-07T15:00:00Z') });
+    assert.equal(r.statusCode, 201, r.body);
+    const l = datos(r);
+    assert.deepEqual(l.contenido.archivos, [{ key: anterior, versiones: ['v1'] }]);
+    await lote(ana, 'POST', `/gobernanza/lotes/${l.loteId}/aprobar`, { huella: l.huella });
+    const ejecucion = await lote(luis, 'POST', `/gobernanza/lotes/${l.loteId}/ejecutar`, { huella: l.huella });
+    assert.equal(ejecucion.statusCode, 200, ejecucion.body);
+    assert.deepEqual(borradas, [`${anterior}@v1`]);
+    assert.ok(buckets.length >= 2 && buckets.every((b) => b === 'evidencia-prueba'), `bucket: ${buckets}`);
+});

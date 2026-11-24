@@ -11,6 +11,8 @@ const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
+const { evaluarCierre } = require('../../lib/casos-servidor');
+const { PERMISO_CLASIFICAR } = require('../../lib/casos');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
 const obraService = new ObraService();
@@ -255,9 +257,12 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
         }
 
         // POST /obras/{id}/investigaciones/{incidentId}/cerrar — Genera y firma el
-        // Informe Art. 71 (arbol de causas) y cierra la investigacion del incidente.
+        // Informe Art. 71 (arbol de causas) y cierra el caso. Cerrar un caso es de quien
+        // lo clasifica (incidentes.calificar_accidente) y exige lo mismo que
+        // PUT /incidents/{id}/cerrar: pasa por las mismas reglas y la misma escritura.
         if (method === 'POST' && obraId && action === 'investigaciones' && subAction && subSubAction === 'cerrar') {
             if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISO_CLASIFICAR)) return error('Solo quien clasifica incidentes puede cerrar el caso', 403);
             if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const body = JSON.parse(event.body || '{}');
 
@@ -275,6 +280,21 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
                 return error('Incidente no encontrado', 404);
             }
             if ((incident.obraId || null) !== obraId) return error('El incidente no pertenece a esta obra', 400);
+
+            // Las reglas del cierre se comprueban ANTES de firmar: el informe firmado no se
+            // puede deshacer. El comentario es el del cuerpo o, si no viene, uno fijo que
+            // deja constancia de cómo se cerró; el informe de esta misma ruta cuenta como
+            // el informe de investigación del caso.
+            const comentarioCierre = typeof body.comentarioCierre === 'string' && body.comentarioCierre.trim()
+                ? body.comentarioCierre
+                : 'Cierre de la investigación con el informe del Art. 71 firmado.';
+            const cierre = evaluarCierre(incident, comentarioCierre, { conInforme: true });
+            if (cierre.error) {
+                return {
+                    ...error(cierre.error, cierre.estado),
+                    body: JSON.stringify({ success: false, error: cierre.error, ...(cierre.pendientes ? { pendientes: cierre.pendientes } : {}) }),
+                };
+            }
 
             const contexto = {
                 ipAddress: event.requestContext?.http?.sourceIp || 'unknown',
@@ -295,9 +315,8 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
                 throw firmaErr;
             }
 
-            // Cerrar la investigacion y enlazar el informe generado.
-            await incidentsRepo.update(subAction, {
-                estado: 'cerrado',
+            // Cierra con la escritura de siempre (deja `cierre`, con bloqueo optimista) y enlaza el informe.
+            await incidentsRepo.cerrar(incident, cierre.comentario, sesion.personaId, {}, {
                 fechaCierre: new Date().toISOString(),
                 informeDocumentId: resultado.documentId
             });

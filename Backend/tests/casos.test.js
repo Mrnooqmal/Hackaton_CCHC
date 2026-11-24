@@ -423,5 +423,5 @@ test('papelesDelCaso: los papeles del contrato anterior (documentos.diat / diep)
         assert.deepEqual(E.avanceDelCaso(inc), C.avanceDelCaso(inc), nombre);
     }
     // Y el resumen para el FUF también ve el informe anterior.
-    assert.equal(C.resumenDelCaso({ ...accidente, documentos: anterior('diat', CLAVE('diat')) }).requeridos[0].cumplido, true);
+    assert.equal(require('../lib/casos-servidor').resumenDelCaso({ ...accidente, documentos: anterior('diat', CLAVE('diat')) }).requeridos[0].cumplido, true);
 });

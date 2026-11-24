@@ -285,7 +285,6 @@ export default function IncidentReportar() {
                 solicitanteId: user?.personaId,
                 reportadoPor: nombreCompleto || 'Usuario',
                 realizadoPor: {
-                    personaId: user?.personaId || null,
                     nombre: nombreCompleto || '',
                     cargo: '',
                 },

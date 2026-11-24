@@ -52,6 +52,22 @@ const uno = (v) => (v ? [v] : []);
 const esPersona = (v) => typeof v === 'string' && v !== '' && v !== 'sistema' && v !== 'QR-Publico';
 
 /**
+ * `reportadoPor` guarda el personaId de quien reportó desde el 15 de septiembre de 2026
+ * (la identidad pasó a salir de la sesión). Antes guardaba el NOMBRE que escribía el
+ * cliente: un nombre no vincula a nadie y, tratado como persona, dejaría el caso
+ * conservado para siempre. Cuenta como persona si tiene forma de id (uuid) o si el caso
+ * es posterior a ese cambio.
+ */
+const FECHA_IDENTIDAD_DE_SESION = '2026-09-15';
+const FORMA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const reportadoPorComoPersona = (it) => {
+    const quien = it?.reportadoPor;
+    if (!esPersona(quien)) return null;
+    if (FORMA_UUID.test(quien)) return quien;
+    return typeof it.createdAt === 'string' && it.createdAt.slice(0, 10) >= FECHA_IDENTIDAD_DE_SESION ? quien : null;
+};
+
+/**
  * Cada fuente dice, para un ítem de su tabla, qué personas involucra
  * (`personasDe`) y qué archivos de S3 referencia (`archivosDe`).
  */
@@ -161,14 +177,14 @@ const FUENTES = [
         // ficha), que el proceso resuelve a personaId con `ctx.personaPorRutHmac`.
         // Además, las personas que actuaron sobre el caso: quien lo reportó
         // (`reportadoPor` guarda su personaId desde que la identidad sale de la sesión; un
-        // valor de sistema como 'sistema', o 'QR-Publico' en casos antiguos, se descarta, o el caso no vencería nunca), quien
+        // valor de sistema como 'sistema', o 'QR-Publico' en casos antiguos, o un nombre de antes de ese cambio, se descarta, o el caso no vencería nunca), quien
         // lo clasificó (y quienes lo clasificaron antes), quien lo cerró y quienes lo
         // reabrieron, quien verificó el cierre, el responsable del hallazgo y los de las
         // medidas, quien creó o editó cada medida y quien subió cada papel. Un caso vence
         // cuando vence el plazo de TODAS las personas involucradas.
         personasDe: (it, ctx = {}) => [
             ...uno(ctx.personaPorRutHmac?.[it.afectadoRutHmac]), ...uno(it.realizadoPor?.personaId),
-            ...uno(it.reportadoPor),
+            ...uno(reportadoPorComoPersona(it)),
             ...uno(it.gobernanza?.responsableId), ...uno(it.gobernanza?.verificadoPor),
             ...uno(it.triaje?.clasificadoPor), ...ids(it.triaje?.anteriores, 'clasificadoPor'),
             ...uno(it.cierre?.cerradoPor),
@@ -188,8 +204,11 @@ const FUENTES = [
             // La DIAT y la DIEP guardadas con el contrato anterior (`documentos.diat/diep`,
             // un archivo por tipo): siguen siendo datos de salud en S3 y tienen que entrar
             // en la retención y en la supresión, aunque ya no se escriban.
-            it.documentos?.diat?.s3Key,
-            it.documentos?.diep?.s3Key,
+            // Solo si la clave es de ESTE incidente (la de la empresa o la del formato sin
+            // empresa, `{incidentId}/documents/…`): el contrato anterior dejaba escribir
+            // `documentos` desde el cliente, y una clave de otro caso se suprimiría con este.
+            ...['diat', 'diep'].map((t) => it.documentos?.[t]?.s3Key).filter((k) => typeof k === 'string'
+                && (k.startsWith(`tenants/${it.tenantId}/incidentes/${it.incidentId}/`) || k.startsWith(`${it.incidentId}/documents/`)) && !k.includes('..')),
         ].filter((k) => typeof k === 'string' && k),
     },
     {

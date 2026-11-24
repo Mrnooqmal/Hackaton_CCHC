@@ -147,3 +147,26 @@ test('el proceso diario recorre las empresas, y una que falla no detiene a las d
     assert.ok(doble.items('GOBERNANZA_TABLE').some((x) => x.tenantId === T), 'la empresa sana tiene su plan');
     assert.ok(errores.some((l) => l.includes('gobernanza.retencion')), 'el fallo queda como métrica');
 });
+
+test('las claves del formato anterior de un papel de incidente (`{id}/documents/…`, sin empresa) también extienden su bloqueo', async () => {
+    await sembrar();
+    const clave = 'i-activo/documents/diat-x.pdf';
+    await poner('INCIDENTS_TABLE', {
+        incidentId: 'i-activo', tenantId: T, fecha: '2031-03-01', createdAt: '2031-03-01T10:00:00.000Z', tipo: 'accidente',
+        reportadoPor: 'activa', documentos: { diat: { s3Key: clave } },
+    });
+    objetos.set(clave, { LastModified: new Date('2027-07-01T00:00:00Z'), RetainUntilDate: new Date('2032-07-01T00:00:00Z') });
+    await proceso._interno.procesarEmpresa({ tenantId: T }, { hoy: HOY });
+    assert.ok(retenciones.some((r) => r.key === clave), 'el archivo sin prefijo de empresa no se quedó sin extender');
+});
+
+test('la clave del formato anterior de un incidente vencido entra en lo que el plan suprime', async () => {
+    await sembrar();
+    const clave = 'i1/documents/diat-x.pdf';
+    const it = doble.items('INCIDENTS_TABLE').find((x) => x.incidentId === 'i1');
+    await poner('INCIDENTS_TABLE', { ...it, documentos: { diat: { s3Key: clave } } });
+    objetos.set(clave, { LastModified: new Date('2027-07-01T00:00:00Z'), RetainUntilDate: new Date('2032-07-01T00:00:00Z') });
+    await proceso._interno.procesarEmpresa({ tenantId: T }, { hoy: HOY });
+    assert.ok(planGuardado().archivosASuprimir.includes(clave));
+    assert.ok(!retenciones.some((r) => r.key === clave), 'lo que se va a suprimir no se extiende');
+});

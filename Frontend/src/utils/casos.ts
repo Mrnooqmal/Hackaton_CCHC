@@ -55,6 +55,8 @@ export interface CasoParaPapeles {
     evidencias?: unknown[];
     gobernanza?: { responsableId?: string | null; plazoRespuestaISO?: string | null; comentarioCierre?: string | null } | null;
     medidasCorrectivas?: unknown[];
+    /** Informe Art. 71 firmado al cerrar la investigación desde la obra. */
+    informeDocumentId?: string | null;
     papeles?: { tipo?: string; s3Key?: string }[];
     /** Contrato anterior de los papeles: un archivo por tipo (`diat` y `diep`). Solo se lee. */
     documentos?: Record<string, { s3Key?: unknown; fileName?: unknown; fileType?: unknown; uploadedAt?: unknown } | null | undefined> | null;
@@ -152,6 +154,9 @@ export function papelesDelCaso(inc?: CasoParaPapeles | null): Array<{ tipo?: str
 
 const hayPapel = (inc: CasoParaPapeles, tipo: TipoPapel) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
 
+/** El informe de investigación lo cumple el papel subido o el informe Art. 71 firmado desde la obra (`informeDocumentId`). */
+const tieneInforme = (inc: CasoParaPapeles) => hayPapel(inc, 'informe_investigacion') || hayTexto(inc?.informeDocumentId);
+
 /**
  * Papeles que el caso exige, cada uno con si ya está cumplido.
  *
@@ -175,7 +180,7 @@ export function papelesRequeridos(incidente?: CasoParaPapeles | null): PapelRequ
         return lista;
     }
 
-    const informe = () => exigir('informe_investigacion', etiquetaTipoPapel('informe_investigacion'), hayPapel(inc, 'informe_investigacion'), 'informe_investigacion');
+    const informe = () => exigir('informe_investigacion', etiquetaTipoPapel('informe_investigacion'), tieneInforme(inc), 'informe_investigacion');
 
     if (inc.tipo === 'accidente') {
         exigir('diat', 'DIAT', hayPapel(inc, 'diat'), 'diat');

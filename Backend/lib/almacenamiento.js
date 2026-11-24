@@ -93,6 +93,18 @@ const categoria = (nombre) => CATEGORIAS[String(nombre || '').trim()] || null;
 const prefijoDeEmpresa = (tenantId) => `tenants/${tenantId}/`;
 
 /**
+ * Claves de los papeles de incidentes del formato anterior (diciembre de 2025 a septiembre
+ * de 2026): `{incidentId}/documents/{tipo}-….pdf`, sin empresa ni carpeta. Siempre
+ * estuvieron en el bucket de evidencia, y la forma de la clave no deja deducirlo: se
+ * reconocen por su forma. Que sean de una empresa lo garantiza quien las reúne (el
+ * inventario las toma del incidente al que pertenecen), no la clave.
+ */
+const esClaveAnteriorDeIncidente = (clave) => {
+    const c = String(clave || '');
+    return !c.startsWith('tenants/') && /^[^/]+\/documents\/[^/]+$/.test(c) && !c.includes('..');
+};
+
+/**
  * Bucket donde vive una clave ya existente.
  *
  * Se deduce de la carpeta (`tenants/{empresa}/{carpeta}/…`), que es parte de la
@@ -100,6 +112,7 @@ const prefijoDeEmpresa = (tenantId) => `tenants/${tenantId}/`;
  * migrar la base entera el día que un bucket cambie de nombre.
  */
 const claseDeClave = (clave) => {
+    if (esClaveAnteriorDeIncidente(clave)) return EVIDENCIA;
     const partes = String(clave || '').split('/');
     const carpeta = partes.length > 2 ? partes[2] : null;
     return CARPETAS_EVIDENCIA.has(carpeta) ? EVIDENCIA : TRABAJO;
@@ -177,6 +190,7 @@ module.exports = {
     bucketDeClave,
     prefijoDeEmpresa,
     esDeLaEmpresa,
+    esClaveAnteriorDeIncidente,
     claveEstampado,
     claveLectura,
     nombreBucketEvidencia: () => EVIDENCIA_BUCKET,

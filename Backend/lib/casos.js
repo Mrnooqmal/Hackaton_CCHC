@@ -19,7 +19,7 @@
  * ── Qué lee del incidente ────────────────────────────────────────────────────
  *   tipo, clasificacion, gravedad, altoPotencial (lo agrega la fase 3),
  *   evidencias (claves de las fotos), gobernanza.{responsableId, plazoRespuestaISO,
- *   comentarioCierre}, medidasCorrectivas (solo las guardadas antes: ya no se crean) y papeles (los archivos subidos al
+ *   comentarioCierre}, informeDocumentId (el informe Art. 71 firmado), medidasCorrectivas (solo las guardadas antes: ya no se crean) y papeles (los archivos subidos al
  *   caso: `[{ tipo, … }]`, ver `incidents.repository.js`).
  */
 
@@ -158,16 +158,11 @@ function papelesDelCaso(inc) {
 const hayPapel = (inc, tipo) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
 
 /**
- * ¿Tiene una investigación registrada con el flujo anterior al rediseño
- * (`POST /incidents/{id}/investigations`, que guarda `investigaciones.prevencionista`,
- * `jefeDirecto` o `comiteParitario`)? Cuenta la que tiene contenido: hallazgos,
- * recomendaciones o medidas con texto. Es de lectura nada más, como `documentos`.
+ * ¿Tiene el informe de investigación? Lo cumple el papel subido o el informe del Art. 71
+ * que la obra firma con PIN al cerrar la investigación (`informeDocumentId`): es el mismo
+ * informe, generado por otra vía.
  */
-const INVESTIGADORES_ANTERIORES = ['prevencionista', 'jefeDirecto', 'comiteParitario'];
-const investigacionAnterior = (inc) => INVESTIGADORES_ANTERIORES.some((quien) => {
-    const i = inc?.investigaciones?.[quien];
-    return Boolean(i) && typeof i === 'object' && [i.hallazgos, i.recomendaciones, i.medidas].some((v) => hayTexto(v) || hayLista(v));
-});
+const tieneInforme = (inc) => hayPapel(inc, 'informe_investigacion') || hayTexto(inc?.informeDocumentId);
 
 /**
  * Papeles que el caso exige, cada uno con si ya está cumplido.
@@ -208,7 +203,7 @@ function papelesRequeridos(incidente) {
         return lista;
     }
 
-    const informe = () => exigir('informe_investigacion', etiquetaTipoPapel('informe_investigacion'), hayPapel(inc, 'informe_investigacion'), 'informe_investigacion');
+    const informe = () => exigir('informe_investigacion', etiquetaTipoPapel('informe_investigacion'), tieneInforme(inc), 'informe_investigacion');
 
     if (inc.tipo === 'accidente') {
         exigir('diat', 'DIAT', hayPapel(inc, 'diat'), 'diat');
@@ -258,36 +253,6 @@ const PERMISO_GESTIONAR = 'incidentes.reportar';
  */
 const ESTADOS_MEDIDA = ['pendiente', 'en_proceso', 'completada', 'verificada'];
 const medidaTerminada = (m) => m?.estado === 'completada' || m?.estado === 'verificada';
-
-/**
- * Las medidas anteriores a la fase 3 pueden no traer `numero`, y todo lo que actúa sobre
- * una medida la busca por número: con `undefined`, una acción sobre una de ellas caía sobre
- * TODAS las que no lo tenían. Esto devuelve el incidente con cada medida sin número
- * numerada, sin tocar lo guardado: se asigna a partir del mayor número que ya existe, en el
- * orden de la lista (que solo crece), así que el mismo caso da siempre los mismos números y
- * no choca con los existentes. Al guardar la lista, los números quedan escritos.
- * Devuelve el mismo objeto si no hay nada que numerar.
- */
-const sinNumero = (m) => m?.numero === undefined || m?.numero === null || m?.numero === '';
-function conMedidasNumeradas(inc) {
-    const medidas = inc?.medidasCorrectivas;
-    if (!Array.isArray(medidas) || !medidas.some((m) => m && typeof m === 'object' && sinNumero(m))) return inc;
-    let siguiente = medidas.reduce((mayor, m) => Math.max(mayor, Number(m?.numero) || 0), 0);
-    return { ...inc, medidasCorrectivas: medidas.map((m) => (m && typeof m === 'object' && sinNumero(m) ? { ...m, numero: ++siguiente } : m)) };
-}
-
-/**
- * Quién ha visto el caso (`viewedBy`) llega al frontend siempre como arreglo. En la tabla
- * conviven listas (la forma actual), conjuntos de texto (los casos en que el primer
- * `ADD` creó el campo) y el campo ausente; un conjunto, que el cliente de DynamoDB
- * entrega como `Set` de JS, `JSON.stringify` lo serializa como `{}`.
- * Devuelve el mismo objeto si ya es un arreglo.
- */
-function conVistoPor(inc) {
-    if (!inc || Array.isArray(inc.viewedBy)) return inc;
-    const v = inc.viewedBy;
-    return { ...inc, viewedBy: v instanceof Set ? [...v] : [] };
-}
 
 /**
  * ¿Está cerrado el caso? Un hallazgo se cierra por su gobernanza y un incidente por
@@ -365,52 +330,13 @@ function siguientePaso(incidente) {
     };
 }
 
-// ── Resumen del caso para el FUF y el repositorio (fase 4) ───────────────────
-
-/**
- * Lo que se puede decir de un caso sin entregar nada de él: ni el afectado, ni
- * el relato, ni los archivos. Es lo que alimenta el ítem 66 del FUF y la lista de
- * casos del repositorio de la obra.
- *
- * Existe porque los papeles (`incidente.papeles`, con la clave de S3 y el nombre
- * de cada archivo) no salen del módulo de incidentes salvo por la ruta de
- * papeles, que firma y audita la descarga. Quien necesita saber "falta el informe"
- * o "van 3 de 4" pregunta acá y recibe un sí o un no, nunca el archivo.
- *
- * Qué lleva cada campo, a propósito:
- *  - `requeridos`: solo `{ clave, etiqueta, cumplido }`. No `tipoDocumento` (es
- *    para ofrecer "subir" en la pantalla del caso, que no es esta).
- *  - `informeInvestigacion`: si el caso está investigado: tiene el informe subido
- *    (exija o no el informe su tipo) o una investigación registrada con el flujo
- *    anterior (`investigaciones.*` con contenido). Es el dato del ítem 66.
- *  - `clasificado`: si el prevencionista ya lo clasificó (triaje).
- * La clasificación y la gravedad salen como las lee todo lo demás (`esHallazgo`:
- * los incidentes anteriores al triaje no la traen guardada).
- */
-function resumenDelCaso(incidente) {
-    const inc = incidente || {};
-    const hallazgo = esHallazgo(inc);
-    return {
-        incidentId: inc.incidentId,
-        tipo: inc.tipo || null,
-        clasificacion: hallazgo ? 'hallazgo' : 'incidente',
-        gravedad: hallazgo ? null : (inc.gravedad || null),
-        fecha: inc.fecha || null,
-        estado: estaCerrado(inc) ? 'cerrado' : 'abierto',
-        clasificado: Boolean(inc.triaje),
-        avance: avanceDelCaso(inc),
-        requeridos: papelesRequeridos(inc).map(({ clave, etiqueta, cumplido }) => ({ clave, etiqueta, cumplido })),
-        informeInvestigacion: hayPapel(inc, 'informe_investigacion') || investigacionAnterior(inc),
-    };
-}
-
 module.exports = {
     TIPOS_PAPEL, ORDEN_TIPOS_PAPEL, esTipoPapel, etiquetaTipoPapel, tipoPapelConSalud,
     EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
     TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo,
     MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
     EXTENSION_POR_MIME_FOTO, MIME_FOTOS,
-    esHallazgo, papelesDelCaso, papelesRequeridos, avanceDelCaso, conMedidasNumeradas, conVistoPor,
+    esHallazgo, papelesDelCaso, tieneInforme, hayTexto, hayLista, papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA,
-    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso, resumenDelCaso,
+    medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
 };
