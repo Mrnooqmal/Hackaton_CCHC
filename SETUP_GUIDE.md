@@ -61,35 +61,6 @@ El backend utiliza **Serverless Framework**.
     ```
     Esto iniciará el servidor en `http://localhost:3001`.
 
-5.  (Alternativa) Probar tu código del backend contra los recursos reales de `dev`, sin desplegar:
-    `npm run dev` no sirve contra AWS (usa LocalStack y no resuelve la llave KMS ni las colas), y
-    desplegar a `dev` pisa el trabajo de quien más lo use. `npm run local` ejecuta los handlers de
-    tu árbol de trabajo en `http://localhost:3001`, con las variables de entorno de las Lambdas ya
-    desplegadas en `dev` (tablas, buckets, llave KMS, colas). Las rutas salen del `serverless.yml`
-    de tu rama.
-
-    PowerShell (Windows):
-    ```powershell
-    cd Backend
-    $env:AWS_PROFILE = "cchc"
-    npm.cmd run local
-    ```
-    WSL / Linux / macOS:
-    ```bash
-    cd Backend
-    AWS_PROFILE=cchc npm run local
-    ```
-    Requiere el AWS CLI con sesión iniciada en la cuenta de `dev`. Opciones: `--puerto 3001`,
-    `--recargar` (vuelve a cargar `handlers/` y `lib/` en cada petición; sin ella, reinicia el
-    servidor al cambiar código). Solo acepta `dev` y escucha únicamente en `127.0.0.1`.
-
-    El frontend local **no necesita `VITE_API_URL`**: su valor por defecto ya es
-    `http://localhost:3001`.
-
-    > **Avisos.** Usa las tablas, buckets y colas REALES de `dev`: lo que crees queda en `dev` y lo
-    > ven los demás. Los trabajos en segundo plano (colas) los procesa la Lambda desplegada en
-    > `dev`, no este código; los disparadores programados no corren.
-
 ---
 
 ## 3. Configuración del Frontend

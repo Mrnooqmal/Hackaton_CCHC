@@ -122,7 +122,7 @@ Cada fase termina con sus pruebas pasando.
 
 - Cada entrega se revisa y se verifica antes de integrarse.
 - Las pruebas del backend se corren en Linux (WSL) con finales de línea LF: en Windows fallan por CRLF y por las barras de las rutas.
-- Esta rama entra a `pruebas` por pull request revisado y no se despliega sola en dev (ver `docs/flujo-de-trabajo.md`). Mientras tanto, el backend se prueba con el servidor local (`npm run local` en `Backend/`, ver `SETUP_GUIDE.md`).
+- Esta rama entra a `pruebas` por pull request revisado y no se despliega sola en dev (ver `docs/flujo-de-trabajo.md`).
 
 ## 9. Estado
 

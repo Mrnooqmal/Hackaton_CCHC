@@ -8,7 +8,7 @@
 //   9  rutas antiguas: quien no puede leer el caso recibe 404
 //   11 medidas antiguas: plazo en ISO completo y medidas sin número
 //   14 cortes de texto que no parten un emoji
-// (El CORS y el 413 del servidor local, en servidor-local.test.js; el espejo de las claves
+// (El espejo de las claves
 // anteriores, en casos.test.js; el formulario de clasificación y el reintento de confirmar un
 // papel son del navegador y no se prueban acá.)
 
