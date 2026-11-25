@@ -196,6 +196,14 @@ export const personasApi = {
             body: JSON.stringify({ pin, pinActual }),
         }),
 
+    // Comprueba el PIN actual (solo el propio) antes de elegir uno nuevo.
+    // Cuenta para el límite de intentos igual que set-pin.
+    verificarPin: (tenantId: string, id: string, pinActual: string) =>
+        apiRequest<{ valido: boolean }>(`/personas/${id}/verificar-pin?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ pinActual }),
+        }),
+
     // Borra el PIN para que la persona configure uno nuevo. Exige
     // persona.restablecer_pin y un motivo; la persona recibe aviso en su bandeja
     // (en la misma escritura) y por correo si tiene.

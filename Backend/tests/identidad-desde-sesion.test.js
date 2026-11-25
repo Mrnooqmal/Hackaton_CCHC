@@ -187,6 +187,7 @@ const PERMITIDAS = {
     'documents/handler.js#module.exports.signAssisted#firmanteId': 'El trabajador que firma con su PIN en el dispositivo de quien asiste; de la misma empresa (404).',
     'incidents-module/handler.js#create#responsableId': 'Responsable del hallazgo: personaDeLaEmpresa, 404.',
     'incidents-module/handler.js#updateGobernanza#responsableId': 'Responsable del hallazgo: personaDeLaEmpresa, 404.',
+    'incidents-module/handler.js#clasificar#responsableId': 'Responsable del hallazgo: personaDeLaEmpresa y activa, 404.',
     'signature-requests/handler.js#module.exports.getPendingByWorker#workerId': 'La propia persona o quien ve fichas (personas.detalle), y de la empresa: personaConsultable, 404.',
     'signature-requests/handler.js#module.exports.getHistoryByWorker#workerId': 'La propia persona o quien ve fichas (personas.detalle), y de la empresa: personaConsultable, 404.',
     'signatures/handler.js#module.exports.getByWorker#workerId': 'La propia persona o quien ve fichas (personas.detalle); el resultado se acota a la empresa de la sesión.',

@@ -54,9 +54,17 @@ La pantalla **Incidentes y hallazgos** tiene dos pestañas, según tus permisos:
      **Dictar** y contarlo en voz alta: la plataforma lo transcribe a texto. El dictado necesita tu
      autorización, porque el audio se envía a un servicio externo para pasarlo a texto. Ver
      [Tus datos y tu privacidad](/terreno/mis-datos#lo-que-autorizas).
-   - **Evidencia fotográfica** *(opcional)* — sube fotos (PNG o JPG, hasta 10 MB) o tómalas con la
-     cámara del teléfono.
+   - **Evidencia fotográfica** *(opcional)* — sube fotos (JPG, PNG, WebP o HEIC) o tómalas con la
+     cámara del teléfono. Si reportas sin fotos, puedes agregarlas después desde la página del
+     reporte.
+   - **Medidas inmediatas** *(opcional)* — qué se hizo en el momento para contener el riesgo.
 4. Revisa la **Confirmación de envío** y envía.
+
+Al enviar llegas a la **página de tu reporte**, con lo que sigue: por ejemplo, que prevención de
+riesgos lo está revisando. Si alguna foto no se pudo adjuntar, ahí mismo te lo dice y puedes
+agregarla. Los reportes que hiciste quedan en **Incidentes → Mis reportes**: ahí ves cómo avanza
+cada uno. Cómo se gestionan después: [Gestionar incidentes y ver
+estadísticas](/obra/incidentes#la-página-del-caso).
 
 ![Pantalla Reportar con las opciones Hallazgo e Incidente](/img/incidentes/reportar.png)
 

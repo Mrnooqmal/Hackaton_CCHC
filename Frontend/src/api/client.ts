@@ -39,6 +39,8 @@ interface ApiResponse<T> {
     sinRed?: boolean;
     /** Motivo del rechazo para que la pantalla actúe, p. ej. `SIN_CONSENTIMIENTO`. */
     codigo?: string;
+    /** Lo que falta para cerrar un caso (409 de `PUT /incidents/{id}/cerrar`), en frases listas para mostrar. */
+    pendientes?: string[];
 }
 
 /** Lo que se le dice a una persona cuando no hay señal. */
@@ -133,6 +135,14 @@ export async function apiRequest<T>(
                     ? 'Hay muchas solicitudes en este momento. Espera unos segundos y vuelve a intentarlo.'
                     : (cuerpo?.error || 'El servidor no pudo responder. Vuelve a intentarlo en un momento.'),
             };
+        }
+
+        // 409: el recurso cambió mientras se trabajaba (bloqueo optimista del servidor, o un cierre al que le
+        // falta algo). Se marca con un código para que la pantalla pueda reintentar solo ese caso sin leer el
+        // texto del error; el resto del cuerpo (`error`, `pendientes`) llega igual.
+        if (response.status === 409) {
+            const cuerpo = await response.json().catch(() => null);
+            return { ...(cuerpo && typeof cuerpo === 'object' ? cuerpo : {}), success: false, codigo: cuerpo?.codigo ?? 'CONFLICTO' };
         }
 
         const data = await response.json();

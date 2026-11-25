@@ -185,7 +185,6 @@ GET    /incidents/{id}         // Obtener detalle
 PUT    /incidents/{id}         // Actualizar
 GET    /incidents/stats        // Estadísticas
 GET    /incidents/analytics    // Datos para dashboard
-POST   /incidents/quick-report // Reporte rápido vía QR
 POST   /incidents/upload       // Subir evidencias
 ```
 

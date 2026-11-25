@@ -85,6 +85,15 @@ export default function Select({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, visible.length]);
 
+    // El panel puede ser más ancho que el disparador (ver `minWidth` abajo): si así
+    // se saldría de la pantalla, se corre a la izquierda lo justo. Se mide ya montado.
+    useLayoutEffect(() => {
+        const el = panelRef.current;
+        if (!el || !rect) return;
+        const sobra = rect.left + el.offsetWidth - (window.innerWidth - 8);
+        el.style.left = `${sobra > 0 ? Math.max(8, rect.left - sobra) : rect.left}px`;
+    }, [rect, visible.length]);
+
     useEffect(() => {
         if (!open) return;
         const onScroll = () => reposition();
@@ -169,7 +178,11 @@ export default function Select({
                 position: 'fixed',
                 top: rect.top,
                 left: rect.left,
-                width: rect.width,
+                // Al menos tan ancho como el disparador, y más si las opciones lo piden
+                // (un filtro angosto no debe cortar "Instalaciones sanitarias").
+                minWidth: rect.width,
+                width: 'max-content',
+                maxWidth: Math.max(rect.width, Math.min(360, window.innerWidth - 16)),
                 transform: rect.above ? 'translateY(-100%)' : undefined,
             }}
             role="listbox"

@@ -641,7 +641,9 @@ export default function Inbox() {
             case 'activity': return '/activities';
             // Deep-link al documento específico: abre su detalle (visualización + firmar).
             case 'document': return `/documents?doc=${encodeURIComponent(linkedEntity.id)}`;
-            case 'incident': return '/incidents';
+            // Al reporte puntual (IncidentDetalle): el aviso a prevención ya no
+            // trae el relato, así que el detalle es donde se lee.
+            case 'incident': return linkedEntity.id ? `/incidents/${linkedEntity.id}` : '/incidents';
             case 'signature-request': return '/my-signatures';
             default: return null;
         }

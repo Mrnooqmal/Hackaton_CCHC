@@ -44,6 +44,28 @@ const AL_VENCER = { SUPRIMIR: 'suprimir', ANONIMIZAR: 'anonimizar', GRUPAL: 'gru
 
 const ids = (lista, campo = 'personaId') => (Array.isArray(lista) ? lista.map((x) => x?.[campo]).filter(Boolean) : []);
 const uno = (v) => (v ? [v] : []);
+/**
+ * Un identificador de persona, y no un valor de sistema como 'sistema' o 'QR-Publico'.
+ * 'QR-Publico' ya no se escribe (el reporte rápido por QR se eliminó), pero puede haber
+ * casos antiguos guardados con ese valor en `reportadoPor`: se sigue descartando.
+ */
+const esPersona = (v) => typeof v === 'string' && v !== '' && v !== 'sistema' && v !== 'QR-Publico';
+
+/**
+ * `reportadoPor` guarda el personaId de quien reportó desde el 15 de septiembre de 2026
+ * (la identidad pasó a salir de la sesión). Antes guardaba el NOMBRE que escribía el
+ * cliente: un nombre no vincula a nadie y, tratado como persona, dejaría el caso
+ * conservado para siempre. Cuenta como persona si tiene forma de id (uuid) o si el caso
+ * es posterior a ese cambio.
+ */
+const FECHA_IDENTIDAD_DE_SESION = '2026-09-15';
+const FORMA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const reportadoPorComoPersona = (it) => {
+    const quien = it?.reportadoPor;
+    if (!esPersona(quien)) return null;
+    if (FORMA_UUID.test(quien)) return quien;
+    return typeof it.createdAt === 'string' && it.createdAt.slice(0, 10) >= FECHA_IDENTIDAD_DE_SESION ? quien : null;
+};
 
 /**
  * Cada fuente dice, para un ítem de su tabla, qué personas involucra
@@ -130,19 +152,64 @@ const FUENTES = [
         // el incidente es borrar esa traza entera.
         traza: 'incidentId',
         nombre: 'Incidentes, accidentes y hallazgos',
-        datos: 'Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas y evidencia.',
+        datos: 'Persona afectada (cifrada), quién reporta e investiga, descripción, gravedad, días perdidos, medidas inmediatas y evidencia. '
+            + 'Papeles del caso (DIAT, DIEP, informe de investigación, plan de medidas correctivas, constancia del aviso a la autoridad y respaldos): '
+            + 'el incidente guarda su tipo, nombre de archivo, fecha, quién lo subió y la clave del archivo; la DIAT y la DIEP '
+            + 'traen RUT y datos de salud y se guardan en el bucket de evidencia, con descarga auditada.',
         finalidad: 'Registro de AT/EP e incidentes peligrosos (Arts. 71 a 73) e indicadores de accidentabilidad.',
         clase: CLASE.EVIDENCIA,
         // Se conserva el hecho (tipo, fecha, gravedad, días perdidos, obra) para
-        // los indicadores; se quitan los datos de las personas.
+        // los indicadores; se quitan los datos de las personas y todo texto libre, que
+        // puede nombrar a alguien (el relato, las medidas inmediatas, las medidas
+        // correctivas de los casos anteriores al plan de medidas, el comentario de cierre, los motivos de reapertura) o dejar quién
+        // hizo qué (la clasificación, el cierre, las reaperturas, la gobernanza).
+        // Una prueba (tests/inventario-datos.test.js) crea casos por todas las rutas y
+        // falla si el repositorio escribe un campo que no está clasificado acá.
         alVencer: AL_VENCER.ANONIMIZAR,
-        camposPersonales: ['cifrado', 'trabajadorNombre', 'realizadoPor', 'reportadoPor', 'viewedBy', 'investigaciones', 'descripcion', 'evidencias', 'documentos'],
+        // `reporteFlash` ya no se guarda acá (vive en la traza, con los afectados y sus RUT), pero los
+        // incidentes anteriores sí lo traen en el elemento listado.
+        camposPersonales: [
+            'cifrado', 'trabajadorNombre', 'trabajador', 'realizadoPor', 'reportadoPor', 'viewedBy', 'investigaciones',
+            'descripcion', 'evidencias', 'documentos', 'papeles', 'firmaConfirmacion', 'reporteFlash',
+            'medidasInmediatas', 'medidasCorrectivas', 'gobernanza', 'triaje', 'cierre', 'reaperturas',
+        ],
         // La persona afectada se vincula por `afectadoRutHmac` (el mismo HMAC de su
         // ficha), que el proceso resuelve a personaId con `ctx.personaPorRutHmac`.
-        // `reportadoPor` es un nombre, no un id.
-        personasDe: (it, ctx = {}) => [...uno(ctx.personaPorRutHmac?.[it.afectadoRutHmac]), ...uno(it.realizadoPor?.personaId),
-            ...uno(it.gobernanza?.responsableId), ...ids(it.medidasCorrectivas, 'responsableId')],
-        archivosDe: (it) => (Array.isArray(it.evidencias) ? it.evidencias.map((e) => (typeof e === 'string' ? e : e?.key || e?.fileKey)).filter(Boolean) : []),
+        // Además, las personas que actuaron sobre el caso: quien lo reportó
+        // (`reportadoPor` guarda su personaId desde que la identidad sale de la sesión; un
+        // valor de sistema como 'sistema', o 'QR-Publico' en casos antiguos, o un nombre de antes de ese cambio, se descarta, o el caso no vencería nunca), quien
+        // lo clasificó (y quienes lo clasificaron antes), quien lo cerró y quienes lo
+        // reabrieron, quien verificó el cierre, el responsable del hallazgo y los de las
+        // medidas, quien creó o editó cada medida y quien subió cada papel. Un caso vence
+        // cuando vence el plazo de TODAS las personas involucradas.
+        personasDe: (it, ctx = {}) => [
+            ...uno(ctx.personaPorRutHmac?.[it.afectadoRutHmac]), ...uno(it.realizadoPor?.personaId),
+            ...uno(reportadoPorComoPersona(it)),
+            ...uno(it.gobernanza?.responsableId), ...uno(it.gobernanza?.verificadoPor),
+            ...uno(it.triaje?.clasificadoPor), ...ids(it.triaje?.anteriores, 'clasificadoPor'),
+            ...uno(it.cierre?.cerradoPor),
+            ...ids(it.reaperturas, 'reabiertoPor'),
+            ...(Array.isArray(it.reaperturas) ? it.reaperturas.flatMap((r) => uno(r?.cierreAnterior?.cerradoPor)) : []),
+            // Las medidas correctivas ya no se crean (se sube el plan de medidas), pero los casos
+            // anteriores las conservan con su responsable y quién las creó o editó: siguen contando.
+            ...ids(it.medidasCorrectivas, 'responsableId'), ...ids(it.medidasCorrectivas, 'creadaPor'), ...ids(it.medidasCorrectivas, 'editadaPor'),
+            ...ids(it.papeles, 'subidoPor'),
+        ].filter(esPersona),
+        // Las fotos y los papeles del caso (`papeles[].s3Key`, fase 2): al vencer el
+        // incidente se suprimen o se conservan juntos, y un archivo que el plan no
+        // conoce no se vigila ni se extiende su bloqueo de S3.
+        archivosDe: (it) => [
+            ...(Array.isArray(it.evidencias) ? it.evidencias.map((e) => (typeof e === 'string' ? e : e?.key || e?.fileKey)) : []),
+            ...(Array.isArray(it.papeles) ? it.papeles.map((x) => x?.s3Key) : []),
+            // La DIAT y la DIEP guardadas con el contrato anterior (`documentos.diat/diep`,
+            // un archivo por tipo): siguen siendo datos de salud en S3 y tienen que entrar
+            // en la retención y en la supresión, aunque ya no se escriban.
+            // Solo si la clave es de ESTE incidente (la de la empresa o la del formato sin
+            // empresa, `{incidentId}/documents/…`): el contrato anterior dejaba escribir
+            // `documentos` desde el cliente, y una clave de otro caso se suprimiría con este.
+            ...['diat', 'diep'].map((t) => it.documentos?.[t]?.s3Key).filter((k) => typeof k === 'string'
+                && (k.startsWith(`tenants/${it.tenantId}/incidentes/${it.incidentId}/`) || k.startsWith(`${it.incidentId}/documents/`)) && !k.includes('..')),
+        ].filter((k) => typeof k === 'string' && k),
     },
     {
         tabla: 'SURVEYS_TABLE',

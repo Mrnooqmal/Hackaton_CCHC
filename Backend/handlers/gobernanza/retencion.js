@@ -22,6 +22,7 @@ const { docClient } = require('../../lib/clients/dynamodb');
 const { s3Client } = require('../../lib/clients/s3');
 const { registrarFallo } = require('../../lib/degradacion');
 const { FUENTES, fuente } = require('../../lib/gobernanza/inventario');
+const { esClaveAnteriorDeIncidente } = require('../../lib/almacenamiento');
 const { planDeRetencion, extensionesDeBloqueo, configDesdeEntorno, INDEFINIDO, sumarAnios } = require('../../lib/gobernanza/retencion');
 
 const tabla = (env) => process.env[env];
@@ -105,12 +106,21 @@ async function extenderBloqueos({ bucket, tenantId, conservarHasta, aSuprimir = 
         token = r.IsTruncated ? r.NextContinuationToken : undefined;
     } while (token);
 
+    // Los papeles de incidentes del formato anterior no cuelgan de `tenants/{empresa}/`: no
+    // salen del listado. Se toman del plan (que los reunió desde los incidentes de la empresa).
+    for (const key of Object.keys(conservarHasta)) {
+        if (esClaveAnteriorDeIncidente(key) && !candidatos.includes(key)) candidatos.push(key);
+    }
+
     const objetos = [];
     for (const key of candidatos) {
         const ret = await s3Client.send(new GetObjectRetentionCommand({ Bucket: bucket, Key: key })).catch((err) => {
             if (err.name === 'NoSuchObjectLockConfiguration') return { Retention: null };
+            // Una clave del formato anterior que ya no está en el bucket no detiene a las demás.
+            if (esClaveAnteriorDeIncidente(key) && (err.name === 'NoSuchKey' || err.name === 'NotFound')) return null;
             throw err;
         });
+        if (!ret) continue;
         objetos.push({ key, retenerHasta: ret.Retention?.RetainUntilDate ? new Date(ret.Retention.RetainUntilDate).toISOString() : null });
     }
 

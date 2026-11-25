@@ -631,7 +631,9 @@ Cada caso es una historia de usuario con sus criterios de aceptación. Marca `[x
   - [ ] Se elige el tipo (Hallazgo, Incidente, Accidente), la condición o acción subestándar y la gravedad (Leve, Grave, Fatal).
   - [ ] Se eligen el trabajador o los trabajadores afectados.
   - [ ] Se adjunta evidencia fotográfica; cada foto se puede quitar.
-  - [ ] Antes de enviar aparece la "Confirmación de envío"; después, el incidente está en el listado.
+  - [ ] Se puede escribir qué se hizo en el momento para contener el riesgo ("Medidas inmediatas", opcional).
+  - [ ] Antes de enviar aparece la "Confirmación de envío"; después se llega a la página del reporte ("Hallazgo reportado" o "Incidente reportado"), con "Qué sigue", y el caso está en el listado.
+  - [ ] Si alguna foto no se pudo adjuntar, la página del reporte lo avisa y permite agregarla.
   - [ ] "Cancelar" vuelve sin guardar.
 
 - [ ] **14.2** `[Todos]` Como desarrollador quiero dictar la descripción por audio, para validar la transcripción.
@@ -661,6 +663,61 @@ Cada caso es una historia de usuario con sus criterios de aceptación. Marca `[x
   - [ ] Las cifras cuadran con el listado.
   - [ ] Descargar el reporte en CSV y en PDF funciona.
   - [ ] Sin `incidentes.historial` solo se ve Estadísticas; sin `incidentes.estadisticas` solo el Listado.
+
+- [ ] **14.8** `[T]` Como desarrollador quiero reportar un hallazgo sin permisos de gestión, para validar la vista del trabajador.
+  - [ ] En Incidentes solo se ve el botón de reportar y "Mis reportes", con lo que reportó esa persona y su estado; no se ve el reporte de otra persona.
+  - [ ] Las fotos del hallazgo llegan al caso aunque el trabajador no tenga `incidentes.reportar`.
+  - [ ] La página del reporte muestra "Qué sigue" con un texto simple, sin afirmar que algo ya se corrigió ("Hay una persona a cargo de corregirlo…", con el plazo si lo hay).
+  - [ ] No aparecen la clasificación, los papeles ni el cierre; sí se pueden agregar fotos mientras no esté cerrado.
+  - [ ] Abrir el reporte de otra persona o de otra empresa por la URL responde "no encontrado".
+
+- [ ] **14.9** `[P]` Como desarrollador quiero clasificar un reporte, para validar el triaje.
+  - [ ] "Clasificar el reporte" ofrece Hallazgo (condición o acción subestándar), Incidente y Accidente; en incidentes y accidentes pide la gravedad.
+  - [ ] En un incidente aparecen las dos preguntas de alto potencial ("¿pudo causar un daño mayor o la muerte?" y "¿generó un gran susto…?"); con un "Sí" el caso pasa a exigir el informe de investigación.
+  - [ ] En un hallazgo se puede elegir quién lo corrige (solo personas activas) y el plazo.
+  - [ ] Reclasificar un accidente como hallazgo quita su gravedad (no cuenta como investigación pendiente) y el historial conserva la clasificación anterior.
+  - [ ] Sin `incidentes.calificar_accidente` la sección no aparece, y el servidor rechaza la clasificación (403).
+  - [ ] Cambiar el tipo por "Editar" no es posible: solo por la clasificación.
+
+- [ ] **14.10** `[J][P][S]` Como desarrollador quiero juntar los papeles de un caso, para validar la carpeta del caso.
+  - [ ] "Papeles del caso" muestra qué exige el tipo de caso (hallazgo: foto, responsable y plazo, comentario de cierre; incidente: informe solo si es de alto potencial; accidente: DIAT, informe y plan de medidas; grave o fatal: además la constancia del aviso a la Inspección del Trabajo y la SEREMI) y el avance.
+  - [ ] Se sube un PDF o una imagen con el tipo de papel y la fecha del documento; aparece en "Archivos subidos" y el papel pasa a cumplido.
+  - [ ] Un archivo de más de 15 MB, o de un tipo no permitido (.zip), se rechaza con un mensaje.
+  - [ ] Si el archivo llega pero no se puede registrar, aparece "Reintentar registro" y no se sube de nuevo.
+  - [ ] La DIAT y la DIEP llevan la etiqueta "Datos de salud"; el aviso al elegir su tipo lo explica.
+  - [ ] Sin `incidentes.reportar` no se puede subir; sin `incidentes.historial` no se ve la sección.
+  - [ ] Se pueden subir papeles a un caso cerrado.
+
+- [ ] **14.11** `[J][P]` Como desarrollador quiero descargar un papel, para validar el enlace firmado y la auditoría.
+  - [ ] Abrir la página del caso no descarga ni registra nada: la lista no trae enlaces.
+  - [ ] "Descargar" prepara un enlace que dura 15 minutos y baja el archivo con un nombre neutro (tipo y fecha, por ejemplo `diat-2026-11-11.pdf`), no con el nombre original.
+  - [ ] Descargar una DIAT o una DIEP deja un registro de acceso a datos de salud, con la persona afectada como titular y sin el contenido; descargar un informe no deja registro.
+  - [ ] Si el registro de auditoría no se puede escribir, la DIAT no se entrega y se avisa.
+  - [ ] Una persona de otra empresa no puede pedir el enlace (404).
+
+- [ ] **14.12** `[P]` Como desarrollador quiero definir las medidas correctivas de un accidente, para validar el plan de medidas.
+  - [ ] No hay botón para crear medidas una por una: se sube el papel "Plan de medidas correctivas".
+  - [ ] Un accidente sin el plan no se puede cerrar y lo dice; con el plan sí.
+  - [ ] Un caso con medidas guardadas antes del cambio las muestra bajo "Medidas registradas antes", sin editarlas, y cuenta como si tuviera el plan.
+  - [ ] En Actuar → Medidas correctivas de la obra solo están las medidas anteriores.
+
+- [ ] **14.13** `[P]` Como desarrollador quiero cerrar y reabrir un caso, para validar el cierre.
+  - [ ] "Cerrar el caso" aparece cuando el caso está clasificado; sin el comentario de cierre, o con papeles incompletos, no cierra y lista lo que falta.
+  - [ ] Al cerrar, el caso queda "Caso cerrado" y deja quién cerró y cuándo; ya no admite cambios (409) salvo agregar papeles.
+  - [ ] "Reabrir el caso" exige un motivo; el cierre anterior queda guardado junto con el motivo y el caso vuelve a estar abierto.
+  - [ ] Al reabrir un hallazgo se borra su comentario de cierre.
+  - [ ] Cerrar un hallazgo desde "Editar gobernanza" exige el mismo permiso y las mismas condiciones.
+  - [ ] Dos personas guardando a la vez: la segunda recibe un aviso de recargar y no pisa a la primera.
+
+- [ ] **14.14** `[J][P]` Como desarrollador quiero cerrar la investigación de un accidente desde la obra, para validar el informe Art. 71.
+  - [ ] En Detalle de obra → Verificar → Investigaciones AT/EP, "Cerrar y firmar informe" sin `incidentes.calificar_accidente` responde que solo quien clasifica incidentes puede cerrar el caso, y no firma nada.
+  - [ ] Con la DIAT o el plan de medidas sin subir, no se firma nada y se informa qué falta.
+  - [ ] Con el caso completo, firma el informe con el PIN, cierra el caso (con quién y cuándo) y el informe cuenta como el informe de investigación del caso y del ítem 66 del FUF.
+  - [ ] Cerrar de nuevo el mismo caso responde que ya está cerrado.
+
+- [ ] **14.15** `[J][P]` Como desarrollador quiero comprobar los casos en el repositorio de la obra y el FUF, para validar el enlace con el resumen.
+  - [ ] El repositorio de la obra lista los casos con su tipo, fecha, estado y avance de papeles, con un enlace al caso; no muestra nombres, RUT ni archivos.
+  - [ ] El ítem 66 del FUF queda "Parcial" con un accidente sin informe y cambia al subir el informe o al firmarlo desde la obra.
 
 ---
 
@@ -842,7 +899,7 @@ Hoy no tienen interfaz. Se prueban con `curl` o Postman, con un token válido.
   - [ ] Al disputarla, el estado pasa a "disputada" y en Mis firmas se ve en ámbar como "Firma disputada".
   - [ ] Al resolverla, el estado final se refleja; `GET /signatures/disputes` la lista.
 
-- [ ] **21.3** Como desarrollador quiero probar los endpoints de investigación de incidentes (`addInvestigation`, `completarFlash`, `quickReport`, `uploadDocument`, `getDocuments`), para validar que responden y respetan los permisos.
+- [ ] **21.3** Como desarrollador quiero probar los endpoints de investigación de incidentes (`addInvestigation`, `completarFlash`, `pedirSubidaDocumento`, `confirmarDocumento`, `getDocuments`, `getEnlacePapel`), para validar que responden y respetan los permisos.
 
 - [ ] **21.4** Como desarrollador quiero reagendar una reunión de un órgano, para validar `reagendarReunion`.
 

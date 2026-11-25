@@ -25,7 +25,7 @@ const { s3Client } = require('../../lib/clients/s3');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
-const { bucketDeClave, esDeLaEmpresa } = require('../../lib/almacenamiento');
+const { bucketDeClave, esDeLaEmpresa, esClaveAnteriorDeIncidente } = require('../../lib/almacenamiento');
 const { fuente } = require('../../lib/gobernanza/inventario');
 const L = require('../../lib/gobernanza/lotes');
 const auditoria = require('../../lib/gobernanza/auditoria');
@@ -43,12 +43,15 @@ const ESTADO_POR_CODIGO = {
 };
 const error409 = (m, c) => Object.assign(new Error(m), { codigo: c });
 
+/** Una clave del plan es de la empresa por su prefijo, o es un papel de incidente del formato anterior (sin empresa en la clave). */
+const claveValida = (key, tenantId) => esDeLaEmpresa(key, tenantId) || esClaveAnteriorDeIncidente(key);
+
 // ─── Contenido actual (se recalcula al proponer, aprobar y ejecutar) ─────────
 
 async function versionesDe(tenantId, keys) {
     const res = {};
     for (const key of keys) {
-        if (!esDeLaEmpresa(key, tenantId)) throw error409('Un archivo del plan no es de esta empresa.', 'ESTADO_INVALIDO');
+        if (!claveValida(key, tenantId)) throw error409('Un archivo del plan no es de esta empresa.', 'ESTADO_INVALIDO');
         const versiones = [];
         let marcador; let marcadorVersion;
         do {
@@ -164,7 +167,7 @@ async function ejecutarContenido(tenantId, contenido) {
         }
     }
     for (const a of contenido.archivos) {
-        if (!esDeLaEmpresa(a.key, tenantId)) { resultado.errores.push({ key: a.key, error: 'OtraEmpresa' }); continue; }
+        if (!claveValida(a.key, tenantId)) { resultado.errores.push({ key: a.key, error: 'OtraEmpresa' }); continue; }
         for (const versionId of a.versiones) {
             try {
                 await s3Client.send(new DeleteObjectCommand({ Bucket: bucketDeClave(a.key), Key: a.key, VersionId: versionId, BypassGovernanceRetention: true }));

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
     FiPlus, FiAlertTriangle, FiX, FiImage,
@@ -8,16 +9,18 @@ import {
     FiPieChart, FiList, FiBarChart2,
     FiChevronLeft, FiChevronRight, FiCheckCircle, FiClock, FiCircle
 } from 'react-icons/fi';
-import { incidentsApi, workersApi } from '../api/client';
-import type { Incident, IncidentStats, AnalyticsData } from '../api/client';
+import { incidentsApi } from '../api/client';
+import type { Incident, IncidentStats, AnalyticsData, HallazgoGobernanza } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import { PERMISSIONS } from '../permissions';
-import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
+import { Modal, Select, PageHeader, SegmentedControl, SearchInput, StatCard, EmptyState, IncidentesSkeleton, IncidentesStatsSkeleton } from '../components/ui';
 import { incidenteCerrado, ETAPAS_CONSTRUCTIVAS } from '../utils/incidentes';
+import { esHallazgo } from '../utils/casos';
 import { ancla } from '../ayuda/registro';
 import { useAlVolverLaSenal, useHaySenal } from '../hooks/useSenal';
 import SinConexion from '../components/SinConexion';
+import SelectorResponsable from '../components/SelectorResponsable';
 import { abrirHtmlEnPestana, htmlImpresionIncidentes } from '../utils/informesHtml';
 
 const INCIDENT_EVIDENCE_BASE_URL = (import.meta.env.VITE_INCIDENT_EVIDENCE_BASE_URL || '').replace(/\/+$/, '');
@@ -41,13 +44,23 @@ const buildEvidenceUrl = (s3Key: string) => {
     return '';
 };
 
+// Una celda del calendario: vacía (antes del día 1) o un día con su resumen.
+interface DiaCalendario {
+    empty: boolean;
+    date?: string;
+    dayNum?: number;
+    hasIncident?: boolean;
+    count?: number;
+    severity?: string | null;
+}
+
 export default function Incidents() {
     const navigate = useNavigate();
     const { user, hasPermission } = useAuth();
     const { selectedObraId } = useObraContext();
     const [incidents, setIncidents] = useState<Incident[]>([]);
     const [stats, setStats] = useState<IncidentStats | null>(null);
-    const [_analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+    const [, setAnalytics] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
     // El listado no se pudo cargar por falta de señal: ni lista vacía ni
     // estadísticas en cero. Reportar necesita conexión: sin señal no se ofrece.
@@ -84,18 +97,19 @@ export default function Incidents() {
     const canVerHistorial = hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL);
     const canCalificarAccidente = hasPermission(PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE);
     const [listTab, setListTab] = useState<'hallazgos' | 'incidentes'>('incidentes');
-    const esHallazgo = (inc: Incident) =>
-        (inc as any).clasificacion === 'hallazgo' || ['condicion_subestandar', 'accion_subestandar'].includes(inc.tipo);
+    // Quien no tiene ni listado ni estadísticas (un trabajador) no ve nada más que el botón
+    // de reportar: se le da un bloque central que lo dice con palabras simples. El botón
+    // del encabezado se oculta en ese caso para no repetirlo.
+    const soloReporta = !canVerHistorial && !canVerEstadisticas;
 
     // Gobernanza de hallazgos (panel supervisor+)
     const [gobIncident, setGobIncident] = useState<Incident | null>(null);
     const [gobForm, setGobForm] = useState({ responsableId: '', plazoRespuestaISO: '', estadoCierre: 'abierto', comentarioCierre: '' });
     const [gobSaving, setGobSaving] = useState(false);
     const [gobError, setGobError] = useState('');
-    const [personasTenant, setPersonasTenant] = useState<any[]>([]);
 
-    const openGobernanza = async (inc: Incident) => {
-        const g = (inc as any).gobernanza || {};
+    const openGobernanza = (inc: Incident) => {
+        const g: Partial<HallazgoGobernanza> = inc.gobernanza || {};
         setGobForm({
             responsableId: g.responsableId || '',
             plazoRespuestaISO: g.plazoRespuestaISO ? String(g.plazoRespuestaISO).slice(0, 10) : '',
@@ -104,10 +118,6 @@ export default function Incidents() {
         });
         setGobError('');
         setGobIncident(inc);
-        if (personasTenant.length === 0) {
-            const res = await workersApi.list();
-            if (res.success && res.data) setPersonasTenant(res.data as any[]);
-        }
     };
 
     const handleSaveGobernanza = async () => {
@@ -116,16 +126,23 @@ export default function Incidents() {
             setGobError('El comentario de cierre es requerido para cerrar el hallazgo.');
             return;
         }
+        // Cerrar el hallazgo es cerrar el caso: el servidor lo exige a quien tiene
+        // `incidentes.calificar_accidente`. La opción ni se ofrece a quien no lo tiene.
+        // Se comprueba ANTES de marcar "guardando": con el `return` después, el panel
+        // quedaba pegado en "guardando" sin que nada lo volviera a soltar.
+        if (gobForm.estadoCierre === 'cerrado' && !canCalificarAccidente) {
+            setGobError('Solo quien clasifica incidentes puede cerrar el hallazgo.');
+            return;
+        }
         setGobSaving(true);
         setGobError('');
         try {
-            const responsable = personasTenant.find((p: any) => p.personaId === gobForm.responsableId);
+            // El nombre del responsable lo lee el servidor de su ficha.
             const res = await incidentsApi.updateGobernanza(gobIncident.incidentId, {
                 actorId: user.personaId,
                 responsableId: gobForm.responsableId || null,
-                responsableNombre: responsable ? `${responsable.nombre} ${responsable.apellido || ''}`.trim() : null,
                 plazoRespuestaISO: gobForm.plazoRespuestaISO || null,
-                estadoCierre: gobForm.estadoCierre as any,
+                estadoCierre: gobForm.estadoCierre as HallazgoGobernanza['estadoCierre'],
                 comentarioCierre: gobForm.comentarioCierre || null
             });
             if (!res.success) { setGobError(res.error || 'No se pudo guardar la gobernanza.'); return; }
@@ -477,12 +494,17 @@ export default function Incidents() {
     useEffect(() => {
         if (lightboxIndex === null) return;
         const onKey = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'Escape') setLightboxIndex(null);
-            else if (e.key === 'ArrowLeft') showPrevEvidence();
+            if (e.key === 'Escape') {
+                // El Modal escucha Escape en `document`: sin cortar la propagación acá,
+                // el mismo Escape que cierra el visor cerraría también el modal de abajo.
+                e.stopPropagation();
+                setLightboxIndex(null);
+            } else if (e.key === 'ArrowLeft') showPrevEvidence();
             else if (e.key === 'ArrowRight') showNextEvidence();
         };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
+        // En captura, para correr antes que el listener del Modal.
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lightboxIndex, viewableEvidence.length]);
 
@@ -507,7 +529,7 @@ export default function Incidents() {
                     tabsLabel="Vista de incidentes"
                     tabsAncla={ancla('incidentes.pestanas')}
                     actions={hay ? (
-                        <>
+                        soloReporta && selectedObraId ? undefined : <>
                             <button
                                 className="btn btn-secondary"
                                 disabled={!selectedObraId}
@@ -586,7 +608,7 @@ export default function Incidents() {
                     const maxTrend = Math.max(...trendMonths.map(m => m.hallazgos + m.incidentes + m.accidentes), 1);
 
                     const etapaData = ETAPAS_CONSTRUCTIVAS
-                        .map(e => ({ label: e, count: incidents.filter(i => (i as any).etapaConstructiva === e).length }))
+                        .map(e => ({ label: e, count: incidents.filter(i => i.etapaConstructiva === e).length }))
                         .filter(e => e.count > 0)
                         .sort((a, b) => b.count - a.count);
                     const maxEtapa = Math.max(...etapaData.map(e => e.count), 1);
@@ -772,7 +794,7 @@ export default function Incidents() {
                                             ))}
                                         </div>
                                         <div className="calendar-grid-month" style={{ gap: '4px' }}>
-                                            {generateCalendarData().map((day: any, i: number) => (
+                                            {generateCalendarData().map((day: DiaCalendario, i: number) => (
                                                 day.empty ? (
                                                     <div key={i} className="calendar-cell-empty" style={{ width: '42px', height: '32px' }} />
                                                 ) : (
@@ -814,7 +836,7 @@ export default function Incidents() {
                         if (filtroGravedad && i.gravedad !== filtroGravedad) return false;
                         if (filtroCierre === 'abierto' && incidenteCerrado(i)) return false;
                         if (filtroCierre === 'cerrado' && !incidenteCerrado(i)) return false;
-                        if (filtroEtapa && (i as any).etapaConstructiva !== filtroEtapa) return false;
+                        if (filtroEtapa && i.etapaConstructiva !== filtroEtapa) return false;
                         return true;
                     });
                     const abiertos = base.filter((i) => !incidenteCerrado(i)).length;
@@ -888,7 +910,7 @@ export default function Incidents() {
                                                 <div className="incident-row-body">
                                                     <div className="incident-row-eyebrow">
                                                         {getTipoLabel(incident.tipo)}
-                                                        {(incident as any).etapaConstructiva && <><span className="dot">·</span>{(incident as any).etapaConstructiva}</>}
+                                                        {incident.etapaConstructiva && <><span className="dot">·</span>{incident.etapaConstructiva}</>}
                                                         {isNewIncident(incident) && <span className="badge badge-accent inc-nuevo-pill">Nuevo</span>}
                                                     </div>
                                                     <p className="incident-row-desc">
@@ -897,8 +919,8 @@ export default function Incidents() {
                                                     <div className="incident-row-meta">
                                                         {/* reportadoPor puede venir como ID de persona: se muestra
                                                             solo un nombre legible, o se omite. */}
-                                                        {((incident as any).realizadoPor?.nombre || incident.trabajadorNombre) && (
-                                                            <><span>{(incident as any).realizadoPor?.nombre || incident.trabajadorNombre}</span><span className="dot">·</span></>
+                                                        {(incident.realizadoPor?.nombre || incident.trabajadorNombre) && (
+                                                            <><span>{incident.realizadoPor?.nombre || incident.trabajadorNombre}</span><span className="dot">·</span></>
                                                         )}
                                                         <span>{new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                                         {incident.evidencias?.length > 0 && (
@@ -908,7 +930,7 @@ export default function Incidents() {
                                                 </div>
                                                 <div className="incident-row-status">
                                                     {esHallazgo(incident)
-                                                        ? renderCierreBadge((incident as any).gobernanza?.estadoCierre || 'abierto')
+                                                        ? renderCierreBadge(incident.gobernanza?.estadoCierre || 'abierto')
                                                         : renderEstadoBadge(incident.estado)}
                                                     {renderGravedadBadge(incident.gravedad)}
                                                 </div>
@@ -920,6 +942,68 @@ export default function Incidents() {
                         </div>
                     );
                 })()}
+
+                {/* Trabajador: sin listado ni estadísticas, el reporte es lo único que puede hacer.
+                    "Mis reportes" sale del mismo `GET /incidents`, que sin `incidentes.historial`
+                    devuelve solo lo que la persona reportó. */}
+                {soloReporta && (
+                    <div className="inc-solo-reporta">
+                        <EmptyState
+                            large
+                            icon={<FiShield />}
+                            title="¿Viste algo que pueda causar un accidente?"
+                            description={hay
+                                ? '¿Viste una condición o acción insegura? Repórtala aquí. Toma un minuto y ayuda a que nadie se lastime.'
+                                : 'Para reportar necesitas conexión. Cuando vuelva la señal podrás hacerlo desde aquí.'}
+                            action={hay ? {
+                                label: 'Reportar hallazgo',
+                                icon: <FiPlus />,
+                                onClick: () => navigate('/incidents/reportar', { state: { clasificacion: 'hallazgo' } }),
+                            } : undefined}
+                            secondaryAction={hay && canCreateIncidente ? {
+                                label: 'Reportar incidente',
+                                icon: <FiPlus />,
+                                onClick: () => navigate('/incidents/reportar', { state: { clasificacion: 'incidente' } }),
+                            } : undefined}
+                        />
+
+                        {!loading && incidents.length > 0 && (
+                            <div className="card inc-mis-reportes">
+                                <h3 className="inc-mis-reportes-titulo">Mis reportes</h3>
+                                <div className="incident-list">
+                                    {[...incidents]
+                                        .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+                                        .map((incident) => (
+                                            <div
+                                                key={incident.incidentId}
+                                                className="incident-row"
+                                                onClick={() => navigate(`/incidents/${incident.incidentId}`)}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={(e) => e.key === 'Enter' && navigate(`/incidents/${incident.incidentId}`)}
+                                            >
+                                                <span className="incident-row-icon inc-icon-neutro">
+                                                    {esHallazgo(incident) ? <FiShield size={17} /> : <FiZap size={17} />}
+                                                </span>
+                                                <div className="incident-row-body">
+                                                    <div className="incident-row-eyebrow">{getTipoLabel(incident.tipo)}</div>
+                                                    <p className="incident-row-desc">{incident.descripcion || 'Sin descripción registrada'}</p>
+                                                    <div className="incident-row-meta">
+                                                        <span>{new Date(incident.fecha).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="incident-row-status">
+                                                    {esHallazgo(incident)
+                                                        ? renderCierreBadge(incident.gobernanza?.estadoCierre || 'abierto')
+                                                        : renderEstadoBadge(incident.estado)}
+                                                </div>
+                                            </div>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Detail Modal */}
                 <Modal
@@ -935,18 +1019,30 @@ export default function Incidents() {
                     icon={<FiAlertTriangle size={24} />}
                     size="xl"
                     footer={
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setSelectedIncident(null);
-                                setDetailError('');
-                                setDetailLoading(false);
-                                setLightboxIndex(null);
-                            }}
-                        >
-                            <FiX className="mr-2" />
-                            Cerrar
-                        </button>
+                        <>
+                            {/* La página del reporte (IncidentDetalle) muestra el estado y
+                                "qué sigue"; el modal sigue siendo el de gestión. */}
+                            {selectedIncident && (
+                                <button
+                                    className="btn btn-ghost"
+                                    onClick={() => navigate(`/incidents/${selectedIncident.incidentId}`)}
+                                >
+                                    Abrir página del reporte
+                                </button>
+                            )}
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    setSelectedIncident(null);
+                                    setDetailError('');
+                                    setDetailLoading(false);
+                                    setLightboxIndex(null);
+                                }}
+                            >
+                                <FiX className="mr-2" />
+                                Cerrar
+                            </button>
+                        </>
                     }
                 >
                     {selectedIncident && (
@@ -956,7 +1052,7 @@ export default function Incidents() {
                                 tabla de datos — mismo lenguaje que las filas del listado. */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap', paddingBottom: 'var(--space-4)', borderBottom: '1px solid var(--surface-border)' }}>
                                 {esHallazgo(selectedIncident)
-                                    ? renderCierreBadge((selectedIncident as any).gobernanza?.estadoCierre || 'abierto')
+                                    ? renderCierreBadge(selectedIncident.gobernanza?.estadoCierre || 'abierto')
                                     : renderEstadoBadge(selectedIncident.estado)}
                                 {renderGravedadBadge(selectedIncident.gravedad)}
                                 <span style={{ flexGrow: 1 }} />
@@ -967,7 +1063,7 @@ export default function Incidents() {
                             </div>
 
                             {/* Flash banner */}
-                            {(selectedIncident as any).reporteFlash?.esFlash && (
+                            {selectedIncident.reporteFlash?.esFlash && (
                                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--accent-tint)', border: '1px solid rgba(0,110,220,0.25)' }}>
                                     <FiAlertCircle size={14} style={{ color: 'var(--accent-text)', flexShrink: 0, marginTop: '2px' }} />
                                     <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
@@ -1003,12 +1099,21 @@ export default function Incidents() {
                                         </p>
                                     </div>
 
-                                    {((selectedIncident as any).etapaConstructiva || (selectedIncident.diasPerdidos ?? 0) > 0) && (
+                                    {selectedIncident.medidasInmediatas && (
+                                        <div>
+                                            <div className="inc-detail-label">Medidas inmediatas</div>
+                                            <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+                                                {selectedIncident.medidasInmediatas}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {(selectedIncident.etapaConstructiva || (selectedIncident.diasPerdidos ?? 0) > 0) && (
                                         <div style={{ display: 'flex', gap: 'var(--space-6)' }}>
-                                            {(selectedIncident as any).etapaConstructiva && (
+                                            {selectedIncident.etapaConstructiva && (
                                                 <div>
                                                     <div className="inc-detail-label">Etapa</div>
-                                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{(selectedIncident as any).etapaConstructiva}</div>
+                                                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{selectedIncident.etapaConstructiva}</div>
                                                 </div>
                                             )}
                                             {(selectedIncident.diasPerdidos ?? 0) > 0 && (
@@ -1083,7 +1188,7 @@ export default function Incidents() {
                                         <div>
                                             <div className="inc-detail-label">Gobernanza</div>
                                             {(() => {
-                                                const gob = (selectedIncident as any).gobernanza || {};
+                                                const gob: Partial<HallazgoGobernanza> = selectedIncident.gobernanza || {};
                                                 return (
                                                     <div className="inc-gob-panel">
                                                         <div className="inc-gob-row">
@@ -1191,7 +1296,7 @@ export default function Incidents() {
                                         <div>
                                             <div className="inc-detail-label">Reportado por</div>
                                             <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                                                {(selectedIncident as any).realizadoPor?.nombre || selectedIncident.reportadoPor}
+                                                {selectedIncident.realizadoPor?.nombre || selectedIncident.reportadoPor}
                                             </div>
                                         </div>
                                     )}
@@ -1202,7 +1307,7 @@ export default function Incidents() {
                 </Modal>
 
 
-                {lightboxItem && (
+                {lightboxItem && createPortal(
                     <div className="incident-evidence-lightbox" onClick={() => setLightboxIndex(null)}>
                         <div className="incident-evidence-lightbox-content" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -1243,11 +1348,27 @@ export default function Incidents() {
                                 )}
                             </p>
                         </div>
-                    </div>
+                    </div>,
+                    document.body,
                 )}
 
 
                 <style>{`
+                /* ── Trabajador: bloque de reporte y "Mis reportes" ── */
+                .inc-solo-reporta {
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-5);
+                    max-width: 720px;
+                    margin: var(--space-6) auto 0;
+                }
+                .inc-mis-reportes-titulo {
+                    padding: var(--space-4) var(--space-4) var(--space-2);
+                    font-size: var(--text-base);
+                    font-weight: 600;
+                    color: var(--text-primary);
+                }
+
                 /* ── Barra de herramientas del listado ── */
                 .inc-toolbar {
                     display: flex;
@@ -1702,7 +1823,10 @@ export default function Incidents() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    z-index: 2000;
+                    /* Por encima de .modal-overlay (999998) y .modal (999999): el visor se
+                       abre desde el modal de detalle y con 2000 quedaba detrás. Además va
+                       en un portal a body, así no depende del apilamiento de su padre. */
+                    z-index: 1000001;
                     padding: var(--space-6);
                 }
 
@@ -1799,7 +1923,7 @@ export default function Incidents() {
                 isOpen={!!gobIncident}
                 onClose={() => setGobIncident(null)}
                 title="Gobernanza del hallazgo"
-                subtitle={gobIncident?.descripcion ? gobIncident.descripcion.slice(0, 80) : ''}
+                subtitle={gobIncident?.descripcion ? Array.from(gobIncident.descripcion).slice(0, 80).join('') : ''}
                 size="lg"
                 footer={
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', width: '100%' }}>
@@ -1818,12 +1942,7 @@ export default function Incidents() {
                     )}
                     <div className="form-group">
                         <label className="form-label">Responsable de cierre</label>
-                        <select className="form-input form-select" value={gobForm.responsableId} onChange={(e) => setGobForm({ ...gobForm, responsableId: e.target.value })}>
-                            <option value="">Selecciona…</option>
-                            {personasTenant.map((p: any) => (
-                                <option key={p.personaId} value={p.personaId}>{p.nombre} {p.apellido || ''} {p.cargo ? `- ${p.cargo}` : ''}</option>
-                            ))}
-                        </select>
+                        <SelectorResponsable value={gobForm.responsableId} onChange={(personaId) => setGobForm({ ...gobForm, responsableId: personaId })} placeholder="Selecciona…" />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="form-group">
@@ -1835,14 +1954,19 @@ export default function Incidents() {
                             <select className="form-input form-select" value={gobForm.estadoCierre} onChange={(e) => setGobForm({ ...gobForm, estadoCierre: e.target.value })}>
                                 <option value="abierto">Abierto</option>
                                 <option value="en_proceso">En proceso</option>
-                                <option value="cerrado">Cerrado</option>
+                                {/* Cerrar exige el permiso de cierre; sin él la opción no se ofrece (salvo que ya esté cerrado). */}
+                                {(canCalificarAccidente || gobForm.estadoCierre === 'cerrado') && <option value="cerrado">Cerrado</option>}
                             </select>
                         </div>
                     </div>
                     <div className="form-group">
                         <label className="form-label">Comentario de cierre {gobForm.estadoCierre === 'cerrado' && '*'}</label>
                         <textarea className="form-input" rows={3} value={gobForm.comentarioCierre} onChange={(e) => setGobForm({ ...gobForm, comentarioCierre: e.target.value })} style={{ resize: 'vertical' }} />
-                        <span className="form-hint">El cierre queda verificado por ti ({user?.nombre || 'usuario actual'}).</span>
+                        <span className="form-hint">
+                            {canCalificarAccidente
+                                ? `Cerrar el hallazgo cierra el caso: pide la clasificación, la foto, el responsable con plazo y las medidas completas. El cierre queda verificado por ti (${user?.nombre || 'usuario actual'}).`
+                                : 'El cierre del caso lo hace quien clasifica incidentes (prevención de riesgos).'}
+                        </span>
                     </div>
                 </div>
             </Modal>

@@ -2180,6 +2180,26 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             }
         }
 
+        // POST /personas/{id}/verificar-pin — Comprobar el PIN actual antes de
+        // elegir uno nuevo. Solo la propia persona; cuenta para el límite de
+        // intentos (ver `PersonaService.verificarPinActual`).
+        if (method === 'POST' && personaId && action === 'verificar-pin') {
+            if (!sesion) return sesionRes.respuesta;
+            const body = JSON.parse(event.body || '{}');
+            if (!await personaDelTenant(personaId)) return error('Persona no encontrada', 404);
+
+            try {
+                const result = await personaService.verificarPinActual(personaId, body.pinActual, {
+                    personaId: sesion.personaId,
+                });
+                return success(result);
+            } catch (err) {
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
+                throw err;
+            }
+        }
+
         // POST /personas/{id}/restablecer-pin — Borrar el PIN de alguien que lo
         // olvidó, para que configure uno nuevo.
         //

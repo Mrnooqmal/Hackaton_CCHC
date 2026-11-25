@@ -18,7 +18,8 @@ import { paginaDeArchivo, pendienteNormativa, redireccionPublicada, resolverEnla
 import { destinoDe } from '../src/manual/redirecciones.ts';
 
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
-const BASE = join(RAIZ, 'src', 'manual', 'content');
+// Los ids que Vite le entrega al plugin siempre llevan "/", también en Windows.
+const BASE = join(RAIZ, 'src', 'manual', 'content').split(sep).join('/');
 const archivos = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? archivos(join(d, e.name)) : [join(d, e.name)]));
 const PAGINAS = archivos(BASE).filter((f) => f.endsWith('.md')).map((f) => ({
     pagina: paginaDeArchivo(relative(BASE, f).split(sep).join('/')), texto: readFileSync(f, 'utf8'),
@@ -68,8 +69,8 @@ test('el build de dev sí trae las páginas pendientes, para revisarlas', { time
 test('el plugin: deja pasar las publicadas, quita las pendientes y falla si su texto aparece en otro archivo', () => {
     const p = manualPendiente({ ambiente: 'prod' });
     p.configResolved({ command: 'build' });
-    const fuf = join(BASE, 'fuf', 'index.md');
-    assert.equal(p.load(`${join(BASE, 'terreno', 'firmar.md')}?raw`), null);
+    const fuf = `${BASE}/fuf/index.md`;
+    assert.equal(p.load(`${BASE}/terreno/firmar.md?raw`), null);
     assert.equal(p.load(fuf), null, 'sin ?raw no es la carga del manual');
     if (pendienteNormativa(readFileSync(fuf, 'utf8'))) {
         assert.equal(p.load(`${fuf}?raw`), 'export default null;\n');

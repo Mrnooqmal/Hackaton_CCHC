@@ -22,6 +22,8 @@ const { ObraService } = require('../../lib/services/ObraService');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { success, error, created, cors } = require('../../lib/utils/response');
 const EP = require('../../lib/estructura-preventiva');
+const { resumenDelCaso } = require('../../lib/casos-servidor');
+const { casosDeLaEmpresa } = require('../../lib/incidentes-lectura');
 const { construirExport, renderHtml } = require('../../lib/completitud-export');
 
 const { QueryCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
@@ -56,6 +58,31 @@ const listarActividadesTenant = async (tenantId) => {
         // Degradar hacia "pendiente" es seguro; lo que no puede es pasar callado.
         registrarFallo('estructura.actividades', err);
         return [];
+    }
+};
+
+/**
+ * Resumen de los casos de incidentes del tenant, para el ítem 66 (investigación
+ * de accidentes). Cada uno sale de `resumenDelCaso`: sin nombres, RUT, relato ni
+ * archivos, porque la completitud la lee cualquiera que abre el panel y es el
+ * módulo de incidentes el que decide quién ve los casos. Solo se conserva, además,
+ * la obra a la que pertenecen.
+ *
+ * La lectura es la misma, paginada, del repositorio de incidentes (`casosDeLaEmpresa`),
+ * pero sin construir el repositorio completo: un listado que solo lee la primera página
+ * deja casos fuera del conteo de "accidentes sin informe".
+ *
+ * A diferencia de documentos y actividades, un fallo de lectura devuelve `null` y
+ * no una lista vacía: "no hay accidentes sin informe" sería una afirmación de
+ * cumplimiento hecha con lo que no se pudo leer. El ítem lo trata como no verificado.
+ */
+const listarCasosTenant = async (tenantId) => {
+    try {
+        const items = await casosDeLaEmpresa(docClient, process.env.INCIDENTS_TABLE, tenantId);
+        return items.map((i) => ({ obraId: i.obraId || null, ...resumenDelCaso(i) }));
+    } catch (err) {
+        registrarFallo('estructura.casos', err);
+        return null;
     }
 };
 
@@ -105,11 +132,13 @@ const contextoDelTenant = async (tenantId) => {
     ]);
     // Documentos y actividades sí se degradan, y hacia el lado correcto: sin
     // ellos los requisitos quedan PENDIENTES, nunca cumplidos (ver sus lectores).
-    const [documentos, actividades] = await Promise.all([
+    // Los casos también se degradan, pero a `null` (no verificado), no a vacío.
+    const [documentos, actividades, casos] = await Promise.all([
         listarDocumentosTenant(tenantId),
         listarActividadesTenant(tenantId),
+        listarCasosTenant(tenantId),
     ]);
-    return { personas, documentos, actividades, tenantSafe: tenant ? tenant.toSafeFormat() : null };
+    return { personas, documentos, actividades, casos, tenantSafe: tenant ? tenant.toSafeFormat() : null };
 };
 
 const armarCompletitud = async (tenantId, ambito, obraId) => {
@@ -119,10 +148,10 @@ const armarCompletitud = async (tenantId, ambito, obraId) => {
         contextoDelTenant(tenantId),
         obraId ? obraService.getById(obraId) : Promise.resolve(null),
     ]);
-    const { personas, documentos, actividades, tenantSafe } = base;
+    const { personas, documentos, actividades, casos, tenantSafe } = base;
 
     const completitud = await estructuraService.completitudAmbito({
-        tenantId, ambito, obraId, personas, documentos,
+        tenantId, ambito, obraId, personas, documentos, casos,
         dotacionDeclarada: ambito === EP.AMBITO.OBRA
             ? (obra?.dotacionDeclarada ?? null)
             : (tenantSafe?.cantidadTrabajadores || null),
@@ -274,6 +303,7 @@ module.exports.estructuraHandler = async (event) => {
                 personas: base.personas,
                 documentos: base.documentos,
                 actividades: base.actividades,
+                casos: base.casos,
                 dotacionDeclarada: obra
                     ? (obra.dotacionDeclarada ?? null)
                     : (base.tenantSafe?.cantidadTrabajadores || null),

@@ -24,6 +24,10 @@ const incidentes = require('../handlers/incidents-module/handler');
 
 let doble; let emitir;
 let A; let supervisora; let companera; let ajena;
+// Quien clasifica y cierra (incidentes.calificar_accidente): cerrar un hallazgo, sea por
+// `/cerrar` o por la gobernanza, exige ese permiso.
+const GESTION = 'incidentes.reportar';
+const CIERRE = 'incidentes.reportar,incidentes.calificar_accidente';
 
 beforeEach(async () => {
     // El repositorio de incidentes construye su propio cliente: el doble va en
@@ -37,15 +41,17 @@ beforeEach(async () => {
     supervisora = (await svc.crear(A, { rut: '12.345.678-5', nombre: 'Sara', rol: 'supervisor' })).persona.personaId;
     companera = (await svc.crear(A, { rut: '11.111.111-1', nombre: 'Rosa', rol: 'trabajador' })).persona.personaId;
     ajena = (await svc.crear(B, { rut: '22.222.222-2', nombre: 'Otra', rol: 'trabajador' })).persona.personaId;
+    // El responsable de un hallazgo tiene que estar activo (la validación es la misma en las tres rutas).
+    doble.items('PERSONAS_TABLE').find((x) => x.personaId === companera).estado = 'activo';
 });
 afterEach(() => { doble.restaurar(); eventBus.emit = emitir; });
 
-const pedir = (metodo, ruta, body) => incidentes.incidentsHandler({
+const pedir = (metodo, ruta, body, permisos = GESTION) => incidentes.incidentsHandler({
     rawPath: ruta, rawQueryString: '', headers: { host: 'api.test' }, queryStringParameters: null,
     body: body === undefined ? undefined : JSON.stringify(body),
     requestContext: {
         http: { method: metodo, path: ruta },
-        authorizer: { lambda: { sessionId: 's', personaId: supervisora, tenantId: A, rol: 'supervisor', permisos: 'incidentes.reportar', credencialProvisional: 'false' } },
+        authorizer: { lambda: { sessionId: 's', personaId: supervisora, tenantId: A, rol: 'supervisor', permisos, credencialProvisional: 'false' } },
     },
 });
 
@@ -72,7 +78,13 @@ test('quién verifica no lo dice el cliente: con cualquier estado, y al cerrar e
     assert.notEqual(g.verificadoPor, ajena);
     assert.notEqual(g.fechaVerificacion, '2020-01-01T00:00:00Z');
 
-    const cierre = await pedir('PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparada', verificadoPor: ajena });
+    // Cerrar por gobernanza exige lo mismo que el cierre del caso (fase 3): clasificado,
+    // con foto y con responsable y plazo. Se deja el caso listo para que esta prueba
+    // siga mirando lo suyo, quién verifica.
+    const guardado = doble.items('INCIDENTS_TABLE').find((i) => i.incidentId === id);
+    guardado.triaje = { tipo: 'condicion_subestandar' };
+    guardado.evidencias = ['tenants/t/incidentes/i/foto.jpg'];
+    const cierre = await pedir('PUT', `/incidents/${id}/gobernanza`, { estadoCierre: 'cerrado', comentarioCierre: 'Reparada', plazoRespuestaISO: '2026-12-01', verificadoPor: ajena }, CIERRE);
     assert.equal(cierre.statusCode, 200, cierre.body);
     g = doble.items('INCIDENTS_TABLE').find((i) => i.incidentId === id).gobernanza;
     assert.equal(g.verificadoPor, supervisora);

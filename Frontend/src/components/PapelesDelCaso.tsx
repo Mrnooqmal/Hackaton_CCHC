@@ -1,0 +1,345 @@
+import { useEffect, useMemo, useState } from 'react';
+import { FiCheckCircle, FiCircle, FiDownload, FiFileText, FiLock, FiUploadCloud, FiX } from 'react-icons/fi';
+import { incidentsApi, type Incident, type PapelDelCaso } from '../api/client';
+import { useToast } from '../context/ToastContext';
+import { Select, Badge, LoadingSpinner } from './ui';
+import { fechaLocal } from '../utils/prescripciones';
+import {
+    ORDEN_TIPOS_PAPEL, TIPOS_PAPEL, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
+    avanceDelCaso, papelesRequeridos, etiquetaTipoPapel, esHallazgo, type TipoPapel,
+} from '../utils/casos';
+import { ZonaCarga } from './FotosEvidencia';
+import { plural } from '../utils/plural';
+
+const MB = 1024 * 1024;
+/** Espera antes de reintentar la confirmación tras un 409 (otra escritura sobre el mismo caso). */
+const REINTENTO_CONFIRMAR_MS = 1200;
+
+const tamanoLegible = (bytes: number) => (bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+/** AAAA-MM-DD sin zona: con `new Date('2026-11-15')` se leería como UTC y en Chile mostraría el día anterior. */
+const fechaCorta = (aaaammdd: string) => {
+    const [a, m, d] = aaaammdd.split('-').map(Number);
+    return a && m && d ? new Date(a, m - 1, d).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }) : aaaammdd;
+};
+
+interface Props {
+    incidente: Incident;
+    /**
+     * `incidentes.reportar`: quien gestiona incidentes puede subir papeles. También en un caso
+     * cerrado: completar el respaldo documental de un caso cerrado (por ejemplo, el informe de
+     * investigación de un accidente anterior al rediseño) es justo lo que pide el repositorio.
+     */
+    puedeSubir: boolean;
+    /** Se llama después de subir un papel: lo que sigue en el caso puede haber cambiado. */
+    onCambio?: () => void;
+}
+
+/**
+ * "Papeles del caso" (fase 2 del rediseño): los papeles que el tipo de caso
+ * exige y cuáles faltan, el avance, y los archivos subidos con su descarga.
+ *
+ * La plataforma es un repositorio: guarda la DIAT y la DIEP como archivos y no
+ * las envía a nadie ni lee su contenido. Esta sección solo se monta para quien
+ * tiene `incidentes.historial` (el padre decide): el trabajador que ve su propio
+ * reporte no la recibe, y el servidor también se lo niega.
+ *
+ * Las reglas de qué se exige vienen de `utils/casos`, espejo de `lib/casos.js`.
+ */
+export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Props) {
+    const { toast } = useToast();
+    const id = incidente.incidentId;
+
+    // Lo cargado queda junto al id y a la recarga que se pidió (como en el detalle).
+    const [recarga, setRecarga] = useState(0);
+    const [descargando, setDescargando] = useState<string | null>(null);
+    const [cargado, setCargado] = useState<{ clave: string; archivos: PapelDelCaso[]; error: string } | null>(null);
+    const clave = `${id}:${recarga}`;
+
+    const [tipo, setTipo] = useState<TipoPapel | ''>('');
+    const [archivo, setArchivo] = useState<File | null>(null);
+    const [fechaDocumento, setFechaDocumento] = useState('');
+    const [subiendo, setSubiendo] = useState(false);
+    const [errorSubida, setErrorSubida] = useState('');
+    // El archivo que ya llegó a S3 pero cuyo registro en el caso falló. Se conserva la clave para
+    // reintentar SOLO la confirmación (el servidor es idempotente con la misma clave): si se
+    // volviera a subir el archivo, el primero quedaría huérfano en un bucket que no deja borrar.
+    const [sinConfirmar, setSinConfirmar] = useState<{ s3Key: string; tipo: TipoPapel } | null>(null);
+
+    useEffect(() => {
+        let cancelado = false;
+        incidentsApi.getDocuments(id).then((res) => {
+            if (cancelado) return;
+            if (res.success && res.data) setCargado({ clave, archivos: res.data.archivos, error: '' });
+            else setCargado({ clave, archivos: [], error: res.error || 'No se pudieron cargar los papeles del caso.' });
+        }).catch(() => {
+            if (!cancelado) setCargado({ clave, archivos: [], error: 'Error de conexión al cargar los papeles del caso.' });
+        });
+        return () => { cancelado = true; };
+    }, [id, clave]);
+
+    const actual = cargado && cargado.clave === clave ? cargado : null;
+    const archivos = useMemo(() => actual?.archivos ?? [], [actual]);
+
+    // Lo exigido se calcula con las mismas reglas que el servidor, sobre el
+    // incidente y los archivos que acaban de llegar.
+    const requeridos = useMemo(() => papelesRequeridos({ ...incidente, papeles: archivos }), [incidente, archivos]);
+    const avance = useMemo(() => avanceDelCaso({ ...incidente, papeles: archivos }), [incidente, archivos]);
+
+    // Con otro archivo u otro tipo, la clave pendiente ya no corresponde (el tipo va en la clave).
+    const cambiarTipo = (nuevo: TipoPapel) => {
+        setTipo(nuevo);
+        if (sinConfirmar && sinConfirmar.tipo !== nuevo) setSinConfirmar(null);
+    };
+    const cambiarArchivo = (nuevo: File | null) => {
+        setArchivo(nuevo);
+        setSinConfirmar(null);
+    };
+
+    // El enlace se pide al hacer clic, no al abrir la página: pedirlo es lo que queda registrado
+    // (y firma uno nuevo de 15 minutos), y listar los papeles no es descargarlos.
+    const handleDescargar = async (p: PapelDelCaso) => {
+        if (descargando) return;
+        setDescargando(p.papelId);
+        try {
+            const res = await incidentsApi.getEnlacePapel(id, p.papelId);
+            if (!res.success || !res.data?.url) { toast.error(res.error || 'No se pudo preparar la descarga.'); return; }
+            const enlace = document.createElement('a');
+            enlace.href = res.data.url;
+            enlace.rel = 'noopener noreferrer';
+            enlace.click();
+        } catch {
+            toast.error('Error de conexión al preparar la descarga.');
+        } finally {
+            setDescargando(null);
+        }
+    };
+
+    const subir = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (subiendo) return;
+        if (!tipo) { setErrorSubida('Elige qué papel vas a subir.'); return; }
+        if (!archivo) { setErrorSubida('Elige el archivo.'); return; }
+        if (!MIME_PAPELES.includes(archivo.type)) { setErrorSubida('Solo se aceptan archivos PDF o imágenes (JPG, PNG o WebP).'); return; }
+        if (archivo.size > MAX_BYTES_PAPEL) { setErrorSubida(`El archivo debe pesar hasta ${MAX_BYTES_PAPEL / MB} MB.`); return; }
+        if (archivos.length >= MAX_PAPELES_POR_CASO) { setErrorSubida(`El caso admite hasta ${MAX_PAPELES_POR_CASO} archivos.`); return; }
+        setErrorSubida('');
+        setSubiendo(true);
+        let archivoYaSubido = Boolean(sinConfirmar);
+        try {
+            let s3Key = sinConfirmar?.s3Key;
+            if (!s3Key) {
+                // 1. URL de subida. El servidor todavía no registra nada.
+                const url = await incidentsApi.pedirSubidaPapel(id, { archivo, tipo });
+                if (!url.success || !url.data) { setErrorSubida(url.error || 'No se pudo preparar la subida.'); return; }
+                // 2. El archivo va directo a S3. `fetch` no lanza con un 4xx/5xx: se mira `ok`.
+                const subida = await fetch(url.data.uploadUrl, { method: 'PUT', body: archivo, headers: url.data.uploadHeaders });
+                if (!subida.ok) { setErrorSubida('No se pudo subir el archivo. Intenta de nuevo.'); return; }
+                s3Key = url.data.s3Key;
+                archivoYaSubido = true;
+                // Desde acá el archivo existe: si confirmar falla, se reintenta con esta misma clave.
+                setSinConfirmar({ s3Key, tipo });
+            }
+            // 3. Confirmar: el servidor comprueba que llegó y recién ahí lo registra.
+            const datosConfirmacion = {
+                s3Key,
+                fileName: archivo.name,
+                ...(fechaDocumento ? { fechaDocumento } : {}),
+            };
+            let confirmado = await incidentsApi.confirmarPapel(id, datosConfirmacion);
+            // 409: el caso cambió justo en ese momento (otra persona guardó algo). Confirmar con la misma
+            // clave es seguro y la segunda vez ya lee el caso nuevo: se reintenta una vez, sin pedirle nada a la persona.
+            if (!confirmado.success && confirmado.codigo === 'CONFLICTO') {
+                await new Promise((resolver) => setTimeout(resolver, REINTENTO_CONFIRMAR_MS));
+                confirmado = await incidentsApi.confirmarPapel(id, datosConfirmacion);
+            }
+            if (!confirmado.success) {
+                setErrorSubida(`El archivo ya se subió, pero no se pudo registrar en el caso${confirmado.error ? `: ${confirmado.error}` : ''}. Presiona "Reintentar registro" para volver a intentarlo sin subirlo de nuevo.`);
+                return;
+            }
+            toast.success('Papel agregado al caso');
+            setArchivo(null);
+            setFechaDocumento('');
+            setSinConfirmar(null);
+            setRecarga((n) => n + 1);
+            onCambio?.();
+        } catch {
+            setErrorSubida(archivoYaSubido
+                ? 'Error de conexión al registrar el archivo. Presiona "Reintentar registro": no hace falta subirlo de nuevo.'
+                : 'Error de conexión al subir el archivo. Intenta de nuevo.');
+        } finally {
+            setSubiendo(false);
+        }
+    };
+
+    // Los papeles que exige un hallazgo (foto, responsable y plazo, comentario de cierre)
+    // no se cumplen subiendo un archivo: la foto se agrega arriba, en "Fotos", y lo demás
+    // se completa en sus propias secciones. Acá solo cabe un respaldo opcional (informe,
+    // constancia, otro), así que el formulario va plegado y con esa aclaración.
+    const soloRespaldos = esHallazgo(incidente);
+
+    const formulario = (
+        <form className="inc-papeles-form" onSubmit={subir}>
+            {!soloRespaldos && <div className="inc-ficha-label">Subir un papel</div>}
+            <div className="inc-papeles-campos">
+                <div className="form-group">
+                    <label className="form-label">Papel</label>
+                    <Select
+                        ariaLabel="Tipo de papel"
+                        value={tipo}
+                        onChange={(v) => cambiarTipo(v as TipoPapel)}
+                        placeholder="Elige el tipo…"
+                        options={ORDEN_TIPOS_PAPEL.map((t) => ({ value: t, label: TIPOS_PAPEL[t].etiqueta }))}
+                        disabled={subiendo}
+                    />
+                </div>
+                <div className="form-group">
+                    <label className="form-label" htmlFor="papel-fecha">Fecha del documento (opcional)</label>
+                    <input
+                        id="papel-fecha"
+                        className="form-input"
+                        type="date"
+                        max={fechaLocal()}
+                        value={fechaDocumento}
+                        disabled={subiendo}
+                        onChange={(e) => setFechaDocumento(e.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="form-group">
+                <span className="form-label">Archivo</span>
+                <ZonaCarga
+                    id="papel-archivo"
+                    accept={MIME_PAPELES}
+                    titulo="Seleccionar archivo"
+                    tituloCambiar={archivo ? 'Cambiar archivo' : undefined}
+                    ayuda={`PDF o imagen (JPG, PNG o WebP), hasta ${MAX_BYTES_PAPEL / MB} MB`}
+                    disabled={subiendo}
+                    onElegir={(elegidos) => {
+                        // Cancelar el selector no trae archivos: se conserva el que ya había.
+                        if (elegidos[0]) { cambiarArchivo(elegidos[0]); setErrorSubida(''); }
+                    }}
+                />
+                {archivo && (
+                    <div className="inc-archivo-elegido">
+                        <FiFileText size={18} className="inc-archivo-elegido-icono" />
+                        <div className="inc-archivo-elegido-texto">
+                            <div className="inc-archivo-elegido-nombre">{archivo.name}</div>
+                            <div className="inc-papeles-meta">{tamanoLegible(archivo.size)}</div>
+                        </div>
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { cambiarArchivo(null); setErrorSubida(''); }}
+                            disabled={subiendo}
+                            aria-label={`Quitar ${archivo.name}`}
+                        >
+                            <FiX size={14} /> Quitar
+                        </button>
+                    </div>
+                )}
+            </div>
+            {tipo && TIPOS_PAPEL[tipo].salud && (
+                <p className="inc-ficha-texto inc-papeles-ayuda">
+                    Este documento trae datos de salud. Solo lo ve quien tiene acceso al historial de incidentes y cada descarga queda registrada.
+                </p>
+            )}
+            {errorSubida && <div className="alert alert-danger" role="alert"><div>{errorSubida}</div></div>}
+            <div>
+                <button type="submit" className="btn btn-primary" disabled={subiendo || !tipo || !archivo}>
+                    <FiUploadCloud size={16} /> {subiendo ? (sinConfirmar ? 'Registrando…' : 'Subiendo…') : sinConfirmar ? 'Reintentar registro' : 'Subir papel'}
+                </button>
+            </div>
+        </form>
+    );
+
+    return (
+        <section className="inc-ficha-card" aria-label="Papeles del caso">
+            <div>
+                <h2 className="inc-papeles-titulo">Papeles del caso</h2>
+                <p className="inc-ficha-texto inc-papeles-ayuda">
+                    Acá se guardan los documentos de este caso. La plataforma no envía la DIAT ni la DIEP a nadie: se adjuntan como archivo.
+                </p>
+            </div>
+
+            {actual === null ? (
+                <LoadingSpinner label="Cargando papeles…" />
+            ) : actual.error ? (
+                <div className="alert alert-danger"><div>{actual.error}</div></div>
+            ) : (
+                <>
+                    <div>
+                        <div className="inc-ficha-label">
+                            {avance.total === 0
+                                ? 'Este caso no exige papeles'
+                                : `Lo que exige este caso · ${avance.cumplidos} de ${plural(avance.total, 'papel', 'papeles')}`}
+                        </div>
+                        {avance.total > 0 && (
+                            <div className="inc-papeles-barra" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={avance.porcentaje} aria-label="Avance de los papeles del caso">
+                                <span style={{ width: `${avance.porcentaje}%` }} />
+                            </div>
+                        )}
+                        <ul className="inc-papeles-lista">
+                            {requeridos.map((r) => (
+                                <li key={r.clave} className="inc-papeles-fila">
+                                    <span className={r.cumplido ? 'inc-papeles-ok' : 'inc-papeles-falta'}>
+                                        {r.cumplido ? <FiCheckCircle size={16} /> : <FiCircle size={16} />}
+                                    </span>
+                                    <span className="inc-papeles-nombre">{r.etiqueta}</span>
+                                    <Badge variant={r.cumplido ? 'success' : 'warning'} size="sm">{r.cumplido ? 'Cumplido' : 'Falta'}</Badge>
+                                    {puedeSubir && !r.cumplido && r.tipoDocumento && (
+                                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => cambiarTipo(r.tipoDocumento as TipoPapel)}>
+                                            Subir
+                                        </button>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div>
+                        <div className="inc-ficha-label">
+                            Archivos subidos{archivos.length > 0 ? ` · ${plural(archivos.length, 'archivo', 'archivos')}` : ''}
+                        </div>
+                        {archivos.length === 0 ? (
+                            <p className="inc-ficha-texto inc-ficha-vacio">Todavía no se subió ningún archivo.</p>
+                        ) : (
+                            <ul className="inc-papeles-lista">
+                                {archivos.map((p) => (
+                                    <li key={p.papelId} className="inc-papeles-fila inc-papeles-fila--archivo">
+                                        <div className="inc-papeles-nombre">
+                                            <div>{etiquetaTipoPapel(p.tipo)}</div>
+                                            <div className="inc-papeles-meta">
+                                                {p.nombreArchivo || 'Sin nombre'}{p.tamano ? ` · ${tamanoLegible(p.tamano)}` : ''}
+                                                {p.fechaDocumento ? ` · documento del ${fechaCorta(p.fechaDocumento)}` : ''}
+                                                {p.subidoEn ? ` · subido el ${new Date(p.subidoEn).toLocaleDateString('es-CL')}` : ''}
+                                            </div>
+                                        </div>
+                                        {p.contieneSalud && (
+                                            <span title="Contiene datos de salud: quién lo descarga queda registrado">
+                                                <Badge variant="info" size="sm"><FiLock size={11} /> Datos de salud</Badge>
+                                            </span>
+                                        )}
+                                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleDescargar(p)} disabled={descargando !== null}>
+                                            <FiDownload size={14} /> {descargando === p.papelId ? 'Preparando…' : 'Descargar'}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
+                    {puedeSubir && (soloRespaldos ? (
+                        <details className="inc-papeles-opcional">
+                            <summary>Subir un respaldo (opcional)</summary>
+                            <p className="inc-ficha-texto inc-papeles-ayuda">
+                                Un hallazgo no necesita archivos para cerrarse: su foto se agrega en "Fotos" y el resto (responsable, plazo y comentario de cierre) se completa en las otras secciones del caso. Acá solo se suben respaldos opcionales, como un informe o una constancia.
+                            </p>
+                            {formulario}
+                        </details>
+                    ) : formulario)}
+                </>
+            )}
+        </section>
+    );
+}

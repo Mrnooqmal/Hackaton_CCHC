@@ -21,6 +21,7 @@ import { abrirDocumentoFirmable } from '../utils/documentoFirmado';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
 import RepositorioDs44 from '../components/obra/RepositorioDs44';
+import CasosDeLaObra from '../components/CasosDeLaObra';
 import { AMBITO as AMBITO_FUF } from '../utils/estructuraPreventiva';
 import { PERMISSIONS } from '../permissions';
 import { useToast } from '../context/ToastContext';
@@ -63,7 +64,8 @@ const EMPRESA_DOC_TITLES: Record<string, string> = {
     REGLAMENTO_INTERNO: 'Reglamento Interno (RIHS/RIOHS)',
     POLITICA_SSO: 'Política de SST',
 };
-const extractEmpresaDocs = (cargos: any[]): { tipo: string; fileKey: string; nombre?: string; subidoEn?: string }[] => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const extractEmpresaDocs = (cargos: any[]):{ tipo: string; fileKey: string; nombre?: string; subidoEn?: string }[] => {
     const out: { tipo: string; fileKey: string; nombre?: string; subidoEn?: string }[] = [];
     const seen = new Set<string>();
     for (const c of cargos || []) {
@@ -145,7 +147,9 @@ export default function DocumentsRepository() {
         try {
             const tenantId = user?.tenantId || localStorage.getItem('tenant_id') || '';
             const [res, cargosRes] = await Promise.all([
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 documentsApi.list({ obraId: selectedObraId } as any),
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 tenantId ? tenantsApi.getCargos(tenantId) : Promise.resolve({ success: false } as any),
             ]);
             if (res.success && res.data) {
@@ -181,6 +185,7 @@ export default function DocumentsRepository() {
     // Las asignaciones usan personaId (workerId es legacy): se comprueban ambos, si no
     // los documentos recién asignados no aparecían en la sección "Personal".
     const isAssignedToUser = (doc: RepoDocument) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Boolean(user?.personaId && doc.asignaciones?.some(a => (a as any).personaId === user.personaId || a.workerId === user.personaId));
 
     const personalDocuments = useMemo(() => documents.filter(isAssignedToUser), [documents, user?.personaId]);
@@ -328,6 +333,7 @@ export default function DocumentsRepository() {
                 clasificacion: 'repositorio',
                 createdBy: user?.personaId || user?.userId,
                 creatorName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : undefined
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             } as any);
 
             if (response.success && response.data) {
@@ -645,6 +651,16 @@ export default function DocumentsRepository() {
                             );
                         })}
                     </div>
+                )}
+
+                {/* ── Casos de incidentes y accidentes de la obra ──
+                    Una lista con el avance de papeles de cada caso y el enlace a su
+                    detalle, donde están los archivos y su descarga auditada. Son casos
+                    sensibles (accidentes con su fecha y gravedad): solo con el permiso
+                    del historial de incidentes, el mismo que exige el servidor. */}
+                {!loading && !sinDatos && selectedObraId && showFolders && activeScope === 'general'
+                    && hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL) && (
+                    <CasosDeLaObra obraId={selectedObraId} />
                 )}
 
                 {/* ── Scope vacío ── */}

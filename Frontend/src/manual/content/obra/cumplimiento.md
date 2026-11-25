@@ -104,7 +104,7 @@ obra.
 | **Planificar** | **Estructura preventiva** — comité paritario o delegado de la obra. Ver [Estructura preventiva](/obra/estructura). |
 | **Hacer** | **Registro de actividad preventiva** (Art. 72), **Onboarding de la obra**, **Registros de gestión** y **Eventos sobrevinientes** (registros que solo existen si ocurre el hecho; no cuentan como faltante). |
 | **Verificar** | **Consolidado del período** (siniestralidad, investigaciones, medidas, vigilancia) e **Investigaciones AT/EP** (informes de incidentes graves y fatales, Art. 71). |
-| **Actuar** | **Medidas correctivas**, **Actualizaciones hacia Planificar** (MIPER, programa y reglamento que toca revisar) y **Prescripciones** (Art. 70). |
+| **Actuar** | **Medidas correctivas** (solo las registradas antes del plan de medidas; el plan de un caso nuevo está en su página de [Incidentes](/obra/incidentes#plan-de-medidas-correctivas)), **Actualizaciones hacia Planificar** (MIPER, programa y reglamento que toca revisar) y **Prescripciones** (Art. 70). |
 
 ![Panel de un módulo de la fase Hacer](/img/obras/modulo-fase.png)
 

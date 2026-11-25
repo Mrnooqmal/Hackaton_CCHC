@@ -419,3 +419,37 @@ test('si el restablecimiento cambia mientras se asiste, la asistencia no procede
     alLeer = () => { ficha.pinRestablecido = { ...ficha.pinRestablecido, en: '2099-01-01T00:00:00.000Z', por: OTRO }; };
     await rechaza(svc().setPin(EMPRESA, DUENA, '7395', undefined, { personaId: OTRO, puedeEnrolar: true }), 'PIN_CAMBIO_CONCURRENTE');
 });
+
+// ─── Verificar el PIN actual en su propio paso ──────────────────────────────
+//
+// "Cambiar PIN" comprueba el actual antes de pedir el nuevo, para avisar ahí
+// mismo si está mal. No escribe nada y pasa por el mismo límite de intentos.
+
+test('verificarPinActual: el PIN correcto pasa, sin escribir', async () => {
+    await conPin('4821');
+    assert.deepEqual(await svc().verificarPinActual(DUENA, '4821', actor(DUENA)), { valido: true });
+    assert.equal(escrituras.length, 0);
+    assert.deepEqual(consultasAlLimite, [DUENA], 'pasa por el límite de intentos');
+});
+
+test('verificarPinActual: el PIN incorrecto se rechaza y cuenta para el límite', async () => {
+    await conPin('4821');
+    await rechaza(svc().verificarPinActual(DUENA, '0000', actor(DUENA)), 'PIN_ACTUAL_INCORRECTO');
+    assert.deepEqual(consultasAlLimite, [DUENA]);
+});
+
+test('verificarPinActual: con la cuenta bloqueada responde bloqueo', async () => {
+    await conPin('4821');
+    bloquear = true;
+    await rechaza(svc().verificarPinActual(DUENA, '4821', actor(DUENA)), 'PIN_BLOQUEADO');
+});
+
+test('verificarPinActual: nadie verifica el PIN de otra persona', async () => {
+    await conPin('4821');
+    await rechaza(svc().verificarPinActual(DUENA, '4821', actor(SUPERVISOR, true)), 'PIN_AJENO');
+    assert.equal(consultasAlLimite.length, 0);
+});
+
+test('verificarPinActual: sin PIN configurado no hay nada que verificar', async () => {
+    await rechaza(svc().verificarPinActual(DUENA, '4821', actor(DUENA)), 'PIN_NO_CONFIGURADO');
+});

@@ -104,6 +104,13 @@
     margin-bottom: var(--space-2);
 }
 
+.ui-empty-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-3);
+}
+
 .ui-empty-state-description {
     color: var(--text-muted);
     max-width: 400px;
@@ -487,8 +494,16 @@
     color: var(--text-muted);
 }
 
+.ui-select-search svg { flex-shrink: 0; }
+
 .ui-select-search input {
     flex: 1;
+    /* Sin min-width: 0 el input conserva su ancho por defecto (~20 caracteres) y, en un
+       panel angosto, se sale del panel: al enfocarlo el navegador desplaza el panel
+       (overflow: hidden también hace scroll) y el texto de las opciones queda cortado
+       por la izquierda. */
+    min-width: 0;
+    width: 100%;
     background: transparent;
     border: none;
     outline: none;
@@ -499,6 +514,7 @@
 .ui-select-options {
     max-height: 240px;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: var(--space-1);
 }
 
