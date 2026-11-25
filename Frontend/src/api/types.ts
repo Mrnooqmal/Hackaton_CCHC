@@ -67,6 +67,7 @@ export interface PersonaResponse {
     passwordTemporalVence?: string | null;
     habilitado: boolean;
     pinConfigurado: boolean;
+    pinRestablecido?: { por: string; nombre?: string | null; en: string } | null;
     enrolado: boolean;
     permisos: string[];
     obraIds: string[];
