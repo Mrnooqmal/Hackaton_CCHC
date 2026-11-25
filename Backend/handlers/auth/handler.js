@@ -407,7 +407,7 @@ module.exports.changePassword = async (event) => {
                 PK: `TENANT#${persona.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente, credencialInicial',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente, credencialInicial, passwordRestablecido',
             ExpressionAttributeValues: {
                 ':passwordHash': newPasswordHash,
                 ':passwordTemporal': false,
@@ -599,7 +599,7 @@ module.exports.resetPassword = async (event) => {
                 PK: `TENANT#${personaItem.tenantId}`,
                 SK: `PERSONA#${personaId}`
             },
-            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry, passwordTemporalVence, activacionPendiente, credencialInicial',
+            UpdateExpression: 'SET passwordHash = :ph, passwordTemporal = :pt, updatedAt = :u REMOVE resetTokenHash, resetTokenExpiry, passwordTemporalVence, activacionPendiente, credencialInicial, passwordRestablecido',
             ExpressionAttributeValues: {
                 ':ph': newPasswordHash,
                 ':pt': false,

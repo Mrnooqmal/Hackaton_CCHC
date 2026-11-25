@@ -107,6 +107,7 @@ export default function WorkerDetail() {
     const canDesvincular = hasPermission(PERMISSIONS.PERSONA_DESVINCULAR);
     const canRestablecerPin = hasPermission(PERMISSIONS.PERSONA_RESTABLECER_PIN);
     const canActivarAcceso = hasPermission(PERMISSIONS.PERSONA_ACTIVAR_ACCESO);
+    const canRestablecerContrasena = hasPermission(PERMISSIONS.PERSONA_RESTABLECER_CONTRASENA);
     // Editar datos sensibles de la persona (cargo, correo, etc.): mismo permiso
     // que gestionar/añadir personas.
     const canEditarDatos = hasPermission(PERMISSIONS.PERSONAS_CREAR);
@@ -1067,6 +1068,7 @@ Generado por PrevencionApp
                                 tenantId={authTenantId}
                                 persona={worker}
                                 puedeActivar={canActivarAcceso}
+                                puedeRestablecer={canRestablecerContrasena}
                                 esLaMisma={worker.personaId === user?.personaId}
                                 onCambio={loadWorkerData}
                             />

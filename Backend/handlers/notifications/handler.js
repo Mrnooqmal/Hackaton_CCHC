@@ -371,3 +371,62 @@ module.exports.sendActivacionEmail = sendActivacionEmail;
 module.exports.sendPasswordResetEmail = sendPasswordResetEmail;
 module.exports.sendOnboardingLicenseEmail = sendOnboardingLicenseEmail;
 module.exports.sendPinRestablecidoEmail = sendPinRestablecidoEmail;
+
+const sendContrasenaRestablecidaEmail = async (email, nombre, { porNombre, fecha, horario, motivo }) => {
+    if (!email) return { sent: false, reason: 'no_email' };
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;padding:32px;">
+    <tr><td>
+      <div style="font-size:20px;font-weight:700;color:#002855;margin-bottom:24px;">Build &amp; Serve</div>
+      <h1 style="font-size:18px;margin:0 0 12px;">Tu contraseña fue restablecida</h1>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
+        Hola ${escaparHtml(nombre)}: <strong>${escaparHtml(porNombre)}</strong> restableció tu contraseña
+        el ${escaparHtml(fecha)} a las ${escaparHtml(horario)}.
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">Motivo registrado: ${escaparHtml(motivo)}</p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
+        Tu contraseña anterior ya no sirve. Quien la restableció te entrega una contraseña temporal en persona o por teléfono;
+        al entrar con ella eliges una nueva. Este correo no la trae, a propósito. Tu PIN de firma no cambió.
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0;">
+        <strong>Si no pediste esto</strong>, avisa a tu empresa o al prevencionista de tu obra.
+      </p>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+    const textBody = `
+Build & Serve — Tu contraseña fue restablecida
+
+Hola ${nombre}: ${porNombre} restableció tu contraseña el ${fecha} a las ${horario}.
+
+Motivo registrado: ${motivo}
+
+Tu contraseña anterior ya no sirve. Quien la restableció te entrega una contraseña
+temporal en persona o por teléfono; al entrar con ella eliges una nueva. Este correo
+no la trae, a propósito. Tu PIN de firma no cambió.
+
+Si no pediste esto, avisa a tu empresa o al prevencionista de tu obra.
+
+---
+Build & Serve — Plataforma de Gestión de Obras
+Este es un mensaje automático. Si necesitas ayuda, responde a este correo o escribe a contacto@buildandserve.cl.
+`.trim();
+
+    try {
+        const r = await enviarCorreo({ para: email, asunto: 'Build & Serve — Tu contraseña fue restablecida', html: htmlBody, texto: textBody });
+        if (!r.enviado) return SUPRIMIDA;
+        return { sent: true };
+    } catch (err) {
+        console.error('Error enviando el aviso de contraseña restablecida a', enmascararCorreo(email), '-', err.name);
+        return { sent: false, error: err.name || 'error', err };
+    }
+};
+
+module.exports.sendContrasenaRestablecidaEmail = sendContrasenaRestablecidaEmail;

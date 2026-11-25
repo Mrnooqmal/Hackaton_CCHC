@@ -211,6 +211,12 @@ export const personasApi = {
             body: '{}',
         }),
 
+    restablecerContrasena: (tenantId: string, id: string, motivo: string) =>
+        apiRequest<{ password: string; vence: string; sesionesCerradas: boolean; correo: 'enviado' | 'fallido' | 'sin-correo' }>(`/personas/${id}/restablecer-contrasena?tenantId=${tenantId}`, {
+            method: 'POST',
+            body: JSON.stringify({ motivo }),
+        }),
+
     reactivarInicial: (tenantId: string, id: string) =>
         apiRequest<{ vence: string }>(`/personas/${id}/reactivar-inicial?tenantId=${tenantId}`, {
             method: 'POST',

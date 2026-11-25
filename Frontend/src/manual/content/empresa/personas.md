@@ -107,6 +107,18 @@ solo el administrador) toca **Restablecer PIN** en la ficha y escribe el **motiv
 recibe un aviso con tu nombre y el motivo, y crea uno nuevo desde **Configuración**.
 ::::
 
+:::: solo persona.restablecer_contrasena
+### Restablecer la contraseña
+
+Si la persona olvidó su contraseña y no tiene correo, quien tiene el permiso **Restablecer la
+contraseña de otra persona** (por defecto, solo el administrador) abre su ficha y toca **Restablecer
+contraseña**. Escribe el motivo (entre 10 y 120 caracteres, sin RUT ni correos): queda en la
+auditoría y la persona recibe un aviso con tu nombre. Aparece una contraseña temporal una sola vez:
+entrégasela en persona o por teléfono, después de verificar que es ella. Vence en 72 horas, sirve
+solo en esta empresa y al entrar elige una nueva. Su PIN de firma no cambia. Nadie restablece la
+contraseña de quien tiene permisos que él no tiene.
+::::
+
 :::: solo persona.desvincular
 ### Eliminar a alguien de la empresa
 
@@ -126,6 +138,9 @@ Si no ha entrado nunca, entra con los cuatro primeros dígitos de su RUT. Si pas
 toca **Reactivar acceso inicial** en su ficha, o activa su acceso con la persona presente. Si la
 contraseña temporal venció sin usarse, toca **Activar de nuevo**. Si ya eligió su contraseña y no
 la recuerda, puede usar **¿Olvidaste tu contraseña?** (si tiene correo registrado).
+
+**Olvidó su contraseña y no tiene correo.**
+Pide a un administrador de la empresa que la restablezca desde su ficha.
 
 **¿Puedo asignar una persona a varias obras?**
 Sí. Puede trabajar en varias obras a la vez, con su cargo en cada una.

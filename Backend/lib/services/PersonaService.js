@@ -21,6 +21,11 @@ const { ValeFirmaService, MOTIVO_DESVINCULACION } = require('./ValeFirmaService'
  *  no sirve para que la persona afectada, o quien revise después, entienda qué
  *  pasó. */
 const MOTIVO_MIN = 10;
+const MOTIVO_CONTRASENA_MIN = 10;
+const MOTIVO_CONTRASENA_MAX = 120;
+const HORAS_RESTABLECIMIENTO = 72;
+const PARECE_RUT = /\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]\b/;
+const PARECE_CORREO = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const MOTIVO_MAX = 500;
 
 /** Condiciones de "no hay" para atributos que `crear` escribe como NULL: en
@@ -404,7 +409,7 @@ class PersonaService {
         await Promise.all(hermanas.map((h, i) => this.dynamo.send(new UpdateCommand({
             TableName: this.table,
             Key: { PK: `TENANT#${h.tenantId}`, SK: `PERSONA#${h.personaId}` },
-            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente, credencialInicial',
+            UpdateExpression: 'SET passwordHash = :passwordHash, passwordTemporal = :passwordTemporal, updatedAt = :updatedAt REMOVE passwordTemporalVence, activacionPendiente, credencialInicial, passwordRestablecido',
             ExpressionAttributeValues: {
                 ':passwordHash': hashes[i],
                 ':passwordTemporal': passwordTemporal,
@@ -955,7 +960,7 @@ class PersonaService {
         };
     }
 
-    async emitirTemporal(tenantId, personaId, { horas, actor, operacion, exigir, aviso, origen = null, detalle = {} }) {
+    async emitirTemporal(tenantId, personaId, { horas, actor, operacion, exigir, aviso, origen = null, detalle = {}, restablecido = null }) {
         if (!actor?.id || !actor?.nombre) throw errorPin('Falta quién emite la contraseña temporal', 'TEMPORAL_SIN_ACTOR');
         if (!(horas > 0)) throw errorPin('Falta la vigencia de la contraseña temporal', 'TEMPORAL_SIN_VIGENCIA');
         const auditoria = require('../gobernanza/auditoria');
@@ -972,7 +977,7 @@ class PersonaService {
         const vence = new Date(ahora.getTime() + horas * 3600 * 1000).toISOString();
         const password = credenciales.generarTemporal();
         const passwordHash = await hashPassword(password, personaId);
-        const evento = { evento: operacion, por: actor.id, tipo: actor.tipo || 'persona', nombre: actor.nombre, en, vence };
+        const evento = { evento: operacion, por: actor.id, tipo: actor.tipo || 'persona', nombre: actor.nombre, en, vence, ...(restablecido ? { motivo: restablecido.motivo } : {}) };
 
         const mensaje = construirMensaje({
             recipientId: personaId,
@@ -1009,8 +1014,9 @@ class PersonaService {
                             Key: { PK: `TENANT#${tenantId}`, SK: `PERSONA#${personaId}` },
                             UpdateExpression: 'SET passwordHash = :hash, passwordTemporal = :si, passwordTemporalVence = :vence, updatedAt = :en,'
                                 + (exigir === 'pendiente' ? ' activacionPendiente = :si,' : '')
+                                + (restablecido ? ' passwordRestablecido = :rest,' : '')
                                 + ' credencialHistorial = list_append(if_not_exists(credencialHistorial, :vacia), :evento)'
-                                + ' REMOVE resetTokenHash, resetTokenExpiry, credencialInicial',
+                                + ' REMOVE resetTokenHash, resetTokenExpiry, credencialInicial' + (restablecido ? '' : ', passwordRestablecido'),
                             ConditionExpression: condiciones.join(' AND '),
                             ExpressionAttributeValues: {
                                 ':hash': passwordHash,
@@ -1020,6 +1026,7 @@ class PersonaService {
                                 ':vacia': [],
                                 ':evento': [evento],
                                 ...(item.passwordHash ? { ':anterior': item.passwordHash } : { ':nulo': null }),
+                                ...(restablecido ? { ':rest': { ...restablecido, en } } : {}),
                             },
                         },
                     },
@@ -1112,6 +1119,53 @@ class PersonaService {
         const r = await sendActivacionEmail(item.email, item.nombre, enlace, horas).catch((err) => ({ sent: false, err }));
         if (!r.sent) registrarFallo('correo.activacion', r.err || new Error(r.error || 'no enviado'), { personaId });
         return { correo: r.sent ? 'enviado' : (r.code === 'DIRECCION_SUPRIMIDA' ? 'suprimido' : 'fallido'), vence };
+    }
+
+    async restablecerContrasena(tenantId, personaId, { motivo, actor, origen = null }) {
+        if (!actor?.id || !actor?.nombre) throw errorPin('Falta quién restablece la contraseña', 'TEMPORAL_SIN_ACTOR');
+        const motivoLimpio = String(motivo ?? '').trim();
+        if (motivoLimpio.length < MOTIVO_CONTRASENA_MIN || motivoLimpio.length > MOTIVO_CONTRASENA_MAX) {
+            throw errorPin(`El motivo tiene que tener entre ${MOTIVO_CONTRASENA_MIN} y ${MOTIVO_CONTRASENA_MAX} caracteres.`, 'MOTIVO_REQUERIDO');
+        }
+        if (PARECE_RUT.test(motivoLimpio) || PARECE_CORREO.test(motivoLimpio)) {
+            throw errorPin('El motivo no puede llevar un RUT ni un correo: describe la situación sin datos personales.', 'MOTIVO_REQUERIDO');
+        }
+
+        const item = await this.getItemById(personaId);
+        if (!item || item.tenantId !== tenantId) throw errorPin('Persona no encontrada', 'PERSONA_NO_ENCONTRADA');
+        if (!item.tieneAccesoWeb) throw errorPin('Esta persona no tiene acceso web.', 'SIN_ACCESO_WEB');
+        if (['desvinculado', 'suspendido', 'inactivo'].includes(item.estado)) {
+            throw errorPin('Esta persona está desvinculada, suspendida o inactiva: no se le restablece la contraseña.', 'PERSONA_NO_ACTIVA');
+        }
+        if (credenciales.pendienteDeActivacion(item) || !item.passwordHash) {
+            throw errorPin('Esta persona todavía no elige su contraseña: activa su acceso o reactiva su acceso inicial.', 'TEMPORAL_CONFLICTO');
+        }
+
+        const { fecha, horario } = fechaHoraChile(new Date());
+        const r = await this.emitirTemporal(tenantId, personaId, {
+            horas: HORAS_RESTABLECIMIENTO,
+            actor,
+            operacion: 'credencial.contrasena_restablecida',
+            origen,
+            detalle: { motivo: motivoLimpio },
+            restablecido: { por: actor.id, nombre: actor.nombre, motivo: motivoLimpio },
+            aviso: {
+                asunto: 'Tu contraseña de Build & Serve fue restablecida',
+                contenido: `${actor.nombre} restableció tu contraseña el ${fecha} a las ${horario}. Motivo: ${motivoLimpio}. `
+                    + 'Si no lo pediste, avisa a tu empresa o al prevencionista de tu obra.',
+            },
+        });
+
+        let correo = 'sin-correo';
+        if (item.email) {
+            const { sendContrasenaRestablecidaEmail } = require('../../handlers/notifications/handler');
+            const envio = await sendContrasenaRestablecidaEmail(item.email, item.nombre, { porNombre: actor.nombre, fecha, horario, motivo: motivoLimpio })
+                .catch((err) => ({ sent: false, err }));
+            correo = envio.sent ? 'enviado' : 'fallido';
+            if (!envio.sent) registrarFallo('correo.contrasena_restablecida', envio.err || new Error(envio.error || 'no enviado'), { personaId });
+        }
+
+        return { password: r.password, vence: r.vence, sesionesCerradas: r.sesionesCerradas, correo };
     }
 
     async reactivarInicial(tenantId, personaId, { actor, origen = null, ahora = new Date() }) {

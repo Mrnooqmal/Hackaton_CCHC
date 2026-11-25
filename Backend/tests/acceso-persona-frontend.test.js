@@ -21,6 +21,15 @@ test('el estado de acceso que muestra la ficha y la lista', () => {
     assert.equal(pendienteDeActivacion({ passwordTemporal: true, passwordTemporalVence: despues }), false, 'una temporal con vencimiento sin la marca no es una activación');
 });
 
+test('una contraseña restablecida se distingue de una activación y no se ofrece reactivarla', () => {
+    const { estadoAcceso, reactivable } = cargarTs('accesoPersona.ts');
+    const restablecida = { tieneAccesoWeb: true, passwordTemporal: true, passwordRestablecido: { por: 'p-1', en: antes } };
+    assert.equal(estadoAcceso({ ...restablecida, passwordTemporalVence: despues }, ahora), 'restablecida-vigente');
+    assert.equal(estadoAcceso({ ...restablecida, passwordTemporalVence: antes }, ahora), 'restablecida-vencida');
+    assert.equal(reactivable('restablecida-vigente'), false);
+    assert.equal(reactivable('restablecida-vencida'), false);
+});
+
 test('se ofrece reactivar el acceso inicial salvo con una temporal de 2 horas vigente', () => {
     const { reactivable } = cargarTs('accesoPersona.ts');
     for (const e of ['pendiente', 'inicial-vigente', 'inicial-vencida', 'temporal-vencida']) assert.equal(reactivable(e), true, e);

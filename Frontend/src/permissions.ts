@@ -29,6 +29,7 @@ export const PERMISSIONS = {
     PERSONA_DESVINCULAR: 'persona.desvincular',
     PERSONA_RESTABLECER_PIN: 'persona.restablecer_pin',
     PERSONA_ACTIVAR_ACCESO: 'persona.activar_acceso',
+    PERSONA_RESTABLECER_CONTRASENA: 'persona.restablecer_contrasena',
     // Repositorio de archivos
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',
@@ -100,6 +101,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
             { key: PERMISSIONS.PERSONA_DESVINCULAR, label: 'Desvincular persona' },
             { key: PERMISSIONS.PERSONA_RESTABLECER_PIN, label: 'Restablecer PIN de firma', nota: 'Quien restablece no puede asistir en la configuración del PIN nuevo.' },
             { key: PERMISSIONS.PERSONA_ACTIVAR_ACCESO, label: 'Activar el acceso de personas nuevas', nota: 'Entrega una contraseña temporal de 2 horas o envía el enlace de activación. No sirve para quien tiene más permisos.' },
+            { key: PERMISSIONS.PERSONA_RESTABLECER_CONTRASENA, label: 'Restablecer la contraseña de otra persona', nota: 'Para quien olvidó su contraseña y no tiene correo. Quien restablece conoce la temporal durante 72 horas. No sirve para quien tiene más permisos.' },
         ],
     },
     {

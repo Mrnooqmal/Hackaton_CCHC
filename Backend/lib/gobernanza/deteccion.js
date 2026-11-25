@@ -89,6 +89,15 @@ const REGLAS = [
         accion: null,
     },
     {
+        id: 'restablecimientos_reiterados',
+        descripcion: 'Una misma cuenta restableció la contraseña de muchas personas en poco tiempo.',
+        aplica: (ev) => ev.operacion === 'credencial.contrasena_restablecida',
+        ventanaMs: 60 * MIN,
+        umbral: 5,
+        severidad: SEVERIDAD.MEDIA,
+        accion: null,
+    },
+    {
         id: 'escalamiento_privilegios',
         descripcion: 'Se otorgó el rol de administrador o se cambiaron los permisos de los roles de la empresa.',
         aplica: (ev) => (ev.operacion === 'admin.cambio_rol' && ev.detalle?.rolNuevo === 'admin') || ev.operacion === 'admin.roles_empresa',

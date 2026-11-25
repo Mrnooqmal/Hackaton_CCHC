@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LuKeyRound, LuCircleAlert, LuCheck, LuMail } from 'react-icons/lu';
+import { LuKeyRound, LuCircleAlert, LuCheck, LuMail, LuCopy } from 'react-icons/lu';
 import { Modal } from './ui';
 import { personasApi } from '../api/personas.api';
 import { estadoAcceso, fechaCorta, horaCorta, reactivable, textoEstadoAcceso, type DatosAcceso } from '../utils/accesoPersona';
@@ -105,20 +105,149 @@ export function ModalActivacion({ tenantId, persona, onCerrar }: ModalProps) {
     );
 }
 
+const MOTIVO_MIN = 10;
+const MOTIVO_MAX = 120;
+
+interface ModalRestablecerProps {
+    tenantId: string;
+    persona: PersonaAcceso | null;
+    onCerrar: (huboCambio: boolean) => void;
+}
+
+export function ModalRestablecer({ tenantId, persona, onCerrar }: ModalRestablecerProps) {
+    const [motivo, setMotivo] = useState('');
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState('');
+    const [copiada, setCopiada] = useState(false);
+    const [hecho, setHecho] = useState<{ password: string; vence: string; sesionesCerradas: boolean; correo: string } | null>(null);
+
+    const nombre = persona?.nombre || 'la persona';
+    const largo = motivo.trim().length;
+    const motivoValido = largo >= MOTIVO_MIN && largo <= MOTIVO_MAX;
+
+    const cerrar = () => {
+        if (enviando) return;
+        const hubo = Boolean(hecho);
+        setHecho(null);
+        setMotivo('');
+        setError('');
+        setCopiada(false);
+        onCerrar(hubo);
+    };
+
+    const restablecer = async () => {
+        if (!persona || !motivoValido) return;
+        setEnviando(true);
+        setError('');
+        try {
+            const r = await personasApi.restablecerContrasena(tenantId, persona.personaId, motivo.trim());
+            if (r.success && r.data) setHecho(r.data);
+            else setError(r.error || 'No se pudo restablecer la contraseña.');
+        } catch {
+            setError('Error de conexión con el servidor.');
+        } finally {
+            setEnviando(false);
+        }
+    };
+
+    const copiar = async () => {
+        if (!hecho) return;
+        try {
+            await navigator.clipboard.writeText(hecho.password);
+            setCopiada(true);
+        } catch {
+            setCopiada(false);
+        }
+    };
+
+    return (
+        <Modal
+            isOpen={Boolean(persona)}
+            onClose={cerrar}
+            title={hecho ? `Contraseña temporal de ${nombre}` : `Restablecer la contraseña de ${nombre}`}
+            size="md"
+            footer={
+                <div className="acceso-web__pie">
+                    {hecho ? (
+                        <button className="btn btn-primary" onClick={cerrar}>Ya la entregué</button>
+                    ) : (
+                        <>
+                            <button className="btn btn-secondary" onClick={cerrar} disabled={enviando}>Cancelar</button>
+                            <button className="btn btn-primary" onClick={restablecer} disabled={enviando || !motivoValido}>
+                                {enviando ? 'Restableciendo…' : 'Restablecer contraseña'}
+                            </button>
+                        </>
+                    )}
+                </div>
+            }
+        >
+            {hecho ? (
+                <div className="acceso-web__mostrar">
+                    <p className="acceso-web__texto">Entrégasela en persona o por teléfono, después de verificar que es {nombre}. Se ve una sola vez.</p>
+                    <div className="acceso-web__clave" aria-label="Contraseña temporal">{hecho.password}</div>
+                    <button type="button" className="btn btn-secondary btn-sm acceso-web__copiar" onClick={copiar}>
+                        <LuCopy size={14} aria-hidden /> {copiada ? 'Copiada' : 'Copiar'}
+                    </button>
+                    <p className="acceso-web__vence">Vence el {fechaCorta(hecho.vence)} a las {horaCorta(hecho.vence)}.</p>
+                    {!hecho.sesionesCerradas && (
+                        <div className="acceso-web__error" role="alert">
+                            <LuCircleAlert size={15} aria-hidden />
+                            <span>No pudimos cerrar las sesiones abiertas de {nombre}. Restablécela de nuevo en unos minutos.</span>
+                        </div>
+                    )}
+                    <ol className="acceso-web__pasos">
+                        <li>Entra con su RUT{persona?.rut ? ` (${persona.rut})` : ''} y esta contraseña, con los guiones.</li>
+                        <li>Elige su propia contraseña. Su PIN de firma no cambia.</li>
+                    </ol>
+                </div>
+            ) : (
+                <div className="acceso-web__form">
+                    {error && (
+                        <div className="acceso-web__error" role="alert">
+                            <LuCircleAlert size={15} aria-hidden /><span>{error}</span>
+                        </div>
+                    )}
+                    <ul className="acceso-web__consecuencias">
+                        <li>Su contraseña actual deja de servir y se cierran sus sesiones abiertas en esta empresa.</li>
+                        <li>Se genera una contraseña temporal que vence en 72 horas, y solo sirve en esta empresa.</li>
+                        <li>Queda registrado que tú la restableciste, con el motivo, y {nombre} recibe un aviso con tu nombre.</li>
+                        <li>Hazlo solo si verificaste que es {nombre} quien lo pide.</li>
+                    </ul>
+                    <label className="acceso-web__motivo">
+                        <span>Motivo (queda en la auditoría; sin RUT ni correos)</span>
+                        <textarea
+                            className="form-input"
+                            rows={3}
+                            maxLength={MOTIVO_MAX}
+                            value={motivo}
+                            onChange={(e) => setMotivo(e.target.value)}
+                            placeholder="Por ejemplo: olvidó su contraseña y no tiene correo"
+                        />
+                        <span className="acceso-web__contador">{largo}/{MOTIVO_MAX}{largo > 0 && largo < MOTIVO_MIN ? ` (mínimo ${MOTIVO_MIN})` : ''}</span>
+                    </label>
+                </div>
+            )}
+        </Modal>
+    );
+}
+
 interface Props {
     tenantId: string;
     persona: PersonaAcceso;
     puedeActivar: boolean;
+    puedeRestablecer?: boolean;
     esLaMisma: boolean;
     onCambio: () => void;
 }
 
-export default function AccesoPlataforma({ tenantId, persona, puedeActivar, esLaMisma, onCambio }: Props) {
+export default function AccesoPlataforma({ tenantId, persona, puedeActivar, puedeRestablecer = false, esLaMisma, onCambio }: Props) {
     const [abierto, setAbierto] = useState(false);
+    const [restableciendo, setRestableciendo] = useState(false);
     const [enlace, setEnlace] = useState<{ estado: 'enviando' | 'enviado' | 'error'; texto?: string } | null>(null);
     const [reactivacion, setReactivacion] = useState<{ estado: 'confirmar' | 'enviando' | 'hecho' | 'error'; texto?: string } | null>(null);
     const estado = estadoAcceso(persona);
-    const activable = estado !== 'sin-acceso' && estado !== 'activo';
+    const activable = estado !== 'sin-acceso' && estado !== 'activo' && estado !== 'restablecida-vigente' && estado !== 'restablecida-vencida';
+    const restablecible = estado === 'activo' || estado === 'restablecida-vigente' || estado === 'restablecida-vencida';
 
     const reactivar = async () => {
         setReactivacion({ estado: 'enviando' });
@@ -174,6 +303,13 @@ export default function AccesoPlataforma({ tenantId, persona, puedeActivar, esLa
                         )}
                     </div>
                 )}
+                {restablecible && puedeRestablecer && !esLaMisma && (
+                    <div className="acceso-web__acciones">
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRestableciendo(true)}>
+                            <LuKeyRound size={14} aria-hidden /> Restablecer contraseña
+                        </button>
+                    </div>
+                )}
                 {reactivacion?.estado === 'confirmar' && (
                     <div className="acceso-web__confirmar" role="group" aria-label="Confirmar reactivación">
                         <p className="acceso-web__nota">
@@ -204,6 +340,12 @@ export default function AccesoPlataforma({ tenantId, persona, puedeActivar, esLa
                 onCerrar={(hubo) => { setAbierto(false); if (hubo) onCambio(); }}
             />
 
+            <ModalRestablecer
+                tenantId={tenantId}
+                persona={restableciendo ? persona : null}
+                onCerrar={(hubo) => { setRestableciendo(false); if (hubo) onCambio(); }}
+            />
+
             <style>{ESTILOS_ACCESO}</style>
         </section>
     );
@@ -224,6 +366,9 @@ export const ESTILOS_ACCESO = `
     .acceso-web__estado--ok svg { color: var(--success-apagado); }
     .acceso-web__acciones { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .acceso-web__confirmar { display: flex; flex-direction: column; gap: var(--space-2); }
+    .acceso-web__motivo { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--text-secondary); }
+    .acceso-web__contador { align-self: flex-end; font-size: 0.75rem; }
+    .acceso-web__copiar { align-self: center; }
     .acceso-web__nota { margin: 0; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; }
     .acceso-web__nota--error { color: var(--danger-600, #b91c1c); }
     .acceso-web__pie { display: flex; justify-content: flex-end; gap: var(--space-2); width: 100%; flex-wrap: wrap; }
