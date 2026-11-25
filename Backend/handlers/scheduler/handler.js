@@ -166,6 +166,12 @@ module.exports.checkDocumentReviewAlerts = async () => {
 module.exports.checkEstructuraAlerts = async () => {
     const { revisarEstructuraPreventiva, revisarEstructuraFaltante } = require('./estructura-alertas');
     const ahora = new Date();
+    let suscriptores = null;
+    try {
+        suscriptores = await require('../../lib/vigilanciaAlertas').revisarSuscriptoresAlertas();
+    } catch (err) {
+        require('../../lib/degradacion').registrarFallo('alertas.suscriptores', err);
+    }
     // Las dos pasadas van por separado y con su propio try: si el recorrido
     // semanal de tenants falla, los recordatorios de mandatos y actas —que son
     // los de plazo corto— tienen que salir igual.
@@ -181,7 +187,7 @@ module.exports.checkEstructuraAlerts = async () => {
     } catch (err) {
         console.error('[estructura-alertas] fallo la revision de estructura faltante:', err);
     }
-    const resumen = { organos, faltantes };
+    const resumen = { organos, faltantes, suscriptores };
     console.log('[estructura-alertas]', JSON.stringify(resumen));
     if (!organos && !faltantes) throw new Error('Ninguna revision de estructura preventiva pudo completarse');
     return resumen;
