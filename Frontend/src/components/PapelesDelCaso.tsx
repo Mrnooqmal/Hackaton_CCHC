@@ -306,7 +306,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                         ) : (
                             <ul className="inc-papeles-lista">
                                 {archivos.map((p) => (
-                                    <li key={p.papelId} className="inc-papeles-fila">
+                                    <li key={p.papelId} className="inc-papeles-fila inc-papeles-fila--archivo">
                                         <div className="inc-papeles-nombre">
                                             <div>{etiquetaTipoPapel(p.tipo)}</div>
                                             <div className="inc-papeles-meta">

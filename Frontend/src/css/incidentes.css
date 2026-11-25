@@ -441,6 +441,7 @@
 @media (max-width: 640px) {
   .inc-ficha-card { padding: var(--space-4); }
   .inc-papeles-fila { flex-wrap: wrap; }
+  .inc-papeles-fila--archivo .inc-papeles-nombre { flex: 1 1 100%; }
   .inc-ficha-datos { gap: var(--space-4); }
 }
 
