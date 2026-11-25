@@ -388,6 +388,11 @@ provider:
             - sns:Publish
           Resource:
             - !Ref IncidentNotificationTopic
+        - Effect: Allow
+          Action:
+            - sns:GetTopicAttributes
+          Resource:
+            - !Ref AlertasOperacionTopic
 
 package:
   individually: false
@@ -751,6 +756,9 @@ functions:
   checkEstructuraAlerts:
     handler: handlers/scheduler/handler.checkEstructuraAlerts
     timeout: 120
+    environment:
+      ALERTAS_TOPIC_ARN: !Ref AlertasOperacionTopic
+      DESTINATARIO_ALERTAS: ${self:custom.destinatarioAlertas}
     events:
       - schedule: cron(0 13 * * ? *)
 

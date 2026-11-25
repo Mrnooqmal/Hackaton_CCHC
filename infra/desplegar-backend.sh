@@ -93,6 +93,13 @@ echo "archivos: $total, distintos: $distintos"
 paquetes="$(aws lambda list-functions --query "Functions[?starts_with(FunctionName,'BuildAndServe-$STAGE-')].CodeSha256" --output text | tr '\t' '\n' | sort -u | wc -l)"
 [ "$paquetes" -eq 1 ] || { echo "Las funciones de $STAGE no comparten un mismo paquete ($paquetes distintos)." >&2; exit 1; }
 echo "Desplegado $SHA en $STAGE (todas las funciones con el mismo paquete)."
+TOPICO_ALERTAS="$(aws cloudformation describe-stack-resource --stack-name "BuildAndServe-$STAGE" --logical-resource-id AlertasOperacionTopic --query StackResourceDetail.PhysicalResourceId --output text)"
+CONFIRMADAS="$(aws sns get-topic-attributes --topic-arn "$TOPICO_ALERTAS" --query Attributes.SubscriptionsConfirmed --output text)"
+if [ "${CONFIRMADAS:-0}" -lt 1 ] 2>/dev/null || ! [[ "$CONFIRMADAS" =~ ^[0-9]+$ ]]; then
+    echo "ATENCIÓN: el tópico de alarmas $TOPICO_ALERTAS no tiene suscripciones confirmadas ($CONFIRMADAS): ninguna alarma de $STAGE le llega a nadie. Ver docs/estado-actual.md, «Alarmas»." >&2
+    exit 1
+fi
+echo "== alarmas: $CONFIRMADAS suscripción(es) confirmada(s) en $TOPICO_ALERTAS"
 if [ -n "$CERTIFICADO_API" ]; then
     DESTINO="$(aws cloudformation describe-stacks --stack-name "BuildAndServe-$STAGE" --query "Stacks[0].Outputs[?OutputKey=='ApiDominioDestino'].OutputValue" --output text)"
     echo "== Cloudflare: CNAME ${DOMINIO_API%%.buildandserve.cl} -> $DESTINO (solo DNS, nube gris)"
