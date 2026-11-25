@@ -153,6 +153,7 @@ class Persona {
         this.passwordTemporalVence = data.passwordTemporalVence || null;
         this.activacionPendiente = data.activacionPendiente || false;
         this.credencialInicial = data.credencialInicial || false;
+        this.passwordRestablecido = data.passwordRestablecido || null;
 
         // Enrolamiento
         this.habilitado = data.habilitado || false;
@@ -378,6 +379,7 @@ class Persona {
             ...(this.passwordTemporalVence ? { passwordTemporalVence: this.passwordTemporalVence } : {}),
             ...(this.activacionPendiente ? { activacionPendiente: true } : {}),
             ...(this.credencialInicial ? { credencialInicial: true } : {}),
+            ...(this.passwordRestablecido ? { passwordRestablecido: this.passwordRestablecido } : {}),
             habilitado: this.habilitado,
             firmaEnrolamiento: this.firmaEnrolamiento,
             onboardingDS44: this.onboardingDS44,
@@ -455,6 +457,9 @@ class Persona {
             passwordTemporalVence: this.passwordTemporalVence,
             activacionPendiente: this.activacionPendiente,
             credencialInicial: this.credencialInicial,
+            passwordRestablecido: this.passwordRestablecido
+                ? { por: this.passwordRestablecido.por, nombre: this.passwordRestablecido.nombre, en: this.passwordRestablecido.en }
+                : null,
             onboardingDS44: this.onboardingDS44,
             ...(incluirSalud ? {
                 vigilanciaSalud: this.vigilanciaSalud,

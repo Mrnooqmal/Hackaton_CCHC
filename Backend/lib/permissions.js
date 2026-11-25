@@ -33,6 +33,7 @@ const PERMISSIONS = {
     // sola. Por defecto solo el administrador; ninguno de los presets lo trae.
     PERSONA_RESTABLECER_PIN: 'persona.restablecer_pin',
     PERSONA_ACTIVAR_ACCESO: 'persona.activar_acceso',
+    PERSONA_RESTABLECER_CONTRASENA: 'persona.restablecer_contrasena',
     // Repositorio
     REPOSITORIO_VER: 'repositorio.ver',
     REPOSITORIO_SUBIR: 'repositorio.subir',

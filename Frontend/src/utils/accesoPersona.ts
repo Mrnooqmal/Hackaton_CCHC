@@ -13,6 +13,8 @@ export type EstadoAcceso =
     | 'inicial-vencida'
     | 'temporal-vigente'
     | 'temporal-vencida'
+    | 'restablecida-vigente'
+    | 'restablecida-vencida'
     | 'activo';
 
 export const pendienteDeActivacion = (p: DatosAcceso): boolean =>
@@ -20,7 +22,10 @@ export const pendienteDeActivacion = (p: DatosAcceso): boolean =>
 
 export function estadoAcceso(p: DatosAcceso, ahora: Date = new Date()): EstadoAcceso {
     if (!p.tieneAccesoWeb) return 'sin-acceso';
-    if (!pendienteDeActivacion(p)) return 'activo';
+    if (!pendienteDeActivacion(p)) {
+        if (!p.passwordTemporal || !p.passwordTemporalVence) return 'activo';
+        return new Date(p.passwordTemporalVence).getTime() > ahora.getTime() ? 'restablecida-vigente' : 'restablecida-vencida';
+    }
     if (!p.passwordTemporal || !p.passwordTemporalVence) return 'pendiente';
     const vigente = new Date(p.passwordTemporalVence).getTime() > ahora.getTime();
     if (p.credencialInicial) return vigente ? 'inicial-vigente' : 'inicial-vencida';
@@ -45,5 +50,7 @@ export function textoEstadoAcceso(p: DatosAcceso, ahora: Date = new Date()): str
         case 'inicial-vencida': return 'Pasaron 7 días sin que entrara y su contraseña inicial venció. Reactiva su acceso inicial o actívalo en terreno.';
         case 'temporal-vigente': return `Activado: su contraseña temporal vence a las ${horaCorta(p.passwordTemporalVence as string)}. Debe entrar y elegir su contraseña antes.`;
         case 'temporal-vencida': return 'La contraseña temporal venció sin usarse. Activa su acceso de nuevo o reactiva su acceso inicial.';
+        case 'restablecida-vigente': return `Su contraseña fue restablecida: la temporal vence el ${fechaCorta(p.passwordTemporalVence as string)} a las ${horaCorta(p.passwordTemporalVence as string)}. Al entrar con ella elige una nueva.`;
+        case 'restablecida-vencida': return 'La contraseña temporal del restablecimiento venció sin usarse. Restablécela de nuevo.';
     }
 }

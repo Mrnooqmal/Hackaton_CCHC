@@ -233,6 +233,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-37 | Sin señal siempre se puede firmar: sobre con el PIN cifrado para el servidor, renovación silenciosa de vales, un intento por sincronización |
 | D-40 | Las cuentas nuevas se activan en terreno con una contraseña temporal de 2 horas, o con un enlace de 72 horas; reemplaza D-13. Modificada por D-41 |
 | D-41 | La contraseña inicial vuelve a los cuatro dígitos del RUT con vencimiento de 7 días, y «Reactivar acceso inicial» por ficha y por obra; riesgo aceptado |
+| D-42 | Restablecer la contraseña desde la ficha (D1 a D8): permiso propio, temporal de 72 horas mostrada una vez, motivo en la auditoría, script de operador y alerta por restablecimientos reiterados |
 
 ### Hallazgos (sección 4)
 

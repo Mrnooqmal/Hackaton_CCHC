@@ -131,7 +131,9 @@ No. Solo necesitas el enlace, tu RUT y tu contraseña.
 Revisa que el RUT tenga guion y dígito verificador. Si es tu primer ingreso, prueba con los cuatro
 primeros dígitos de tu RUT; si pasaron más de 7 días desde que te registraron, o si la
 contraseña temporal venció, pide en la obra que reactiven tu acceso. Si ya elegiste tu
-contraseña y no la recuerdas, usa **¿Olvidaste tu contraseña?**.
+contraseña y no la recuerdas, usa **¿Olvidaste tu contraseña?** si tienes correo registrado. Si no
+tienes correo, pide a un administrador de tu empresa que la restablezca: te entrega una
+contraseña temporal en persona o por teléfono, que vence en 72 horas, y al entrar eliges una nueva.
 
 **¿La contraseña y el PIN son lo mismo?**
 No. La **contraseña** sirve para entrar; el **PIN** (4 dígitos) sirve para **firmar**. Son

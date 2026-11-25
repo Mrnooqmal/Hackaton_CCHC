@@ -2009,6 +2009,27 @@ pero no firmar por la responsable.
 
 **Verificación.** `Backend/tests/reactivar-acceso-inicial.test.js` (17 pruebas: por ficha, por obra, corte por tiempo, D1, migración), y las de `contrasena-temporal`, `alta-sin-correo`, `activar-acceso`, `acceso-persona-frontend` y `plantilla-personas` actualizadas; `Frontend/tests/e2e/reactivar-acceso.spec.mjs` (4). 22 sabotajes atrapados (19 de backend, 3 de pantalla). La prueba de punta a punta comprueba que el alta entra con los cuatro dígitos y vence en 7 días, que la activación en terreno los anula, que la reactivación rechaza a quien ya eligió su contraseña y que los cuatro dígitos abren solo la empresa donde siguen vigentes.
 
+### D-42. Restablecer la contraseña desde la ficha, para quien no tiene correo
+**Estado: aprobada por Adrean el 20 de noviembre de 2026 (D1 a D8 del plan de credenciales); implementada el 24 de noviembre en la rama `feat/restablecer-contrasena-ficha`, para desplegar entre el 4 y el 9 de diciembre.**
+
+**Qué lo motivó.** Quien ya eligió su contraseña, la olvida y no tiene correo no tenía ninguna salida: «¿Olvidaste tu contraseña?» solo sirve con correo.
+
+**Qué se decidió.**
+- **D1** (en prod desde el 20 de noviembre): una contraseña abre solo las fichas donde coincide, y solo se copia donde quien la cambia demostró control. La temporal del restablecimiento abre solo esa ficha, y el cambio desde ella no se copia a otras empresas.
+- **D2.** Permiso nuevo `persona.restablecer_contrasena`. Ningún rol por omisión lo trae: solo el administrador, que tiene todos. Asignarlo a otro rol queda en la auditoría y dispara `escalamiento_privilegios`.
+- **D3.** `POST /personas/{id}/restablecer-contrasena`: otra empresa 404 sin escribir; uno mismo 403; quien tiene algún permiso que el que restablece no tiene, 403; desvinculada, suspendida, inactiva o sin acceso web, 409; pendiente de activación, 409 (para eso están «Activar acceso» y «Reactivar acceso inicial»). Motivo obligatorio de 10 a 120 caracteres, que se rechaza si parece un RUT o un correo. Sin el nombre de quien restablece, no se restablece (503).
+- **D4.** La temporal es la de D-40 (`XXXX-XXXX-XXXX`, sin 0, O, 1, I ni L, `crypto.randomInt`), **vence a las 72 horas** y obliga a elegir una nueva al entrar. Se muestra una sola vez, con «Copiar» y «Ya la entregué», y no se guarda en el navegador. No va en la bandeja, el correo, la auditoría ni los logs. Vencida, el ingreso responde lo mismo que una contraseña equivocada (D-41).
+- **D5.** Una sola transacción condicionada a que el hash siga siendo el leído (si no, 409): la ficha (hash, temporal, vencimiento, `passwordRestablecido` con quién, cuándo y motivo, el evento en `credencialHistorial`, y se borra cualquier enlace de recuperación pendiente), el aviso en la bandeja y el registro sellado `credencial.contrasena_restablecida` con el motivo. Después se cierran las sesiones de esa ficha y, si tiene correo, se le avisa sin la contraseña. Si cerrar las sesiones falla, la respuesta lo dice y la pantalla pide repetirlo. Elegir la contraseña nueva quita `passwordRestablecido`.
+- **D6** (en prod desde el 20 de noviembre): `reset-password` responde 404.
+- **D7.** `scripts/restablecer-contrasena.js --stage <dev|prod> --empresa <tenantId> --rut <rut> --motivo "<ticket y motivo>" [--confirmar]`. Sin `--confirmar` es un ensayo que no escribe: empresa, persona, rol, estado, si tiene correo, si es el único administrador, sesiones abiertas y en cuántas empresas está el RUT. Con `--confirmar` usa el mismo método del servicio, con el ARN de `sts get-caller-identity` como actor y «Soporte de Build & Serve» en el aviso, e imprime la temporal una vez. Verificar la identidad de quien lo pide es un procedimiento: confirmar por teléfono con la constructora y anotar el ticket en el motivo.
+- **D8.** Regla de detección `restablecimientos_reiterados`: cinco restablecimientos de la misma cuenta en una hora generan una alerta media.
+
+**Sesiones, vales y firmas.** Se cierran las sesiones de esa ficha, no las de la misma persona en otras empresas (con D1 su contraseña allá no cambió). Los vales y las firmas en cola no se tocan: dependen del PIN, no de la contraseña.
+
+**Riesgo que queda.** Quien restablece conoce la temporal hasta que la persona entra, como máximo 72 horas. Lo acotan el motivo en la auditoría, el aviso a la persona con su nombre, el cambio obligatorio, D1 (no sirve en otra empresa) y la alerta por restablecimientos reiterados.
+
+**Verificación.** `Backend/tests/restablecer-contrasena.test.js` (12 pruebas), `acceso-persona-frontend.test.js` (estados) y `Frontend/tests/e2e/restablecer-contrasena.spec.mjs` (3). 18 sabotajes atrapados (14 de backend, 4 de pantalla).
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

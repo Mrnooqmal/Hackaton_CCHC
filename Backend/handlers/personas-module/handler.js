@@ -52,6 +52,7 @@ const ESTADO_POR_ERROR_DE_PIN = {
     SIN_CORREO: 409,
     TEMPORAL_VIGENTE: 409,
     SIN_INICIAL: 409,
+    PERSONA_NO_ACTIVA: 409,
 };
 
 const PLAZO_REACTIVACION_MS = 4000;
@@ -2231,6 +2232,37 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 return success(result);
             } catch (err) {
                 if (err.codigo === 'PIN_BLOQUEADO') return error(err.message, 423);
+                throw err;
+            }
+        }
+
+        if (method === 'POST' && personaId && action === 'restablecer-contrasena') {
+            if (!sesion) return sesionRes.respuesta;
+            if (!puede(PERMISSIONS.PERSONA_RESTABLECER_CONTRASENA)) {
+                return error('No tienes permiso para restablecer la contraseña de otras personas', 403);
+            }
+            const objetivo = await personaDelTenant(personaId);
+            if (!objetivo) return error('Persona no encontrada', 404);
+            if (objetivo.personaId === sesion.personaId) {
+                return error('Para cambiar tu propia contraseña usa «Cambiar contraseña» en Configuración.', 403);
+            }
+            const tenant = await tenantService.getById(tenantId);
+            if (!resolvePersonaPermisos(objetivo, tenant).every((p) => puede(p))) {
+                return error('No puedes restablecer la contraseña de alguien que tiene permisos que tú no tienes', 403);
+            }
+            const nombre = await nombreDeSesion();
+            if (!nombre) return error('No se pudo identificar a quien restablece. Intenta de nuevo.', 503);
+            const body = JSON.parse(event.body || '{}');
+            try {
+                const r = await personaService.restablecerContrasena(tenantId, personaId, {
+                    motivo: body.motivo,
+                    actor: { id: sesion.personaId, tipo: 'persona', nombre, rol: sesion.rol },
+                    origen: auditoria.origenDe(event),
+                });
+                return success(r);
+            } catch (err) {
+                const estado = ESTADO_POR_ERROR_DE_PIN[err.codigo];
+                if (estado) return error(err.message, estado);
                 throw err;
             }
         }

@@ -84,6 +84,7 @@ const OPERACIONES = {
     'credencial.acceso_activado': CATEGORIAS.SEGURIDAD,
     'credencial.enlace_activacion': CATEGORIAS.SEGURIDAD,
     'credencial.inicial_reactivada': CATEGORIAS.SEGURIDAD,
+    'credencial.contrasena_restablecida': CATEGORIAS.SEGURIDAD,
     'identidad.verificada': CATEGORIAS.SEGURIDAD,
     'identidad.verificacion_fallida': CATEGORIAS.SEGURIDAD,
     'consentimiento.otorgado': CATEGORIAS.CONSENTIMIENTO,

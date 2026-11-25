@@ -63,6 +63,7 @@ export interface PersonaResponse {
     tieneAccesoWeb: boolean;
     activacionPendiente?: boolean;
     credencialInicial?: boolean;
+    passwordRestablecido?: { por: string; nombre?: string | null; en: string } | null;
     passwordTemporal?: boolean;
     passwordTemporalVence?: string | null;
     habilitado: boolean;
