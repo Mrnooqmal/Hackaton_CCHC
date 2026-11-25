@@ -301,10 +301,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const updateUser = (userData: Partial<User>) => {
-        if (user) {
-            setUser({ ...user, ...userData });
-            guardarSesionLocal({ ...user, ...userData });
-        }
+        setUser((anterior) => {
+            if (!anterior) return anterior;
+            const nuevo = { ...anterior, ...userData };
+            guardarSesionLocal(nuevo);
+            return nuevo;
+        });
     };
 
     const hasPermission = (permission: string) => {

@@ -99,10 +99,19 @@ export default function Settings() {
     useEffect(() => {
         const tenantId = user?.tenantId || (user as any)?.empresaId;
         const rut = user?.rut;
-        if (!tenantId || !rut) { setCargando(false); return; }
-        personasApi.getByRut(tenantId, rut)
-            .then((res) => { if (res.success && res.data) setPersona(res.data); })
+        if (!tenantId || !rut) { setCargando(false); return undefined; }
+        const cargarFicha = () => personasApi.getByRut(tenantId, rut)
+            .then((res) => {
+                if (!res.success || !res.data) return;
+                setPersona(res.data);
+                updateUser({ pinConfigurado: res.data.pinConfigurado, pinRestablecido: res.data.pinRestablecido ?? null } as any);
+            })
+            .catch(() => undefined)
             .finally(() => setCargando(false));
+        const alVolver = () => { if (document.visibilityState === 'visible') cargarFicha(); };
+        cargarFicha();
+        document.addEventListener('visibilitychange', alVolver);
+        return () => document.removeEventListener('visibilitychange', alVolver);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
