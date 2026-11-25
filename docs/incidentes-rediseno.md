@@ -128,10 +128,10 @@ Cada fase termina con sus pruebas pasando.
 
 | Fase | Estado |
 |---|---|
-| 1. Reportar de punta a punta | Implementada el 15 de noviembre (1520 pruebas pasan después de traer `pruebas` del 21 de noviembre; build y lint sin errores). Falta probarla en el navegador |
-| 2. Carpeta del caso | Implementada el 22 de noviembre (1552 pruebas pasan). Falta probarla en el navegador y contra S3 real |
-| 3. Clasificación, medidas y cierre | Implementada el 22 de noviembre (1597 pruebas pasan). Falta probarla en el navegador |
-| 4. FUF y repositorio | Implementada el 22 de noviembre (1624 pruebas pasan; 1663 después de las correcciones de la revisión). Falta probarla en el navegador |
+| 1. Reportar de punta a punta | Implementada y probada en el navegador (23 de noviembre): reportar con fotos, agregar fotos después, aviso a prevención, vista del trabajador |
+| 2. Carpeta del caso | Implementada y probada en el navegador contra el S3 de dev (23 de noviembre): subir los cuatro papeles de un accidente, descarga firmada y vista sin acceso para quien no puede leer el caso. Pendiente: las DIAT de 2025 y 2026 con la clave antigua |
+| 3. Clasificación y cierre | Implementada y probada en el navegador (23 de noviembre): clasificar un accidente y un hallazgo, cierre bloqueado hasta tener los papeles, cerrar y reabrir. Pendiente: el cierre desde la obra, que exige un PIN real |
+| 4. FUF y repositorio | Implementada y probada en el navegador (23 de noviembre): la sección de casos del repositorio. Pendiente: ver el ítem 66 cambiar en el panel del FUF |
 
 ### Decisiones de la fase 2 (22 de noviembre)
 
