@@ -33,7 +33,7 @@ import {
     type PermisoTrabajo,
     type EvaluacionRespaldo,
 } from '../api/client';
-import SignatureModal from '../components/SignatureModal';
+import FirmaModal, { FichaFirma } from '../components/firmas/FirmaModal';
 import { estadoSeguimiento, hoyISO } from '../utils/seguimientoActividad';
 import { construirFilasAsistencia, labelDe, listaSeleccion, CLIMA_LABEL, estadoDuracion, formatoDuracion } from '../utils/reporteActividad';
 import { construirReporteActividadPdf, nombreArchivoReporte } from '../utils/reporteActividadPdf';
@@ -106,6 +106,7 @@ export default function Activities() {
     const [filterType, setFilterType] = useState('');
     const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [signatureError, setSignatureError] = useState('');
+    const [firmando, setFirmando] = useState(false);
     // Firma asistida SECUENCIAL: cada trabajador firma con su propio PIN, uno a uno.
     const [signingIndex, setSigningIndex] = useState(0);
     const [signingResults, setSigningResults] = useState<{ signed: number; skipped: number }>({ signed: 0, skipped: 0 });
@@ -423,6 +424,19 @@ export default function Activities() {
         }
     };
 
+    // El modal de firma muestra `signatureError` y deja al mismo trabajador
+    // reintentar: aquí se traduce lo que lanza la firma a ese error.
+    const handleConfirmCurrentWorker = async (pin: string) => {
+        setFirmando(true);
+        try {
+            await handleSignCurrentWorker(pin);
+        } catch (err) {
+            setSignatureError(mensajeDeError(err, 'Error al validar PIN'));
+        } finally {
+            setFirmando(false);
+        }
+    };
+
     // Firma del trabajador actual con SU PIN. Si falla, lanza para que el modal
     // muestre el error y el mismo trabajador reintente (no avanza).
     const handleSignCurrentWorker = async (pin: string) => {
@@ -638,6 +652,7 @@ export default function Activities() {
     const handleSelfSign = async (pin: string) => {
         if (!selfSignActivity || !user?.personaId) return;
         setSignatureError('');
+        setFirmando(true);
         try {
             const result = await signActivity(
                 selfSignActivity.activityId,
@@ -663,10 +678,13 @@ export default function Activities() {
         } catch (error: any) {
             console.error('Error self-signing:', error);
             setSignatureError(mensajeDeError(error, 'Error al registrar tu asistencia'));
+        } finally {
+            setFirmando(false);
         }
     };
 
     const openSelfSignModal = (activity: Activity) => {
+        setSignatureError('');
         setSelfSignActivity(activity);
         setShowSelfSignModal(true);
     };
@@ -1550,42 +1568,47 @@ export default function Activities() {
                     })()}
                 </Modal>
 
-                {/* Signature Modal — firma asistida SECUENCIAL (PIN por trabajador) */}
+                {/* Firma asistida SECUENCIAL (PIN por trabajador), con el mismo
+                    modal de "Mis firmas". */}
                 {(() => {
                     const currentWorkerId = selectedWorkers[signingIndex];
                     const currentWorker = workers.find(w => w.personaId === currentWorkerId);
                     const currentNombre = currentWorker ? `${currentWorker.nombre} ${currentWorker.apellido || ''}`.trim() : 'Trabajador';
                     return (
-                        <SignatureModal
-                            // Remonta el modal (y el PinInput) por cada trabajador para
-                            // resetear el PIN al avanzar. Sin esto, el input queda
-                            // congelado con el PIN del trabajador anterior.
+                        <FirmaModal
+                            // Remonta el modal por cada trabajador: cada uno parte sin
+                            // PIN y sin la declaración marcada.
                             key={`sign-${signingIndex}`}
-                            isOpen={showSignatureModal && selectedWorkers.length > 0}
-                            onClose={() => { setShowSignatureModal(false); setSigningIndex(0); }}
-                            onConfirm={handleSignCurrentWorker}
-                            type="activity"
-                            title={`Firma de ${currentNombre}`}
-                            itemName={`${selectedActivity?.titulo || ''} · Trabajador ${signingIndex + 1} de ${selectedWorkers.length}`}
-                            description={`${currentNombre} ingresa su PIN para firmar su asistencia. Cada trabajador firma con su propio PIN.`}
+                            isOpen={showSignatureModal && selectedWorkers.length > 0 && !!selectedActivity}
+                            onClose={() => { if (firmando) return; setShowSignatureModal(false); setSigningIndex(0); }}
+                            onConfirm={handleConfirmCurrentWorker}
+                            firmando={firmando}
                             error={signatureError}
-                            secondaryActionLabel={selectedWorkers.length > 1 ? 'Saltar este trabajador' : undefined}
-                            onSecondaryAction={selectedWorkers.length > 1 ? handleSkipCurrentWorker : undefined}
-                        />
+                            titulo={`Firma de ${currentNombre}`}
+                            subtitulo={`${selectedActivity?.titulo || ''} · Trabajador ${signingIndex + 1} de ${selectedWorkers.length}`}
+                            icono={<FiCalendar size={22} />}
+                            declaracion={`${currentNombre} declara haber participado en esta actividad`}
+                            accionSecundaria={selectedWorkers.length > 1 ? { label: 'Saltar este trabajador', onClick: handleSkipCurrentWorker } : undefined}
+                        >
+                            {selectedActivity && <FichaAsistencia activity={selectedActivity} firmante={currentNombre} />}
+                        </FirmaModal>
                     );
                 })()}
 
-                {/* Self-Sign Modal for Workers */}
-                <SignatureModal
-                    isOpen={showSelfSignModal}
-                    onClose={() => setShowSelfSignModal(false)}
+                {/* Autofirma de asistencia del trabajador */}
+                <FirmaModal
+                    isOpen={showSelfSignModal && !!selfSignActivity}
+                    onClose={() => { if (!firmando) setShowSelfSignModal(false); }}
                     onConfirm={handleSelfSign}
-                    type="activity"
-                    title="Registrar mi asistencia"
-                    itemName={selfSignActivity?.titulo}
-                    description="Confirma tu asistencia a esta actividad con tu firma digital."
+                    firmando={firmando}
                     error={signatureError}
-                />
+                    titulo="Registrar mi asistencia"
+                    subtitulo={selfSignActivity?.titulo}
+                    icono={<FiCalendar size={22} />}
+                    declaracion="Declaro haber participado en esta actividad"
+                >
+                    {selfSignActivity && <FichaAsistencia activity={selfSignActivity} />}
+                </FirmaModal>
 
                 {/* Detalle de la actividad */}
                 {(() => {
@@ -2630,3 +2653,20 @@ const activitiesStyles = `
 .act-plan-item-copy span { font-size: var(--text-xs); color: var(--text-muted); }
 .act-plan-hint { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.5; margin: 0 0 var(--space-2); }
 `;
+
+/** Lo que se firma al registrar asistencia: paso 1 del modal de firma. */
+function FichaAsistencia({ activity: a, firmante }: { activity: Activity; firmante?: string }) {
+    const tipo = ACTIVITY_TYPES[a.tipo]?.label || a.tipoDescripcion || a.tipo;
+    const subtipo = a.subtipo ? (a.subtipoDescripcion || CAPACITACION_SUBTIPOS[a.subtipo] || a.subtipo) : '';
+    const horario = `${(a.horaInicio || '—').slice(0, 5)}${a.horaFin ? `–${a.horaFin.slice(0, 5)}` : ''}`;
+    return (
+        <FichaFirma items={[
+            ...(firmante ? [{ label: 'Firmante', valor: firmante }] : []),
+            { label: 'Tipo', valor: subtipo ? `${tipo} · ${subtipo}` : tipo },
+            { label: 'Fecha', valor: new Date(`${a.fecha}T00:00:00`).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }) },
+            { label: 'Horario', valor: horario },
+            ...(a.ubicacion ? [{ label: 'Lugar', valor: a.ubicacion }] : []),
+            ...(a.descripcion ? [{ label: 'Descripción', valor: a.descripcion, full: true }] : []),
+        ]} />
+    );
+}

@@ -57,6 +57,8 @@ export interface FirmaModalProps {
     declaracion?: string;
     /** Reemplaza el aviso por omisión (p. ej. para decir que se firma sin red). */
     aviso?: ReactNode;
+    /** Acción opcional junto a Cancelar (p. ej. "Saltar este trabajador" en la firma asistida). */
+    accionSecundaria?: { label: string; onClick: () => void };
     /** Paso 1: qué se está firmando. */
     children: ReactNode;
 }
@@ -112,6 +114,7 @@ function FirmaModalAbierto({
     icono = <FiEdit3 size={22} />,
     declaracion = 'Declaro haber leído conscientemente la solicitud de firma',
     aviso,
+    accionSecundaria,
     children,
 }: FirmaModalProps) {
     const esMovil = useEsMovil();
@@ -179,6 +182,11 @@ function FirmaModalAbierto({
                             {declarado ? `Siguiente: tu PIN de ${LARGO_PIN} dígitos` : 'Marca la declaración para continuar'}
                         </p>
                         <div className="fm-acciones">
+                            {accionSecundaria && (
+                                <button type="button" className="btn btn-ghost fm-secundaria" onClick={accionSecundaria.onClick} disabled={firmando}>
+                                    {accionSecundaria.label}
+                                </button>
+                            )}
                             <button type="button" className="btn btn-secondary fm-cancelar" onClick={onClose} disabled={firmando}>
                                 Cancelar
                             </button>
