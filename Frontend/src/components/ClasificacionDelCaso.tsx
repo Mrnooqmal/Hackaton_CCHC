@@ -157,7 +157,7 @@ export default function ClasificacionDelCaso({ incidente, onCambio }: Props) {
                     <div className="inc-papeles-campos">
                         <div className="form-group">
                             <label className="form-label">Quién lo corrige (opcional)</label>
-                            <SelectorResponsable value={responsableId} onChange={setResponsableId} disabled={guardando} />
+                            <SelectorResponsable value={responsableId} onChange={setResponsableId} disabled={guardando} nombreActual={responsableId === incidente.gobernanza?.responsableId ? incidente.gobernanza?.responsableNombre : undefined} />
                         </div>
                         <div className="form-group">
                             <label className="form-label" htmlFor="clasificar-plazo">Plazo para corregirlo (opcional)</label>

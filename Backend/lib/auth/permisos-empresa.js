@@ -14,7 +14,7 @@
  * contestar con los roles estándar que dejar sin respuesta.
  */
 
-const { conNeutro } = require('../degradacion');
+const { conNeutro, registrarFallo } = require('../degradacion');
 const { TenantService } = require('../services/TenantService');
 
 /** La empresa en formato seguro para `personaPuede`, o `null` si no se pudo leer. */
@@ -24,4 +24,15 @@ async function tenantParaPermisos(tenantId, etiqueta = 'permisos.roles') {
     return tenant ? tenant.toSafeFormat() : null;
 }
 
-module.exports = { tenantParaPermisos };
+async function tenantParaPermisosEstricto(tenantId) {
+    let tenant;
+    try {
+        tenant = await new TenantService().getById(tenantId);
+    } catch (err) {
+        registrarFallo('permisos.roles.estricto', err, { tenantId });
+        throw Object.assign(new Error('No pudimos comprobar los permisos de la empresa. Intenta de nuevo.'), { statusCode: 503 });
+    }
+    return tenant ? tenant.toSafeFormat() : null;
+}
+
+module.exports = { tenantParaPermisos, tenantParaPermisosEstricto };

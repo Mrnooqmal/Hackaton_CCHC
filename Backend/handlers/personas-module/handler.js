@@ -15,7 +15,8 @@ const { EppService } = require('../../lib/services/EppService');
 const { TenantService } = require('../../lib/services/TenantService');
 const { success, error, created, cors, headers } = require('../../lib/utils/response');
 const { normalizeRol, validateRut } = require('../../lib/utils/validation');
-const { PERMISSIONS, resolvePersonaPermisos } = require('../../lib/permissions');
+const { PERMISSIONS, resolvePersonaPermisos, personaPuede } = require('../../lib/permissions');
+const { tenantParaPermisosEstricto } = require('../../lib/auth/permisos-empresa');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const auditoria = require('../../lib/gobernanza/auditoria');
 const credenciales = require('../../lib/credenciales');
@@ -74,6 +75,10 @@ const tenantSafe = async (tenantId) => {
     if (!tenantId) return null;
     const tenant = await tenantService.getById(tenantId).catch(() => null);
     return tenant ? tenant.toSafeFormat() : null;
+};
+
+const FILTROS_POR_PERMISO = {
+    [PERMISSIONS.INCIDENTES_HISTORIAL]: [PERMISSIONS.INCIDENTES_REPORTAR, PERMISSIONS.INCIDENTES_CALIFICAR_ACCIDENTE],
 };
 
 // Resuelve el rol de la empresa (def. del tenant) que corresponde a persona.rol,
@@ -1662,13 +1667,25 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         // GET /personas — Listar personas del tenant
         if (method === 'GET' && !personaId) {
             if (!sesion) return sesionRes.respuesta;
-            const { rol, estado, obraId, incluirBloqueadas } = event.queryStringParameters || {};
+            const { rol, estado, obraId, incluirBloqueadas, conPermiso } = event.queryStringParameters || {};
+            if (conPermiso !== undefined && !(Object.prototype.hasOwnProperty.call(FILTROS_POR_PERMISO, conPermiso) && FILTROS_POR_PERMISO[conPermiso].some(puede))) {
+                return error('Filtro por permiso no disponible', 400);
+            }
             // Quien gestiona los derechos de los titulares o las supresiones
             // necesita ver también a las personas con el tratamiento bloqueado
             // (para registrar, responder o aprobar lo que les concierne). Para el resto siguen fuera: es tratamiento nuevo.
             const verBloqueadas = incluirBloqueadas === '1'
                 && (puede(PERMISSIONS.EMPRESA_DERECHOS_TITULARES) || puede(PERMISSIONS.EMPRESA_SUPRESION_DATOS));
-            const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
+            let personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
+            if (conPermiso) {
+                let def;
+                try {
+                    def = await tenantParaPermisosEstricto(tenantId);
+                } catch (err) {
+                    return error(err.message, err.statusCode || 500);
+                }
+                personas = personas.filter((p) => personaPuede(p, def, conPermiso));
+            }
 
             // Sin `personas.ver`, el listado se recorta a lo necesario para elegir
             // a alguien (reportar un hallazgo, ver quién está citado a una

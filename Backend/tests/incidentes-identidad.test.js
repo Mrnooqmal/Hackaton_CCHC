@@ -66,7 +66,8 @@ test('un responsable o un afectado de otra empresa responde 404 y no se guarda n
 });
 
 test('quién verifica no lo dice el cliente: con cualquier estado, y al cerrar es la sesión', async () => {
-    const creado = await pedir('POST', '/incidents', { ...HALLAZGO, responsableId: companera, afectados: [{ nombre: 'Rosa', personaId: companera }] });
+    doble.items('PERSONAS_TABLE').find((x) => x.personaId === supervisora).estado = 'activo';
+    const creado = await pedir('POST', '/incidents', { ...HALLAZGO, responsableId: supervisora, afectados: [{ nombre: 'Rosa', personaId: companera }] });
     assert.equal(creado.statusCode, 201, creado.body);
     const id = doble.items('INCIDENTS_TABLE').find((i) => i.clasificacion === 'hallazgo').incidentId;
 

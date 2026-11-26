@@ -1,27 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FiCheckCircle, FiCircle, FiDownload, FiFileText, FiLock, FiUploadCloud, FiX } from 'react-icons/fi';
+import { FiCheckCircle, FiCircle, FiFileText, FiUploadCloud, FiX } from 'react-icons/fi';
 import { incidentsApi, type Incident, type PapelDelCaso } from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { Select, Badge, LoadingSpinner } from './ui';
 import { fechaLocal } from '../utils/prescripciones';
 import {
     ORDEN_TIPOS_PAPEL, TIPOS_PAPEL, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
-    avanceDelCaso, papelesRequeridos, etiquetaTipoPapel, esHallazgo, type TipoPapel,
+    avanceDelCaso, papelesRequeridos, esHallazgo, estaCerrado, admiteOtroPapel, type TipoPapel,
 } from '../utils/casos';
 import { ZonaCarga } from './FotosEvidencia';
+import FilaPapel from './FilaPapel';
+import { tamanoLegible } from '../utils/papeles';
 import { plural } from '../utils/plural';
 
 const MB = 1024 * 1024;
 /** Espera antes de reintentar la confirmación tras un 409 (otra escritura sobre el mismo caso). */
 const REINTENTO_CONFIRMAR_MS = 1200;
-
-const tamanoLegible = (bytes: number) => (bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
-
-/** AAAA-MM-DD sin zona: con `new Date('2026-11-15')` se leería como UTC y en Chile mostraría el día anterior. */
-const fechaCorta = (aaaammdd: string) => {
-    const [a, m, d] = aaaammdd.split('-').map(Number);
-    return a && m && d ? new Date(a, m - 1, d).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }) : aaaammdd;
-};
 
 interface Props {
     incidente: Incident;
@@ -53,7 +47,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
     // Lo cargado queda junto al id y a la recarga que se pidió (como en el detalle).
     const [recarga, setRecarga] = useState(0);
     const [descargando, setDescargando] = useState<string | null>(null);
-    const [cargado, setCargado] = useState<{ clave: string; archivos: PapelDelCaso[]; error: string } | null>(null);
+    const [cargado, setCargado] = useState<{ clave: string; archivos: PapelDelCaso[]; error: string; informeNoDisponible?: boolean } | null>(null);
     const clave = `${id}:${recarga}`;
 
     const [tipo, setTipo] = useState<TipoPapel | ''>('');
@@ -70,7 +64,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
         let cancelado = false;
         incidentsApi.getDocuments(id).then((res) => {
             if (cancelado) return;
-            if (res.success && res.data) setCargado({ clave, archivos: res.data.archivos, error: '' });
+            if (res.success && res.data) setCargado({ clave, archivos: res.data.archivos, error: '', informeNoDisponible: res.data.informeNoDisponible });
             else setCargado({ clave, archivos: [], error: res.error || 'No se pudieron cargar los papeles del caso.' });
         }).catch(() => {
             if (!cancelado) setCargado({ clave, archivos: [], error: 'Error de conexión al cargar los papeles del caso.' });
@@ -115,6 +109,8 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
         }
     };
 
+    const puedeAnular = puedeSubir && !estaCerrado(incidente);
+
     const subir = async (e: React.FormEvent) => {
         e.preventDefault();
         if (subiendo) return;
@@ -122,7 +118,7 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
         if (!archivo) { setErrorSubida('Elige el archivo.'); return; }
         if (!MIME_PAPELES.includes(archivo.type)) { setErrorSubida('Solo se aceptan archivos PDF o imágenes (JPG, PNG o WebP).'); return; }
         if (archivo.size > MAX_BYTES_PAPEL) { setErrorSubida(`El archivo debe pesar hasta ${MAX_BYTES_PAPEL / MB} MB.`); return; }
-        if (archivos.length >= MAX_PAPELES_POR_CASO) { setErrorSubida(`El caso admite hasta ${MAX_PAPELES_POR_CASO} archivos.`); return; }
+        if (!admiteOtroPapel(archivos)) { setErrorSubida(`El caso admite hasta ${MAX_PAPELES_POR_CASO} archivos vigentes.`); return; }
         setErrorSubida('');
         setSubiendo(true);
         let archivoYaSubido = Boolean(sinConfirmar);
@@ -298,6 +294,9 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                     </div>
 
                     <div>
+                        {actual.informeNoDisponible && (
+                            <div className="alert alert-warning" role="alert"><div>No pudimos consultar el informe firmado desde la obra. Vuelve a abrir el caso.</div></div>
+                        )}
                         <div className="inc-ficha-label">
                             Archivos subidos{archivos.length > 0 ? ` · ${plural(archivos.length, 'archivo', 'archivos')}` : ''}
                         </div>
@@ -306,24 +305,16 @@ export default function PapelesDelCaso({ incidente, puedeSubir, onCambio }: Prop
                         ) : (
                             <ul className="inc-papeles-lista">
                                 {archivos.map((p) => (
-                                    <li key={p.papelId} className="inc-papeles-fila inc-papeles-fila--archivo">
-                                        <div className="inc-papeles-nombre">
-                                            <div>{etiquetaTipoPapel(p.tipo)}</div>
-                                            <div className="inc-papeles-meta">
-                                                {p.nombreArchivo || 'Sin nombre'}{p.tamano ? ` · ${tamanoLegible(p.tamano)}` : ''}
-                                                {p.fechaDocumento ? ` · documento del ${fechaCorta(p.fechaDocumento)}` : ''}
-                                                {p.subidoEn ? ` · subido el ${new Date(p.subidoEn).toLocaleDateString('es-CL')}` : ''}
-                                            </div>
-                                        </div>
-                                        {p.contieneSalud && (
-                                            <span title="Contiene datos de salud: quién lo descarga queda registrado">
-                                                <Badge variant="info" size="sm"><FiLock size={11} /> Datos de salud</Badge>
-                                            </span>
-                                        )}
-                                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleDescargar(p)} disabled={descargando !== null}>
-                                            <FiDownload size={14} /> {descargando === p.papelId ? 'Preparando…' : 'Descargar'}
-                                        </button>
-                                    </li>
+                                    <FilaPapel
+                                        key={p.papelId}
+                                        incidentId={id}
+                                        papel={p}
+                                        puedeAnular={puedeAnular}
+                                        descargando={descargando}
+                                        onDescargar={handleDescargar}
+                                        onAnulado={() => { setRecarga((n) => n + 1); onCambio?.(); }}
+                                        onDesactualizado={() => { setRecarga((n) => n + 1); onCambio?.(); }}
+                                    />
                                 ))}
                             </ul>
                         )}

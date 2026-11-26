@@ -17,20 +17,14 @@ const isOffline = process.env.IS_OFFLINE === 'true';
 
 // Configuración del cliente S3
 const { s3Client, HUELLA_SHA256, urlDeSubida } = require("../../lib/clients/s3");
-const { leerHuellaArchivo, verificarArchivo } = require('../../lib/huellaArchivo');
+const { leerHuellaArchivo, verificarEntrega } = require('../../lib/huellaArchivo');
 
 /**
  * Antes de entregar un archivo, ¿sigue siendo el que se registró? (H-7)
  * Si fue alterado, no se entrega y queda medido: es la señal de que algo
  * cambió un archivo de evidencia por debajo de su documento.
  */
-const integridadParaEntregar = async (fileKey, mapaDocs) => {
-    const integridad = await verificarArchivo(mapaDocs.get(fileKey), fileKey);
-    if (integridad === 'alterada') {
-        registrarFallo('integridad.archivo', new Error('El archivo no coincide con su huella registrada'), { clave: fileKey });
-    }
-    return integridad;
-};
+const integridadParaEntregar = (fileKey, mapaDocs) => verificarEntrega(mapaDocs.get(fileKey), fileKey);
 
 // Tipos MIME permitidos
 const ALLOWED_MIME_TYPES = [

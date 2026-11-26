@@ -234,6 +234,7 @@ Todo está en `docs/gobernanza-y-seguridad-de-datos.md`. Búscalo por su identif
 | D-37 | Sin señal siempre se puede firmar: sobre con el PIN cifrado para el servidor, renovación silenciosa de vales, un intento por sincronización |
 | D-40 | Las cuentas nuevas se activan en terreno con una contraseña temporal de 2 horas, o con un enlace de 72 horas; reemplaza D-13. Modificada por D-41 |
 | D-41 | La contraseña inicial vuelve a los cuatro dígitos del RUT con vencimiento de 7 días, y «Reactivar acceso inicial» por ficha y por obra; riesgo aceptado |
+| D-43 | Los papeles de un caso se anulan con motivo sin borrarse, el informe firmado se descarga desde el caso y el responsable de un hallazgo tiene que poder verlo |
 
 ### Hallazgos (sección 4)
 

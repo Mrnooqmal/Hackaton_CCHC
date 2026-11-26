@@ -50,7 +50,8 @@ reporte**:
   presenciaron?"*. Basta un **Sí** para que el incidente sea de alto potencial y exija su informe
   de investigación.
 - **Quién lo corrige** y **Plazo para corregirlo** — solo en hallazgos y opcionales. Se elige a una
-  persona activa que pueda abrir el caso.
+  persona activa que tenga **Ver historial**, para que pueda abrir el caso. Una asignación anterior
+  se conserva aunque esa persona no lo tenga.
 
 Reclasificar es posible mientras el caso esté abierto: la clasificación anterior queda guardada en
 el historial del caso.
@@ -73,10 +74,15 @@ Un incidente que no es de alto potencial no exige papeles: aparece como *"no exi
 
 :::: solo incidentes.reportar
 **Subir un papel.** Elige el tipo de papel, la fecha del documento (opcional) y el archivo (PDF
-o imagen JPG, PNG o WebP, hasta 15 MB; hasta 30 archivos por caso) y toca **Subir papel**. Si el
+o imagen JPG, PNG o WebP, hasta 15 MB; hasta 30 archivos vigentes por caso; los anulados no cuentan, con un máximo de 60 guardados) y toca **Subir papel**. Si el
 archivo ya llegó pero no se pudo registrar, aparece **Reintentar registro**: no hace falta subirlo
 de nuevo. Los archivos se acumulan: subir una segunda DIAT no reemplaza a la primera. También se
 pueden subir papeles a un caso ya cerrado, para completar su respaldo.
+
+**Anular un papel.** Si subiste el archivo con el tipo equivocado, o no era el archivo, toca
+**Anular** y escribe el motivo. El papel deja de contar para el caso y queda en la lista marcado
+como **Anulado**; el archivo se conserva. Después sube el correcto. En un caso cerrado no se anula:
+primero hay que reabrirlo.
 ::::
 
 La plataforma **guarda** los archivos; no tramita ni envía la DIAT ni la DIEP.
@@ -118,7 +124,9 @@ firmar informe**: genera el informe con tu PIN, lo guarda como documento de la o
 caso**. Por eso exige el mismo permiso que cerrarlo (**Calificar accidente**) y las mismas
 condiciones: el caso tiene que estar clasificado y tener el resto de sus papeles (la DIAT y el plan
 de medidas correctivas); si falta algo, te lo dice y no se firma nada. El informe firmado cuenta
-como el informe de investigación del caso. Ver [Obras](/obra/cumplimiento#módulos-de-cada-fase).
+como el informe de investigación del caso: aparece en **Archivos subidos** como **Informe firmado
+desde la obra**, con su botón **Descargar**, y cada descarga queda registrada. En la lista de
+investigaciones pendientes se ve si el accidente tiene el plan de medidas subido. Ver [Obras](/obra/cumplimiento#módulos-de-cada-fase).
 
 Las medidas **ya no se siguen** en **Actuar → Medidas correctivas**: ahí solo quedan las que se
 registraron antes del plan de medidas. El plan de cada caso nuevo está en su página.

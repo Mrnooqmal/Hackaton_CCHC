@@ -64,6 +64,11 @@ const MIME_PAPELES = Object.keys(EXTENSION_POR_MIME);
 const MAX_BYTES_PAPEL = 15 * 1024 * 1024;
 /** Tope de archivos por caso: evita que un caso se vuelva un depósito. */
 const MAX_PAPELES_POR_CASO = 30;
+const MAX_PAPELES_GUARDADOS = 60;
+const admiteOtroPapel = (papeles) => {
+    const lista = Array.isArray(papeles) ? papeles.filter((p) => p && !p.legado && !p.firmado) : [];
+    return lista.length < MAX_PAPELES_GUARDADOS && lista.filter((p) => !p.anulado).length < MAX_PAPELES_POR_CASO;
+};
 
 // ── Qué exige cada caso ──────────────────────────────────────────────────────
 
@@ -87,6 +92,8 @@ const esHallazgo = (inc) => (inc?.clasificacion ? inc.clasificacion === 'hallazg
 const MAX_MEDIDAS_INMEDIATAS = 1000;
 const MAX_COMENTARIO_CIERRE = 1000;
 const MAX_MOTIVO_REAPERTURA = 500;
+const MAX_MOTIVO_ANULACION = 500;
+const PAPEL_INFORME_FIRMADO = 'informe-firmado';
 /** Fotos por envío: cubre una ráfaga en terreno. Más que eso falla entero al adjuntar. */
 const MAX_EVIDENCIAS_POR_ENVIO = 10;
 /** Fotos por caso: evita que un caso se vuelva un depósito de archivos. */
@@ -155,7 +162,7 @@ function papelesDelCaso(inc) {
     return [...nuevos, ...anteriores];
 }
 
-const hayPapel = (inc, tipo) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
+const hayPapel = (inc, tipo) => papelesDelCaso(inc).some((p) => p?.tipo === tipo && !p.anulado);
 
 /**
  * ¿Tiene el informe de investigación? Lo cumple el papel subido o el informe del Art. 71
@@ -332,9 +339,9 @@ function siguientePaso(incidente) {
 
 module.exports = {
     TIPOS_PAPEL, ORDEN_TIPOS_PAPEL, esTipoPapel, etiquetaTipoPapel, tipoPapelConSalud,
-    EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
+    EXTENSION_POR_MIME, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO, MAX_PAPELES_GUARDADOS, admiteOtroPapel,
     TIPOS_HALLAZGO, TIPOS_INCIDENTE, GRAVEDADES, clasificacionDelTipo,
-    MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
+    MAX_MEDIDAS_INMEDIATAS, MAX_COMENTARIO_CIERRE, MAX_MOTIVO_REAPERTURA, MAX_MOTIVO_ANULACION, PAPEL_INFORME_FIRMADO, MAX_EVIDENCIAS_POR_ENVIO, MAX_EVIDENCIAS_TOTAL,
     EXTENSION_POR_MIME_FOTO, MIME_FOTOS,
     esHallazgo, papelesDelCaso, tieneInforme, hayTexto, hayLista, papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR, ESTADOS_MEDIDA,

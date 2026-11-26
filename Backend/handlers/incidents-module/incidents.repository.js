@@ -6,7 +6,7 @@ const { HUELLA_SHA256, urlDeSubida, s3Client } = require('../../lib/clients/s3')
 const almacenamiento = require('../../lib/almacenamiento');
 const {
     EXTENSION_POR_MIME, EXTENSION_POR_MIME_FOTO, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_MEDIDAS_INMEDIATAS,
-    tipoPapelConSalud, esTipoPapel, esHallazgo, clasificacionDelTipo, papelesDelCaso, ESTADOS_MEDIDA,
+    tipoPapelConSalud, PAPEL_INFORME_FIRMADO, esTipoPapel, esHallazgo, clasificacionDelTipo, papelesDelCaso, ESTADOS_MEDIDA,
 } = require('../../lib/casos');
 const { leido, casosDeLaEmpresa } = require('../../lib/incidentes-lectura');
 const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
@@ -1212,14 +1212,56 @@ class IncidentsRepository {
         return almacenamiento.bucketDeClave(s3Key);
     }
 
+    async informeFirmado(incidente) {
+        const documentId = incidente?.informeDocumentId;
+        if (!documentId || incidente.anonimizadoEl) return null;
+        const { Item: documento } = await this.dynamo.send(new GetCommand({
+            TableName: process.env.DOCUMENTS_TABLE || 'Documents',
+            Key: { documentId },
+        }));
+        const s3Key = documento?.s3Key;
+        if (!documento || documento.tenantId !== incidente.tenantId || documento.tipo !== 'INVESTIGACION_ACCIDENTE') return null;
+        if (s3Key !== `tenants/${incidente.tenantId}/registros/${incidente.obraId}/investigaciones/${documentId}.html`) return null;
+        return {
+            papelId: PAPEL_INFORME_FIRMADO,
+            tipo: 'informe_investigacion',
+            nombreArchivo: 'Informe firmado desde la obra',
+            tipoMime: 'text/html',
+            s3Key,
+            subidoPor: null,
+            subidoEn: documento.createdAt || null,
+            fechaDocumento: null,
+            tamano: null,
+            firmado: true,
+            documento,
+        };
+    }
+
+    async anularPapel(incidente, papelId, motivo, personaId) {
+        const anulado = { anuladoEn: new Date().toISOString(), anuladoPor: personaId, motivo };
+        const papeles = incidente.papeles.map((p) => (p.papelId === papelId ? { ...p, anulado } : p));
+        await this.actualizarCaso(incidente, { papeles });
+        console.log('[PAPELES] anulado | incidente', incidente.incidentId, '| papel', papelId);
+        const { s3Key, huella, ...visible } = papeles.find((p) => p.papelId === papelId);
+        return visible;
+    }
+
     // La lista de papeles del caso, sin enlaces: listar no entrega los archivos. Incluye los
     // papeles del contrato anterior (`documentos.diat`/`diep`).
-    getDocuments(incidente) {
-        const archivos = papelesDelCaso(incidente).map((p) => {
-            const { s3Key, huella, ...visible } = p;
-            return { ...visible, contieneSalud: tipoPapelConSalud(p.tipo) };
+    async getDocuments(incidente) {
+        let firmado = null;
+        let informeNoDisponible = false;
+        try {
+            firmado = await this.informeFirmado(incidente);
+        } catch (err) {
+            informeNoDisponible = true;
+            registrarFallo('incidente.informe_firmado', err, { incidentId: incidente.incidentId });
+        }
+        const archivos = [...papelesDelCaso(incidente), ...(firmado ? [firmado] : [])].map((p) => {
+            const { s3Key, huella, documento, ...visible } = p;
+            return { ...visible, contieneSalud: Boolean(p.firmado) || tipoPapelConSalud(p.tipo) };
         });
-        return { archivos };
+        return { archivos, informeNoDisponible };
     }
 
     /**

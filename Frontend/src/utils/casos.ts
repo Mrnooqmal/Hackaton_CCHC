@@ -40,6 +40,11 @@ export const MIME_PAPELES: string[] = Object.keys(EXTENSION_POR_MIME);
 export const MAX_BYTES_PAPEL = 15 * 1024 * 1024;
 /** Tope de archivos por caso. */
 export const MAX_PAPELES_POR_CASO = 30;
+export const MAX_PAPELES_GUARDADOS = 60;
+export const admiteOtroPapel = (papeles?: { anulado?: unknown; legado?: boolean; firmado?: boolean }[]) => {
+    const lista = Array.isArray(papeles) ? papeles.filter((p) => p && !p.legado && !p.firmado) : [];
+    return lista.length < MAX_PAPELES_GUARDADOS && lista.filter((p) => !p.anulado).length < MAX_PAPELES_POR_CASO;
+};
 
 // ── Qué exige cada caso ──
 
@@ -57,7 +62,7 @@ export interface CasoParaPapeles {
     medidasCorrectivas?: unknown[];
     /** Informe Art. 71 firmado al cerrar la investigación desde la obra. */
     informeDocumentId?: string | null;
-    papeles?: { tipo?: string; s3Key?: string }[];
+    papeles?: { tipo?: string; s3Key?: string; anulado?: unknown }[];
     /** Contrato anterior de los papeles: un archivo por tipo (`diat` y `diep`). Solo se lee. */
     documentos?: Record<string, { s3Key?: unknown; fileName?: unknown; fileType?: unknown; uploadedAt?: unknown } | null | undefined> | null;
 }
@@ -95,6 +100,7 @@ export const esHallazgo = (inc?: CasoParaPapeles | null): boolean =>
 export const MAX_MEDIDAS_INMEDIATAS = 1000;
 export const MAX_COMENTARIO_CIERRE = 1000;
 export const MAX_MOTIVO_REAPERTURA = 500;
+export const MAX_MOTIVO_ANULACION = 500;
 /** Fotos por envío (y por reporte al reportar): más que eso falla entero al adjuntar. */
 export const MAX_EVIDENCIAS_POR_ENVIO = 10;
 /** Fotos por caso. */
@@ -152,7 +158,7 @@ export function papelesDelCaso(inc?: CasoParaPapeles | null): Array<{ tipo?: str
     return [...nuevos, ...anteriores];
 }
 
-const hayPapel = (inc: CasoParaPapeles, tipo: TipoPapel) => papelesDelCaso(inc).some((p) => p?.tipo === tipo);
+const hayPapel = (inc: CasoParaPapeles, tipo: TipoPapel) => papelesDelCaso(inc).some((p) => p?.tipo === tipo && !p.anulado);
 
 /** El informe de investigación lo cumple el papel subido o el informe Art. 71 firmado desde la obra (`informeDocumentId`). */
 const tieneInforme = (inc: CasoParaPapeles) => hayPapel(inc, 'informe_investigacion') || hayTexto(inc?.informeDocumentId);

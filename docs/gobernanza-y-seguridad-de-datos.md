@@ -2009,6 +2009,18 @@ pero no firmar por la responsable.
 
 **Verificación.** `Backend/tests/reactivar-acceso-inicial.test.js` (17 pruebas: por ficha, por obra, corte por tiempo, D1, migración), y las de `contrasena-temporal`, `alta-sin-correo`, `activar-acceso`, `acceso-persona-frontend` y `plantilla-personas` actualizadas; `Frontend/tests/e2e/reactivar-acceso.spec.mjs` (4). 22 sabotajes atrapados (19 de backend, 3 de pantalla). La prueba de punta a punta comprueba que el alta entra con los cuatro dígitos y vence en 7 días, que la activación en terreno los anula, que la reactivación rechaza a quien ya eligió su contraseña y que los cuatro dígitos abren solo la empresa donde siguen vigentes.
 
+### D-43. Papeles del caso: anulación con motivo, informe firmado visible y responsable que puede ver el caso
+**Estado: decidido el 26 de noviembre de 2026 por Benjamín.**
+
+**Qué lo motivó.** Las pruebas del rediseño de incidentes mostraron que un papel subido con el tipo equivocado contaba como cumplido sin forma de corregirlo, que el informe del Art. 71 firmado desde la obra no se podía abrir desde el caso y que se podía dejar a cargo de un hallazgo a quien no puede verlo.
+
+**Qué se decidió.**
+- **Anular un papel** (`PUT /incidents/{id}/documents/{papelId}/anular`) exige `incidentes.reportar` e `incidentes.historial`, un motivo de hasta 500 caracteres y el caso abierto. El papel no se borra ni sale del bucket: queda marcado con quién, cuándo y por qué, deja de contar y su descarga sigue disponible. `anuladoPor` cuenta como persona involucrada para la retención. Los anulados no ocupan el cupo de 30 papeles vigentes; el tope de archivos guardados por caso es 60.
+- **El informe firmado** aparece entre los papeles del caso y se descarga por la misma ruta de enlaces, con `incidentes.historial`, comprobación de integridad (D-12) y registro de acceso a datos de salud (D-18), con el caso y el documento. Un caso anonimizado no lo entrega; el documento sigue en el repositorio con su propia retención.
+- **El responsable de un hallazgo** tiene que tener `incidentes.historial`. `GET /personas?conPermiso=incidentes.historial` alimenta el selector y lo puede pedir quien tiene `incidentes.reportar` o `incidentes.calificar_accidente`. Las asignaciones anteriores no se revalidan. Si no se pueden leer los roles de la empresa, se responde 503 en vez de decidir con los roles por defecto.
+
+**Verificación.** `Backend/tests/incidentes-anulacion-informe.test.js`, más los casos agregados en `casos`, `incidentes-correcciones` e `incidentes-revision`; 11 sabotajes atrapados antes de la revisión independiente y 8 sobre sus correcciones. `Frontend/tests/e2e/anular-papel.spec.mjs` (3) cubre la anulación en el navegador.
+
 ## 4. Hallazgos priorizados
 
 ### H-1. El PIN usaba SHA-256 sin función de derivación con costo

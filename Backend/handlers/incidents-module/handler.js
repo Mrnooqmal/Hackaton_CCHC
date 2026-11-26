@@ -1,7 +1,9 @@
 const { Router } = require('itty-router');
 const { sinCache } = require('../../lib/utils/response');
 const { IncidentsRepository } = require('./incidents.repository');
-const { PERMISSIONS } = require('../../lib/permissions');
+const { PERMISSIONS, personaPuede } = require('../../lib/permissions');
+const { tenantParaPermisosEstricto } = require('../../lib/auth/permisos-empresa');
+const { verificarEntrega } = require('../../lib/huellaArchivo');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { conNeutro } = require('../../lib/degradacion');
 const { personaDeLaEmpresa, personasDeLaEmpresa, obraDeLaEmpresa } = require('../../lib/auth/pertenencia');
@@ -9,7 +11,7 @@ const { fechaHoraChile } = require('../../lib/utils/fechaChile');
 const { cortar } = require('../../lib/utils/texto');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 const {
-    ORDEN_TIPOS_PAPEL, esTipoPapel, tipoPapelConSalud, papelesDelCaso, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO,
+    ORDEN_TIPOS_PAPEL, esTipoPapel, tipoPapelConSalud, papelesDelCaso, MIME_PAPELES, MAX_BYTES_PAPEL, MAX_PAPELES_POR_CASO, admiteOtroPapel, MAX_MOTIVO_ANULACION, PAPEL_INFORME_FIRMADO,
     papelesRequeridos, avanceDelCaso,
     PERMISO_CLASIFICAR, PERMISO_GESTIONAR,
     medidaTerminada, estaCerrado, pendientesDeCierre, siguientePaso,
@@ -154,7 +156,8 @@ router
     .post('/incidents/:id/documents', pedirSubidaDocumento)
     .post('/incidents/:id/documents/confirmar', confirmarDocumento)
     .get('/incidents/:id/documents', getDocuments)
-    .get('/incidents/:id/documents/:papelId/enlace', getEnlacePapel);
+    .get('/incidents/:id/documents/:papelId/enlace', getEnlacePapel)
+    .put('/incidents/:id/documents/:papelId/anular', anularPapel);
 
 router.all('*', () => jsonResponse({ error: 'Not Found' }, 404));
 
@@ -817,6 +820,10 @@ const responsableYPlazo = async (responsableId, plazo, sesion) => {
         } else {
             const r = await responsableActivo(responsableId, sesion);
             if (r.respuesta) return r;
+            const tenantSafe = await tenantParaPermisosEstricto(sesion.tenantId);
+            if (!personaPuede(r.persona, tenantSafe, PERMISSIONS.INCIDENTES_HISTORIAL)) {
+                return { respuesta: solicitudInvalida('La persona responsable tiene que poder ver el historial de incidentes.') };
+            }
             datos.responsableId = responsableId;
             datos.responsableNombre = r.nombre;
         }
@@ -955,7 +962,6 @@ async function reabrir(request) {
 // borra), cada uno guarda quién lo subió y cuándo, y no tocan `cierre` ni el estado.
 const PAPEL_SIN_PERMISO = 'Solo quien gestiona incidentes puede subir papeles al caso.';
 
-const cantidadDePapeles = (incidente) => (Array.isArray(incidente.papeles) ? incidente.papeles.length : 0);
 const SIN_CUPO = `El caso admite hasta ${MAX_PAPELES_POR_CASO} archivos.`;
 
 // Lo que arma `pedirSubidaPapel` después del prefijo: `{tipo}-{uuid}.{extensión}`.
@@ -997,7 +1003,7 @@ async function pedirSubidaDocumento(request) {
         if (body.tamano !== undefined && (!Number.isFinite(body.tamano) || body.tamano <= 0 || body.tamano > MAX_BYTES_PAPEL)) {
             return jsonResponse({ success: false, error: `El archivo debe pesar hasta ${Math.round(MAX_BYTES_PAPEL / (1024 * 1024))} MB.` }, 413);
         }
-        if (cantidadDePapeles(incidente) >= MAX_PAPELES_POR_CASO) {
+        if (!admiteOtroPapel(incidente.papeles)) {
             return jsonResponse({ success: false, error: SIN_CUPO }, 400);
         }
         const result = await incidentsRepo.pedirSubidaPapel({
@@ -1042,7 +1048,7 @@ async function confirmarDocumento(request) {
             return jsonResponse({ success: false, error: 'La fecha del documento debe ser un día válido (AAAA-MM-DD) que no sea futuro.' }, 400);
         }
         const yaEsta = Array.isArray(incidente.papeles) && incidente.papeles.some((x) => x.s3Key === s3Key);
-        if (!yaEsta && cantidadDePapeles(incidente) >= MAX_PAPELES_POR_CASO) {
+        if (!yaEsta && !admiteOtroPapel(incidente.papeles)) {
             return jsonResponse({ success: false, error: SIN_CUPO }, 400);
         }
 
@@ -1060,6 +1066,38 @@ async function confirmarDocumento(request) {
     }
 }
 
+async function anularPapel(request) {
+    try {
+        const ses = sesionDe(request);
+        if (!ses.ok) return ses.respuesta;
+        const sesion = ses.sesion;
+        const incidente = await incidenteDelTenant(request.params.id, sesion);
+        const rechazo = rechazoParaGestionar(incidente, sesion, PERMISO_GESTIONAR, 'Solo quien gestiona incidentes puede anular papeles del caso.');
+        if (rechazo) return rechazo;
+        if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los papeles del caso.');
+        if (estaCerrado(incidente)) {
+            return jsonResponse({ success: false, error: 'El caso está cerrado. Reábrelo para anular un papel.' }, 409);
+        }
+
+        const papelId = decodeURIComponent(request.params.papelId);
+        const papel = (Array.isArray(incidente.papeles) ? incidente.papeles : []).find((p) => p.papelId === papelId);
+        if (!papel) return jsonResponse({ success: false, error: 'Papel no encontrado' }, 404);
+        if (papel.anulado) return jsonResponse({ success: false, error: 'Ese papel ya está anulado.' }, 409);
+
+        const body = parseBody(request.event);
+        const motivo = typeof body.motivo === 'string' ? body.motivo.trim() : '';
+        if (!motivo) return solicitudInvalida('El motivo para anular el papel es obligatorio.');
+        if (motivo.length > MAX_MOTIVO_ANULACION) {
+            return solicitudInvalida(`El motivo admite hasta ${MAX_MOTIVO_ANULACION} caracteres.`);
+        }
+
+        const anulado = await incidentsRepo.anularPapel(incidente, papelId, motivo, sesion.personaId);
+        return jsonResponse({ success: true, data: { papel: anulado } });
+    } catch (err) {
+        return errorResponse(err);
+    }
+}
+
 // Lista de papeles y lo que el caso exige. No entrega archivos ni enlaces: eso es
 // `getEnlacePapel`, que es lo que se audita. Abrir la página del caso lista, y no es una descarga.
 async function getDocuments(request) {
@@ -1072,10 +1110,10 @@ async function getDocuments(request) {
         // Quien reportó el caso lo ve, pero sus papeles son del historial.
         if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los papeles del caso.');
 
-        const { archivos } = incidentsRepo.getDocuments(incidente);
+        const { archivos, informeNoDisponible } = await incidentsRepo.getDocuments(incidente);
         return jsonResponse({
             success: true,
-            data: { archivos, requeridos: papelesRequeridos(incidente), avance: avanceDelCaso(incidente) },
+            data: { archivos, informeNoDisponible, requeridos: papelesRequeridos(incidente), avance: avanceDelCaso(incidente) },
         });
     } catch (err) {
         return errorResponse(err);
@@ -1096,16 +1134,21 @@ async function getEnlacePapel(request) {
         if (!veHistorial(sesion)) return sinPermiso('No tienes permiso para ver los papeles del caso.');
 
         const papelId = decodeURIComponent(request.params.papelId);
-        const papel = papelesDelCaso(incidente).find((p) => p.papelId === papelId);
+        const papel = papelId === PAPEL_INFORME_FIRMADO
+            ? await incidentsRepo.informeFirmado(incidente)
+            : papelesDelCaso(incidente).find((p) => p.papelId === papelId);
         if (!papel) return jsonResponse({ success: false, error: 'Papel no encontrado' }, 404);
+        if (papel.firmado && await verificarEntrega(papel.documento, papel.s3Key) === 'alterada') {
+            return jsonResponse({ success: false, error: 'El archivo guardado no coincide con su huella de integridad registrada. No se entrega.' }, 409);
+        }
 
         const { url } = await incidentsRepo.enlaceDePapel(papel);
-        if (tipoPapelConSalud(papel.tipo)) {
+        if (papel.firmado || tipoPapelConSalud(papel.tipo)) {
             const titular = await incidentsRepo.personaDelAfectado(sesion.tenantId, incidente.afectadoRutHmac);
             anotarAccesoSalud({
                 tipo: TIPOS_ACCESO_SALUD.DESCARGA,
                 titulares: titular ? [titular] : [],
-                documentos: [incidente.incidentId],
+                documentos: [incidente.incidentId, ...(papel.firmado ? [papel.documento.documentId] : [])],
                 claves: [papel.s3Key],
             });
         }

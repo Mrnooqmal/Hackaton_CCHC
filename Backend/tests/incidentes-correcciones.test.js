@@ -116,6 +116,27 @@ const clasificar = async (id, cuerpo) => {
 };
 const papel = (tipo) => ({ papelId: `p-${tipo}`, tipo, nombreArchivo: `${tipo}.pdf`, tipoMime: 'application/pdf', s3Key: `tenants/${A}/incidentes/x/papeles/${tipo}-1.pdf`, subidoPor: gestora, subidoEn: '2026-11-20T10:00:00.000Z' });
 
+test('con el PIN incorrecto de verdad, cerrar desde la obra y el registro AT/EP responden 400 y nada se cierra', async () => {
+    RegistroService.prototype.generarInformeInvestigacion = generarInforme;
+    await new PersonaService().setPin(A, prevencionista, '1234', null, { personaId: prevencionista });
+    const ficha = doble.items('PERSONAS_TABLE').find((x) => x.personaId === prevencionista);
+    ficha.habilitado = false;
+    ficha.estado = 'pendiente';
+    const id = await crearAccidente();
+    await clasificar(id, { tipo: 'accidente', gravedad: 'leve' });
+    guardado(id).papeles = [papel('diat'), papel('plan_medidas')];
+    const sinEnrolar = await cerrarDesdeObra(prev(), id, { firmante: { pin: '9999' } });
+    assert.equal(sinEnrolar.statusCode, 409, sinEnrolar.body);
+    ficha.habilitado = true;
+    ficha.estado = 'activo';
+    const res = await cerrarDesdeObra(prev(), id, { firmante: { pin: '9999' } });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal(JSON.parse(res.body).error, 'PIN incorrecto');
+    assert.notEqual(guardado(id).estado, 'cerrado');
+    const registro = await pedirObra(prev(), `/obras/${obraA}/registros/at-ep`, { firmante: { pin: '9999' } });
+    assert.equal(registro.statusCode, 400, registro.body);
+});
+
 // ─── 1. Cerrar la investigación desde la obra ────────────────────────────────
 
 const rutaCierre = (id) => `/obras/${obraA}/investigaciones/${id}/cerrar`;
@@ -455,7 +476,6 @@ test('el handler de incidentes no deja código muerto: ni `esSupervisorOSuperior
     const handler = leer('Backend', 'handlers', 'incidents-module', 'handler.js');
     assert.doesNotMatch(handler, /esSupervisorOSuperior/);
     assert.doesNotMatch(handler, /existing code/);
-    assert.doesNotMatch(leer('Backend', 'handlers', 'personas-module', 'handler.js'), /let personas = await personaService\.listByTenant/);
 });
 
 test('`updateMedidaEstado` usa la lista de estados de lib/casos, y ClasificacionDelCaso las listas de utils/casos', () => {

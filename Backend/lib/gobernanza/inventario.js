@@ -194,6 +194,7 @@ const FUENTES = [
             // anteriores las conservan con su responsable y quién las creó o editó: siguen contando.
             ...ids(it.medidasCorrectivas, 'responsableId'), ...ids(it.medidasCorrectivas, 'creadaPor'), ...ids(it.medidasCorrectivas, 'editadaPor'),
             ...ids(it.papeles, 'subidoPor'),
+            ...(Array.isArray(it.papeles) ? it.papeles.flatMap((p) => uno(p?.anulado?.anuladoPor)) : []),
         ].filter(esPersona),
         // Las fotos y los papeles del caso (`papeles[].s3Key`, fase 2): al vencer el
         // incidente se suprimen o se conservan juntos, y un archivo que el plan no

@@ -25,6 +25,7 @@
  * pasa a ser la que se sirve.
  */
 
+const { registrarFallo } = require('./degradacion');
 const { HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { s3Client } = require('./clients/s3');
 const almacenamiento = require('./almacenamiento');
@@ -94,4 +95,12 @@ const verificarArchivo = async (doc, clave) => {
         : 'alterada';
 };
 
-module.exports = { leerHuellaArchivo, huellaDePut, camposDeArchivo, huellaRegistradaPara, verificarArchivo };
+const verificarEntrega = async (doc, clave) => {
+    const integridad = await verificarArchivo(doc, clave);
+    if (integridad === 'alterada') {
+        registrarFallo('integridad.archivo', new Error('El archivo no coincide con su huella registrada'), { clave });
+    }
+    return integridad;
+};
+
+module.exports = { leerHuellaArchivo, huellaDePut, camposDeArchivo, huellaRegistradaPara, verificarArchivo, verificarEntrega };

@@ -53,6 +53,7 @@ const CASOS = {
         clasificacion: 'incidente', tipo: 'accidente', gravedad: 'fatal',
         papeles: [papel('diat'), papel('informe_investigacion'), papel('plan_medidas'), papel('constancia_aviso_autoridad'), papel('diep'), papel('otro')],
     },
+    accidenteConPapelAnulado: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', papeles: [{ ...papel('diat'), anulado: { motivo: 'x' } }, papel('plan_medidas')] },
     accidenteConOtroNoCuenta: { clasificacion: 'incidente', tipo: 'accidente', gravedad: 'leve', papeles: [papel('otro'), papel('diep')] },
     vacio: {},
 };
@@ -98,6 +99,11 @@ test('accidente: DIAT, informe de investigación y plan de medidas correctivas',
     assert.equal(cumplido(CASOS.accidenteConOtroNoCuenta, 'diat'), false);
     // La DIEP no se exige en ningún caso.
     for (const inc of Object.values(CASOS)) assert.ok(!claves(inc).includes('diep'), JSON.stringify(inc));
+});
+
+test('un papel anulado no cuenta como cumplido', () => {
+    assert.equal(cumplido(CASOS.accidenteConPapelAnulado, 'diat'), false);
+    assert.equal(cumplido(CASOS.accidenteConPapelAnulado, 'plan_medidas'), true);
 });
 
 test('accidente grave o fatal: además la constancia del aviso a la Inspección del Trabajo y a la SEREMI de Salud', () => {

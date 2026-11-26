@@ -159,6 +159,7 @@ export default function ObraDetalle() {
   const [allWorkers, setAllWorkers] = useState<any[]>([]);
   const [documentosPrevencion, setDocumentosPrevencion] = useState<any[]>([]);
   const [incidentes, setIncidentes] = useState<any[]>([]);
+  const [planPorCaso, setPlanPorCaso] = useState<Record<string, boolean>>({});
   const [actividades, setActividades] = useState<any[]>([]);
   const [encuestas, setEncuestas] = useState<any[]>([]);
   const [obraSignatureRequests, setObraSignatureRequests] = useState<SignatureRequest[]>([]);
@@ -434,6 +435,15 @@ export default function ObraDetalle() {
         setDocumentosPrevencion(uniqueDocsPrev);
 
         setIncidentes((incidentsRes.success && incidentsRes.data ? incidentsRes.data : []).filter((inc: any) => inc.obraId === obraId));
+        const faltaPlanPorMirar = (incidentsRes.data || []).some((inc: any) => inc.obraId === obraId && inc.estado !== 'cerrado'
+          && (['grave', 'fatal'].includes(inc.gravedad) || inc.esFatal) && !(inc.medidasCorrectivas || []).length);
+        if (faltaPlanPorMirar && hasPermission(PERMISSIONS.INCIDENTES_HISTORIAL)) incidentsApi.getCasosResumen(obraId as string).then((res) => {
+          if (!res.success || !res.data) return;
+          setPlanPorCaso(Object.fromEntries(res.data.flatMap((caso) => {
+            const plan = caso.requeridos.find((r) => r.clave === 'plan_medidas');
+            return plan ? [[caso.incidentId, plan.cumplido]] : [];
+          })));
+        }).catch(() => {});
         setActividades((activitiesRes.success && activitiesRes.data ? activitiesRes.data.activities || [] : []).filter((act: any) => act.obraId === obraId));
         setEncuestas(surveysRes.success && surveysRes.data ? surveysRes.data.surveys || [] : []);
         if (sigRes.success && sigRes.data) setObraSignatureRequests(sigRes.data.requests || []);
@@ -1957,7 +1967,9 @@ export default function ObraDetalle() {
                       <div key={inc.incidentId} className="card" style={{ padding: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                         <div style={{ minWidth: 0 }}>
                           <div className="font-medium" style={{ fontSize: '0.9rem' }}>{inc.descripcion || inc.incidentId}</div>
-                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''} · {plural((inc.medidasCorrectivas || []).length, 'medida', 'medidas')}</div>
+                          <div className="text-muted" style={{ fontSize: '0.78rem' }}>{inc.fecha || ''} · {inc.gravedad}{inc.esFatal ? ' (fatal)' : ''}{(inc.medidasCorrectivas || []).length > 0
+                            ? ` · ${plural(inc.medidasCorrectivas.length, 'medida', 'medidas')}`
+                            : inc.incidentId in planPorCaso ? ` · ${planPorCaso[inc.incidentId] ? 'Plan de medidas subido' : 'Sin plan de medidas'}` : ''}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
                           <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate(`/incidents?obraId=${obraId}`)}>Ver / investigar</button>

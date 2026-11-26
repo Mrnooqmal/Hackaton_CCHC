@@ -192,7 +192,7 @@ Encontrado y sin corregir:
 
 - `PUT /incidents/{id}/flash-completar` nunca funciona: lee `reporteFlash` del elemento listado, pero se guarda en la traza. Viene de antes del rediseño.
 - El reporte rápido por QR no exigía permiso para crear un accidente. Se eliminó (ver más abajo).
-- El responsable de un hallazgo no recibe aviso, y si no tiene `incidentes.historial` no puede ver el hallazgo que se le asignó.
+- El responsable de un hallazgo no recibe aviso.
 - `afectadoRutHmac` se conserva al anonimizar, porque es el vínculo que usa la retención.
 
 ### Casos borde (22 de noviembre)
@@ -211,6 +211,19 @@ Una segunda revisión independiente buscó casos borde y encontró 14; se corrig
 - **Si confirmar un papel da conflicto,** se reintenta con el mismo archivo, sin volver a subirlo.
 
 Sin verificar: si las DIAT de 2025 y 2026 siguen en el bucket de evidencia actual o quedaron en el bucket del stack anterior.
+
+### Correcciones tras las pruebas con backend local (26 de noviembre)
+
+Registradas como D-43 en `docs/gobernanza-y-seguridad-de-datos.md`.
+
+- Un papel se anula con motivo, solo en un caso abierto. No se borra; deja de contar. No se anulan el informe firmado ni los papeles del contrato anterior.
+- El informe Art. 71 firmado desde la obra se ve y se descarga entre los papeles del caso.
+- Un PIN incorrecto al cerrar desde la obra responde 400 y no 500.
+- El responsable de un hallazgo tiene que tener `incidentes.historial`.
+- La lista de investigaciones pendientes de la obra dice si el plan de medidas está subido. Los indicadores de `RegistroService` no cambian.
+- El registro AT/EP responde igual que el cierre ante un PIN incorrecto y ante una persona que no puede firmar (400, 403 o 409 en vez de 500).
+- Tras una revisión independiente: 503 si no se pueden leer los roles, el informe no se entrega en un caso anonimizado, los anulados no ocupan cupo y la lista avisa si no pudo consultar el informe.
+- Pendiente y por decidir (anterior al rediseño): si falla la escritura del informe en S3, `RegistroService.generarInformeInvestigacion` sigue, y el caso se cierra con un informe sin archivo.
 
 ## 10. Pendientes de decisión
 

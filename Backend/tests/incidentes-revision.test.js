@@ -530,12 +530,13 @@ const listarPersonas = (quien, query) => personasHandler({
     },
 });
 
-test('GET /personas ya no filtra por permiso: el selector de responsable es el de un hallazgo y ofrece a todas las personas activas', async () => {
-    // `conPermiso` existía para el responsable de una medida; las medidas ya no se asignan a nadie.
+test('GET /personas?conPermiso= deja solo a quienes pueden ver el historial, y solo lo usa quien asigna responsables', async () => {
     const res = await listarPersonas(gest(), { estado: 'activo', conPermiso: 'incidentes.historial' });
     assert.equal(res.statusCode, 200, res.body);
     const ids = datos(res).personas.map((x) => x.personaId);
-    for (const quien of [gestora, responsable, prevencionista, sinHistorial]) assert.ok(ids.includes(quien), `falta ${quien}`);
+    for (const quien of [gestora, responsable, prevencionista]) assert.ok(ids.includes(quien), `falta ${quien}`);
+    assert.ok(!ids.includes(sinHistorial), 'quien no ve el historial no se ofrece');
     assert.ok(!ids.includes(ajena), 'nunca una persona de otra empresa');
-    assert.equal((await listarPersonas(dePersona(), null)).statusCode, 200);
+    assert.equal((await listarPersonas(dePersona(), { conPermiso: 'incidentes.historial' })).statusCode, 400);
+    assert.equal((await listarPersonas(gest(), { conPermiso: 'personas.crear' })).statusCode, 400);
 });

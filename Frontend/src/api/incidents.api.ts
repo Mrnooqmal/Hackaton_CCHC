@@ -216,12 +216,15 @@ export interface PapelDelCaso {
     tamano: number | null;
     /** El papel venía guardado con el contrato anterior (`documentos.diat`/`diep`): se ve y cuenta igual. */
     legado?: boolean;
+    anulado?: { anuladoEn: string; anuladoPor: string; motivo: string };
+    firmado?: boolean;
     /** La DIAT y la DIEP traen datos de salud: su descarga queda auditada. */
     contieneSalud: boolean;
 }
 
 export interface PapelesDelCaso {
     archivos: PapelDelCaso[];
+    informeNoDisponible?: boolean;
     requeridos: PapelRequerido[];
     avance: AvanceDelCaso;
 }
@@ -425,6 +428,12 @@ export const incidentsApi = {
     getEnlacePapel: (incidentId: string, papelId: string) =>
         apiRequest<{ url: string }>(`/incidents/${incidentId}/documents/${encodeURIComponent(papelId)}/enlace`),
 
+    anularPapel: (incidentId: string, papelId: string, motivo: string) =>
+        apiRequest<{ papel: Omit<PapelDelCaso, 'contieneSalud'> }>(`/incidents/${incidentId}/documents/${encodeURIComponent(papelId)}/anular`, {
+            method: 'PUT',
+            body: JSON.stringify({ motivo }),
+        }),
+
     /** Casos de una obra sin datos personales ni archivos, del más reciente al más antiguo. Exige `incidentes.historial`. */
     getCasosResumen: (obraId: string) =>
         apiRequest<CasoResumen[]>(`/incidents/casos-resumen?obraId=${encodeURIComponent(obraId)}`),
@@ -482,7 +491,7 @@ export const incidentsApi = {
      * estado, así que no se puede filtrar acá).
      */
     personasACargo: async () => {
-        const res = await apiRequest<{ total: number; personas: Worker[] }>('/personas?estado=activo');
+        const res = await apiRequest<{ total: number; personas: Worker[] }>('/personas?estado=activo&conPermiso=incidentes.historial');
         if (res.success && res.data) return { success: true as const, data: res.data.personas };
         return { success: false as const, data: undefined, error: res.error };
     },

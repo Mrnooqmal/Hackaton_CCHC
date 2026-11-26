@@ -687,6 +687,9 @@ Cada caso es una historia de usuario con sus criterios de aceptación. Marca `[x
   - [ ] La DIAT y la DIEP llevan la etiqueta "Datos de salud"; el aviso al elegir su tipo lo explica.
   - [ ] Sin `incidentes.reportar` no se puede subir; sin `incidentes.historial` no se ve la sección.
   - [ ] Se pueden subir papeles a un caso cerrado.
+  - [ ] "Anular" pide un motivo; el papel queda marcado "Anulado", deja de contar y se puede subir el correcto.
+  - [ ] En un caso cerrado no aparece "Anular".
+  - [ ] "Quién lo corrige" solo ofrece a personas con `incidentes.historial`.
 
 - [ ] **14.11** `[J][P]` Como desarrollador quiero descargar un papel, para validar el enlace firmado y la auditoría.
   - [ ] Abrir la página del caso no descarga ni registra nada: la lista no trae enlaces.
@@ -714,6 +717,9 @@ Cada caso es una historia de usuario con sus criterios de aceptación. Marca `[x
   - [ ] Con la DIAT o el plan de medidas sin subir, no se firma nada y se informa qué falta.
   - [ ] Con el caso completo, firma el informe con el PIN, cierra el caso (con quién y cuándo) y el informe cuenta como el informe de investigación del caso y del ítem 66 del FUF.
   - [ ] Cerrar de nuevo el mismo caso responde que ya está cerrado.
+  - [ ] Con el PIN incorrecto dice "PIN incorrecto" y el caso sigue abierto.
+  - [ ] El caso muestra "Informe firmado desde la obra" en sus archivos y se puede descargar.
+  - [ ] La lista de investigaciones pendientes dice "Plan de medidas subido" o "Sin plan de medidas".
 
 - [ ] **14.15** `[J][P]` Como desarrollador quiero comprobar los casos en el repositorio de la obra y el FUF, para validar el enlace con el resumen.
   - [ ] El repositorio de la obra lista los casos con su tipo, fecha, estado y avance de papeles, con un enlace al caso; no muestra nombres, RUT ni archivos.

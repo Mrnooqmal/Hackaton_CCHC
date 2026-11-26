@@ -1942,7 +1942,7 @@ export default function Incidents() {
                     )}
                     <div className="form-group">
                         <label className="form-label">Responsable de cierre</label>
-                        <SelectorResponsable value={gobForm.responsableId} onChange={(personaId) => setGobForm({ ...gobForm, responsableId: personaId })} placeholder="Selecciona…" />
+                        <SelectorResponsable value={gobForm.responsableId} onChange={(personaId) => setGobForm({ ...gobForm, responsableId: personaId })} placeholder="Selecciona…" nombreActual={gobForm.responsableId === gobIncident?.gobernanza?.responsableId ? gobIncident?.gobernanza?.responsableNombre : undefined} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="form-group">

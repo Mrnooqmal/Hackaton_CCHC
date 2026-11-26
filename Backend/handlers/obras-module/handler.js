@@ -15,6 +15,14 @@ const { evaluarCierre } = require('../../lib/casos-servidor');
 const { PERMISO_CLASIFICAR } = require('../../lib/casos');
 const { conAuditoriaSalud, anotarAccesoSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
+const respuestaErrorDeFirma = (firmaErr) => {
+    if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
+    if (firmaErr.message === 'Validación de PIN fallida') return error('PIN incorrecto', 400);
+    if (firmaErr.codigo === 'PERSONA_DESVINCULADA') return error(firmaErr.message, 403);
+    if (firmaErr.codigo === 'TRATAMIENTO_BLOQUEADO' || firmaErr.message.startsWith('Persona no está habilitada')) return error(firmaErr.message, 409);
+    throw firmaErr;
+};
+
 const obraService = new ObraService();
 const registroService = new RegistroService();
 const incidentsRepo = new IncidentsRepository();
@@ -178,10 +186,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
                     contexto
                 });
             } catch (firmaErr) {
-                // El límite de intentos (H-2) responde 423, no el 500 genérico
-                // del catch de más abajo.
-                if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
-                throw firmaErr;
+                return respuestaErrorDeFirma(firmaErr);
             }
             return created({
                 message: 'Registro AT/EP generado y firmado',
@@ -311,8 +316,7 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
                     contexto
                 });
             } catch (firmaErr) {
-                if (firmaErr.codigo === 'PIN_BLOQUEADO') return error(firmaErr.message, 423);
-                throw firmaErr;
+                return respuestaErrorDeFirma(firmaErr);
             }
 
             // Cierra con la escritura de siempre (deja `cierre`, con bloqueo optimista) y enlaza el informe.
