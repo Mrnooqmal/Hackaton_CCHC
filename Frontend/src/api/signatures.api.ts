@@ -31,6 +31,8 @@ export interface DigitalSignature {
     tipoFirma: 'enrolamiento' | 'documento' | 'actividad' | 'capacitacion';
     referenciaId?: string;
     referenciaTipo?: string;
+    /** Título de lo firmado (documento, actividad, encuesta), resuelto al listar. */
+    referenciaTitulo?: string;
     fecha: string;
     horario: string;
     timestamp: string;
