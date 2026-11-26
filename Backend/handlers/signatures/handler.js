@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../../lib/clients/dynamodb');
 const { success, error, created } = require('../../lib/utils/response');
 const { fechaHoraChile } = require('../../lib/utils/fechaChile');
@@ -15,6 +15,61 @@ const { PersonaService } = require('../../lib/services/PersonaService');
 const { conSesion, sesionPuede } = require('../../lib/auth/sesion');
 const { PERMISSIONS } = require('../../lib/permissions');
 const { normalizeRol } = require('../../lib/utils/validation');
+
+/**
+ * Las firmas hechas con `FirmaService.crear` (documentos, actividades,
+ * encuestas, registros) guardan solo `referenciaId`, no el título de lo
+ * firmado: el historial de la persona mostraba un guion. Se resuelve al
+ * listar, leyendo el título de cada referencia por lotes. Las firmas de
+ * solicitudes ya traen `requestTitulo`.
+ */
+const TABLAS_REFERENCIA = {
+    document: { tabla: () => DOCUMENTS_TABLE, clave: 'documentId' },
+    activity: { tabla: () => process.env.ACTIVITIES_TABLE || 'Activities', clave: 'activityId' },
+    survey: { tabla: () => process.env.SURVEYS_TABLE || 'Surveys', clave: 'surveyId' },
+};
+
+const conTituloDeReferencia = async (firmas, tenantId) => {
+    const pendientes = {};
+    for (const f of firmas) {
+        if (f.requestTitulo || !f.referenciaId) continue;
+        const def = TABLAS_REFERENCIA[f.referenciaTipo];
+        if (!def) continue;
+        (pendientes[f.referenciaTipo] ||= new Set()).add(f.referenciaId);
+    }
+
+    const titulos = {};
+    for (const [tipo, ids] of Object.entries(pendientes)) {
+        const { tabla, clave } = TABLAS_REFERENCIA[tipo];
+        const lista = [...ids];
+        for (let i = 0; i < lista.length; i += 100) {
+            let pedido = {
+                [tabla()]: {
+                    Keys: lista.slice(i, i + 100).map((id) => ({ [clave]: id })),
+                    ProjectionExpression: '#k, titulo, tenantId',
+                    ExpressionAttributeNames: { '#k': clave },
+                },
+            };
+            // Reintenta lo que DynamoDB deje sin procesar (pocas vueltas: es
+            // un adorno del listado, no debe trabarlo).
+            for (let vuelta = 0; vuelta < 3 && pedido && Object.keys(pedido).length; vuelta++) {
+                const r = await docClient.send(new BatchGetCommand({ RequestItems: pedido }));
+                for (const item of r.Responses?.[tabla()] || []) {
+                    // Solo títulos de la empresa de la sesión.
+                    if (item.tenantId && tenantId && item.tenantId !== tenantId) continue;
+                    if (item.titulo) titulos[`${tipo}#${item[clave]}`] = item.titulo;
+                }
+                pedido = r.UnprocessedKeys;
+            }
+        }
+    }
+
+    return firmas.map((f) => {
+        if (f.requestTitulo) return f;
+        const titulo = titulos[`${f.referenciaTipo}#${f.referenciaId}`] || f.metadata?.surveyTitulo;
+        return titulo ? { ...f, referenciaTitulo: titulo } : f;
+    });
+};
 
 /**
  * Firma de la empresa de la sesión, o null.
@@ -350,9 +405,15 @@ module.exports.getByWorker = async (event) => {
             })
         );
 
-        const signatures = soloDelTenant(result.Items, sesion).sort((a, b) =>
+        const delTenant = soloDelTenant(result.Items, sesion).sort((a, b) =>
             new Date(b.timestamp) - new Date(a.timestamp)
         );
+        // Sin título la fila no dice qué se firmó; si la lectura falla, la
+        // lista sale igual (con la etiqueta por tipo que pone el cliente).
+        const signatures = await conTituloDeReferencia(delTenant, sesion.tenantId).catch((e) => {
+            console.warn('No se pudieron resolver los títulos de las firmas:', e.message);
+            return delTenant;
+        });
 
         return success({
             personaId: inputId,

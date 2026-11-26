@@ -92,6 +92,38 @@ const getSigIcon = (sig: DigitalSignature) => {
     }
 };
 
+// Qué se firmó, para la fila del historial cuando la firma no trae título.
+const TIPO_FIRMA_LABEL: Record<string, string> = {
+    enrolamiento: 'Enrolamiento',
+    documento: 'Documento',
+    actividad: 'Actividad',
+    capacitacion: 'Capacitación',
+    encuesta: 'Encuesta',
+    CHARLA_5MIN: 'Charla de 5 minutos',
+    INDUCCION: 'Inducción',
+    ENTREGA_EPP: 'Entrega de EPP',
+    ART: 'Análisis de riesgo (ART)',
+    PROCEDIMIENTO: 'Procedimiento',
+    INSPECCION: 'Inspección',
+    REGLAMENTO: 'Reglamento interno',
+};
+
+const tipoFirmaLabel = (sig: DigitalSignature): string => {
+    const s = sig as any;
+    const tipo = s.requestTipo || s.tipoFirma || '';
+    return TIPO_FIRMA_LABEL[tipo] || (tipo ? tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase() : 'Firma');
+};
+
+// Detalle que acompaña al tipo: cómo se firmó, cuando no es la firma propia.
+const detalleFirma = (sig: DigitalSignature): string | null => {
+    const m = (sig as any).metadata || {};
+    if (m.modalidad === 'firma_asistida') return 'Firma asistida';
+    if (m.rolFirma === 'relator') return 'Como relator';
+    if (m.tipoRegistro === 'REGISTRO_AT_EP') return 'Registro AT/EP';
+    if (m.tipoRegistro === 'INVESTIGACION_ACCIDENTE') return 'Investigación de accidente';
+    return null;
+};
+
 export default function WorkerDetail() {
     const { rut } = useParams<{ rut: string }>();
     const navigate = useNavigate();
@@ -1288,10 +1320,16 @@ Generado por PrevencionApp
                                         {firmasVisibles.map((sig, idx) => {
                                             const s = sig as any;
                                             const fecha = s.fechaFirma || s.fecha;
+                                            const tipo = tipoFirmaLabel(sig);
+                                            const titulo = s.requestTitulo || s.referenciaTitulo || s.titulo || s.nombre;
+                                            const meta = [titulo ? tipo : null, detalleFirma(sig)].filter(Boolean).join(' · ');
                                             return (
-                                                <div key={s.firmaId || s.id || idx} className="pd-fila-lista">
+                                                <div key={s.signatureId || s.firmaId || s.id || idx} className="pd-fila-lista">
                                                     <span className="pd-tipo" aria-hidden="true">{getSigIcon(sig)}</span>
-                                                    <span className="pd-fila-texto"><span className="pd-fila-titulo">{s.requestTitulo || s.titulo || s.nombre || '—'}</span></span>
+                                                    <span className="pd-fila-texto">
+                                                        <span className="pd-fila-titulo">{titulo || tipo}</span>
+                                                        {meta && <span className="pd-fila-meta">{meta}</span>}
+                                                    </span>
                                                     <span className="pd-fecha">{fecha ? fechaCorta(fecha) : '—'}</span>
                                                     {sig.estado === 'valida'
                                                         ? <span className="pd-ok"><LuCircleCheck size={14} aria-hidden="true" /> Válida</span>
