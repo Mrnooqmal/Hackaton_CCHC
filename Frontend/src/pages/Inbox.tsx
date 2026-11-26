@@ -639,8 +639,11 @@ export default function Inbox() {
             // El detalle muestra "Responder ahora" si la tiene pendiente.
             case 'survey': return linkedEntity.id ? `/surveys/${linkedEntity.id}` : '/surveys';
             case 'activity': return '/activities';
-            // Deep-link al documento específico: abre su detalle (visualización + firmar).
-            case 'document': return `/documents?doc=${encodeURIComponent(linkedEntity.id)}`;
+            // Deep-link al documento: Mis firmas abre su vista previa. No había
+            // ruta /documents y el enlace caía en el inicio.
+            case 'document': return linkedEntity.id
+                ? `/my-signatures?doc=${encodeURIComponent(linkedEntity.id)}`
+                : '/my-signatures';
             case 'incident': return '/incidents';
             case 'signature-request': return '/my-signatures';
             default: return null;

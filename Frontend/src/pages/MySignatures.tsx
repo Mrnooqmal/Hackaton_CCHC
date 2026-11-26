@@ -435,19 +435,46 @@ export default function MySignatures() {
     // ── Vista previa real del documento (no una silueta decorativa): abre
     // el mismo DocumentPreviewModal que ya usa el Repositorio, apilado sobre
     // este modal (Modal.tsx ya soporta esa pila).
-    const [previewDoc, setPreviewDoc] = useState<{ nombre: string; fileKey: string; url: string | null } | null>(null);
+    const [previewDoc, setPreviewDoc] = useState<{ nombre: string; fileKey: string; url: string | null; documento?: DocumentoApi | null } | null>(null);
 
-    const abrirVistaPrevia = async (doc: DocumentoAdjunto) => {
-        setPreviewDoc({ nombre: doc.nombre, fileKey: doc.url, url: null });
+    const abrirVistaPrevia = async (doc: DocumentoAdjunto, documento: DocumentoApi | null = null) => {
+        setPreviewDoc({ nombre: doc.nombre, fileKey: doc.url, url: null, documento });
         try {
             const response = await uploadsApi.getDownloadUrl(doc.url);
             if (response.success && response.data) {
-                setPreviewDoc({ nombre: doc.nombre, fileKey: doc.url, url: response.data.downloadUrl });
+                setPreviewDoc({ nombre: doc.nombre, fileKey: doc.url, url: response.data.downloadUrl, documento });
             }
         } catch (err) {
             console.error('Error obteniendo la vista previa:', err);
         }
     };
+
+    // "Ver documento" desde una notificación llega como ?doc=<documentId>:
+    // se abre directo la vista previa, con la ficha del documento.
+    const docDeEnlace = new URLSearchParams(location.search).get('doc');
+    useEffect(() => {
+        if (!docDeEnlace) return;
+        navigate(location.pathname, { replace: true, state: location.state });
+        setActiveTab('pendientes');
+        (async () => {
+            try {
+                const res = await documentsApi.get(docDeEnlace);
+                const d = res.success ? res.data : null;
+                const fileKey = d && (d.s3Key || d.archivoUrl);
+                if (!d || !fileKey) {
+                    setError('No se pudo abrir el documento.');
+                    return;
+                }
+                abrirVistaPrevia(
+                    { nombre: d.archivoNombre || d.titulo || 'Documento', url: fileKey, tipo: '', tamaño: 0 },
+                    d,
+                );
+            } catch (err) {
+                console.error('Error abriendo el documento enlazado:', err);
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [docDeEnlace]);
 
     // DocPreviewCards vive fuera del componente: definida aquí adentro era un
     // componente nuevo en cada render, y cualquier cambio de estado (un PIN
@@ -859,6 +886,7 @@ export default function MySignatures() {
                 fileName={previewDoc?.nombre}
                 onDownload={() => previewDoc && downloadDocument(previewDoc.fileKey, previewDoc.nombre)}
                 fileKey={previewDoc?.fileKey ?? null}
+                documento={previewDoc?.documento ?? null}
             />
 
             <style>{`

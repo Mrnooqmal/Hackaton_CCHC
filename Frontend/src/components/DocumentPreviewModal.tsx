@@ -4,6 +4,7 @@ import { FiDownload, FiFile, FiVolume2 } from 'react-icons/fi';
 import type { Document } from '../api/documents.api';
 import { ultimaDifusion, descripcionDifusion } from '../utils/difusion';
 import LecturaEnVoz from './LecturaEnVoz';
+import VisorPdf from './VisorPdf';
 import { FUNCIONES } from '../config/funciones';
 
 interface DocumentPreviewModalProps {
@@ -41,6 +42,18 @@ function firmasPendientes(doc?: DocumentPreviewModalProps['documento']): { firma
 const getExt = (name?: string) => (name?.split('?')[0].split('.').pop() || '').toLowerCase();
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+
+/**
+ * Si el navegador muestra PDFs dentro de un <iframe>. Chrome en Android no
+ * (`pdfViewerEnabled` es false) y Safari en iOS solo la primera página: en
+ * pantallas táctiles se dibuja con PDF.js.
+ */
+const navegadorMuestraPdf = (): boolean => {
+    if (typeof window === 'undefined') return true;
+    const nav = navigator as Navigator & { pdfViewerEnabled?: boolean };
+    if (nav.pdfViewerEnabled === false) return false;
+    return !window.matchMedia?.('(pointer: coarse)').matches;
+};
 
 export default function DocumentPreviewModal({
     isOpen, onClose, url, fileName, onDownload, documento = null, fileKey = null,
@@ -117,6 +130,8 @@ export default function DocumentPreviewModal({
                     </div>
                 ) : isImage ? (
                     <img src={url} alt={fileName || 'documento'} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                ) : !navegadorMuestraPdf() ? (
+                    <VisorPdf url={url} nombre={fileName} />
                 ) : (
                     <iframe
                         src={url}

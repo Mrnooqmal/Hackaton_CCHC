@@ -24,6 +24,7 @@
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.7",
     "minisearch": "^7.2.0",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
