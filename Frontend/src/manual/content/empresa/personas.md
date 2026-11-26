@@ -88,6 +88,11 @@ pestañas:
 
 Arriba están **Editar** y **Exportar ficha**.
 
+En el onboarding, quien puede actualizarlo ve **Subir** o **Reemplazar** junto a los documentos
+que la persona tiene asignados y que nadie ha firmado. Un ítem **Sin documento asignado** no admite
+archivo: los documentos dependen de la obra, el cargo y el rol de la persona. Si un archivo o la
+foto no se pueden guardar, la ficha muestra el motivo.
+
 ![Ficha de una persona](/img/personas/ficha.png)
 
 :::: solo persona.vigilancia_salud
