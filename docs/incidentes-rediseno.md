@@ -236,3 +236,29 @@ Registradas como D-43 en `docs/gobernanza-y-seguridad-de-datos.md`.
 - Plazos internos para clasificar e investigar: no son normativos.
 - Indicadores por sexo: tocan `RegistroService`, compartido con los ítems 46 y 47. Acordarlo antes de cambiarlo.
 - Qué criterios marcan un incidente como de alto potencial: el artefacto propone las dos preguntas de la guía de Mutual.
+
+## 11. Para retomar (estado al 26 de noviembre)
+
+**Dónde va.** El pull request #10 está abierto hacia `pruebas`, con las correcciones de D-43 y sin aprobación. Sobre `4cee3f2` pasaban: backend 1782, frontend 110, build y Playwright 73. Las correcciones que salieron de la última revisión independiente se probaron solo con pruebas automáticas, no contra dev.
+
+**Pendiente.**
+- Aprobación de otra persona.
+- Descripción del pull request: falta mencionar D-43 y adjuntar capturas.
+- Integrar lo que `pruebas` haya avanzado antes de mezclar.
+- Base de conocimiento (`okf/`, rama `docs/okf`): agregar D-43 y la anulación de papeles cuando esa rama tenga estos documentos.
+- Coordinar con Adrean la fase ACTUAR y los indicadores de `RegistroService`.
+- Sin verificar: las DIAT de 2025 y 2026 con la clave antigua (en dev no hay ninguna), el modo sin señal y el tema oscuro.
+
+**Por decidir.**
+- Si falla la escritura del informe en S3, el caso se cierra igual y el informe cuenta como cumplido sin archivo. Propuesta: no cerrar el caso. Toca evidencia firmada.
+- Para que un trabajador sea responsable de un hallazgo hay que darle `incidentes.historial`, que abre también las DIAT y DIEP de toda la empresa. Confirmar que es lo que se quiere.
+
+**Levantar el entorno en otro computador.**
+1. `git switch incidentes-rediseño` y `npm ci` en `Backend/` y en `Frontend/`.
+2. Pruebas: `npm test` en las dos carpetas y `npm run build` en `Frontend/`.
+3. Playwright: `VITE_API_URL=http://localhost:3001 npm run test:e2e` en `Frontend/` (antes, una vez, `./node_modules/.bin/playwright install chromium`).
+4. Backend local contra dev, con credenciales de AWS de la cuenta del proyecto. El servidor se sacó del repositorio a propósito y no debe volver a él: recupéralo fuera de la carpeta con `git show b42d520^:Backend/scripts/servidor-local.js > ../servidor-local.js`, cambia en esa copia `RAIZ` por la ruta absoluta de `Backend/` y córrela con `node`. Escucha en el puerto 3001.
+5. Frontend contra ese backend: `VITE_API_URL=http://localhost:3001 npm run dev` en `Frontend/`.
+6. Pruebas manuales: cuentas de prevencionista, trabajador y supervisor en la «Obra QA Providencia» de dev. Los usuarios, contraseñas y PIN no van en el repositorio.
+
+Cada página tarda unos segundos porque cada llamada va a AWS, y el primer ingreso puede dar 504 por el arranque en frío: se repite.
