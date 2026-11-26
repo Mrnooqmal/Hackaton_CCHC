@@ -201,6 +201,28 @@ class EventBus {
     }
 
     /**
+     * Recordatorio de una firma que ya estaba pendiente ("Recordar"). Asunto
+     * propio para que se distinga de la asignación original (H-11). La clave de
+     * idempotencia es por evento: cada "Recordar" es un aviso nuevo.
+     */
+    async onDocumentReminder(data, ctx = {}) {
+        const { documentId, userIds, assignedBy, creatorName, documentName } = data;
+        if (!userIds || userIds.length === 0) return;
+        await this.inboxRepo.sendMessage({
+            senderId: assignedBy || 'system',
+            senderName: creatorName || 'Gestor SST',
+            senderRol: 'system',
+            recipientIds: userIds,
+            type: 'task',
+            priority: 'normal',
+            subject: `Recordatorio: firma pendiente de ${documentName}`,
+            content: `Te recordamos que tienes pendiente la firma del documento "${documentName}". Puedes firmarlo desde "Mis firmas".`,
+            linkedEntity: { type: 'document', id: documentId },
+            idempotencia: idem(ctx, 'document.reminder'),
+        });
+    }
+
+    /**
      * Send a notification to inbox for activity creation
      */
     async onActivityCreated(data, ctx = {}) {
@@ -488,6 +510,7 @@ const eventBus = new EventBus();
 
 // Register default listeners
 eventBus.on('document.assigned', (data, ctx) => eventBus.onDocumentAssigned(data, ctx));
+eventBus.on('document.reminder', (data, ctx) => eventBus.onDocumentReminder(data, ctx));
 eventBus.on('activity.created', (data, ctx) => eventBus.onActivityCreated(data, ctx));
 eventBus.on('survey.assigned', (data, ctx) => eventBus.onSurveyAssigned(data, ctx));
 eventBus.on('signature.requested', (data, ctx) => eventBus.onSignatureRequested(data, ctx));

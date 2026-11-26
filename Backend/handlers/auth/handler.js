@@ -8,6 +8,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
+const { problemaPassword } = require('../../lib/utils/politicaPassword');
 const { PutCommand, GetCommand, ScanCommand, UpdateCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -382,9 +383,8 @@ module.exports.changePassword = async (event) => {
         if (passwordNuevo !== confirmarPassword) {
             return error('Las contraseñas no coinciden');
         }
-        if (passwordNuevo.length < 6) {
-            return error('La contraseña debe tener al menos 6 caracteres');
-        }
+        const problemaNueva = problemaPassword(passwordNuevo);
+        if (problemaNueva) return error(problemaNueva);
 
         const persona = await personaService.getById(personaId);
         if (!persona) return error('Usuario no encontrado', 404);
@@ -569,9 +569,8 @@ module.exports.resetPassword = async (event) => {
         if (passwordNuevo !== confirmarPassword) {
             return error('Las contraseñas no coinciden');
         }
-        if (passwordNuevo.length < 6) {
-            return error('La contraseña debe tener al menos 6 caracteres');
-        }
+        const problemaNueva = problemaPassword(passwordNuevo);
+        if (problemaNueva) return error(problemaNueva);
 
         // Item crudo (no via modelo): el constructor de Persona no preserva
         // resetTokenHash/resetTokenExpiry. Con el índice en `KEYS_ONLY`, el ítem se

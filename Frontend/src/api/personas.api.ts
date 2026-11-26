@@ -104,8 +104,10 @@ export const personasApi = {
             body: JSON.stringify(data),
         }),
 
-    list: (tenantId: string, filters?: { rol?: string; estado?: string; obraId?: string; incluirBloqueadas?: boolean }) => {
+    list: (tenantId: string, filters?: { rol?: string; estado?: string; obraId?: string; incluirBloqueadas?: boolean; sinSalud?: boolean }) => {
         const params = new URLSearchParams({ tenantId });
+        // Sin datos de salud: para pantallas que solo eligen o nombran personas.
+        if (filters?.sinSalud) params.append('sinSalud', '1');
         // Solo lo respeta el backend para quien gestiona derechos de los titulares.
         if (filters?.incluirBloqueadas) params.append('incluirBloqueadas', '1');
         if (filters?.rol) params.append('rol', filters.rol);

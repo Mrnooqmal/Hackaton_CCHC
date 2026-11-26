@@ -32,6 +32,9 @@ type Estado =
 const CADA_MS = 3000;
 // ~5 minutos: un escaneado largo pasa por OCR antes de la voz.
 const MAX_CONSULTAS = 100;
+// Fallos seguidos (sin señal o error del servidor) antes de avisar. Antes se
+// reintentaba en silencio las 100 veces y quedaba "Preparando audio…" sin fin.
+const MAX_FALLOS_SEGUIDOS = 3;
 
 const VELOCIDADES = [1, 1.25, 1.5, 2, 0.75];
 const velocidadTexto = (v: number) => `${String(v).replace('.', ',')}×`;
@@ -130,14 +133,23 @@ export default function LecturaEnVoz({ fileKey, compacto = false, variante = 'ta
     const escuchar = async () => {
         activa?.alRevisar();
         setEstado({ tipo: 'preparando' });
+        let fallos = 0;
         for (let i = 0; i < MAX_CONSULTAS; i++) {
             const r = await uploadsApi.lectura(fileKey).catch(() => null);
             if (!vigente.current) return;
             if (r?.success && r.data) {
+                fallos = 0;
                 if (r.data.estado === 'listo') return setEstado({ tipo: 'listo', audioUrl: r.data.audioUrl });
                 if (r.data.estado === 'no_disponible') return setEstado({ tipo: 'no_disponible', motivo: r.data.motivo });
             } else if (r && !r.reintentable && !r.sinRed) {
                 return setEstado({ tipo: 'error', mensaje: r.error || 'No se pudo preparar la lectura del documento.' });
+            } else if (++fallos >= MAX_FALLOS_SEGUIDOS) {
+                return setEstado({
+                    tipo: 'error',
+                    mensaje: r?.sinRed
+                        ? 'No pudimos conectarnos para preparar el audio. Revisa la conexión y vuelve a intentarlo.'
+                        : (r?.error || 'No se pudo preparar la lectura del documento.'),
+                });
             }
             await new Promise((ok) => setTimeout(ok, CADA_MS));
             if (!vigente.current) return;

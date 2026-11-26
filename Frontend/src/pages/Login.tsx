@@ -15,7 +15,17 @@ const ROL_LABEL: Record<string, string> = {
 };
 
 export default function Login() {
-    const { login, completarLoginConTenant, error: authError } = useAuth();
+    const { login, completarLoginConTenant } = useAuth();
+
+    // Un fallo de red o del servidor no es "credenciales inválidas" (H-18). Antes
+    // se leía el error del contexto, que en este render todavía no se había
+    // actualizado, y siempre caía en el texto por omisión.
+    const mensajeDeIngreso = (r: { error?: string; sinRed?: boolean; reintentable?: boolean }, porOmision: string) =>
+        r.sinRed
+            ? 'No pudimos conectarnos con el servidor. Revisa tu conexión e inténtalo de nuevo.'
+            : r.reintentable
+                ? (r.error || 'El servidor no pudo responder. Vuelve a intentarlo en un momento.')
+                : (r.error || porOmision);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -37,9 +47,17 @@ export default function Login() {
     // completar el login (sin volver a pedir la contraseña).
     const [seleccion, setSeleccion] = useState<{ selectionToken: string; opciones: TenantOpcion[] } | null>(null);
 
-    const from = (location.state as any)?.from?.pathname || '/';
+    const pedido = (location.state as any)?.from?.pathname || '/';
+    const de = ((location.state as any)?.de as string | null | undefined) || null;
 
     const continuarPostLogin = (result: { requiresChangePassword?: boolean; requiresEnrollment?: boolean }) => {
+        // La ruta pendiente es de quien tenía la sesión: si entra otra persona
+        // (equipo compartido de la obra), va al inicio y no a la pantalla del
+        // anterior, que quizás no puede ver (H-17).
+        let quien: string | null = null;
+        try { quien = localStorage.getItem('persona_id'); } catch { /* sin almacenamiento */ }
+        const from = de && quien && de !== quien ? '/' : pedido;
+        try { if (quien) localStorage.setItem('ultima_persona', quien); } catch { /* sin almacenamiento */ }
         if (result.requiresChangePassword) {
             navigate('/change-password');
         } else if (result.requiresEnrollment) {
@@ -66,7 +84,7 @@ export default function Login() {
             }
             continuarPostLogin(result);
         } else {
-            setError(authError || 'Credenciales inválidas');
+            setError(mensajeDeIngreso(result, 'Credenciales inválidas'));
             setLoading(false);
         }
     };
@@ -79,7 +97,7 @@ export default function Login() {
         if (result.success) {
             continuarPostLogin(result);
         } else {
-            setError(authError || 'No se pudo completar el ingreso. Intenta nuevamente.');
+            setError(mensajeDeIngreso(result, 'No se pudo completar el ingreso. Intenta nuevamente.'));
             setSeleccion(null);
             setLoading(false);
         }

@@ -95,7 +95,7 @@ test('el estado de señal es uno solo: lo marca cualquier respuesta y lo quita u
         delete global.navigator;
     }
     const cliente = leer('api', 'client.ts');
-    const i = cliente.indexOf('const response = await fetch(`${API_BASE_URL}${finalEndpoint}`');
+    const i = cliente.indexOf('response = await fetch(url');
     assert.ok(i > 0 && cliente.indexOf('marcarSenal(true);', i) > i, 'cualquier respuesta = hay señal');
     assert.match(cliente, /if \(esErrorDeRed\(error\)\) marcarSenal\(false\);/);
     const hook = leer('hooks', 'useOfflineSignature.ts');

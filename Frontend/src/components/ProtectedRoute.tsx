@@ -26,7 +26,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
     if (!user) {
         // Redirigir a login pero guardar la ubicación a la que intentaba acceder
-        return <Navigate to="/login" state={{ from: location }} replace />;
+        // `de`: quién tenía la sesión. En un equipo compartido el siguiente en
+        // entrar no debe caer en la ruta del anterior (H-17); ver Login.
+        let de: string | null = null;
+        try { de = localStorage.getItem('ultima_persona'); } catch { /* sin almacenamiento */ }
+        return <Navigate to="/login" state={{ from: location, de }} replace />;
     }
 
     // 1. Verificar si requiere cambio de contraseña (temporal)

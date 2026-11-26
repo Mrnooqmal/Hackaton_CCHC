@@ -114,3 +114,12 @@ export const inboxApi = {
         }>(`/inbox/recipients?${params}`);
     },
 };
+
+/**
+ * La bandeja cambió (se leyó, archivó o borró un mensaje): la campana del
+ * encabezado recuenta al instante en vez de esperar al próximo ciclo (H-16).
+ */
+export const EVENTO_BANDEJA_CAMBIO = 'bandejaCambio';
+export const avisarBandejaCambio = () => {
+    try { window.dispatchEvent(new CustomEvent(EVENTO_BANDEJA_CAMBIO)); } catch { /* sin window */ }
+};

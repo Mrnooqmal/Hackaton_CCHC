@@ -1662,13 +1662,20 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
         // GET /personas — Listar personas del tenant
         if (method === 'GET' && !personaId) {
             if (!sesion) return sesionRes.respuesta;
-            const { rol, estado, obraId, incluirBloqueadas } = event.queryStringParameters || {};
+            const { rol, estado, obraId, incluirBloqueadas, sinSalud } = event.queryStringParameters || {};
             // Quien gestiona los derechos de los titulares o las supresiones
             // necesita ver también a las personas con el tratamiento bloqueado
             // (para registrar, responder o aprobar lo que les concierne). Para el resto siguen fuera: es tratamiento nuevo.
             const verBloqueadas = incluirBloqueadas === '1'
                 && (puede(PERMISSIONS.EMPRESA_DERECHOS_TITULARES) || puede(PERMISSIONS.EMPRESA_SUPRESION_DATOS));
-            const personas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: verBloqueadas });
+            // Se leen todas y se separan acá para poder decir CUÁNTAS quedaron
+            // fuera por un bloqueo, sin decir quiénes: antes la persona
+            // desaparecía del equipo sin aviso y la pantalla decía que "todos ya
+            // están" (H-13). El número no identifica a nadie.
+            const todas = await personaService.listByTenant(tenantId, { rol, estado, obraId, incluirBloqueadas: true });
+            const estaBloqueada = (p) => Array.isArray(p.solicitudesBloqueo) && p.solicitudesBloqueo.length > 0;
+            const personas = verBloqueadas ? todas : todas.filter((p) => !estaBloqueada(p));
+            const bloqueadas = verBloqueadas ? 0 : todas.length - personas.length;
 
             // Sin `personas.ver`, el listado se recorta a lo necesario para elegir
             // a alguien (reportar un hallazgo, ver quién está citado a una
@@ -1688,7 +1695,7 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
                 await anotarLectura('datos.lectura_directorio', {
                     detalle: { personas: directorio.length, alcance: 'recortado', filtros: { rol, estado, obraId } },
                 });
-                return success({ total: directorio.length, personas: directorio.map(listadoMinimo) });
+                return success({ total: directorio.length, bloqueadas, personas: directorio.map(listadoMinimo) });
             }
 
             // Resuelve nombre/tipo del rol desde la def. del tenant para que el
@@ -1702,8 +1709,12 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             });
             return success({
                 total: personas.length,
+                bloqueadas,
                 personas: personas.map(p => {
-                    const safe = fichaVisible(p);
+                    // `sinSalud=1`: la pantalla solo necesita nombres y RUT (p. ej.
+                    // el panel de derechos de los titulares). Sin esto, cada carga
+                    // entregaba —y auditaba— la salud de todo el personal (H-08).
+                    const safe = sinSalud === '1' ? p.toSafeFormat({ incluirSalud: false }) : fichaVisible(p);
                     const r = resolverRol(p.rol, tenantDef);
                     return {
                         ...safe,
@@ -1733,8 +1744,14 @@ module.exports.personasHandler = conAuditoriaSalud(async (event) => {
             const rut = event.queryStringParameters?.rut;
             if (!rut) return error('El parámetro rut es requerido', 400);
 
+            // `valido` es el dígito verificador y `existe` si ya está en la
+            // empresa: son dos avisos distintos (antes `valido` era `!existe`,
+            // y un RUT duplicado se mostraba como "RUT inválido", H-03).
+            if (!validateRut(rut).valid) {
+                return success({ existe: false, valido: false, mensaje: 'El RUT no es válido: revisa el dígito verificador.' });
+            }
             const existente = await personaService.getByRut(tenantId, rut);
-            return success({ existe: !!existente, valido: !existente,
+            return success({ existe: !!existente, valido: true,
                 mensaje: existente ? `El RUT ${rut} ya está registrado en esta empresa.` : null });
         }
 

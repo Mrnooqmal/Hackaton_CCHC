@@ -125,7 +125,7 @@ export const Obras: React.FC = () => {
               <button
                 type="button"
                 title="Copiar código de obra"
-                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.codigo || ''); }}
+                onClick={e => { e.stopPropagation(); void navigator.clipboard?.writeText(o.codigo || '').catch(() => undefined); }}
                 style={{ background: 'none', border: '1px solid var(--surface-border)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
               >
                 <FiCopy size={9} />
@@ -137,7 +137,7 @@ export const Obras: React.FC = () => {
               <button
                 type="button"
                 title="Copiar ID interno (esta obra no tiene código)"
-                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.obraId || ''); }}
+                onClick={e => { e.stopPropagation(); void navigator.clipboard?.writeText(o.obraId || '').catch(() => undefined); }}
                 style={{ background: 'none', border: '1px solid var(--surface-border)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
               >
                 <FiCopy size={9} />
@@ -252,7 +252,7 @@ export const Obras: React.FC = () => {
                   <button
                     type="button"
                     title="Copiar código de obra"
-                    onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(obra.codigo || ''); }}
+                    onClick={e => { e.stopPropagation(); void navigator.clipboard?.writeText(obra.codigo || '').catch(() => undefined); }}
                     style={{ background: 'none', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
                   >
                     <FiCopy size={9} />
@@ -264,7 +264,7 @@ export const Obras: React.FC = () => {
                   <button
                     type="button"
                     title="Copiar ID interno (esta obra no tiene código)"
-                    onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(obra.obraId || ''); }}
+                    onClick={e => { e.stopPropagation(); void navigator.clipboard?.writeText(obra.obraId || '').catch(() => undefined); }}
                     style={{ background: 'none', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 4, padding: '1px 4px', cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}
                   >
                     <FiCopy size={9} />

@@ -43,7 +43,7 @@ RUT podría entrar como tú.
 
 Al entrar con los cuatro dígitos o con la contraseña temporal aparece **Crea tu contraseña**:
 
-1. Escribe tu **Nueva contraseña** (mínimo 6 caracteres).
+1. Escribe tu **Nueva contraseña** (mínimo 8 caracteres, con letras y números).
 2. Repítela en **Confirmar nueva contraseña**.
 3. Toca **Cambiar contraseña**.
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { NIVEL_ESCOLAR_OPTIONS, RELACION_OPTIONS, nivelEscolarLabel, relacionLabel, conValorActual } from '../utils/datosPersona';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
     LuUser,
@@ -992,7 +993,6 @@ Generado por PrevencionApp
                                             {[
                                                 { k: 'email', l: 'Correo', type: 'email' },
                                                 { k: 'fechaNacimiento', l: 'Fecha de nacimiento', type: 'date' },
-                                                { k: 'nivelEscolar', l: 'Nivel escolar', type: 'text' },
                                             ].map((f, i) => (
                                                 <label key={f.k} className="pd-input" style={entrada(i + 4)}>
                                                     <span className="pd-label">{f.l}</span>
@@ -1001,6 +1001,12 @@ Generado por PrevencionApp
                                                         onChange={(e) => setEditForm({ ...editForm, [f.k]: e.target.value })} />
                                                 </label>
                                             ))}
+                                            <div className="pd-input" style={entrada(6)}>
+                                                <span className="pd-label">Nivel escolar</span>
+                                                <Select ariaLabel="Nivel escolar" value={editForm.nivelEscolar}
+                                                    onChange={(v) => setEditForm({ ...editForm, nivelEscolar: v })}
+                                                    options={conValorActual(NIVEL_ESCOLAR_OPTIONS, editForm.nivelEscolar)} />
+                                            </div>
                                         </div>
                                         <div className="pd-rejilla pd-solo-lectura">
                                             <Campo label="Rol de sistema" value={`${rolLabel(worker.rol)} · se cambia en Roles`} />
@@ -1011,7 +1017,7 @@ Generado por PrevencionApp
                                     <div className="pd-rejilla">
                                         <Campo label="Correo" value={worker.email} vacio="Sin correo" />
                                         <Campo label="Fecha de nacimiento" value={fechaCorta(w.fechaNacimiento)} />
-                                        <Campo label="Nivel escolar" value={w.nivelEscolar} />
+                                        <Campo label="Nivel escolar" value={nivelEscolarLabel(w.nivelEscolar)} />
                                         <Campo label="Rol de sistema" value={rolLabel(worker.rol)} />
                                         <Campo label="Cursos" value={cursosLista.length > 0 && <span className="pd-chips">{cursosLista.map((c, i) => <span key={i} className="pd-chip">{c}</span>)}</span>} vacio="Sin cursos registrados" />
                                     </div>
@@ -1025,7 +1031,6 @@ Generado por PrevencionApp
                                         {[
                                             { k: 'contactoNombre', l: 'Nombre' },
                                             { k: 'contactoTelefono', l: 'Teléfono' },
-                                            { k: 'contactoRelacion', l: 'Relación' },
                                         ].map((f, i) => (
                                             <label key={f.k} className="pd-input" style={entrada(i + 7)}>
                                                 <span className="pd-label">{f.l}</span>
@@ -1033,12 +1038,18 @@ Generado por PrevencionApp
                                                     onChange={(e) => setEditForm({ ...editForm, [f.k]: e.target.value })} />
                                             </label>
                                         ))}
+                                        <div className="pd-input" style={entrada(9)}>
+                                            <span className="pd-label">Relación</span>
+                                            <Select ariaLabel="Relación" value={editForm.contactoRelacion}
+                                                onChange={(v) => setEditForm({ ...editForm, contactoRelacion: v })}
+                                                options={conValorActual(RELACION_OPTIONS, editForm.contactoRelacion)} />
+                                        </div>
                                     </div>
                                 ) : (ce.nombre || ce.telefono || ce.relacion) ? (
                                     <div className="pd-columna">
                                         <Campo label="Nombre" value={ce.nombre} />
                                         <Campo label="Teléfono" value={ce.telefono} />
-                                        <Campo label="Relación" value={ce.relacion} />
+                                        <Campo label="Relación" value={relacionLabel(ce.relacion)} />
                                     </div>
                                 ) : (
                                     <p className="pd-vacio-linea">Sin contacto de emergencia registrado.</p>

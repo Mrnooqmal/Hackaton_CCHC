@@ -87,7 +87,7 @@ export default function SolicitudesTitularesPanel({ puedeSuprimir = false }: { p
         try {
             const [s, p] = await Promise.all([
                 gobernanzaApi.listar(filtro === 'todas' ? undefined : filtro),
-                personasApi.list(tenantId, { incluirBloqueadas: true }),
+                personasApi.list(tenantId, { incluirBloqueadas: true, sinSalud: true }),
             ]);
             if (s.success && s.data) setSolicitudes(s.data.solicitudes);
             else setError(s.error || 'No se pudieron cargar las solicitudes.');

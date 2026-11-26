@@ -77,10 +77,13 @@ async function escribir(event, eventos, ahora = new Date()) {
     const s = sesionDe(event);
     const en = ahora.toISOString();
     const juntar = (campo) => [...new Set(eventos.flatMap((e) => e[campo]))];
-    const item = {
+    const base = {
         tenantId: s.tenantId || 'sin-empresa',
         sk: `${en}#${crypto.randomUUID()}`,
         en,
+        // `listar` le pone esta categoría al leer; se guarda para que el sello
+        // cubra el mismo registro que después se verifica.
+        categoria: 'salud',
         actorId: s.personaId || 'desconocido',
         actorRol: s.rol,
         ip: event?.requestContext?.http?.sourceIp || null,
@@ -92,6 +95,16 @@ async function escribir(event, eventos, ahora = new Date()) {
         documentos: juntar('documentos'),
         claves: juntar('claves'),
     };
+    // Sellado igual que el resto de la auditoría (H-08): antes estos registros
+    // salían como "Sin sello (anterior)" aunque fueran de hoy. Si la llave del
+    // sello no está disponible se registra igual, sin sello: lo que no puede
+    // faltar es el registro (fail-closed), no su sello. El fallo queda medido.
+    let item = base;
+    try {
+        item = await require('./auditoria').sellar(base);
+    } catch (err) {
+        registrarFallo('auditoria.sello_salud', err, {});
+    }
     await docClient.send(new PutCommand({
         TableName: process.env.AUDITORIA_ACCESOS_TABLE,
         Item: item,

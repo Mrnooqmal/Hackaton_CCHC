@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { rutValido } from '../utils/rut';
+import { NIVEL_ESCOLAR_OPTIONS, RELACION_OPTIONS } from '../utils/datosPersona';
 import { useNavigate } from 'react-router-dom';
 import { personasApi } from '../api/personas.api';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
@@ -83,27 +85,6 @@ function PhoneField({ value, onChange, label }: { value: string; onChange: (v: s
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-const NIVEL_ESCOLAR_OPTIONS = [
-    { value: '', label: 'Sin especificar' },
-    { value: 'basica_incompleta', label: 'Básica incompleta' },
-    { value: 'basica_completa', label: 'Básica completa' },
-    { value: 'media_incompleta', label: 'Media incompleta' },
-    { value: 'media_completa', label: 'Media completa' },
-    { value: 'tecnica', label: 'Técnica / CFT / IP' },
-    { value: 'universitaria', label: 'Universitaria' },
-    { value: 'postgrado', label: 'Postgrado' },
-];
-
-const RELACION_OPTIONS = [
-    { value: '', label: 'Sin especificar' },
-    { value: 'conyuge', label: 'Cónyuge / pareja' },
-    { value: 'padre_madre', label: 'Padre / madre' },
-    { value: 'hijo_hija', label: 'Hijo / hija' },
-    { value: 'hermano_hermana', label: 'Hermano / hermana' },
-    { value: 'amigo', label: 'Amigo / amiga' },
-    { value: 'otro', label: 'Otro' },
-];
-
 const INITIAL_FORM = {
     rut: '',
     nombre: '',
@@ -177,10 +158,11 @@ export default function PersonaNueva() {
 
     const handleRutBlur = async () => {
         if (!form.rut) { setRutError(''); return; }
+        if (!rutValido(form.rut)) { setRutError('RUT inválido: revisa el dígito verificador.'); return; }
         try {
             const res = await personasApi.validateRut(form.rut, tenantId);
-            if (!res.success || !res.data) return;
-            if (!res.data.valido) { setRutError('RUT inválido.'); return; }
+            if (!res.success || !res.data) { setRutError(''); return; }
+            if (!res.data.valido) { setRutError('RUT inválido: revisa el dígito verificador.'); return; }
             if (res.data.existe) { setRutError('Este RUT ya está registrado en la empresa.'); return; }
             setRutError('');
         } catch { setRutError(''); }
@@ -376,7 +358,7 @@ export default function PersonaNueva() {
                             className={`form-input${rutError ? ' form-input--error' : ''}`}
                             name="rut"
                             value={form.rut}
-                            onChange={e => setForm(prev => ({ ...prev, rut: rutFormat(e.target.value) }))}
+                            onChange={e => { setRutError(''); setForm(prev => ({ ...prev, rut: rutFormat(e.target.value) })); }}
                             onBlur={handleRutBlur}
                             placeholder="12.345.678-9"
                             autoComplete="off"

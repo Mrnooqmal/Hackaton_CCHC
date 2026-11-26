@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { mensajeDeError } from '../../api/client';
+import { useToast } from '../../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import {
     LuArrowRight, LuDownload, LuEye, LuFilePen, LuFileText, LuInfo, LuSearch, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers, LuX,
@@ -97,6 +98,7 @@ export default function RepositorioDs44({
     tenantId, ambito, obraId = null, onVerDocumento, onDescargarDocumento,
 }: RepositorioDs44Props) {
     const navigate = useNavigate();
+    const { toast } = useToast();
     const [data, setData] = useState<CompletitudAmbito | null>(null);
     const [documentos, setDocumentos] = useState<DocRepo[]>([]);
     const [cargando, setCargando] = useState(true);
@@ -250,6 +252,11 @@ export default function RepositorioDs44({
         try {
             const res = await documentsApi.assign(documentId, { workerIds: personaIds, personaIds, notificar: true });
             if (!res.success) throw new Error(res.error || 'No se pudo solicitar la firma.');
+            const recordados = res.data?.recordados || 0;
+            const nuevos = res.data?.asignaciones?.length || 0;
+            toast.success(recordados > 0 && nuevos === 0
+                ? (recordados === 1 ? 'Recordatorio enviado. Le llegó a su bandeja.' : `Recordatorio enviado a ${recordados} personas.`)
+                : 'Firma solicitada. Le llegó a "Mis firmas" y a su bandeja.');
             await cargar(true);
         } catch (e) {
             alert(mensajeDeError(e, 'No se pudo solicitar la firma.'));

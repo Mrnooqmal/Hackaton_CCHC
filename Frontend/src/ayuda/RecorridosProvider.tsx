@@ -112,24 +112,42 @@ export default function RecorridosProvider({ children }: { children: ReactNode }
 
     // Una lectura por sesión. Lo que quedó en la cola local se fusiona encima:
     // es más nuevo que lo que tiene el servidor.
+    //
+    // Si falla, se reintenta (H-05): en el primer ingreso la sesión empieza con
+    // la contraseña provisional y el servidor responde 403 a esta ruta; aun
+    // después de cambiarla, el autorizador guarda ese estado hasta 60 s. Sin
+    // reintento el progreso quedaba "sin cargar" y ningún recorrido se lanzaba
+    // hasta recargar. Mientras la contraseña siga provisional ni se intenta, y al
+    // cambiarla (`passwordTemporal` pasa a false) se lee de nuevo.
+    const primerIngreso = Boolean((user as { passwordTemporal?: boolean } | null)?.passwordTemporal);
     useEffect(() => {
         setCargado(false);
         setProgreso(new Map());
         setActivo(null);
-        if (!quien) return;
+        if (!quien || primerIngreso) return;
         let vigente = true;
-        void leerProgreso().then((r) => {
-            if (!vigente || !r) return;
-            const mapa = new Map<string, EntradaProgreso>();
-            for (const p of r.progreso) mapa.set(p.recorridoId, { version: p.version, estado: p.estado, ultimoPaso: p.ultimoPaso, cierres: p.cierres });
-            for (const [id, e] of Object.entries(pendientesDe(localStorage, quien))) mapa.set(id, fusionar(mapa.get(id) || null, e).progreso);
-            setProgreso(mapa);
-            setRegistrar(r.registrar);
-            setCargado(true);
-            void vaciarCola();
-        });
-        return () => { vigente = false; };
-    }, [quien, vaciarCola]);
+        let intento = 0;
+        let t: number | undefined;
+        const leer = () => {
+            void leerProgreso().then((r) => {
+                if (!vigente) return;
+                if (!r) {
+                    // 5 s, 10 s, 20 s, 40 s, 60 s… hasta 8 intentos (~6 min).
+                    if (++intento <= 8) t = window.setTimeout(leer, Math.min(60_000, 5_000 * 2 ** (intento - 1)));
+                    return;
+                }
+                const mapa = new Map<string, EntradaProgreso>();
+                for (const p of r.progreso) mapa.set(p.recorridoId, { version: p.version, estado: p.estado, ultimoPaso: p.ultimoPaso, cierres: p.cierres });
+                for (const [id, e] of Object.entries(pendientesDe(localStorage, quien))) mapa.set(id, fusionar(mapa.get(id) || null, e).progreso);
+                setProgreso(mapa);
+                setRegistrar(r.registrar);
+                setCargado(true);
+                void vaciarCola();
+            });
+        };
+        leer();
+        return () => { vigente = false; window.clearTimeout(t); };
+    }, [quien, primerIngreso, vaciarCola]);
 
     useEffect(() => {
         const alVolver = () => { void vaciarCola(); };

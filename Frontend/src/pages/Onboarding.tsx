@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { passwordCumple, requisitosPassword } from '../utils/politicaPassword';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { onboardingApi } from '../api/onboarding.api';
 import type { LicenciaValida, DisponibilidadEmpresa } from '../api/onboarding.api';
@@ -55,8 +56,8 @@ const rutValido = (rut: string): boolean => {
 
 // La misma política que aplica el servidor. Repetirla acá no la reemplaza: sirve
 // para no hacer viajar un formulario que ya se sabe que va a ser rechazado.
-const MIN_PASSWORD = 8;
-const passwordOk = (p: string) => p.length >= MIN_PASSWORD && /[a-zA-Z]/.test(p) && /[0-9]/.test(p);
+// Misma política que el cambio y el restablecimiento (H-21).
+const passwordOk = passwordCumple;
 
 // Quien administra la empresa firma por ella: tiene que ser mayor de edad
 // (el servidor aplica la misma regla).
@@ -169,9 +170,7 @@ export default function Onboarding() {
         && !!disponibilidadActual && !disponibilidadActual.nombre && !disponibilidadActual.rutEmpresa;
     const colorOk = COLOR_HEX.test(color);
     const requisitos = [
-        { label: `${MIN_PASSWORD} caracteres o más`, ok: admin.password.length >= MIN_PASSWORD },
-        { label: 'Una letra', ok: /[a-zA-Z]/.test(admin.password) },
-        { label: 'Un número', ok: /[0-9]/.test(admin.password) },
+        ...requisitosPassword(admin.password),
         { label: 'Coinciden', ok: !!admin.password && admin.password === admin.confirmarPassword },
     ];
     const accesoOk = passwordOk(admin.password) && admin.password === admin.confirmarPassword;

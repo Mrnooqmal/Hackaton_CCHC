@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import { useBrand } from '../context/BrandContext';
 import LogoMarca from './LogoMarca';
-import { inboxApi } from '../api/client';
+import { inboxApi, EVENTO_BANDEJA_CAMBIO } from '../api/client';
 import MenuAyuda from '../ayuda/MenuAyuda';
 import { ancla } from '../ayuda/registro';
 
@@ -119,7 +119,8 @@ export default function Header() {
         };
         loadCount();
         const interval = setInterval(loadCount, 60000);
-        return () => { active = false; clearInterval(interval); };
+        window.addEventListener(EVENTO_BANDEJA_CAMBIO, loadCount);
+        return () => { active = false; clearInterval(interval); window.removeEventListener(EVENTO_BANDEJA_CAMBIO, loadCount); };
     }, [user?.personaId, location.pathname]);
 
     const crumbs = buildCrumbs(location.pathname, !!selectedObra);

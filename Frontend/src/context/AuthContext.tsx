@@ -12,6 +12,10 @@ export interface TenantOpcion { tenantId: string; tenantNombre: string; rol: str
 type LoginResult = {
     success: boolean;
     error?: string;
+    /** No hubo respuesta (sin red o CORS): no es un problema de credenciales (H-18). */
+    sinRed?: boolean;
+    /** El servidor falló de forma pasajera (5xx, 429). */
+    reintentable?: boolean;
     requiresChangePassword?: boolean;
     requiresEnrollment?: boolean;
     // Presente cuando el RUT pertenece a varias empresas: hay que llamar a
@@ -254,12 +258,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 const msg = response.error || 'Error al iniciar sesión';
                 setError(msg);
-                return { success: false, error: msg };
+                return { success: false, error: msg, sinRed: response.sinRed, reintentable: response.reintentable };
             }
         } catch (err) {
             const msg = 'Error de conexión';
             setError(msg);
-            return { success: false, error: msg };
+            return { success: false, error: msg, sinRed: true };
         }
     };
 
@@ -278,11 +282,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             const msg = response.error || 'Error al iniciar sesión';
             setError(msg);
-            return { success: false, error: msg };
+            return { success: false, error: msg, sinRed: response.sinRed, reintentable: response.reintentable };
         } catch (err) {
             const msg = 'Error de conexión';
             setError(msg);
-            return { success: false, error: msg };
+            return { success: false, error: msg, sinRed: true };
         }
     };
 

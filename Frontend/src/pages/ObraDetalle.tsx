@@ -1615,6 +1615,9 @@ export default function ObraDetalle() {
 
   const handleDeactivateWorker = async (worker: any) => {
     if (!obraId) return;
+    // Pide confirmación (H-04): antes daba de baja al primer clic.
+    const nombre = `${worker.nombre || ''} ${worker.apellido || ''}`.trim() || 'Esta persona';
+    if (!window.confirm(`${nombre} quedará inactivo en la obra. Su historial se conserva y puedes reactivarlo después. ¿Dar de baja?`)) return;
     setUpdatingWorkers(worker.personaId);
     try {
       // Prevent deactivating administrators

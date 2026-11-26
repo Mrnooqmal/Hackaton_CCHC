@@ -7,7 +7,7 @@ import {
     FiTrash2, FiChevronLeft, FiPlus, FiUsers, FiFlag,
     FiChevronDown, FiX
 } from 'react-icons/fi';
-import { inboxApi, personasApi, tenantsApi, type InboxMessage, type InboxRecipient, type SendMessageData, type MessageType, type MessagePriority } from '../api/client';
+import { inboxApi, avisarBandejaCambio, personasApi, tenantsApi, type InboxMessage, type InboxRecipient, type SendMessageData, type MessageType, type MessagePriority } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useObraContext } from '../context/ObraContext';
@@ -403,6 +403,7 @@ export default function Inbox() {
                 m.messageId === message.messageId ? { ...m, read: true } : m
             ));
             setUnreadCount(prev => Math.max(0, prev - 1));
+            avisarBandejaCambio();
         }
     };
 
@@ -410,6 +411,7 @@ export default function Inbox() {
         if (!currentUserId) return;
         try {
             await inboxApi.archive(messageId, currentUserId);
+            avisarBandejaCambio();
             setMessages(prev => prev.filter(m => m.messageId !== messageId));
             setSelectedMessage(null);
         } catch (error) {
@@ -422,6 +424,7 @@ export default function Inbox() {
         if (!confirm('¿Eliminar este mensaje?')) return;
         try {
             await inboxApi.delete(messageId, currentUserId);
+            avisarBandejaCambio();
             setMessages(prev => prev.filter(m => m.messageId !== messageId));
             setSelectedMessage(null);
         } catch (error) {
@@ -442,6 +445,7 @@ export default function Inbox() {
         try {
             const res = await inboxApi.markAsRead(message.messageId, currentUserId, leido);
             if (!res.success) throw new Error(res.error || 'Error');
+            avisarBandejaCambio();
         } catch {
             setMessages(prev => prev.map(m =>
                 m.messageId === message.messageId ? { ...m, read: !leido } : m
@@ -457,6 +461,7 @@ export default function Inbox() {
             await inboxApi.markAllAsRead(currentUserId);
             setMessages(prev => prev.map(m => ({ ...m, read: true })));
             setUnreadCount(0);
+            avisarBandejaCambio();
         } catch (error) {
             console.error('Error marking all as read:', error);
         }

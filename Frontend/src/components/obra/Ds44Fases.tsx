@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { mensajeDeError } from '../../api/client';
+import { useToast } from '../../context/ToastContext';
 import {
     LuArrowRight, LuCalendar, LuChevronRight, LuEye, LuFilePen, LuSend, LuSignature, LuUpload, LuUserCheck, LuUsers,
 } from 'react-icons/lu';
@@ -213,12 +214,18 @@ export default function Ds44Fases({
     const [solicitando, setSolicitando] = useState<string | null>(null);
     // Recordar reusa la misma llamada: a quien ya tiene la firma pendiente el
     // backend no la duplica, solo le vuelve a avisar.
+    const { toast } = useToast();
     const solicitarFirma = async (r: RequisitoFuf, documentId: string, personaIds: string[]) => {
         setSolicitando(r.id);
         setError(null);
         try {
             const res = await documentsApi.assign(documentId, { workerIds: personaIds, personaIds, notificar: true });
             if (!res.success) throw new Error(res.error || 'No se pudo solicitar la firma.');
+            const recordados = res.data?.recordados || 0;
+            const nuevos = res.data?.asignaciones?.length || 0;
+            toast.success(recordados > 0 && nuevos === 0
+                ? (recordados === 1 ? 'Recordatorio enviado. Le llegó a su bandeja.' : `Recordatorio enviado a ${recordados} personas.`)
+                : 'Firma solicitada. Le llegó a "Mis firmas" y a su bandeja.');
             await onRecargar();
         } catch (e) {
             setError(mensajeDeError(e, 'No se pudo solicitar la firma.'));
