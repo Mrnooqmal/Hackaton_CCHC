@@ -1,4 +1,4 @@
-// Las capturas del manual que dependen de la firma: PIN y firma sin conexión.
+// Las capturas del manual generadas con datos simulados: firma, PIN y ficha.
 // Una entrada por imagen. Sale `<archivo>.png` en escritorio y `<archivo>-360.png`
 // a 360 px, en la misma carpeta que usa el manual (public/manual-img).
 //
@@ -44,6 +44,7 @@ const porEnviar = (i) => ({
 });
 
 export const CAPTURAS = [
+    { archivo: 'personas/ficha', perfil: 'administracion', ruta: '/personas/33.333.333-3', ver: 'Exportar ficha', marcar: 'button:has-text("Exportar ficha")' },
     { archivo: 'firmas/mis-firmas', perfil: 'trabajadora', ruta: '/my-signatures', ver: 'Procedimiento de trabajo en altura' },
     { archivo: 'firmas/firmar', perfil: 'trabajadora', ruta: '/my-signatures', pasos: abrirFirma, ver: 'Confirmar firma', marcar: '.pin-input-container' },
     {

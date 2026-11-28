@@ -21,6 +21,7 @@ const PERMISOS_SUPERVISOR = ['obras.ver', 'obras.detalle', 'obra.asignar_trabaja
 
 /** Quién está en sesión en cada captura. */
 export const PERFILES = {
+    administracion: { user: { ...SUPERVISOR, nombre: 'Carla', apellido: 'Díaz', rol: 'admin', rolTipo: 'admin', permisos: [] }, guardado: { obraScope: 'obra', selectedObraId: 'o-1' } },
     trabajadora: { user: { ...TRABAJADORA, permisos: ['actividades.ver'] } },
     supervisor: { user: { ...SUPERVISOR, permisos: PERMISOS_SUPERVISOR }, guardado: { obraScope: 'obra', selectedObraId: 'o-1' } },
     'sin-enrolar': { user: { ...TRABAJADORA, permisos: ['actividades.ver'], habilitado: false, pinConfigurado: false } },
@@ -78,6 +79,12 @@ const respuestas = (perfil, progreso) => [
     // Lo pendiente de la persona ya viene por las solicitudes; la firma asistida lista los de la obra.
     ['GET', /^\/documents$/, (url) => ({ documents: url.searchParams.has('pendienteDe') ? [] : [DOCUMENTO] })],
     ['GET', /^\/personas$/, () => ({ total: 3, personas: [{ ...TRABAJADORA, ...EN_LA_OBRA('p-2') }, COMPANERO, SUPERVISOR] })],
+    // La ficha de una persona (manual: personas/ficha).
+    ['GET', /^\/personas\/.*33\.?333\.?333-?3$/, () => ({ ...COMPANERO, email: 'luis.vera@constructora.cl', fechaNacimiento: '1994-05-12', nivelEscolar: 'Media completa' })],
+    ['GET', /^\/tenants\/t-1\/cargos$/, () => ({ cargos: [] })],
+    ['GET', /^\/tenants\/t-1\/epp$/, () => ({ epp: [] })],
+    ['GET', /^\/signatures\/worker\//, () => ({ firmas: [] })],
+    ['GET', /^\/activities$/, () => ({ activities: [] })],
     ['GET', /^\/gobernanza\/mis-datos\/aviso$/, () => AVISO_PRIVACIDAD],
     ['GET', /^\/surveys$/, () => []],
     ['GET', /^\/inbox\/unread-count$/, () => ({ count: 0 })],
