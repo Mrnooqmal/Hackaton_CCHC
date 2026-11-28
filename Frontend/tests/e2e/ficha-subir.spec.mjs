@@ -98,11 +98,30 @@ test('sin permiso de onboarding no ofrece subir', async ({ page }) => {
     await expect(onboarding.locator('input[type=file]')).toHaveCount(0);
 });
 
-test('un documento ya firmado no se puede reemplazar', async ({ page }) => {
+test('reemplazar un documento firmado pide confirmación antes de subir', async ({ page }) => {
     const firmado = { ...documento, tipo: 'CAPACITACION_SST', s3Key: 'v', requiereFirmaRelator: true, asignaciones: [{ personaId: 'p1', estado: 'firmado' }] };
-    const { onboarding } = await abrirFicha(page, { documentos: [firmado] });
-    await expect(onboarding.getByText('Pendiente de firma').first()).toBeVisible();
-    await expect(onboarding.getByText('Reemplazar')).toHaveCount(0);
+    const { onboarding, escrituras } = await abrirFicha(page, { documentos: [firmado] });
+    const aviso = page.getByRole('alertdialog', { name: 'Reemplazar documento firmado' });
+    const elegir = async () => {
+        const selector = page.waitForEvent('filechooser');
+        await onboarding.getByText('Reemplazar', { exact: true }).click();
+        await (await selector).setFiles({ name: 'a.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') });
+        await expect(aviso).toBeVisible();
+    };
+    await elegir();
+    await aviso.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(aviso).toHaveCount(0);
+    expect(escrituras).not.toContain('PUT /documents/d1');
+    await elegir();
+    await aviso.getByRole('button', { name: 'Reemplazar' }).click();
+    await expect.poll(() => escrituras).toContain('PUT /documents/d1');
+});
+
+test('lo firmado en otra obra no completa el ítem de la obra en vista', async ({ page }) => {
+    const documentos = [{ ...documento, obraId: 'obraA', s3Key: 'v', asignaciones: [{ personaId: 'p1', estado: 'firmado' }] }];
+    const { onboarding } = await abrirFicha(page, { documentos, ficha: { ...persona, obraIds: ['obraB'] } });
+    await expect(onboarding.getByText('Sin documento asignado').first()).toBeVisible();
+    await expect(onboarding.getByText('0 de')).toBeVisible();
 });
 
 test('con documentos en dos obras sube al de la obra de la persona', async ({ page }) => {

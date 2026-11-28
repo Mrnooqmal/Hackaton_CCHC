@@ -26,7 +26,6 @@ import {
 import {
     workersApi,
     documentsApi,
-    uploadsApi,
     mensajeDeError,
     signaturesApi,
     signatureRequestsApi,
@@ -49,6 +48,8 @@ import AccesoPlataforma from '../components/AccesoPlataforma';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
+import { adjuntarArchivo } from '../utils/adjuntarArchivo';
+import ConfirmModal from '../components/ConfirmModal';
 import '../css/ficha.css';
 
 interface WorkerStats {
@@ -176,6 +177,8 @@ export default function WorkerDetail() {
     const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; firmado: boolean }>>({});
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
     const [errorSubida, setErrorSubida] = useState('');
+    // Archivo en espera de confirmación: reemplazar un documento firmado reabre las firmas.
+    const [reemplazo, setReemplazo] = useState<{ tipo: string; file: File } | null>(null);
     const [docsCargados, setDocsCargados] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -646,7 +649,8 @@ export default function WorkerDetail() {
             const kitDoneByLink = new Set<string>();
             if (activitiesRes.success && activitiesRes.data) {
                 (activitiesRes.data.activities || []).forEach((act: any) => {
-                    if (act.kitItemKey && (act.asistentes || []).some((a: any) => (a.personaId || a.workerId) === myId)) {
+                    if (targetObraId && act.obraId && act.obraId !== targetObraId) return;
+                    if (act.kitItemKey &&(act.asistentes || []).some((a: any) => (a.personaId || a.workerId) === myId)) {
                         kitDoneByLink.add(act.kitItemKey);
                     }
                 });
@@ -703,8 +707,13 @@ export default function WorkerDetail() {
             // Firma cruzada (CAPACITACION_SST): completo solo si relator + trabajador firmaron.
             const docRelatorPendiente = new Map<string, boolean>();
             const newDocRecordMap: Record<string, { documentId: string; firmado: boolean }> = {};
-            const prioridadObra = (doc: { obraId?: string | null }) => (doc.obraId === targetObraId ? 0 : doc.obraId ? 2 : 1);
-            [...docs].sort((a, b) => prioridadObra(a) - prioridadObra(b)).forEach((doc) => {
+            // El estado es el de la obra en vista: sus documentos y los de empresa
+            // (sin obra). Lo firmado en otra obra no completa el ítem en esta.
+            const docsEnVista: any[] = targetObraId
+                ? docs.filter((d: any) => !d.obraId || d.obraId === targetObraId)
+                : docs;
+            const prioridadObra = (doc: { obraId?: string | null }) => (doc.obraId ? 0 : 1);
+            [...docsEnVista].sort((a, b) => prioridadObra(a) - prioridadObra(b)).forEach((doc) => {
                 const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
                 const relatorPendiente = Boolean(doc.requiereFirmaRelator) && doc.firmaRelator?.estado !== 'firmado';
                 (doc.asignaciones || []).forEach((asig: any) => {
@@ -717,7 +726,8 @@ export default function WorkerDetail() {
                     // Track document record for upload
                     if (!newDocRecordMap[doc.tipo]) {
                         const firmado = doc.firmaRelator?.estado === 'firmado'
-                            || (doc.asignaciones || []).some((a: { estado?: string; fechaFirma?: string }) => a.estado === 'firmado' || a.fechaFirma);
+                            || (doc.asignaciones || []).some((a: { estado?: string; fechaFirma?: string; reutilizado?: boolean }) =>
+                                (a.estado === 'firmado' || a.fechaFirma) && !a.reutilizado);
                         newDocRecordMap[doc.tipo] = { documentId: doc.documentId, firmado };
                     }
                 });
@@ -827,20 +837,14 @@ Generado por PrevencionApp
         setUploadingDocType(tipo);
         setErrorSubida('');
         try {
-            const subida = await uploadsApi.uploadFile(file, 'trabajadores', (worker as any).tenantId || (worker as any).empresaId || 'default');
-            if (!subida.success || !subida.data) {
-                setErrorSubida(subida.error || 'No se pudo subir el archivo.');
-                return;
-            }
-            const fileKey = subida.data.url;
-            const res = await documentsApi.update(docRecord.documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name } as any);
-            if (!res.success) {
-                setErrorSubida(res.error || 'El archivo se subió, pero no quedó guardado en el documento.');
-                return;
-            }
+            await adjuntarArchivo({
+                documentId: docRecord.documentId, file, categoria: 'trabajadores',
+                tenantId: (worker as any).tenantId || authTenantId,
+            });
             await loadWorkerData(); // Recargar datos
         } catch (err) {
             console.error('Error subiendo documento del trabajador:', err);
+            setErrorSubida(mensajeDeError(err, 'No se pudo subir el archivo.'));
         } finally {
             setUploadingDocType(null);
         }
@@ -871,6 +875,7 @@ Generado por PrevencionApp
     if (!worker) return null;
 
     const w = worker as any;
+    const obraEnVista = obrasInfo[resolveTargetObraId(worker) || '']?.nombre;
     const ce = w.contactoEmergencia || {};
     const cursosLista: string[] = Array.isArray(w.cursos)
         ? w.cursos.map((c: any) => (typeof c === 'string' ? c : c?.nombre)).filter(Boolean)
@@ -1203,7 +1208,7 @@ Generado por PrevencionApp
                                 personaId={worker.personaId}
                                 tenantId={authTenantId}
                                 initial={w.evidencias || []}
-                                canEdit={canVigilancia}
+                                canEdit={canOnboarding || canEditarDatos}
                             />
                         </div>
 
@@ -1247,7 +1252,7 @@ Generado por PrevencionApp
                                 const pct = ds44Checklist.total > 0 ? Math.round((ds44Checklist.completed / ds44Checklist.total) * 100) : 0;
                                 return (
                                     <section className="pd-seccion" aria-label="Onboarding DS 44">
-                                        {seccion('Onboarding DS 44', `${ds44Checklist.completed} de ${ds44Checklist.total} ítems completados`,
+                                        {seccion('Onboarding DS 44', `${ds44Checklist.completed} de ${ds44Checklist.total} ítems completados${obraEnVista ? ` · ${obraEnVista}` : ''}`,
                                             <span className="pd-pct">{pct}%</span>)}
                                         <span className="pd-barra-progreso"><span style={{ width: `${pct}%` }} /></span>
                                         {errorSubida && <div className="pd-alerta" role="alert"><LuCircleAlert size={15} aria-hidden="true" /><span>{errorSubida}</span></div>}
@@ -1258,11 +1263,17 @@ Generado por PrevencionApp
                                         <div className="pd-lista">
                                             {ds44Checklist.items.map((item) => {
                                                 const documento = docRecordMap[item.tipo || ''];
-                                                const subir = (texto: string) => canOnboarding && documento && !documento.firmado && (
+                                                const subir = (texto: string) => canOnboarding && documento && (
                                                     <label className="btn btn-secondary btn-sm pd-subir">
                                                         {uploadingDocType === item.tipo ? <><LuClock size={13} /> Subiendo…</> : <><LuUpload size={13} /> {texto}</>}
                                                         <input type="file" accept=".pdf,.doc,.docx" hidden disabled={!!uploadingDocType}
-                                                            onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); e.target.value = ''; }} />
+                                                            onChange={(e) => {
+                                                                const f = e.target.files?.[0];
+                                                                e.target.value = '';
+                                                                if (!f || !item.tipo) return;
+                                                                if (documento.firmado) setReemplazo({ tipo: item.tipo, file: f });
+                                                                else handleUploadWorkerDoc(item.tipo, f);
+                                                            }} />
                                                     </label>
                                                 );
                                                 return (
@@ -1776,6 +1787,17 @@ Generado por PrevencionApp
                 `}</style>
             </Modal>
 
+            <ConfirmModal
+                isOpen={!!reemplazo}
+                title="Reemplazar documento firmado"
+                message="Las firmas quedan guardadas con la versión anterior y habrá que firmar de nuevo el archivo nuevo."
+                confirmLabel="Reemplazar"
+                onCancel={() => setReemplazo(null)}
+                onConfirm={() => {
+                    if (reemplazo) handleUploadWorkerDoc(reemplazo.tipo, reemplazo.file);
+                    setReemplazo(null);
+                }}
+            />
         </>
     );
 }
