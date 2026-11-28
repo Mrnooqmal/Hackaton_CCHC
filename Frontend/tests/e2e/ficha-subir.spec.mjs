@@ -124,6 +124,13 @@ test('lo firmado en otra obra no completa el ítem de la obra en vista', async (
     await expect(onboarding.getByText('0 de')).toBeVisible();
 });
 
+test('un documento compartido con otras personas no se reemplaza desde la ficha', async ({ page }) => {
+    const compartido = { ...documento, clasificacion: 'obra', s3Key: 'v', asignaciones: [{ personaId: 'p1' }, { personaId: 'p2' }] };
+    const { onboarding } = await abrirFicha(page, { documentos: [compartido] });
+    await expect(onboarding.getByText('Pendiente de firma').first()).toBeVisible();
+    await expect(onboarding.locator('input[type=file]')).toHaveCount(0);
+});
+
 test('con documentos en dos obras sube al de la obra de la persona', async ({ page }) => {
     const documentos = [{ ...documento, documentId: 'otra', obraId: 'obraA' }, { ...documento, documentId: 'actual', obraId: 'obraB' }];
     const { onboarding, escrituras } = await abrirFicha(page, { documentos, ficha: { ...persona, obraIds: ['obraB'] } });

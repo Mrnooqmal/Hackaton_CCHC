@@ -49,6 +49,7 @@ import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
 import { adjuntarArchivo } from '../utils/adjuntarArchivo';
+import { esCopiaDe, tieneFirmas } from '../utils/documentoDePersona';
 import ConfirmModal from '../components/ConfirmModal';
 import '../css/ficha.css';
 
@@ -177,7 +178,6 @@ export default function WorkerDetail() {
     const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; firmado: boolean }>>({});
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
     const [errorSubida, setErrorSubida] = useState('');
-    // Archivo en espera de confirmación: reemplazar un documento firmado reabre las firmas.
     const [reemplazo, setReemplazo] = useState<{ tipo: string; file: File } | null>(null);
     const [docsCargados, setDocsCargados] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -238,11 +238,11 @@ export default function WorkerDetail() {
     };
 
     const resolveTargetObraId = (workerData: WorkerWithRole | null) => {
-        if (selectedObraId) return selectedObraId;
-        if (!workerData) return null;
-        const overrideObraId = getLatestOverrideObraId((workerData as any).onboardingDS44);
-        if (overrideObraId) return overrideObraId;
-        return workerData.obraIds?.[0] || null;
+        if (!workerData) return selectedObraId || null;
+        const obras = workerData.obraIds || [];
+        const preferida = [selectedObraId, getLatestOverrideObraId((workerData as any).onboardingDS44)]
+            .find((id) => id && obras.includes(id));
+        return preferida || obras[0] || null;
     };
 
     useEffect(() => {
@@ -707,8 +707,6 @@ export default function WorkerDetail() {
             // Firma cruzada (CAPACITACION_SST): completo solo si relator + trabajador firmaron.
             const docRelatorPendiente = new Map<string, boolean>();
             const newDocRecordMap: Record<string, { documentId: string; firmado: boolean }> = {};
-            // El estado es el de la obra en vista: sus documentos y los de empresa
-            // (sin obra). Lo firmado en otra obra no completa el ítem en esta.
             const docsEnVista: any[] = targetObraId
                 ? docs.filter((d: any) => !d.obraId || d.obraId === targetObraId)
                 : docs;
@@ -724,11 +722,8 @@ export default function WorkerDetail() {
                     if (hasFile) docHasFile.set(doc.tipo, true);
                     if (relatorPendiente) docRelatorPendiente.set(doc.tipo, true);
                     // Track document record for upload
-                    if (!newDocRecordMap[doc.tipo]) {
-                        const firmado = doc.firmaRelator?.estado === 'firmado'
-                            || (doc.asignaciones || []).some((a: { estado?: string; fechaFirma?: string; reutilizado?: boolean }) =>
-                                (a.estado === 'firmado' || a.fechaFirma) && !a.reutilizado);
-                        newDocRecordMap[doc.tipo] = { documentId: doc.documentId, firmado };
+                    if (!newDocRecordMap[doc.tipo] && esCopiaDe(doc, personaId)) {
+                        newDocRecordMap[doc.tipo] = { documentId: doc.documentId, firmado: tieneFirmas(doc) };
                     }
                 });
             });

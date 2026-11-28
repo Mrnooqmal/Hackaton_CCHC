@@ -2,10 +2,6 @@ import { documentsApi } from '../api/documents.api';
 import { uploadsApi } from '../api/uploads.api';
 import type { CategoriaEvidencia } from './subirDocumento';
 
-/**
- * Sube un archivo y lo deja en un documento que ya existe. Lanza con el motivo si
- * falla cualquier paso: la subida a S3, la confirmación o el guardado.
- */
 export async function adjuntarArchivo({ documentId, file, categoria, tenantId }: {
     documentId: string;
     file: File;

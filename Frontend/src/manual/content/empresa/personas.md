@@ -89,11 +89,12 @@ pestañas:
 Arriba están **Editar** y **Exportar ficha**.
 
 En el onboarding, quien puede actualizarlo ve **Subir** o **Reemplazar** junto a los documentos
-que la persona tiene asignados. Reemplazar uno que ya tiene firmas pide confirmación: las firmas
+propios de la persona (no los compartidos con otras). Reemplazar uno que ya tiene firmas pide confirmación: las firmas
 quedan con la versión anterior y hay que firmar de nuevo. Un ítem **Sin documento asignado** no admite
 archivo: los documentos dependen de la obra, el cargo y el rol de la persona. Si un archivo o la
 foto no se pueden guardar, la ficha muestra el motivo. El avance es el de la obra que estás viendo,
 más los documentos de empresa.
+Desde el equipo de obra, **Subir** funciona igual.
 
 ![Ficha de una persona](/img/personas/ficha.png)
 

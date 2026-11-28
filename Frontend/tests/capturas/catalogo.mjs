@@ -1,4 +1,4 @@
-// Las capturas del manual generadas con datos simulados: firma, PIN y ficha.
+// Las capturas del manual que dependen de la firma: PIN y firma sin conexión.
 // Una entrada por imagen. Sale `<archivo>.png` en escritorio y `<archivo>-360.png`
 // a 360 px, en la misma carpeta que usa el manual (public/manual-img).
 //

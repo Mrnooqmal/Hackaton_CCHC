@@ -110,6 +110,17 @@ Al publicar:
   prevención) y a los **representantes de los trabajadores** (comité paritario, delegado).
 ::::
 
+## Si cambias el archivo de un documento firmado
+
+Las firmas quedan guardadas con la versión anterior y quienes habían firmado **deben firmar de
+nuevo**. La pantalla pide confirmación. La primera subida a un documento que no tenía archivo no
+reabre nada.
+
+En el **onboarding de la obra**, la carga para varias personas omite a quienes ya firmaron y dice
+cuántas quedaron sin actualizar. Al subir una **plantilla de obra**, el documento se asigna también a
+quienes ya están en la obra con ese cargo; cambiar la plantilla no modifica documentos que ya
+existen.
+
 ## Vigencia
 
 Los documentos tienen fecha de **caducidad**, que por defecto es **12 meses** después de

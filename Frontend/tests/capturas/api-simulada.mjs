@@ -79,8 +79,7 @@ const respuestas = (perfil, progreso) => [
     // Lo pendiente de la persona ya viene por las solicitudes; la firma asistida lista los de la obra.
     ['GET', /^\/documents$/, (url) => ({ documents: url.searchParams.has('pendienteDe') ? [] : [DOCUMENTO] })],
     ['GET', /^\/personas$/, () => ({ total: 3, personas: [{ ...TRABAJADORA, ...EN_LA_OBRA('p-2') }, COMPANERO, SUPERVISOR] })],
-    // La ficha de una persona (manual: personas/ficha).
-    ['GET', /^\/personas\/.*33\.?333\.?333-?3$/, () => ({ ...COMPANERO, email: 'luis.vera@constructora.cl', fechaNacimiento: '1994-05-12', nivelEscolar: 'Media completa' })],
+    ['GET', /^\/personas\/.*33\.?333\.?333-?3$/, () => ({ ...COMPANERO, email: 'luis.vera@example.com', fechaNacimiento: '1994-05-12', nivelEscolar: 'Media completa' })],
     ['GET', /^\/tenants\/t-1\/cargos$/, () => ({ cargos: [] })],
     ['GET', /^\/tenants\/t-1\/epp$/, () => ({ epp: [] })],
     ['GET', /^\/signatures\/worker\//, () => ({ firmas: [] })],

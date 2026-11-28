@@ -39,7 +39,7 @@ export interface DigitalSignature {
     ipAddress: string;
     userAgent: string;
     metodoValidacion: string;
-    estado: 'valida' | 'disputada' | 'revocada';
+    estado: 'valida' | 'disputada' | 'revocada' | 'superada';
     disputaInfo?: {
         motivo: string;
         reportadoPor: string;

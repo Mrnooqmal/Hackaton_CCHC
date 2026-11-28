@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activitiesApi, documentsApi, mensajeDeError, signatureRequestsApi, surveysApi } from '../api/client';
 import { adjuntarArchivo } from '../utils/adjuntarArchivo';
+import { copiaDePersona } from '../utils/documentoDePersona';
 import { CATEGORIA_EVIDENCIA_DS44 } from '../api/uploads.api';
 import { useCargoCatalog } from './useCargoCatalog';
 import { computeOnboardingSummary, type OnboardingSummary } from '../utils/onboardingObra';
@@ -94,19 +95,13 @@ export function useObraOnboarding(obraId: string | null | undefined, trabajadore
         setUploadingDoc(`${workerId}:${tipo}`);
         setErrorSubida(null);
         try {
-            // El documento se busca antes de subir: sin dónde guardarlo, el archivo
-            // quedaría huérfano en el almacenamiento.
             const docsRes = await documentsApi.list({ asignadoA: workerId } as any);
             if (!docsRes.success || !docsRes.data) {
                 throw new Error(docsRes.error || 'No se pudieron cargar los documentos.');
             }
-            const candidatos = (docsRes.data.documents || []).filter((d: any) =>
-                d.tipo === tipo && (!d.obraId || d.obraId === obraId)
-                && (d.asignaciones || []).some((a: any) => a.personaId === workerId)
-            );
-            const destino = candidatos.find((d: any) => d.obraId === obraId) || candidatos[0];
+            const destino = copiaDePersona<any>(docsRes.data.documents || [], { personaId: workerId, tipo, obraId });
             if (!destino) {
-                throw new Error('Esta persona no tiene un documento asignado para este ítem.');
+                throw new Error('Esta persona no tiene un documento propio para este ítem.');
             }
             await adjuntarArchivo({ documentId: destino.documentId, file, categoria: CATEGORIA_EVIDENCIA_DS44, tenantId });
             await reload();
