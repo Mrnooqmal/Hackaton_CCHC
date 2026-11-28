@@ -29,6 +29,7 @@ const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/ses
 const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
+const { supersedeFirmasDeReferencia } = require('../../lib/services/superarFirmas');
 const { conAuditoriaSalud, anotarAccesoSalud, tieneDatosDeSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
 /** Estado HTTP de cada rechazo de `PersonaService.setPin` y `restablecerPin`.
@@ -139,7 +140,6 @@ const TEMPLATE_INSTRUCTIONS = [
 ];
 
 const DOCUMENTS_TABLE = process.env.DOCUMENTS_TABLE || 'Documents';
-const SIGNATURES_TABLE = process.env.SIGNATURES_TABLE || 'Signatures';
 
 // Roles de gestión/staff que NO pasan por el onboarding de terreno del trabajador.
 // (El kit reducido para posiciones de gestión se definirá en una fase posterior.)
@@ -437,36 +437,6 @@ const reconcileCargoDocs = async (tenantId, obraId, personaId, nuevosCargosNorm)
     }
 };
 
-// Marca como 'superada' las firmas válidas de unas personas para una referencia
-// (al renovar un documento: la firma anterior es de una versión previa). Las firmas
-// no se borran (auditoría); cambiar el estado permite volver a firmar la versión
-// nueva (la verificación de idempotencia solo cuenta firmas 'valida').
-const supersedeFirmasDeReferencia = async (referenciaId, personaIds) => {
-    for (const pid of personaIds) {
-        try {
-            const res = await docClient.send(new QueryCommand({
-                TableName: SIGNATURES_TABLE,
-                IndexName: 'personaId-index',
-                KeyConditionExpression: 'personaId = :p',
-                FilterExpression: 'referenciaId = :r AND #st = :v',
-                ExpressionAttributeNames: { '#st': 'estado' },
-                ExpressionAttributeValues: { ':p': pid, ':r': referenciaId, ':v': 'valida' },
-            }));
-            for (const f of (res.Items || [])) {
-                await docClient.send(new UpdateCommand({
-                    TableName: SIGNATURES_TABLE,
-                    Key: { signatureId: f.signatureId },
-                    UpdateExpression: 'SET #st = :s, supersededAt = :u',
-                    ExpressionAttributeNames: { '#st': 'estado' },
-                    ExpressionAttributeValues: { ':s': 'superada', ':u': new Date().toISOString() },
-                }));
-            }
-        } catch (e) {
-            console.error('No se pudo superar firma previa al renovar:', e.message);
-        }
-    }
-};
-
 // Genera el onboarding DS44 según el KIT del cargo (catálogo del tenant).
 // - Sin cargo → no hay kit (personal de oficina/gestión).
 // - ENTREGA_EPP → EppService (Art. 13), matriz del cargo.
@@ -676,6 +646,35 @@ const ensureCompanyDocsForPersona = async ({ tenantId, persona, solicitante }) =
             console.error(`No se pudo asignar documento de empresa ${item.tipo} a ${persona.personaId}:`, e.message);
         }
     }
+};
+
+// Plantillas de OBRA (`obra.plantillasOnboarding[cargo][item]`): al subir o
+// cambiar una, se re-corre el onboarding de quienes ya están en la obra con ese
+// cargo. Es idempotente: crea solo lo que falta, no toca documentos existentes.
+const syncPlantillasObra = async ({ tenantId, obraId, anteriores, nuevas }) => {
+    const cargosCambiados = new Set();
+    for (const [cargo, items] of Object.entries(nuevas || {})) {
+        const cambio = Object.entries(items || {}).some(([key, p]) =>
+            p?.fileKey && p.fileKey !== anteriores?.[cargo]?.[key]?.fileKey);
+        if (cambio) cargosCambiados.add(normalizeCargoCodigo(cargo));
+    }
+    if (cargosCambiados.size === 0) return { personas: 0 };
+
+    const personas = await personaService.listByTenant(tenantId, { obraId });
+    let revisadas = 0;
+    for (const persona of personas) {
+        const enObra = persona.cargosEnObra?.(obraId) || [];
+        const cargos = enObra.length ? enObra : [persona.cargo];
+        if (!cargos.some((c) => c && cargosCambiados.has(normalizeCargoCodigo(c)))) continue;
+        try {
+            // Sin solicitante: el aviso de "faltan plantillas" no se repite por persona.
+            await runOnboardingForObra({ tenantId, obraId, persona, solicitante: null });
+            revisadas++;
+        } catch (e) {
+            console.error(`Plantillas de obra (persona ${persona.personaId}):`, e.message);
+        }
+    }
+    return { personas: revisadas };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1188,6 +1187,7 @@ const dependenciasCarga = () => ({
 module.exports.dependenciasCarga = dependenciasCarga;
 module.exports.createTemplateBuffer = createTemplateBuffer;
 module.exports.syncPlantillasToWorkers = syncPlantillasToWorkers;
+module.exports.syncPlantillasObra = syncPlantillasObra;
 module.exports.ensureCompanyDocsForPersona = ensureCompanyDocsForPersona;
 
 /**

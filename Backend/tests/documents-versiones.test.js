@@ -370,3 +370,103 @@ test('editar el documento no puede marcar firmas: asignaciones, firmas o firma d
         assert.equal(store.updates.length, 0, 'y no se escribe nada, ni siquiera el archivo');
     }
 });
+
+// ─── Reemplazar un documento firmado reabre las firmas ───────────────────────
+
+const firmadoPor = (personaId) => ({
+    documentId: 'd1', tenantId: 't1', tipo: 'RESPONSABILIDADES', titulo: 'Responsabilidades',
+    s3Key: 'obras/v1.pdf', version: 1,
+    firmas: [{ personaId, token: 'tok-1' }],
+    asignaciones: [{ personaId, estado: 'firmado', fechaFirma: '2026-03-01T00:00:00.000Z' }],
+});
+
+test('reemplazar el archivo de un documento firmado archiva las firmas y pide firmar de nuevo', async () => {
+    store.doc = firmadoPor('ana');
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input.IndexName === 'personaId-index') {
+            return { Items: [{ signatureId: 'sig-1' }] };
+        }
+        return base(cmd);
+    };
+
+    const res = await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.equal(res.statusCode, 200);
+
+    const w = escrito(store.updates[0]);
+    assert.deepEqual(w.firmas, []);
+    assert.equal(w.asignaciones[0].estado, 'pendiente');
+    assert.equal(w.asignaciones[0].fechaFirma, null);
+    assert.equal(w.versiones[0].firmasArchivadas[0].token, 'tok-1');
+    assert.equal(w.versiones[0].asignacionesArchivadas[0].estado, 'firmado');
+    // La firma anterior deja de contar: si no, volver a firmar la devolvería.
+    assert.deepEqual(store.updates[1].Key, { signatureId: 'sig-1' });
+    assert.equal(store.updates[1].ExpressionAttributeValues[':s'], 'superada');
+});
+
+test('editar metadatos o reenviar el mismo archivo no toca las firmas', async () => {
+    for (const cuerpo of [{ titulo: 'Otro' }, { s3Key: 'obras/v1.pdf' }]) {
+        store.doc = firmadoPor('ana');
+        store.updates = [];
+        await handler.update(ev('d1', cuerpo));
+        assert.equal(store.updates.length, 1);
+        const w = escrito(store.updates[0]);
+        assert.equal(w.firmas, undefined);
+        assert.equal(w.asignaciones, undefined);
+    }
+});
+
+test('la evidencia reutilizada no cuenta como firma al reemplazar', async () => {
+    store.doc = {
+        documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1, firmas: [],
+        asignaciones: [{ personaId: 'ana', estado: 'firmado', fechaFirma: '2026-03-01T00:00:00.000Z', reutilizado: true }],
+    };
+    await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.equal(escrito(store.updates[0]).asignaciones, undefined);
+});
+
+// ─── Publicar una versión deja sin efecto las firmas anteriores ──────────────
+//
+// Sin esto, volver a firmar devolvía la firma de antes de publicar
+// (FirmaService es idempotente sobre las firmas 'valida').
+
+/** Cada persona tiene una firma válida `sig-<persona>`; devuelve las superadas. */
+const conFirmasValidas = () => {
+    const superadas = [];
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        const { constructor, input } = cmd;
+        if (constructor.name === 'QueryCommand' && input.IndexName === 'personaId-index') {
+            return { Items: [{ signatureId: `sig-${input.ExpressionAttributeValues[':p']}` }] };
+        }
+        if (constructor.name === 'UpdateCommand' && input.Key.signatureId) {
+            superadas.push(input.Key.signatureId);
+            return {};
+        }
+        return base(cmd);
+    };
+    return superadas;
+};
+
+test('publicar una nueva versión supera las firmas de todas las personas del documento', async () => {
+    const superadas = conFirmasValidas();
+    const { res } = await conFirmantes(miper([asig('ana'), asig('luis', 'pendiente')]), {});
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(superadas.sort(), ['sig-ana', 'sig-luis']);
+});
+
+test('publicar una versión corporativa supera las firmas de cada copia', async () => {
+    const superadas = conFirmasValidas();
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input.IndexName === 'tenantId-index') {
+            return { Items: ['ana', 'luis'].map((p) => ({ ...miper([asig(p)]), documentId: `copia-${p}`, tipo: 'REGLAMENTO_INTERNO' })) };
+        }
+        return base(cmd);
+    };
+    const res = await handler.nuevaVersionCorporativa({
+        ...SESION, body: JSON.stringify({ tipo: 'REGLAMENTO_INTERNO', s3Key: 'obras/ri-v2.pdf', motivo: 'Revisión anual' }),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(superadas.sort(), ['sig-ana', 'sig-luis']);
+});

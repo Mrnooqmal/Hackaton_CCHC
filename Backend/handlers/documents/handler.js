@@ -29,6 +29,7 @@ const anotarDocumentosSalud = (docs, tipo = TIPOS_ACCESO_SALUD.DOCUMENTO) => {
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 const almacenamiento = require('../../lib/almacenamiento');
 const { camposDeArchivo, verificarArchivo } = require('../../lib/huellaArchivo');
+const { supersedeFirmasDelDocumento } = require('../../lib/services/superarFirmas');
 const { registrarFallo } = require('../../lib/degradacion');
 const {
     llaveDe: llaveDeArreglos,
@@ -555,7 +556,9 @@ module.exports.remove = async (event) => {
  * se archiva en `versiones[]` y sube el contador `version`. Es un invariante del
  * documento (reemplazar nunca destruye lo anterior), no una función de un
  * endpoint, por eso vive acá y cubre todas las pantallas que reemplazan archivos.
- * A diferencia de `nuevaVersion`, no toca firmas ni asignaciones.
+ * Si además el documento ya tenía firmas, esas firmas son del archivo anterior:
+ * se archivan con su versión, las asignaciones vuelven a 'pendiente' y se avisa
+ * a quienes habían firmado que deben firmar de nuevo.
  */
 module.exports.update = async (event) => {
     try {
@@ -604,6 +607,9 @@ module.exports.update = async (event) => {
 
         // Archivar la versión saliente cuando el archivo cambia de verdad.
         const nuevoS3Key = body.s3Key !== undefined ? body.s3Key : body.archivoUrl;
+        // Personas que firmaron el archivo que se está reemplazando.
+        let refirman = [];
+        let cambiaArchivo = false;
         if (nuevoS3Key) {
             // H-7: el archivo nuevo trae su huella, leída de S3.
             const { archivoHuella } = await camposDeArchivo(nuevoS3Key);
@@ -614,7 +620,35 @@ module.exports.update = async (event) => {
             const doc = actual;
 
             const s3KeyActual = doc.s3Key || doc.archivoUrl || null;
-            if (s3KeyActual && s3KeyActual !== nuevoS3Key) {
+            // La evidencia reutilizada nace 'firmado' sin que nadie firmara.
+            const firmaron = (doc.asignaciones || [])
+                .filter((a) => (a.estado === 'firmado' || a.fechaFirma) && !a.reutilizado);
+            const relatorFirmo = doc.firmaRelator?.estado === 'firmado';
+            cambiaArchivo = s3KeyActual !== nuevoS3Key;
+            const reabreFirmas = cambiaArchivo
+                && Boolean(doc.firmas?.length || firmaron.length || relatorFirmo);
+
+            if (reabreFirmas) {
+                refirman = [...new Set([
+                    ...firmaron.map((a) => a.personaId),
+                    ...(doc.firmas || []).map((f) => f.personaId),
+                    relatorFirmo ? doc.firmaRelator.personaId : null,
+                ].filter(Boolean))];
+
+                updateExpressions.push('#firmas = :firmas', '#asig = :asig');
+                expressionNames['#firmas'] = 'firmas';
+                expressionNames['#asig'] = 'asignaciones';
+                expressionValues[':firmas'] = [];
+                expressionValues[':asig'] = (doc.asignaciones || [])
+                    .map((a) => ({ ...a, estado: 'pendiente', fechaFirma: null }));
+                if (doc.firmaRelator) {
+                    updateExpressions.push('#relator = :relator');
+                    expressionNames['#relator'] = 'firmaRelator';
+                    expressionValues[':relator'] = { personaId: null, nombre: null, timestamp: null, estado: 'pendiente' };
+                }
+            }
+
+            if (reabreFirmas || (s3KeyActual && s3KeyActual !== nuevoS3Key)) {
                 const versionActual = doc.version || 1;
                 const snapshot = {
                     version: versionActual,
@@ -627,6 +661,11 @@ module.exports.update = async (event) => {
                     publicadaEn: doc.updatedAt || doc.createdAt || null,
                     motivo: doc.ultimoMotivoVersion || null,
                     participantes: doc.ultimosParticipantesRevision || null,
+                    ...(reabreFirmas ? {
+                        firmasArchivadas: doc.firmas || [],
+                        asignacionesArchivadas: doc.asignaciones || [],
+                        firmaRelator: doc.firmaRelator || null,
+                    } : {}),
                 };
                 const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
 
@@ -662,6 +701,22 @@ module.exports.update = async (event) => {
             ExpressionAttributeValues: expressionValues,
             ReturnValues: 'ALL_NEW'
         }));
+        // Sin esto, volver a firmar devolvería la firma anterior (idempotencia).
+        if (cambiaArchivo) await supersedeFirmasDelDocumento(actual);
+        if (refirman.length > 0) {
+            try {
+                await eventBus.emit('document.assigned', {
+                    documentId: id,
+                    userIds: refirman,
+                    assignedBy: sesion.personaId,
+                    creatorName: body.publicadaPorNombre || 'Gestor SST',
+                    documentName: `${result.Attributes?.titulo || actual.titulo} (versión actualizada)`,
+                    dueDate: null,
+                });
+            } catch (eventError) {
+                console.error('Error emitting document.assigned event (reemplazo):', eventError);
+            }
+        }
         // El programa precreado de una obra recibe su archivo por acá.
         await asignarRepresentanteSiCorresponde(result.Attributes);
 
@@ -794,6 +849,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                         ':now': now,
                     },
                 }));
+                await supersedeFirmasDelDocumento(doc);
                 actualizados += 1;
             } catch (e) {
                 console.error(`No se pudo versionar la copia ${doc.documentId}:`, e.message);
@@ -948,6 +1004,9 @@ module.exports.nuevaVersion = async (event) => {
                 ':now': now,
             },
         }));
+        // Las firmas de la versión anterior dejan de valer: si no, volver a
+        // firmar devolvería la antigua (idempotencia).
+        await supersedeFirmasDelDocumento(doc);
 
         // Notificación desacoplada (best-effort: no rompe la publicación).
         try {
