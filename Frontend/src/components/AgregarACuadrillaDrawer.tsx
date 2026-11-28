@@ -23,7 +23,7 @@ const iniciales = (w: any) => `${w.nombre?.[0] ?? ''}${w.apellido?.[0] ?? w.nomb
  * Se monta con `key` por cuadrilla, así cada apertura parte sin marcas.
  */
 export default function AgregarACuadrillaDrawer({
-    isOpen, cuadrilla, grupos, onClose, onConfirm, cargoDe,
+    isOpen, cuadrilla, grupos, onClose, onConfirm, cargoDe, bloqueadas = 0,
 }: {
     isOpen: boolean;
     /** Nombre del supervisor de la cuadrilla destino. */
@@ -33,6 +33,8 @@ export default function AgregarACuadrillaDrawer({
     onConfirm: (personaIds: string[]) => void;
     /** Cargo legible de la persona (el catálogo guarda códigos). */
     cargoDe?: (w: any) => string;
+    /** Personas ocultas por un bloqueo de sus datos: no se pueden sumar. */
+    bloqueadas?: number;
 }) {
     const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
     const [filtro, setFiltro] = useState('todas');
@@ -141,7 +143,8 @@ export default function AgregarACuadrillaDrawer({
                     </>
                 ) : (
                     <p className="acd-vacio">
-                        No hay trabajadores para sumar: todos los de la empresa ya están en esta cuadrilla.
+                        No hay trabajadores disponibles para sumar a esta cuadrilla.
+                        {bloqueadas > 0 && ` ${bloqueadas === 1 ? 'Una persona no se puede sumar' : `${bloqueadas} personas no se pueden sumar`} mientras sus datos estén bloqueados por una solicitud del titular.`}
                     </p>
                 )}
             </div>

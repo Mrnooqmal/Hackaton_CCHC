@@ -45,8 +45,11 @@ test('nombre, rol y cargo: ni correo ni RUT', async () => {
     assert.equal(juan.personaId, juan.userId);
 });
 
-test('el aviso de una solicitud de firma busca a los destinatarios por identificador, no por RUT', () => {
+test('el aviso de una solicitud de firma lo manda solo el backend, no también el navegador', () => {
+    // H-10: el navegador mandaba su propio "Firma requerida" además del evento
+    // `signature.requested`, y el aviso llegaba dos veces.
     const s = fs.readFileSync(path.join(__dirname, '..', '..', 'Frontend', 'src', 'pages', 'SignatureRequests.tsx'), 'utf8');
-    assert.ok(s.includes('allRecipients.filter(r => selectedWorkers.includes(r.personaId))'));
-    assert.ok(!/r\.rut/.test(s.slice(s.indexOf('const allRecipients'), s.indexOf('const allRecipients') + 600)));
+    assert.ok(!s.includes('inboxApi.send('), 'SignatureRequests.tsx no debe enviar su propio aviso a la bandeja');
+    const bus = fs.readFileSync(path.join(__dirname, '..', 'lib', 'events', 'EventBus.js'), 'utf8');
+    assert.match(bus, /eventBus\.on\('signature\.requested'/);
 });

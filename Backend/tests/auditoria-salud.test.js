@@ -169,3 +169,25 @@ test('el Registro AT/EP (trae salud de varias personas) queda en la auditoría a
     assert.equal(auditoria().length, 1);
     assert.deepEqual(auditoria()[0].documentos, ['reg-1']);
 });
+
+test('el registro de acceso a salud sale sellado y la verificación lo da por íntegro (H-08)', async () => {
+    const r = await personas.personasHandler(evento(medica, 'GET', `/personas/${juan.personaId}`));
+    assert.equal(r.statusCode, 200, r.body);
+    const [reg] = auditoria();
+    assert.ok(reg.sello, 'el registro no quedó sellado');
+    assert.equal(reg.categoria, 'salud');
+    const auditoriaGeneral = require('../lib/gobernanza/auditoria');
+    const [leido] = (await auditoriaGeneral.listar(T)).filter((e) => Array.isArray(e.tipos) && e.tipos.length);
+    assert.equal(await auditoriaGeneral.verificarSello(leido), 'integro');
+});
+
+test('el listado con sinSalud=1 no entrega ni audita datos de salud (H-08)', async () => {
+    const ev = evento(medica, 'GET', '/personas');
+    ev.queryStringParameters = { sinSalud: '1' };
+    const r = await personas.personasHandler(ev);
+    assert.equal(r.statusCode, 200, r.body);
+    const fila = JSON.parse(r.body).data.personas.find((p) => p.personaId === juan.personaId);
+    assert.ok(fila, 'Juan debe estar en el listado');
+    assert.ok(!fila.vigilanciaSalud || !fila.vigilanciaSalud.enVigilancia, 'no debe venir la vigilancia');
+    assert.equal(auditoria().length, 0);
+});

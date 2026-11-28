@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { passwordCumple, requisitosPassword } from '../utils/politicaPassword';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authApi } from '../api/client';
 import { FiLock, FiEye, FiEyeOff, FiCheck, FiCheckCircle, FiArrowLeft, FiArrowRight, FiArrowUp } from 'react-icons/fi';
@@ -7,7 +8,6 @@ import TarjetaAcceso from '../components/TarjetaAcceso';
 import '../css/cambio-password.css';
 
 // Misma regla que valida el backend (POST /auth/reset-password).
-const MIN_PASSWORD = 6;
 
 type Campo = 'passwordNuevo' | 'confirmarPassword';
 
@@ -37,11 +37,12 @@ export default function ResetPassword() {
     const [error, setError] = useState('');
     const [done, setDone] = useState(false);
 
-    const minLen = form.passwordNuevo.length >= MIN_PASSWORD;
+    // Misma política que el onboarding y el cambio de contraseña (H-21).
+    const cumple = passwordCumple(form.passwordNuevo);
     const match = form.passwordNuevo === form.confirmarPassword && form.confirmarPassword !== '';
-    const canSubmit = linkValido && minLen && match;
+    const canSubmit = linkValido && cumple && match;
     const requisitos = [
-        { label: `${MIN_PASSWORD} caracteres o más`, ok: minLen },
+        ...requisitosPassword(form.passwordNuevo),
         { label: 'Coinciden', ok: match },
     ];
 

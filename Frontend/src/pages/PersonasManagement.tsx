@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { personasApi, type PersonaResponse } from '../api/client';
 import { tenantsApi, type TenantRole } from '../api/tenants.api';
@@ -82,6 +83,17 @@ export default function PersonasManagement() {
     // Unused locally but kept for WorkerDetail-triggered confirm flows
     const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; title: string; message: string }>({ isOpen: false, title: '', message: '' });
     const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+    // Posición del menú "⋯" en la pantalla. Va en un portal con posición fija:
+    // dentro de la tabla (que tiene scroll propio) quedaba recortado con pocas
+    // filas (H-19). Si no cabe hacia abajo, se abre hacia arriba.
+    const [menuPos, setMenuPos] = useState<{ top: number; right: number; arriba: boolean } | null>(null);
+    useEffect(() => {
+        if (!menuOpenId) return;
+        const cerrar = () => setMenuOpenId(null);
+        window.addEventListener('scroll', cerrar, true);
+        window.addEventListener('resize', cerrar);
+        return () => { window.removeEventListener('scroll', cerrar, true); window.removeEventListener('resize', cerrar); };
+    }, [menuOpenId]);
 
     // Los roles solo se usan en el filtro y la columna del directorio de empresa;
     // el panel de obra trae los suyos.
@@ -174,15 +186,25 @@ export default function PersonasManagement() {
                         <button
                             className="btn btn-ghost btn-sm"
                             style={{ padding: '4px 6px', color: 'var(--text-muted)' }}
-                            onClick={() => setMenuOpenId(isOpen ? null : p.personaId)}
+                            aria-label={`Acciones de ${p.nombre}`}
+                            aria-expanded={isOpen}
+                            onClick={(e) => {
+                                if (isOpen) { setMenuOpenId(null); return; }
+                                const r = e.currentTarget.getBoundingClientRect();
+                                const ALTO_MENU = 140;
+                                const arriba = window.innerHeight - r.bottom < ALTO_MENU + 8 && r.top > ALTO_MENU + 8;
+                                setMenuPos({ top: arriba ? r.top - 4 : r.bottom + 4, right: window.innerWidth - r.right, arriba });
+                                setMenuOpenId(p.personaId);
+                            }}
                         >
                             <FiMoreVertical size={16} />
                         </button>
-                        {isOpen && (
+                        {isOpen && menuPos && createPortal(
                             <>
                                 <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setMenuOpenId(null)} />
-                                <div style={{
-                                    position: 'absolute', right: 0, top: '100%', zIndex: 1000,
+                                <div role="menu" style={{
+                                    position: 'fixed', right: menuPos.right, top: menuPos.top, zIndex: 1000,
+                                    transform: menuPos.arriba ? 'translateY(-100%)' : undefined,
                                     background: 'var(--surface-card)', border: '1px solid var(--surface-border)',
                                     borderRadius: 'var(--radius-md)', boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
                                     minWidth: 180, overflow: 'hidden',
@@ -202,7 +224,8 @@ export default function PersonasManagement() {
                                         </button>
                                     ))}
                                 </div>
-                            </>
+                            </>,
+                            document.body,
                         )}
                     </div>
                 );

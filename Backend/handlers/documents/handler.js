@@ -1082,22 +1082,37 @@ module.exports.assign = async (event) => {
             ExpressionAttributeValues: expressionAttributeValues
         }));
 
-        // Notificar asignados, y volver a avisar a quien ya la tenía pendiente.
-        const assignedIds = [...nuevasAsignaciones.map(a => a.personaId), ...soloAvisar];
+        // Notificar a los asignados nuevos. A quien ya la tenía pendiente
+        // ("Recordar") le llega un recordatorio, con su propio asunto: antes
+        // recibía otro "Nuevo documento asignado", que se leía como duplicado
+        // y no dejaba constancia de que se recordó (H-10, H-11).
+        const nombreAsigna = assignerName || docResult.Item.creatorName || 'Gestor SST';
         try {
-            await eventBus.emit('document.assigned', {
-                documentId: id,
-                userIds: assignedIds,
-                assignedBy,
-                creatorName: assignerName || docResult.Item.creatorName || 'Gestor SST',
-                documentName: docResult.Item.titulo,
-                dueDate: fechaLimite || null
-            });
+            if (nuevasAsignaciones.length > 0) {
+                await eventBus.emit('document.assigned', {
+                    documentId: id,
+                    userIds: nuevasAsignaciones.map(a => a.personaId),
+                    assignedBy,
+                    creatorName: nombreAsigna,
+                    documentName: docResult.Item.titulo,
+                    dueDate: fechaLimite || null
+                });
+            }
+            if (soloAvisar.length > 0) {
+                await eventBus.emit('document.reminder', {
+                    documentId: id,
+                    userIds: soloAvisar,
+                    assignedBy,
+                    creatorName: nombreAsigna,
+                    documentName: docResult.Item.titulo,
+                });
+            }
         } catch (eventError) {
             console.error('Error emitting document.assigned event:', eventError);
         }
 
         return success({
+            recordados: soloAvisar.length,
             message: `Documento asignado a ${plural(nuevasAsignaciones.length, 'persona', 'personas')}`,
             // Lo que va al cliente es el RUT, no el sobre: esta respuesta la
             // dibuja la pantalla igual que un listado.

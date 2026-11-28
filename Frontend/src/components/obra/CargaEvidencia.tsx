@@ -148,7 +148,7 @@ export default function CargaEvidencia({
                         <section className="dp-bloque" aria-label="Archivo">
                             <span className="ob-rotulo">Archivo</span>
                             <input
-                                ref={inputArchivo} type="file" accept="application/pdf,image/*" style={{ display: 'none' }}
+                                ref={inputArchivo} type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp,.doc,.docx,.xls,.xlsx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }}
                                 onChange={(e) => { elegir(e.target.files?.[0]); e.target.value = ''; }}
                             />
                             {archivo ? (
@@ -171,7 +171,7 @@ export default function CargaEvidencia({
                                 >
                                     <LuUpload size={22} aria-hidden="true" />
                                     <span className="ce-zona__titulo">Selecciona o arrastra el archivo</span>
-                                    <span className="ce-zona__nota">PDF o imagen, hasta 10 MB</span>
+                                    <span className="ce-zona__nota">PDF, imagen, Word o Excel, hasta 10 MB</span>
                                 </button>
                             )}
                         </section>

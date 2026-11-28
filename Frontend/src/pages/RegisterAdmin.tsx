@@ -43,8 +43,12 @@ export default function RegisterAdmin() {
         }
     };
 
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text);
+    const copyToClipboard = async (text: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch {
+            return; // sin permiso: no se marca como copiado (H-20)
+        }
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };

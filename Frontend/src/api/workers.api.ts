@@ -64,9 +64,11 @@ export const workersApi = {
         if (params?.obraId) {
             query += `&obraId=${params.obraId}`;
         }
-        const res = await apiRequest<{ total: number; personas: any[] }>(query);
+        const res = await apiRequest<{ total: number; bloqueadas?: number; personas: any[] }>(query);
         if (res.success && res.data) {
-            return { success: true, data: res.data.personas as unknown as Worker[] };
+            // `bloqueadas`: cuántas personas quedaron fuera por una solicitud del
+            // titular (sin decir quiénes). Ver H-13.
+            return { success: true, data: res.data.personas as unknown as Worker[], bloqueadas: res.data.bloqueadas || 0 };
         }
         return res as any;
     },

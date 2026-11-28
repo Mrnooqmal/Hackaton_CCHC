@@ -188,8 +188,14 @@ function Descarga() {
         setEnviando(false);
         setPassword('');
         if (r?.success && r.data) {
-            descargarJson(r.data, `mis-datos-${new Date().toISOString().slice(0, 10)}.json`);
-            setListo('Se descargó el archivo. Guárdalo en un lugar seguro: contiene tus datos personales.');
+            try {
+                descargarJson(r.data, `mis-datos-${new Date().toISOString().slice(0, 10)}.json`);
+                setListo('Se descargó el archivo. Guárdalo en un lugar seguro: contiene tus datos personales.');
+            } catch {
+                setError('La copia se generó, pero el navegador no permitió descargarla. Revisa los permisos de descarga y vuelve a intentarlo.');
+            }
+        } else if (r?.sinRed || r?.reintentable) {
+            setError('No se pudo generar la copia: el servidor no respondió a tiempo. Vuelve a intentarlo en un momento.');
         } else setError(r?.error || 'No se pudo generar la copia.');
     };
     return (

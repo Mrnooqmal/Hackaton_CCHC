@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MIN_PASSWORD, passwordCumple, requisitosPassword } from '../utils/politicaPassword';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -14,7 +15,6 @@ import '../css/cambio-password.css';
 import { useBloqueoAyuda } from '../ayuda/useBloqueoAyuda';
 
 // Misma regla que valida el backend (POST /auth/change-password).
-const MIN_PASSWORD = 6;
 
 const PASOS_PRIMER_INGRESO = [
   { id: 'password', label: 'Contraseña' },
@@ -45,12 +45,13 @@ export default function ChangePassword() {
   const [capsLock, setCapsLock] = useState(false);
   const [form, setForm] = useState({ passwordActual: '', passwordNuevo: '', confirmarPassword: '' });
 
-  const minLen = form.passwordNuevo.length >= MIN_PASSWORD;
+  // Misma política que el onboarding y el restablecimiento (H-21).
+  const cumple = passwordCumple(form.passwordNuevo);
   const match = form.passwordNuevo === form.confirmarPassword && form.confirmarPassword !== '';
   // En el primer ingreso no se pide la contraseña actual (ya se validó al iniciar sesión).
-  const canSubmit = Boolean((isFirstEntry || form.passwordActual) && minLen && match);
+  const canSubmit = Boolean((isFirstEntry || form.passwordActual) && cumple && match);
   const requisitos = [
-    { label: `${MIN_PASSWORD} caracteres o más`, ok: minLen },
+    ...requisitosPassword(form.passwordNuevo),
     { label: 'Coinciden', ok: match },
   ];
 
@@ -269,7 +270,7 @@ export default function ChangePassword() {
               </div>
             </FieldSection>
 
-            <FieldSection title="Nueva contraseña" description={`Mínimo ${MIN_PASSWORD} caracteres`} inline>
+            <FieldSection title="Nueva contraseña" description={`Mínimo ${MIN_PASSWORD} caracteres, con letras y números`} inline>
               <div className="form-group">
                 <label className="form-label" htmlFor="cpw-nueva">Nueva contraseña</label>
                 <div className="cpw-pass">

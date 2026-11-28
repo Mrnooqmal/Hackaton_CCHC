@@ -206,6 +206,16 @@ export default function ObraNueva() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isCreating) return;
+    // Decir qué falta (H-14): antes un formulario vacío terminaba en "No se
+    // pudo crear la obra. Intenta nuevamente.", que no dice qué corregir.
+    const faltan = [
+      !formData.nombre?.trim() && 'el nombre de la obra',
+      !formData.direccion?.trim() && 'la dirección',
+    ].filter(Boolean) as string[];
+    if (faltan.length) {
+      setError(`Falta ${faltan.join(' y ')}.`);
+      return;
+    }
     setError('');
     setIsCreating(true);
     try {
@@ -244,7 +254,7 @@ export default function ObraNueva() {
         refreshObras();
         navigate('/obras');
       } else {
-        setError('No se pudo crear la obra. Intenta nuevamente.');
+        setError(res.error || 'No se pudo crear la obra. Intenta nuevamente.');
       }
     } catch (err) {
       console.error(err);

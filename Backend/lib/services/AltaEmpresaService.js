@@ -20,18 +20,8 @@ const { validateRut } = require('../utils/validation');
 const { buildDefaultCargoCatalog } = require('../ds44');
 const { subirLogoEmpresa, problemaLogo } = require('./LogoEmpresa');
 
-/** Mínimo exigible a la contraseña que el administrador elige en el onboarding. */
-const MIN_PASSWORD = 8;
-
-const politicaPassword = (password) => {
-    if (!password || password.length < MIN_PASSWORD) {
-        return `La contraseña debe tener al menos ${MIN_PASSWORD} caracteres`;
-    }
-    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-        return 'La contraseña debe combinar letras y números';
-    }
-    return null;
-};
+// Misma política que el cambio y el restablecimiento (lib/utils/politicaPassword.js).
+const { problemaPassword: politicaPassword, MIN_PASSWORD } = require('../utils/politicaPassword');
 
 /** Edad del administrador: quien firma por la empresa tiene que ser mayor de edad. */
 const EDAD_MINIMA_ADMIN = 18;

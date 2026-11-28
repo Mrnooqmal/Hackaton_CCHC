@@ -22,7 +22,7 @@ lo corrija.
 
 ## Cambiar contraseña
 
-Toca **Cambiar contraseña**, escribe la **actual**, la **nueva** (mínimo 6 caracteres) y
+Toca **Cambiar contraseña**, escribe la **actual**, la **nueva** (mínimo 8 caracteres, con letras y números) y
 confírmala. Al cambiarla **se cierran todas tus otras sesiones abiertas**, en cualquier equipo.
 
 ## Cambiar PIN de firma

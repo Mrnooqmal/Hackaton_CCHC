@@ -23,6 +23,7 @@ import { tenantsApi, type Tenant, type TenantRole, type TenantCargo } from '../a
 import { eppApi, CERTIFICADO_TIPO_LABEL, type EppElemento, type EppAdjunto, type CertificadoTipo } from '../api/epp.api';
 import { uploadsApi } from '../api/uploads.api';
 import { personasApi } from '../api/personas.api';
+import { authApi } from '../api/auth.api';
 import type { PersonaResponse } from '../api/types';
 import { PERMISSION_GROUPS, ALL_PERMISSION_KEYS, PERMISSIONS } from '../permissions';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
@@ -535,7 +536,8 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
     // Qué mandar al servidor por cada logo: un data URL si es nuevo, '' si se
     // quitó, nada si sigue igual. Con "mismo logo" no hay variante oscura.
     const cambioLogo = (actual: string | null, guardado: string | null) =>
-        actual?.startsWith('data:') ? actual : (!actual && guardado ? '' : undefined);
+        actual === guardado ? undefined
+            : actual?.startsWith('data:') ? actual : (!actual && guardado ? '' : undefined);
     const guardados = logosGuardados();
     const oscuroFinal = logos.mismo ? null : logos.oscuro;
     const logoBase64 = cambioLogo(logos.claro, guardados.claro);
@@ -561,19 +563,35 @@ function IdentidadTab({ tenant, personas, onSaved, brand, auth, toast }: {
                 nombre: nombre.trim(), colorPrimario: color, logoBase64, logoOscuroBase64,
             });
             if (res.success && res.data) {
-                // Aplicar identidad en vivo y reflejarla en la sesión.
+                // Aplicar identidad en vivo y reflejarla en la sesión. Si el logo
+                // no se tocó, se deja el que ya está en el encabezado: antes un
+                // `null` aquí lo borraba hasta recargar (H-09).
+                const quitoLogo = logoBase64 === '';
+                const claroFinal = logos.claro || (quitoLogo ? null : guardados.claro);
                 brand.setPrimaryColor(color);
-                brand.setLogo(logos.claro, oscuroFinal);
+                if (claroFinal || quitoLogo) brand.setLogo(claroFinal, oscuroFinal);
                 auth.updateUser({
                     branding: {
                         ...(auth.user?.branding || {}),
                         colorPrimario: color,
-                        logoUrl: logos.claro,
+                        logoUrl: claroFinal,
                         logoOscuroUrl: oscuroFinal,
                     },
                 });
                 onSaved(res.data.tenant);
                 toast.success('Identidad de la empresa actualizada.');
+                // Un logo nuevo queda como data URL en memoria: se cambia por la
+                // URL firmada del servidor, que es la que sobrevive al recargar.
+                if (logoBase64 || logoOscuroBase64) {
+                    const token = localStorage.getItem('auth_token');
+                    const me = token ? await authApi.me(token).catch(() => null) : null;
+                    const branding = (me?.data?.user as { branding?: { logoUrl?: string | null; logoOscuroUrl?: string | null; colorPrimario?: string | null } } | undefined)?.branding;
+                    if (branding?.logoUrl) {
+                        brand.setLogo(branding.logoUrl, branding.logoOscuroUrl || null);
+                        auth.updateUser({ branding: { ...(auth.user?.branding || {}), ...branding, colorPrimario: color } });
+                        setLogos({ mismo: !branding.logoOscuroUrl, claro: branding.logoUrl, oscuro: branding.logoOscuroUrl || null });
+                    }
+                }
             } else {
                 setErr(res.error || 'No se pudo guardar la identidad.');
             }

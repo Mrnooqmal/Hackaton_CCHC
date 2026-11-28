@@ -11,7 +11,8 @@ import {
     FiClock,
     FiEdit3,
 } from 'react-icons/fi';
-import { activitiesApi, documentsApi, surveysApi } from '../api/client';
+import { activitiesApi, documentsApi, signatureRequestsApi, surveysApi } from '../api/client';
+import { leerCola } from '../utils/colaFirmas';
 import type { Activity } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useObraContext } from '../context/ObraContext';
@@ -152,36 +153,63 @@ export default function Dashboard() {
         const cargar = async () => {
             setCargando(true);
 
-            const [docsRes, encuestasRes, actividadesRes] = await Promise.allSettled([
-                personaId ? documentsApi.list({ asignadoA: personaId }) : Promise.resolve(null),
+            // Las firmas se cuentan igual que "Mis firmas" y el contador del
+            // sidebar (utils/firmasPendientes): documentos pendientes de la
+            // persona más las solicitudes de firma. Antes solo se miraban las
+            // `asignaciones` de los documentos y el inicio decía "Al día" con
+            // firmas por hacer (H-07).
+            const [docsRes, encuestasRes, actividadesRes, solicitudesRes] = await Promise.allSettled([
+                personaId ? documentsApi.list({ pendienteDe: personaId }) : Promise.resolve(null),
                 surveysApi.list(),
                 activitiesApi.list({ obraId: selectedObraId || undefined }),
+                personaId ? signatureRequestsApi.getPendingByWorker(personaId) : Promise.resolve(null),
             ]);
             if (!vivo) return;
 
-            const faltaSenal = [valor(docsRes), valor(encuestasRes), valor(actividadesRes)].some((r) => Boolean(r?.sinRed));
+            const faltaSenal = [valor(docsRes), valor(encuestasRes), valor(actividadesRes), valor(solicitudesRes)].some((r) => Boolean(r?.sinRed));
             setSinDatos(faltaSenal);
 
             const lista: Pendiente[] = [];
             let bloqueantesPend = 0;
 
-            // ── Documentos asignados a mí ─────────────────────────────────────
+            // ── Solicitudes de firma ──────────────────────────────────────────
+            const solicitudes = valor(solicitudesRes)?.data?.pendientes || [];
+            const yaSolicitados = new Set(solicitudes.map((r) => r.referenciaId).filter(Boolean));
+            solicitudes.forEach((r) => {
+                const urgencia = urgenciaDePlazo(r.fechaLimite?.slice(0, 10), hoy);
+                lista.push({
+                    id: `doc:sol:${r.requestId}`,
+                    titulo: `Firmar ${r.titulo}`,
+                    meta: [r.tipoInfo?.label || 'Solicitud de firma', textoDePlazo(r.fechaLimite?.slice(0, 10), hoy)].filter(Boolean).join(' · '),
+                    urgencia,
+                    bloqueante: false,
+                    marca: marcaDeUrgencia(urgencia),
+                    icono: <FiEdit3 size={17} />,
+                    to: '/my-signatures',
+                });
+            });
+
+            // ── Documentos pendientes de mi firma ─────────────────────────────
+            let tenantIdLocal: string | null = null;
+            try { tenantIdLocal = localStorage.getItem('tenant_id'); } catch { /* sin almacenamiento */ }
+            const firmadosSinSenal = new Set(
+                leerCola(tenantIdLocal)
+                    .filter((f) => f.workerId === personaId && f.type === 'documento')
+                    .map((f) => f.targetId),
+            );
             const docs = valor(docsRes)?.data?.documents || [];
             docs.forEach((doc) => {
+                if (yaSolicitados.has(doc.documentId) || firmadosSinSenal.has(doc.documentId)) return;
                 const asig = (doc.asignaciones || []).find(
                     (a) => a.personaId === personaId || a.workerId === personaId,
                 );
-                if (!asig) return;
-                if (asig.estado === 'firmado' || asig.fechaFirma) return;
-                // Sin archivo cargado todavía no es responsabilidad de la persona:
-                // espera que el admin suba la plantilla.
-                if (!doc.s3Key && !doc.archivoUrl) return;
+                if (asig && (asig.estado === 'firmado' || asig.fechaFirma)) return;
 
-                const urgencia = urgenciaDePlazo(asig.fechaLimite, hoy);
+                const urgencia = urgenciaDePlazo(asig?.fechaLimite, hoy);
                 const bloqueante = Boolean(doc.bloqueante);
                 if (bloqueante) bloqueantesPend += 1;
 
-                const plazo = textoDePlazo(asig.fechaLimite, hoy);
+                const plazo = textoDePlazo(asig?.fechaLimite, hoy);
                 const contexto = bloqueante
                     ? 'Requisito para ingresar a terreno'
                     : doc.tipoDescripcion || 'Documento pendiente de firma';

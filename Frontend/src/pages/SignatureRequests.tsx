@@ -28,7 +28,6 @@ import {
     signaturesApi,
     workersApi,
     uploadsApi,
-    inboxApi,
     type SignatureRequest,
     type Worker,
     type DocumentoAdjunto,
@@ -207,35 +206,9 @@ export default function SignatureRequests() {
             });
 
             if (response.success && response.data) {
-                // FIXED MISSING NOTIFICATIONS (Frontend explicit push)
-                try {
-                    const recipientsRes = await inboxApi.getRecipients(currentUserId, user?.tenantId || user?.empresaId || '');
-                    if (recipientsRes.success && recipientsRes.data) {
-                        const allRecipients = recipientsRes.data.recipients;
-                        // Por identificador. Antes se cruzaba por RUT, y la lista de
-                        // destinatarios nunca traía el RUT (está cifrado en la tabla):
-                        // el aviso no le llegaba a nadie.
-                        const recipientUserIds = allRecipients.filter(r => selectedWorkers.includes(r.personaId)).map(r => r.userId);
-                        
-                        if (recipientUserIds.length > 0) {
-                            const isUrgent = newRequest.fechaLimite && new Date(newRequest.fechaLimite) <= new Date(Date.now() + 48 * 60 * 60 * 1000); // <48hrs
-                            await inboxApi.send({
-                                senderId: currentUserId || 'system',
-                                senderName: user ? `${user.nombre} ${user.apellido || ''}`.trim() : 'PrevencionApp',
-                                senderRol: 'system',
-                                recipientIds: recipientUserIds,
-                                type: 'task',
-                                priority: isUrgent ? 'urgent' : 'normal',
-                                subject: `Firma requerida: ${newRequest.titulo || REQUEST_TYPES[newRequest.tipo].label}`,
-                                content: `Se requiere tu firma para el documento "${newRequest.titulo || REQUEST_TYPES[newRequest.tipo].label}". Por favor firma a la brevedad.`,
-                                linkedEntity: { type: 'signature-request', id: response.data.requestId }
-                            });
-                        }
-                    }
-                } catch (notifErr) {
-                    console.error('Error mandando notificación desde frontend', notifErr);
-                }
-
+                // El aviso "Firma requerida" lo manda el backend (evento
+                // `signature.requested`, con idempotencia). Este envío extra desde
+                // el navegador lo duplicaba en la bandeja (H-10).
                 setRequests([response.data, ...requests]);
                 resetForm();
                 setShowModal(false);

@@ -98,10 +98,22 @@ export async function apiRequest<T>(
                 : `${endpoint}?tenantId=${tenantId}`;
         }
 
-        const response = await fetch(`${API_BASE_URL}${finalEndpoint}`, {
-            ...options,
-            headers,
-        });
+        const url = `${API_BASE_URL}${finalEndpoint}`;
+        let response: Response;
+        try {
+            response = await fetch(url, { ...options, headers });
+        } catch (e) {
+            // Un preflight CORS que falla de forma pasajera (500/503 de API
+            // Gateway, hallazgo H-02) se ve igual que "sin red". Si el equipo
+            // dice estar en línea y el método es idempotente, se reintenta una
+            // vez: repetirlo no duplica nada. POST y PATCH no se repiten.
+            const metodo = (options.method || 'GET').toUpperCase();
+            const idempotente = ['GET', 'HEAD', 'PUT', 'DELETE'].includes(metodo);
+            const enLinea = typeof navigator === 'undefined' || navigator.onLine !== false;
+            if (!esErrorDeRed(e) || !idempotente || !enLinea) throw e;
+            await new Promise((ok) => setTimeout(ok, 600));
+            response = await fetch(url, { ...options, headers });
+        }
         // Respondió el servidor (con lo que sea): hay señal (utils/conexion).
         marcarSenal(true);
 

@@ -219,6 +219,8 @@ export interface AssignDocumentData {
 export interface AssignResult {
     message: string;
     asignaciones: DocumentAssignment[];
+    /** Cuántas personas ya la tenían pendiente y recibieron un recordatorio. */
+    recordados?: number;
 }
 
 export interface SignDocumentData {

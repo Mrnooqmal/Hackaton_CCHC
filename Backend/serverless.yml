@@ -1040,6 +1040,18 @@ functions:
 
   corsPreflight:
     handler: handlers/cors/handler.preflight
+    # Paquete propio y mínimo (hallazgo H-02): con el paquete común, un arranque
+    # en frío del preflight cargaba el zip de todo el backend y a veces fallaba
+    # (500/503 intermitentes en `OPTIONS /tenants/...` y `/obras/...`). Un
+    # preflight rechazado bloquea la petición real sin que la app pueda leerlo.
+    memorySize: 128
+    timeout: 3
+    package:
+      individually: true
+      patterns:
+        - '!**'
+        - handlers/cors/**
+        - lib/utils/response.js
     events:
       # Los reportes de `report-to` pueden llegar con preflight CORS.
       - httpApi:
@@ -1144,6 +1156,11 @@ functions:
   # getBatchDownloadUrls) se borraron al desplegar (aprobado el 7 de noviembre).
   uploadsModule:
     handler: handlers/uploads/handler.enrutar
+    # 29s (tope de HTTP API: 30). Con los 6s por omisión, la lectura en voz alta
+    # (mapa de documentos + cabeceras de S3 + encolar) a veces no alcanzaba: la
+    # Lambda se cortaba, API Gateway respondía un 500 suyo sin cabeceras de CORS
+    # y el navegador lo veía como "sin red" (hallazgo H-01).
+    timeout: 29
     events:
       - httpApi:
           path: /uploads/presigned-url
@@ -1279,6 +1296,12 @@ functions:
   # prórroga y respuesta, con historial que solo crece. Ver handlers/gobernanza.
   gobernanzaDerechos:
     handler: handlers/gobernanza/derechos.handler
+    # La exportación de "Mis datos" verifica la contraseña (scrypt, ver
+    # authLogin), junta todas las secciones del titular, audita y escribe la
+    # solicitud: con los 6 s por omisión se cortaba antes de auditar y el
+    # navegador no recibía nada (hallazgo H-06). 29 s: tope de HTTP API.
+    memorySize: 1769
+    timeout: 29
     events:
       - httpApi:
           path: /gobernanza/{proxy+}

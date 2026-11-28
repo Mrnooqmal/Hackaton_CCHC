@@ -64,7 +64,8 @@ export default function ObraResumen(props: ObraResumenProps) {
         personasAsignadas, dotacionDeclarada, dotacionObservacion, onDeclarar,
         incidentesAbiertos, onVerEquipo, onVerIncidentes, onVerDocumentos,
     } = props;
-    const [copiado, setCopiado] = useState(false);
+    // null: sin acción · 'ok': se copió · 'error': el navegador no lo permitió.
+    const [copiado, setCopiado] = useState<null | 'ok' | 'error'>(null);
     const [guardando, setGuardando] = useState<CampoCondicion | null>(null);
 
     const declarada = typeof dotacionDeclarada === 'number' && dotacionDeclarada > 0 ? dotacionDeclarada : null;
@@ -75,10 +76,17 @@ export default function ObraResumen(props: ObraResumenProps) {
         ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([direccion, comuna, region].filter(Boolean).join(', '))}`
         : null;
 
-    const copiar = () => {
-        navigator.clipboard.writeText(codigo);
-        setCopiado(true);
-        setTimeout(() => setCopiado(false), 1500);
+    // "Copiado" solo si de verdad se copió (H-20): sin permiso o sin contexto
+    // seguro, `writeText` rechaza y antes igual se mostraba el visto.
+    const copiar = async () => {
+        try {
+            if (!navigator.clipboard?.writeText) throw new Error('sin portapapeles');
+            await navigator.clipboard.writeText(codigo);
+            setCopiado('ok');
+        } catch {
+            setCopiado('error');
+        }
+        setTimeout(() => setCopiado(null), 1800);
     };
 
     const declarar = async (campo: CampoCondicion, valor: boolean) => {
@@ -98,7 +106,7 @@ export default function ObraResumen(props: ObraResumenProps) {
                             <span className="ob-letrero__codigo">{codigo}</span>
                         </div>
                         <button type="button" className="ob-letrero__copiar" onClick={copiar} aria-label="Copiar código de la obra">
-                            {copiado ? <LuCheck size={14} /> : <LuCopy size={14} />} {copiado ? 'Copiado' : 'Copiar'}
+                            {copiado === 'ok' ? <LuCheck size={14} /> : <LuCopy size={14} />} {copiado === 'ok' ? 'Copiado' : copiado === 'error' ? 'No se pudo copiar' : 'Copiar'}
                         </button>
                     </div>
                     <div className="ob-letrero__pie">

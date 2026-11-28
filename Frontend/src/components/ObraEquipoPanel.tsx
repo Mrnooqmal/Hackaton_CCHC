@@ -14,6 +14,7 @@ import { AlertBanner, Modal } from './ui';
 import type { CollectionMode } from './ui';
 import { PERMISSIONS } from '../permissions';
 import FirmaAsistidaModal from './FirmaAsistidaModal';
+import ConfirmModal from './ConfirmModal';
 import AgregarACuadrillaDrawer, { type GrupoCandidatos } from './AgregarACuadrillaDrawer';
 import { EquipoObraSkeleton } from './ui/Skeletons';
 import {
@@ -278,6 +279,10 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [updating, setUpdating] = useState<string | null>(null);
+    // "Dar de baja" pide confirmación (H-04): antes daba de baja al primer clic.
+    const [bajaPendiente, setBajaPendiente] = useState<any | null>(null);
+    // Personas de la empresa ocultas por una solicitud del titular (solo el número).
+    const [bloqueadas, setBloqueadas] = useState(0);
     const [toast, setToast] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [searchAssigned, setSearchAssigned] = useState('');
@@ -359,7 +364,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
     const reloadWorkers = async () => {
         const res = await workersApi.list();
-        if (res.success && res.data) setWorkers(res.data as any[]);
+        if (res.success && res.data) { setWorkers(res.data as any[]); setBloqueadas((res as any).bloqueadas || 0); }
     };
 
     useEffect(() => {
@@ -373,7 +378,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
             .then(([oRes, wRes, tRes]) => {
                 if (!alive) return;
                 if (oRes.success && oRes.data) setObra(oRes.data);
-                if (wRes.success && wRes.data) setWorkers(wRes.data as any[]);
+                if (wRes.success && wRes.data) { setWorkers(wRes.data as any[]); setBloqueadas((wRes as any).bloqueadas || 0); }
                 if (tRes && (tRes as any).success && (tRes as any).data) setRoles(((tRes as any).data.roles || []) as TenantRole[]);
             })
             .catch(() => alive && setError('Error de conexión al cargar datos'))
@@ -1366,7 +1371,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                             <button
                                 className="btn btn-ghost btn-sm eq2-baja-btn"
                                 disabled={updating === w.personaId || w.rol === 'admin'}
-                                onClick={() => handleBaja(w)}
+                                onClick={() => setBajaPendiente(w)}
                             >
                                 <FiX size={13} /> Dar de baja
                             </button>
@@ -1536,6 +1541,14 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
     return (
         <>
             {error && <AlertBanner variant="error" message={error} onDismiss={() => setError('')} />}
+            {bloqueadas > 0 && (
+                <AlertBanner
+                    variant="info"
+                    message={bloqueadas === 1
+                        ? 'Hay 1 persona de la empresa que no aparece aquí: sus datos están bloqueados mientras se resuelve una solicitud sobre sus datos personales. Volverá a aparecer cuando se resuelva.'
+                        : `Hay ${bloqueadas} personas de la empresa que no aparecen aquí: sus datos están bloqueados mientras se resuelve una solicitud sobre sus datos personales. Volverán a aparecer cuando se resuelva.`}
+                />
+            )}
 
             {/* La página es UNA columna de secciones separadas por reglas: sin
                 tarjetas contenedoras, la jerarquía la marcan los rótulos. */}
@@ -1718,7 +1731,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
 
                         {filteredUnassigned.length === 0 ? (
                             <div className="eq-empty-state">
-                                {search ? 'Sin resultados para esa búsqueda.' : 'Todas las personas de la empresa ya están en esta obra.'}
+                                {search ? 'Sin resultados para esa búsqueda.' : bloqueadas > 0 ? 'No hay más personas disponibles para sumar a esta obra.' : 'Todas las personas de la empresa ya están en esta obra.'}
                             </div>
                         ) : mode === 'grid' ? (
                             <div className="eq2-crew-grid">
@@ -2022,7 +2035,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                                 <button
                                     className="btn btn-ghost btn-sm eq2-baja-btn"
                                     disabled={updating === w.personaId || w.rol === 'admin'}
-                                    onClick={async () => { setEditModal(null); await handleBaja(w); }}
+                                    onClick={() => { setEditModal(null); setBajaPendiente(w); }}
                                     style={{ marginRight: 'auto' }}
                                 >
                                     <FiX size={13} /> Dar de baja
@@ -2099,6 +2112,18 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                 );
             })()}
 
+            <ConfirmModal
+                isOpen={!!bajaPendiente}
+                title="Dar de baja"
+                message={bajaPendiente
+                    ? `${`${bajaPendiente.nombre} ${bajaPendiente.apellido || ''}`.trim()} quedará inactivo y dejará de aparecer en la cuadrilla. Su historial se conserva y puedes reactivarlo después.`
+                    : ''}
+                confirmLabel="Dar de baja"
+                variant="danger"
+                onCancel={() => setBajaPendiente(null)}
+                onConfirm={() => { const w = bajaPendiente; setBajaPendiente(null); if (w) void handleBaja(w); }}
+            />
+
             {/* Modal confirmación gestión */}
             {gestionModalPersona && (
                 <GestionConfirmModal
@@ -2174,6 +2199,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
                         isOpen
                         cuadrilla={`${sup.nombre} ${sup.apellido || ''}`.trim()}
                         grupos={grupos}
+                        bloqueadas={bloqueadas}
                         onClose={() => setAgregarA(null)}
                         onConfirm={(ids) => { setAgregarA(null); moverEnLote(ids, sup.personaId); }}
                         cargoDe={(w) => {
