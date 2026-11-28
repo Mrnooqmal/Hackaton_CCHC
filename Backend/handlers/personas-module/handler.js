@@ -29,7 +29,7 @@ const { tenantIdDeSesion, conSesion, sesionPuede } = require('../../lib/auth/ses
 const { conNeutro, registrarFallo } = require('../../lib/degradacion');
 const { llaveDe: llaveDeArreglos, construirAsignacion } = require('../../lib/arregloSensible');
 const { camposDeArchivo } = require('../../lib/huellaArchivo');
-const { supersedeFirmasDeReferencia } = require('../../lib/services/superarFirmas');
+const { superandoFirmas } = require('../../lib/services/superarFirmas');
 const { conAuditoriaSalud, anotarAccesoSalud, tieneDatosDeSalud, TIPOS: TIPOS_ACCESO_SALUD } = require('../../lib/gobernanza/auditoriaSalud');
 
 /** Estado HTTP de cada rechazo de `PersonaService.setPin` y `restablecerPin`.
@@ -379,19 +379,31 @@ const avisarFaltaPlantilla = async ({ solicitante, persona, obraId, faltantes })
 
 // Documentos de onboarding (clasificacion 'diario') de una persona en una obra.
 // Base para idempotencia (no duplicar al reasignar) y limpieza al desasignar.
-const getOnboardingDocsForPersonaObra = async (tenantId, obraId, personaId) => {
-    const result = await docClient.send(new QueryCommand({
-        TableName: DOCUMENTS_TABLE,
-        IndexName: 'tenantId-index',
-        KeyConditionExpression: 'tenantId = :t',
-        ExpressionAttributeValues: { ':t': tenantId },
-    }));
-    return (result.Items || []).filter((doc) =>
-        doc.obraId === obraId &&
-        doc.clasificacion === 'diario' &&
-        (doc.asignaciones || []).some((a) => a.personaId === personaId)
-    );
+const documentosDeEmpresa = async (tenantId) => {
+    const documentos = [];
+    let desde;
+    do {
+        const pagina = await docClient.send(new QueryCommand({
+            TableName: DOCUMENTS_TABLE,
+            IndexName: 'tenantId-index',
+            KeyConditionExpression: 'tenantId = :t',
+            ExpressionAttributeValues: { ':t': tenantId },
+            ...(desde ? { ExclusiveStartKey: desde } : {}),
+        }));
+        documentos.push(...(pagina.Items || []));
+        desde = pagina.LastEvaluatedKey;
+    } while (desde);
+    return documentos;
 };
+
+const onboardingDePersonaObra = (documentos, obraId, personaId) => documentos.filter((doc) =>
+    doc.obraId === obraId &&
+    doc.clasificacion === 'diario' &&
+    (doc.asignaciones || []).some((a) => a.personaId === personaId)
+);
+
+const getOnboardingDocsForPersonaObra = async (tenantId, obraId, personaId) =>
+    onboardingDePersonaObra(await documentosDeEmpresa(tenantId), obraId, personaId);
 
 // Documentos de empresa que TODA persona (salvo admin) debe revisar/firmar,
 // indistinto de rol o cargo: Reglamento Interno y Política SST. Se toman del
@@ -445,7 +457,7 @@ const reconcileCargoDocs = async (tenantId, obraId, personaId, nuevosCargosNorm)
 // - Nunca bloquea el registro/vinculación (cada ítem va en su propio try/catch).
 // - IDEMPOTENTE: si el ítem ya existe para esta persona+obra (de una asignación
 //   previa), no se duplica; si estaba archivado, se reactiva.
-const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) => {
+const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante, cargado = {} }) => {
     // El kit DE OBRA es solo para trabajadores de TERRENO (con cargo). Los documentos
     // de EMPRESA (Reglamento Interno + Política SST) ya NO viven en el kit por obra:
     // son de nivel tenant y se asignan a TODA persona no-admin en ensureCompanyDocsForPersona
@@ -466,18 +478,20 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     const esTerreno = !ROLES_GESTION.has(rolNorm) && cargos.length > 0;
     if (!esTerreno) return;
 
-    const tenant = await tenantService.getById(tenantId).catch(() => null);
+    const tenant = cargado.tenant || await tenantService.getById(tenantId).catch(() => null);
     const kit = resolveKitUnion(tenant?.reglas?.cargos, cargos);
     if (!Array.isArray(kit) || kit.length === 0) return;
 
-    const obra = obraId ? await obraService.getById(obraId).catch(() => null) : null;
+    const obra = cargado.obra || (obraId ? await obraService.getById(obraId).catch(() => null) : null);
     const aplicabilidad = (obra && obra.aplicabilidadKit) || {};       // MIPER manual por obra+cargo
     const plantillasPorCargo = (obra && obra.plantillasOnboarding) || {};
 
     // Idempotencia: documentos de onboarding ya existentes de esta persona en la
     // obra (de una asignación previa), agrupados por la key del kit / tipo. Se guardan
     // TODOS (no solo el primero) para poder distinguir por cargo al reconciliar.
-    const existentes = await getOnboardingDocsForPersonaObra(tenantId, obraId, persona.personaId).catch(() => []);
+    const existentes = cargado.documentos
+        ? onboardingDePersonaObra(cargado.documentos, obraId, persona.personaId)
+        : await getOnboardingDocsForPersonaObra(tenantId, obraId, persona.personaId).catch(() => []);
     const existentePorKey = new Map(); // key -> doc[]
     for (const d of existentes) {
         const k = d.kitItemKey || d.tipo;
@@ -487,6 +501,7 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
     }
 
     const faltantes = [];
+    let fallidos = 0;
 
     for (const item of kit) {
         try {
@@ -589,10 +604,12 @@ const runOnboardingForObra = async ({ tenantId, obraId, persona, solicitante }) 
             });
         } catch (itemErr) {
             console.error(`Onboarding: error en ítem ${item.key}:`, itemErr.message);
+            fallidos++;
         }
     }
 
     await avisarFaltaPlantilla({ solicitante, persona, obraId, faltantes });
+    return { fallidos };
 };
 
 // Asigna los DOCUMENTOS DE EMPRESA (Reglamento Interno + Política SST) a una persona
@@ -648,33 +665,35 @@ const ensureCompanyDocsForPersona = async ({ tenantId, persona, solicitante }) =
     }
 };
 
-// Plantillas de OBRA (`obra.plantillasOnboarding[cargo][item]`): al subir o
-// cambiar una, se re-corre el onboarding de quienes ya están en la obra con ese
-// cargo. Es idempotente: crea solo lo que falta, no toca documentos existentes.
-const syncPlantillasObra = async ({ tenantId, obraId, anteriores, nuevas }) => {
-    const cargosCambiados = new Set();
-    for (const [cargo, items] of Object.entries(nuevas || {})) {
-        const cambio = Object.entries(items || {}).some(([key, p]) =>
-            p?.fileKey && p.fileKey !== anteriores?.[cargo]?.[key]?.fileKey);
-        if (cambio) cargosCambiados.add(normalizeCargoCodigo(cargo));
-    }
-    if (cargosCambiados.size === 0) return { personas: 0 };
+const syncPlantillasObra = async ({ tenantId, obra }) => {
+    const cargosConPlantilla = new Set(Object.entries(obra.plantillasOnboarding || {})
+        .filter(([, items]) => Object.values(items || {}).some((p) => p?.fileKey))
+        .map(([cargo]) => normalizeCargoCodigo(cargo)));
+    const resultado = { asignadas: 0, pendientes: 0 };
+    if (cargosConPlantilla.size === 0) return resultado;
 
-    const personas = await personaService.listByTenant(tenantId, { obraId });
-    let revisadas = 0;
+    const { obraId } = obra;
+    const [personas, tenant, documentos] = await Promise.all([
+        personaService.listByTenant(tenantId, { obraId }),
+        tenantService.getById(tenantId),
+        documentosDeEmpresa(tenantId),
+    ]);
     for (const persona of personas) {
         const enObra = persona.cargosEnObra?.(obraId) || [];
         const cargos = enObra.length ? enObra : [persona.cargo];
-        if (!cargos.some((c) => c && cargosCambiados.has(normalizeCargoCodigo(c)))) continue;
+        if (!cargos.some((c) => c && cargosConPlantilla.has(normalizeCargoCodigo(c)))) continue;
         try {
-            // Sin solicitante: el aviso de "faltan plantillas" no se repite por persona.
-            await runOnboardingForObra({ tenantId, obraId, persona, solicitante: null });
-            revisadas++;
+            const r = await runOnboardingForObra({
+                tenantId, obraId, persona, solicitante: null, cargado: { tenant, obra, documentos },
+            });
+            if (r?.fallidos) resultado.pendientes++;
+            else resultado.asignadas++;
         } catch (e) {
             console.error(`Plantillas de obra (persona ${persona.personaId}):`, e.message);
+            resultado.pendientes++;
         }
     }
-    return { personas: revisadas };
+    return resultado;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -771,15 +790,18 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
                 .filter((a) => a.estado === 'firmado' || a.fechaFirma)
                 .map((a) => a.personaId || a.workerId)
                 .filter(Boolean);
-            if (firmantes.length > 0) await supersedeFirmasDeReferencia(doc.documentId, firmantes);
             const asigReset = (doc.asignaciones || []).map((a) => ({ ...a, estado: 'pendiente', fechaFirma: null }));
-            await docClient.send(new UpdateCommand({
-                TableName: DOCUMENTS_TABLE,
-                Key: { documentId: doc.documentId },
-                UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, asignaciones = :asig, firmas = :f, updatedAt = :u',
-                ExpressionAttributeValues: { ':s': null, ':n': null, ':h': null, ':asig': asigReset, ':f': [], ':u': now },
-            }));
-            removidos++;
+            try {
+                await superandoFirmas(doc.documentId, firmantes, () => docClient.send(new UpdateCommand({
+                    TableName: DOCUMENTS_TABLE,
+                    Key: { documentId: doc.documentId },
+                    UpdateExpression: 'SET s3Key = :s, archivoNombre = :n, archivoHuella = :h, asignaciones = :asig, firmas = :f, updatedAt = :u',
+                    ExpressionAttributeValues: { ':s': null, ':n': null, ':h': null, ':asig': asigReset, ':f': [], ':u': now },
+                })));
+                removidos++;
+            } catch (e) {
+                console.error(`No se pudo quitar la plantilla del documento ${doc.documentId}:`, e.message);
+            }
             continue;
         }
 
@@ -802,12 +824,12 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
         const huboFirmados = (doc.asignaciones || []).some((a) => a.estado === 'firmado' || a.fechaFirma);
 
         let nuevasAsignaciones = doc.asignaciones || [];
+        let porSuperar = [];
         if (esRenovacion && huboFirmados) {
-            const firmantes = (doc.asignaciones || [])
+            porSuperar = (doc.asignaciones || [])
                 .filter((a) => a.estado === 'firmado' || a.fechaFirma)
                 .map((a) => a.personaId)
                 .filter(Boolean);
-            await supersedeFirmasDeReferencia(doc.documentId, firmantes);
             nuevasAsignaciones = (doc.asignaciones || []).map((a) => ({
                 ...a, estado: 'pendiente', fechaFirma: null,
             }));
@@ -835,12 +857,17 @@ const syncPlantillasToWorkers = async ({ tenantId, oldCargos, newCargos }) => {
                 ':u': now,
             };
 
-        await docClient.send(new UpdateCommand({
-            TableName: DOCUMENTS_TABLE,
-            Key: { documentId: doc.documentId },
-            UpdateExpression: updateExpr,
-            ExpressionAttributeValues: exprValues,
-        }));
+        try {
+            await superandoFirmas(doc.documentId, porSuperar, () => docClient.send(new UpdateCommand({
+                TableName: DOCUMENTS_TABLE,
+                Key: { documentId: doc.documentId },
+                UpdateExpression: updateExpr,
+                ExpressionAttributeValues: exprValues,
+            })));
+        } catch (e) {
+            console.error(`No se pudo renovar la plantilla del documento ${doc.documentId}:`, e.message);
+            continue;
+        }
         actualizados++;
 
         // Avisar a TODOS los asignados (en renovación reabren firma; en primera

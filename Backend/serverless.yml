@@ -474,7 +474,6 @@ functions:
 
   obrasModule:
     handler: handlers/obras-module/handler.obrasHandler
-    # Guardar plantillas de obra asigna documentos a quienes ya están en ella.
     timeout: 29
     events:
       - httpApi:
@@ -815,6 +814,7 @@ functions:
 
   updateDocument:
     handler: handlers/documents/handler.update
+    timeout: 29
     events:
       - httpApi:
           path: /documents/{id}
@@ -833,6 +833,7 @@ functions:
 
   documentNuevaVersion:
     handler: handlers/documents/handler.nuevaVersion
+    timeout: 29
     events:
       - httpApi:
           path: /documents/{id}/nueva-version
@@ -845,7 +846,6 @@ functions:
   # /documents/{id}/... porque 'corporativo' no es un id.
   documentNuevaVersionCorporativa:
     handler: handlers/documents/handler.nuevaVersionCorporativa
-    # Recorre cada copia por persona y supera sus firmas.
     timeout: 29
     events:
       - httpApi:

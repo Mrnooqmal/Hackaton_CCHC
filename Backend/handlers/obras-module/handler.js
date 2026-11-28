@@ -111,26 +111,23 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
         if (method === 'PUT' && obraId && !action) {
             if (!sesion) return sesionRes.respuesta;
             if (!puedeGestionarObras()) return error('No tienes permiso para editar obras', 403);
-            const anterior = await obraDelTenant(obraId);
-            if (!anterior) return error('Obra no encontrada', 404);
+            if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const body = JSON.parse(event.body || '{}');
             const obra = await obraService.actualizar(tenantId, obraId, body);
+            let asignacion;
             if (body.plantillasOnboarding !== undefined) {
-                // La plantilla ya quedó guardada: un fallo al asignar no la deshace.
                 try {
                     const { syncPlantillasObra } = require('../personas-module/handler');
-                    await syncPlantillasObra({
-                        tenantId, obraId,
-                        anteriores: anterior.plantillasOnboarding,
-                        nuevas: body.plantillasOnboarding,
-                    });
+                    asignacion = await syncPlantillasObra({ tenantId, obra });
                 } catch (e) {
                     console.error(`Asignación por plantillas de obra ${obraId}:`, e.message);
+                    asignacion = { error: true };
                 }
             }
             return success({
                 message: 'Obra actualizada',
-                obra: obra.toSafeFormat()
+                obra: obra.toSafeFormat(),
+                ...(asignacion ? { asignacion } : {}),
             });
         }
 
