@@ -7,6 +7,8 @@ import { activitiesApi, documentsApi, incidentsApi, obrasApi, uploadsApi, worker
 import { CATEGORIA_EVIDENCIA_DS44 } from '../api/uploads.api';
 import { abrirDocumentoFirmable as abrirDocumentoFirmableCompartido, resolverDocumentoFirmable } from '../utils/documentoFirmado';
 import { publicarNuevaVersion, esVersionable, ENTIDADES_REVISION } from '../utils/versionarDocumento';
+import { AVISO_REEMPLAZO_FIRMADO, copiaDePersona, tieneFirmas } from '../utils/documentoDePersona';
+import { mensajeDeError } from '../api/client';
 import { caducidadPorDefecto, tiempoRelativo, revisionVencida, MESES_VIGENCIA_DEFECTO } from '../utils/vigenciaDocumento';
 import ObraAplicabilidadKit from '../components/ObraAplicabilidadKit';
 import ObraPlantillasOnboarding from '../components/ObraPlantillasOnboarding';
@@ -695,6 +697,11 @@ export default function ObraDetalle() {
           setDoCreateSaving(false);
           return;
         }
+        if (doCreateForm.file && !esNuevaVersion && existingDoc?.documentId && tieneFirmas(existingDoc)
+          && !window.confirm(AVISO_REEMPLAZO_FIRMADO)) {
+          setDoCreateSaving(false);
+          return;
+        }
 
         let s3Key: string | undefined;
         let archivoNombre: string | undefined;
@@ -869,7 +876,10 @@ export default function ObraDetalle() {
 
       let documentId = selectedDoDoc.documentId;
       if (documentId) {
-        await documentsApi.update(documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: fileName, fechaCaducidad: expiryValue } as any);
+        await documentsApi.update(documentId, {
+          ...(pendingDoFile ? { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: fileName } : {}),
+          fechaCaducidad: expiryValue,
+        } as any);
       } else {
         const createRes = await documentsApi.create({
           obraId,
@@ -939,41 +949,40 @@ export default function ObraDetalle() {
     if (!obraId || !obra) return;
     setBulkUploadingTipo(tipo);
     try {
-      const uploadRes = await uploadsApi.getUploadUrl({
-        archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
-        categoria: CATEGORIA_EVIDENCIA_DS44, empresaId: obra.tenantId
-      });
-      if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-      await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
-      const fileKey = uploadRes.data.fileKey;
-      await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
+      const subida = await uploadsApi.uploadFile(file, CATEGORIA_EVIDENCIA_DS44, obra.tenantId);
+      if (!subida.success || !subida.data) throw new Error(subida.error || 'No se pudo subir el archivo.');
+      const fileKey = subida.data.url;
 
-      // Actualizar el documento de cada worker para este tipo
+      let firmados = 0;
+      let sinDocumento = 0;
+      let fallidos = 0;
+      let guardados = 0;
       for (const worker of workers) {
         const workerId = worker.personaId;
-        const docsRes = await documentsApi.list({ obraId, workerId } as any);
-        if (docsRes.success && docsRes.data) {
-          const workerDocs = docsRes.data.documents || [];
-          const targetDoc = workerDocs.find((d: any) =>
-            d.tipo === tipo &&
-            (d.asignaciones || []).some((a: any) => (a.personaId) === workerId)
-          );
-          if (targetDoc) {
-            // Solo el archivo. Esto marcaba además la asignación de cada persona
-            // como "firmado": una firma solo existe si pasó por PIN o vale, y el
-            // backend lo descartaba en silencio mientras la pantalla lo daba por
-            // hecho. La asignación queda pendiente hasta que la persona firme.
-            await documentsApi.update(targetDoc.documentId, {
-              s3Key: fileKey,
-              archivoUrl: fileKey,
-              archivoNombre: file.name,
-            } as any);
-          }
-        }
+        const docsRes = await documentsApi.list({ asignadoA: workerId } as any);
+        const destino = docsRes.success && docsRes.data
+          ? copiaDePersona<any>(docsRes.data.documents || [], { personaId: workerId, tipo, obraId })
+          : undefined;
+        if (!destino) { sinDocumento++; continue; }
+        if (tieneFirmas(destino)) { firmados++; continue; }
+        const guardado = await documentsApi.update(destino.documentId, {
+          s3Key: fileKey,
+          archivoUrl: fileKey,
+          archivoNombre: file.name,
+        } as any);
+        if (guardado.success) guardados++;
+        else fallidos++;
       }
-      setBulkUploadDone(prev => ({ ...prev, [tipo]: true }));
+      const omitidas = [
+        firmados ? `${firmados} con documento ya firmado` : '',
+        sinDocumento ? `${sinDocumento} sin documento propio` : '',
+        fallidos ? `${fallidos} con error al guardar` : '',
+      ].filter(Boolean).join(', ');
+      if (omitidas) setObraToast(`Sin actualizar: ${omitidas}.`);
+      if (guardados && !fallidos) setBulkUploadDone(prev => ({ ...prev, [tipo]: true }));
     } catch (err) {
       console.error('Error en carga masiva de onboarding:', err);
+      setObraToast(mensajeDeError(err, 'No se pudo subir el archivo.'));
     } finally {
       setBulkUploadingTipo(null);
     }
@@ -1097,6 +1106,8 @@ export default function ObraDetalle() {
       alert('Indica el motivo del cambio para publicar la nueva versión.');
       return;
     }
+    if (pendingDs44File && !esNuevaVersionPlan && selectedDs44Doc.documentId && tieneFirmas(selectedDs44Detail)
+      && !window.confirm(AVISO_REEMPLAZO_FIRMADO)) return;
 
     setUploadingKey(selectedDs44Doc.key);
     setDs44Saving(true);
@@ -1171,16 +1182,18 @@ export default function ObraDetalle() {
           titulo: tituloDocumento,
         } as any);
       } else if (documentId) {
-        await documentsApi.update(documentId, {
-          s3Key: fileKey,
-          archivoUrl: fileKey,
-          archivoNombre: fileName,
+        const guardado = await documentsApi.update(documentId, {
+          ...(pendingDs44File ? { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: fileName } : {}),
           fechaCaducidad: expiryValue,
           titulo: tituloDocumento,
           // Queda registrado en el historial como autor de esta versión.
           publicadaPor: user?.personaId,
           publicadaPorNombre: autorNombreDs44,
         } as any);
+        if (!guardado.success) {
+          alert(guardado.error || 'No se pudo guardar el documento.');
+          return;
+        }
       } else {
         const createRes = await documentsApi.create({
           obraId,

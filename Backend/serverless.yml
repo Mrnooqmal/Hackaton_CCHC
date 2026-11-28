@@ -474,6 +474,7 @@ functions:
 
   obrasModule:
     handler: handlers/obras-module/handler.obrasHandler
+    timeout: 29
     events:
       - httpApi:
           path: /obras
@@ -813,6 +814,7 @@ functions:
 
   updateDocument:
     handler: handlers/documents/handler.update
+    timeout: 29
     events:
       - httpApi:
           path: /documents/{id}
@@ -831,6 +833,7 @@ functions:
 
   documentNuevaVersion:
     handler: handlers/documents/handler.nuevaVersion
+    timeout: 29
     events:
       - httpApi:
           path: /documents/{id}/nueva-version
@@ -843,6 +846,7 @@ functions:
   # /documents/{id}/... porque 'corporativo' no es un id.
   documentNuevaVersionCorporativa:
     handler: handlers/documents/handler.nuevaVersionCorporativa
+    timeout: 29
     events:
       - httpApi:
           path: /documents/corporativo/nueva-version

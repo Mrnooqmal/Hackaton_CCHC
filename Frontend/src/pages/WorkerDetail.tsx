@@ -26,7 +26,7 @@ import {
 import {
     workersApi,
     documentsApi,
-    uploadsApi,
+    mensajeDeError,
     signaturesApi,
     signatureRequestsApi,
     activitiesApi,
@@ -48,6 +48,9 @@ import AccesoPlataforma from '../components/AccesoPlataforma';
 import { useCargoCatalog } from '../hooks/useCargoCatalog';
 import { eppApi, faltantesLabel, type EppElemento } from '../api/epp.api';
 import { DS44_ONBOARDING_ITEMS, getCargoLabel } from '../utils/ds44';
+import { adjuntarArchivo } from '../utils/adjuntarArchivo';
+import { esCopiaDe, tieneFirmas } from '../utils/documentoDePersona';
+import ConfirmModal from '../components/ConfirmModal';
 import '../css/ficha.css';
 
 interface WorkerStats {
@@ -172,8 +175,11 @@ export default function WorkerDetail() {
     const [signatures, setSignatures] = useState<DigitalSignature[]>([]);
     const [, setCompliance] = useState({ completed: 0, assigned: 0 });
     const [ds44Checklist, setDs44Checklist] = useState<{ completed: number; total: number; items: Array<{ key: string; label: string; articulo?: string; kind?: string; tipo?: string; actionLabel?: string; firmaInfo?: string; status: 'ok' | 'pending' | 'na' | 'subido' }> } | null>(null);
-    const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }>>({});
+    const [docRecordMap, setDocRecordMap] = useState<Record<string, { documentId: string; firmado: boolean }>>({});
     const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+    const [errorSubida, setErrorSubida] = useState('');
+    const [reemplazo, setReemplazo] = useState<{ tipo: string; file: File } | null>(null);
+    const [docsCargados, setDocsCargados] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     // Vigilancia de salud (Art. 67/73) — editable desde la ficha del trabajador
@@ -232,11 +238,11 @@ export default function WorkerDetail() {
     };
 
     const resolveTargetObraId = (workerData: WorkerWithRole | null) => {
-        if (selectedObraId) return selectedObraId;
-        if (!workerData) return null;
-        const overrideObraId = getLatestOverrideObraId((workerData as any).onboardingDS44);
-        if (overrideObraId) return overrideObraId;
-        return workerData.obraIds?.[0] || null;
+        if (!workerData) return selectedObraId || null;
+        const obras = workerData.obraIds || [];
+        const preferida = [selectedObraId, getLatestOverrideObraId((workerData as any).onboardingDS44)]
+            .find((id) => id && obras.includes(id));
+        return preferida || obras[0] || null;
     };
 
     useEffect(() => {
@@ -293,6 +299,7 @@ export default function WorkerDetail() {
         if (!worker) return;
         setFotoSaving(true);
         setFotoSuccess(false);
+        setError('');
         try {
             const base64 = await resizeToBase64(file);
             const res = await workersApi.update(worker.personaId, { fotoPerfil: base64 } as any);
@@ -300,9 +307,12 @@ export default function WorkerDetail() {
                 setWorker((prev) => (prev ? { ...prev, fotoPerfil: base64 } : prev));
                 setFotoSuccess(true);
                 setTimeout(() => setFotoSuccess(false), 2500);
+            } else {
+                setError(res.error || 'No se pudo guardar la foto.');
             }
         } catch (err) {
             console.error('Error subiendo la foto:', err);
+            setError(mensajeDeError(err, 'No se pudo guardar la foto.'));
         } finally {
             setFotoSaving(false);
         }
@@ -311,11 +321,14 @@ export default function WorkerDetail() {
     const handleFotoRemove = async () => {
         if (!worker) return;
         setFotoSaving(true);
+        setError('');
         try {
             const res = await workersApi.update(worker.personaId, { fotoPerfil: null } as any);
             if (res.success) setWorker((prev) => (prev ? { ...prev, fotoPerfil: undefined } : prev));
+            else setError(res.error || 'No se pudo quitar la foto.');
         } catch (err) {
             console.error('Error quitando la foto:', err);
+            setError(mensajeDeError(err, 'No se pudo quitar la foto.'));
         } finally {
             setFotoSaving(false);
         }
@@ -602,6 +615,7 @@ export default function WorkerDetail() {
         if (!rut) return;
         setLoading(true);
         setError('');
+        setErrorSubida('');
         try {
             // OPTIMIZED: Use getByRut instead of listing all workers
             const workerRes = await workersApi.getByRut(rut);
@@ -635,7 +649,8 @@ export default function WorkerDetail() {
             const kitDoneByLink = new Set<string>();
             if (activitiesRes.success && activitiesRes.data) {
                 (activitiesRes.data.activities || []).forEach((act: any) => {
-                    if (act.kitItemKey && (act.asistentes || []).some((a: any) => (a.personaId || a.workerId) === myId)) {
+                    if (targetObraId && act.obraId && act.obraId !== targetObraId) return;
+                    if (act.kitItemKey &&(act.asistentes || []).some((a: any) => (a.personaId || a.workerId) === myId)) {
                         kitDoneByLink.add(act.kitItemKey);
                     }
                 });
@@ -691,8 +706,12 @@ export default function WorkerDetail() {
             const docHasFile = new Map<string, boolean>();
             // Firma cruzada (CAPACITACION_SST): completo solo si relator + trabajador firmaron.
             const docRelatorPendiente = new Map<string, boolean>();
-            const newDocRecordMap: Record<string, { documentId: string; s3Key: string | null; archivoNombre: string | null }> = {};
-            docs.forEach((doc: any) => {
+            const newDocRecordMap: Record<string, { documentId: string; firmado: boolean }> = {};
+            const docsEnVista: any[] = targetObraId
+                ? docs.filter((d: any) => !d.obraId || d.obraId === targetObraId)
+                : docs;
+            const prioridadObra = (doc: { obraId?: string | null }) => (doc.obraId ? 0 : 1);
+            [...docsEnVista].sort((a, b) => prioridadObra(a) - prioridadObra(b)).forEach((doc) => {
                 const hasFile = Boolean(doc.s3Key || doc.archivoUrl);
                 const relatorPendiente = Boolean(doc.requiereFirmaRelator) && doc.firmaRelator?.estado !== 'firmado';
                 (doc.asignaciones || []).forEach((asig: any) => {
@@ -703,12 +722,13 @@ export default function WorkerDetail() {
                     if (hasFile) docHasFile.set(doc.tipo, true);
                     if (relatorPendiente) docRelatorPendiente.set(doc.tipo, true);
                     // Track document record for upload
-                    if (!newDocRecordMap[doc.tipo]) {
-                        newDocRecordMap[doc.tipo] = { documentId: doc.documentId, s3Key: doc.s3Key || null, archivoNombre: doc.archivoNombre || null };
+                    if (!newDocRecordMap[doc.tipo] && esCopiaDe(doc, personaId)) {
+                        newDocRecordMap[doc.tipo] = { documentId: doc.documentId, firmado: tieneFirmas(doc) };
                     }
                 });
             });
             setDocRecordMap(newDocRecordMap);
+            setDocsCargados(Boolean(docsRes?.success));
 
             let ds44Total = 0;
             let ds44Completed = 0;
@@ -810,19 +830,16 @@ Generado por PrevencionApp
         const docRecord = docRecordMap[tipo];
         if (!docRecord || !worker) return;
         setUploadingDocType(tipo);
+        setErrorSubida('');
         try {
-            const uploadRes = await uploadsApi.getUploadUrl({
-                archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
-                categoria: 'trabajadores', empresaId: (worker as any).tenantId || (worker as any).empresaId || 'default'
+            await adjuntarArchivo({
+                documentId: docRecord.documentId, file, categoria: 'trabajadores',
+                tenantId: (worker as any).tenantId || authTenantId,
             });
-            if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
-            const fileKey = uploadRes.data.fileKey;
-            await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
-            await documentsApi.update(docRecord.documentId, { s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name } as any);
             await loadWorkerData(); // Recargar datos
         } catch (err) {
             console.error('Error subiendo documento del trabajador:', err);
+            setErrorSubida(mensajeDeError(err, 'No se pudo subir el archivo.'));
         } finally {
             setUploadingDocType(null);
         }
@@ -853,6 +870,7 @@ Generado por PrevencionApp
     if (!worker) return null;
 
     const w = worker as any;
+    const obraEnVista = obrasInfo[resolveTargetObraId(worker) || '']?.nombre;
     const ce = w.contactoEmergencia || {};
     const cursosLista: string[] = Array.isArray(w.cursos)
         ? w.cursos.map((c: any) => (typeof c === 'string' ? c : c?.nombre)).filter(Boolean)
@@ -1185,7 +1203,7 @@ Generado por PrevencionApp
                                 personaId={worker.personaId}
                                 tenantId={authTenantId}
                                 initial={w.evidencias || []}
-                                canEdit={canVigilancia}
+                                canEdit={canOnboarding || canEditarDatos}
                             />
                         </div>
 
@@ -1229,16 +1247,28 @@ Generado por PrevencionApp
                                 const pct = ds44Checklist.total > 0 ? Math.round((ds44Checklist.completed / ds44Checklist.total) * 100) : 0;
                                 return (
                                     <section className="pd-seccion" aria-label="Onboarding DS 44">
-                                        {seccion('Onboarding DS 44', `${ds44Checklist.completed} de ${ds44Checklist.total} ítems completados`,
+                                        {seccion('Onboarding DS 44', `${ds44Checklist.completed} de ${ds44Checklist.total} ítems completados${obraEnVista ? ` · ${obraEnVista}` : ''}`,
                                             <span className="pd-pct">{pct}%</span>)}
                                         <span className="pd-barra-progreso"><span style={{ width: `${pct}%` }} /></span>
+                                        {errorSubida && <div className="pd-alerta" role="alert"><LuCircleAlert size={15} aria-hidden="true" /><span>{errorSubida}</span></div>}
+                                        {!docsCargados && <div className="pd-alerta" role="alert"><LuCircleAlert size={15} aria-hidden="true" /><span>No se pudieron cargar los documentos. Recarga la página para subir archivos.</span></div>}
+                                        {docsCargados && ds44Checklist.items.some((i) => i.status === 'pending' && i.kind === 'document' && !docRecordMap[i.tipo || '']) && (
+                                            <p className="pd-fila-meta">Los ítems sin documento asignado no admiten archivo. Los documentos dependen de la obra, el cargo y el rol de la persona.</p>
+                                        )}
                                         <div className="pd-lista">
                                             {ds44Checklist.items.map((item) => {
-                                                const subir = (texto: string) => canOnboarding && (
+                                                const documento = docRecordMap[item.tipo || ''];
+                                                const subir = (texto: string) => canOnboarding && documento && (
                                                     <label className="btn btn-secondary btn-sm pd-subir">
                                                         {uploadingDocType === item.tipo ? <><LuClock size={13} /> Subiendo…</> : <><LuUpload size={13} /> {texto}</>}
                                                         <input type="file" accept=".pdf,.doc,.docx" hidden disabled={!!uploadingDocType}
-                                                            onChange={(e) => { const f = e.target.files?.[0]; if (f && item.tipo) handleUploadWorkerDoc(item.tipo, f); e.target.value = ''; }} />
+                                                            onChange={(e) => {
+                                                                const f = e.target.files?.[0];
+                                                                e.target.value = '';
+                                                                if (!f || !item.tipo) return;
+                                                                if (documento.firmado) setReemplazo({ tipo: item.tipo, file: f });
+                                                                else handleUploadWorkerDoc(item.tipo, f);
+                                                            }} />
                                                     </label>
                                                 );
                                                 return (
@@ -1257,7 +1287,7 @@ Generado por PrevencionApp
                                                             )}
                                                         </span>
                                                         {item.status === 'pending' && item.kind === 'document' && (
-                                                            <span className="pd-fila-acciones"><span className="pd-pildora">Pendiente de subir</span>{subir('Subir')}</span>
+                                                            <span className="pd-fila-acciones"><span className="pd-pildora">{docsCargados && !documento ? 'Sin documento asignado' : 'Pendiente de subir'}</span>{subir('Subir')}</span>
                                                         )}
                                                         {item.status === 'subido' && (
                                                             <span className="pd-fila-acciones"><span className="pd-pildora">Pendiente de firma</span>{subir('Reemplazar')}</span>
@@ -1752,6 +1782,17 @@ Generado por PrevencionApp
                 `}</style>
             </Modal>
 
+            <ConfirmModal
+                isOpen={!!reemplazo}
+                title="Reemplazar documento firmado"
+                message="Las firmas quedan guardadas con la versión anterior y habrá que firmar de nuevo el archivo nuevo."
+                confirmLabel="Reemplazar"
+                onCancel={() => setReemplazo(null)}
+                onConfirm={() => {
+                    if (reemplazo) handleUploadWorkerDoc(reemplazo.tipo, reemplazo.file);
+                    setReemplazo(null);
+                }}
+            />
         </>
     );
 }

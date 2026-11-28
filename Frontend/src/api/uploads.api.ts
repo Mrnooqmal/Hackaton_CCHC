@@ -130,7 +130,7 @@ export const uploadsApi = {
             });
 
             if (!confirmResponse.success || !confirmResponse.data) {
-                return { success: false, error: 'Error confirmando carga' };
+                return { success: false, error: confirmResponse.error || 'Error confirmando carga' };
             }
 
             return { success: true, data: confirmResponse.data.documento };

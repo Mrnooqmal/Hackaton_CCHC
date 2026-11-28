@@ -755,7 +755,7 @@ export default function MySignatures() {
                                                     </span>
                                                 ) : (
                                                     <span className="msig-pill msig-pill--atencion">
-                                                        {firma.estado === 'disputada' ? 'Disputada' : firma.estado === 'revocada' ? 'Revocada' : firma.estado}
+                                                        {firma.estado === 'disputada' ? 'Disputada' : firma.estado === 'revocada' ? 'Revocada' : firma.estado === 'superada' ? 'Versión anterior' : firma.estado}
                                                     </span>
                                                 )}
                                                 <FiChevronRight size={18} className="msig-hist-chevron" />
@@ -866,7 +866,7 @@ export default function MySignatures() {
                             <div className="msig-modal-col">
                                 <div className="msig-hist-detail-status">
                                     {esValida ? <FiCheck size={15} /> : <FiAlertCircle size={15} />}
-                                    {esValida ? 'Firma válida' : firma.estado === 'disputada' ? 'Firma disputada' : firma.estado}
+                                    {esValida ? 'Firma válida' : firma.estado === 'disputada' ? 'Firma disputada' : firma.estado === 'superada' ? 'Firma de una versión anterior' : firma.estado}
                                 </div>
                                 <div className="msig-verif">
                                     <span className="msig-verif-label"><FiShield size={13} /> Token de verificación</span>

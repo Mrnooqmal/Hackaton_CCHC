@@ -147,7 +147,7 @@ Esta sección responde a las tres preocupaciones centrales: **acceso único por 
 
 ### 5.3 Integridad y trazabilidad de los datos
 
-- Cada firma es un **registro inmutable**: se crea una vez y no se altera. Su estado solo cambia a través de un flujo controlado y auditado (disputa → resolución).
+- Cada firma es un **registro inmutable**: se crea una vez y su contenido no se altera. Su estado cambia por el flujo de disputa y revisión, y pasa a `superada` cuando se reemplaza o se publica una versión nueva del documento que firmó (queda con `supersededAt`; el documento archiva la versión anterior con quién publicó). Una firma superada no vuelve a `valida` al resolver una disputa o una revisión.
 - El **PDF original nunca se modifica**; la evidencia de firmas se agrega como anexo, preservando el documento tal cual se subió.
 - Cada firma guarda **evidencia de auditoría** completa: fecha, hora, *timestamp*, IP de origen y método de validación, lo que permite **reconstruir con precisión quién firmó qué y cuándo**.
 - El mecanismo de **idempotencia** garantiza que reintentos o dobles envíos **no generen firmas duplicadas** ni inconsistencias.

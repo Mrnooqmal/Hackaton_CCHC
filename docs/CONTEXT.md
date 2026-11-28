@@ -274,8 +274,23 @@ Los **procedimientos** de obra (tipos en `TIPOS_PROCEDIMIENTO`: `PROCEDIMIENTO_T
   (`RepositorioDs44`, que muestra el historial con descarga por versión). Los
   tipos versionables viven en `TIPOS_VERSIONABLES` (`utils/versionarDocumento.ts`),
   espejo de `TIPOS_PROCEDIMIENTO` del backend.
-  `FirmaService`/`SignaturesTable` **no se tocan** (firmas reales quedan intactas
-  en su tabla inmutable; en `versiones[]` va solo un snapshot para auditoría).
+  En `SignaturesTable` las firmas no se borran, pero las de la versión anterior
+  pasan a `superada` (con `supersededAt`): `FirmaService` es idempotente sobre las
+  firmas `valida` y, sin esto, volver a firmar devolvía la firma antigua. En
+  `versiones[]` queda además el snapshot para auditoría.
+- **Reemplazar sin publicar versión** (`handler.update`): la misma regla. Si el
+  documento tenía un archivo y firmas, se archivan con esa versión (firmas,
+  asignaciones y relator), todo vuelve a `pendiente` y se avisa a quienes habían
+  firmado. La primera subida a un documento sin archivo no reabre nada. Las firmas
+  se marcan antes de escribir el documento: si fallan, no se escribe. Con solo
+  `persona.onboarding` no se reemplaza un documento firmado que no sea la copia de
+  una sola persona. La ficha, el equipo de obra y la carga masiva de onboarding
+  solo escriben en copias individuales; la carga masiva omite las ya firmadas.
+- **Plantillas de obra** (`PUT /obras/{id}` con `plantillasOnboarding`): se crea lo
+  que falte a quienes ya están en la obra con ese cargo. Corre dentro de la
+  petición y es repetible: si algo queda pendiente, la respuesta lo dice y volver a
+  guardar lo reintenta. Cambiar una plantilla **no** actualiza documentos que ya
+  existen.
 - **Re-firma visible en "Mis Firmas":** además de resetear `asignaciones` a
   `pendiente`, al publicar la nueva versión el frontend crea una **`SignatureRequest`**
   (`referenciaId = documentId`, versión en el título) para los firmantes previos.

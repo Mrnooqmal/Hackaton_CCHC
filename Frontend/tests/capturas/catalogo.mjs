@@ -44,6 +44,7 @@ const porEnviar = (i) => ({
 });
 
 export const CAPTURAS = [
+    { archivo: 'personas/ficha', perfil: 'administracion', ruta: '/personas/33.333.333-3', ver: 'Exportar ficha', marcar: 'button:has-text("Exportar ficha")' },
     { archivo: 'firmas/mis-firmas', perfil: 'trabajadora', ruta: '/my-signatures', ver: 'Procedimiento de trabajo en altura' },
     { archivo: 'firmas/firmar', perfil: 'trabajadora', ruta: '/my-signatures', pasos: abrirFirma, ver: 'Confirmar firma', marcar: '.pin-input-container' },
     {

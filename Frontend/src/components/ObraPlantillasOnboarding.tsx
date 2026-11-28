@@ -54,7 +54,13 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
     setSaving(true); setError('');
     try {
       const res = await obrasApi.update(obraId, { plantillasOnboarding: next });
-      if (res.success) onSaved?.(next);
+      if (res.success) {
+        onSaved?.(next);
+        const asignacion = res.data?.asignacion;
+        if (asignacion?.error || asignacion?.pendientes) {
+          setError('La plantilla se guardó, pero no se pudo asignar a todas las personas. Vuelve a subirla para reintentar.');
+        }
+      }
       else setError(res.error || 'No se pudo guardar la plantilla');
     } catch { setError('Error de conexión al guardar la plantilla'); }
     finally { setSaving(false); }
@@ -170,7 +176,7 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
                           <input
                             type="file"
                             hidden
-                            disabled={busy === id}
+                            disabled={!!busy || saving}
                             onChange={(e) => {
                               const f = e.target.files?.[0];
                               if (f) uploadPlantilla(cargo.codigo, item, f);
@@ -179,7 +185,7 @@ export default function ObraPlantillasOnboarding({ obraId, tenantId, cargos, ini
                           />
                         </label>
                         {current && (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePlantilla(cargo.codigo, item.key)} title="Quitar plantilla">
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removePlantilla(cargo.codigo, item.key)} disabled={!!busy || saving} title="Quitar plantilla">
                             <FiTrash2 />
                           </button>
                         )}

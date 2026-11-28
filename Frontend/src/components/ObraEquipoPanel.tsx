@@ -475,6 +475,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         reload: reloadOnboarding,
         subirDocumento,
         uploadingDoc,
+        errorSubida,
     } = useObraOnboarding(obraId, assigned, obra);
 
     const filteredUnassigned = useMemo(() => {
@@ -983,6 +984,7 @@ export default function ObraEquipoPanel({ obraId }: { obraId: string }) {
         }
         return (
             <div className="eq-ob-list">
+                {errorSubida && errorSubida.workerId === w.personaId && <AlertBanner variant="error" message={errorSubida.mensaje} />}
                 {ob.itemDetail.map((item) => {
                     const soloFaltaRelator = item.estado === 'pendiente_firma' && item.firmaRelatorPendiente && item.trabajadorFirmo;
                     const estadoLabel = item.estado === 'completo' ? 'Completo'

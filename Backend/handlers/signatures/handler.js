@@ -87,6 +87,8 @@ const firmaDelTenant = async (signatureId, sesion) => {
     return firma && firma.tenantId === sesion.tenantId ? firma : null;
 };
 
+const estadoSiVale = (firma, estado) => (estado === 'valida' && firma.supersededAt ? 'superada' : estado);
+
 /** Deja fuera lo que no sea de la empresa de la sesión. */
 const soloDelTenant = (items, sesion) =>
     (items || []).filter((f) => f.tenantId === sesion.tenantId);
@@ -661,7 +663,7 @@ module.exports.resolve = async (event) => {
                 Key: { signatureId: id },
                 UpdateExpression: 'SET estado = :estado, disputaInfo = :disputaInfo',
                 ExpressionAttributeValues: {
-                    ':estado': body.nuevoEstado,
+                    ':estado': estadoSiVale(firma, body.nuevoEstado),
                     ':disputaInfo': disputaInfo,
                 },
             })
@@ -731,7 +733,7 @@ module.exports.revisar = async (event) => {
             ExpressionAttributeValues: {
                 ':no': false,
                 ':rev': revision,
-                ':estado': body.decision === 'confirmada' ? 'valida' : 'revocada',
+                ':estado': estadoSiVale(firma, body.decision === 'confirmada' ? 'valida' : 'revocada'),
             },
         }));
 

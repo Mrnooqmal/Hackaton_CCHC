@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { activitiesApi, documentsApi, signatureRequestsApi, surveysApi, uploadsApi } from '../api/client';
+import { activitiesApi, documentsApi, mensajeDeError, signatureRequestsApi, surveysApi } from '../api/client';
+import { adjuntarArchivo } from '../utils/adjuntarArchivo';
+import { copiaDePersona } from '../utils/documentoDePersona';
 import { CATEGORIA_EVIDENCIA_DS44 } from '../api/uploads.api';
 import { useCargoCatalog } from './useCargoCatalog';
 import { computeOnboardingSummary, type OnboardingSummary } from '../utils/onboardingObra';
@@ -22,6 +24,7 @@ export function useObraOnboarding(obraId: string | null | undefined, trabajadore
     const [encuestas, setEncuestas] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [uploadingDoc, setUploadingDoc] = useState<string | null>(null); // `${workerId}:${tipo}`
+    const [errorSubida, setErrorSubida] = useState<{ workerId: string; mensaje: string } | null>(null);
 
     const tenantId = obra?.tenantId || localStorage.getItem('tenant_id') || '';
 
@@ -90,34 +93,25 @@ export function useObraOnboarding(obraId: string | null | undefined, trabajadore
     const subirDocumento = useCallback(async (workerId: string, tipo: string, file: File) => {
         if (!obraId || !tenantId) return;
         setUploadingDoc(`${workerId}:${tipo}`);
+        setErrorSubida(null);
         try {
-            const uploadRes = await uploadsApi.getUploadUrl({
-                archivo: file, fileName: file.name, fileType: file.type, fileSize: file.size,
-                categoria: CATEGORIA_EVIDENCIA_DS44, empresaId: tenantId,
-            });
-            if (!uploadRes.success || !uploadRes.data) throw new Error('Sin URL de subida');
-            await fetch(uploadRes.data.uploadUrl, { method: 'PUT', body: file, headers: uploadRes.data.uploadHeaders });
-            const fileKey = uploadRes.data.fileKey;
-            await uploadsApi.confirmUpload({ fileKey, fileName: file.name, fileType: file.type, fileSize: file.size });
-
-            const docsRes = await documentsApi.list({ obraId, workerId } as any);
-            if (docsRes.success && docsRes.data) {
-                const targetDoc = (docsRes.data.documents || []).find((d: any) =>
-                    d.tipo === tipo && (d.asignaciones || []).some((a: any) => a.personaId === workerId)
-                );
-                if (targetDoc) {
-                    await documentsApi.update(targetDoc.documentId, {
-                        s3Key: fileKey, archivoUrl: fileKey, archivoNombre: file.name,
-                    } as any);
-                }
+            const docsRes = await documentsApi.list({ asignadoA: workerId } as any);
+            if (!docsRes.success || !docsRes.data) {
+                throw new Error(docsRes.error || 'No se pudieron cargar los documentos.');
             }
+            const destino = copiaDePersona<any>(docsRes.data.documents || [], { personaId: workerId, tipo, obraId });
+            if (!destino) {
+                throw new Error('Esta persona no tiene un documento propio para este ítem.');
+            }
+            await adjuntarArchivo({ documentId: destino.documentId, file, categoria: CATEGORIA_EVIDENCIA_DS44, tenantId });
             await reload();
         } catch (err) {
             console.error('Error subiendo doc de onboarding:', err);
+            setErrorSubida({ workerId, mensaje: mensajeDeError(err, 'No se pudo subir el archivo.') });
         } finally {
             setUploadingDoc(null);
         }
     }, [obraId, tenantId, reload]);
 
-    return { summary, byWorkerId, loading, reload, subirDocumento, uploadingDoc };
+    return { summary, byWorkerId, loading, reload, subirDocumento, uploadingDoc, errorSubida };
 }

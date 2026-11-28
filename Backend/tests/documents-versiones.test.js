@@ -370,3 +370,191 @@ test('editar el documento no puede marcar firmas: asignaciones, firmas o firma d
         assert.equal(store.updates.length, 0, 'y no se escribe nada, ni siquiera el archivo');
     }
 });
+
+const firmadoPor = (personaId) => ({
+    documentId: 'd1', tenantId: 't1', tipo: 'RESPONSABILIDADES', titulo: 'Responsabilidades',
+    s3Key: 'obras/v1.pdf', version: 1,
+    firmas: [{ personaId, token: 'tok-1' }],
+    asignaciones: [{ personaId, estado: 'firmado', fechaFirma: '2026-03-01T00:00:00.000Z' }],
+});
+
+test('reemplazar el archivo de un documento firmado archiva las firmas y pide firmar de nuevo', async () => {
+    store.doc = firmadoPor('ana');
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input.IndexName === 'personaId-index') {
+            return { Items: [{ signatureId: 'sig-1' }] };
+        }
+        return base(cmd);
+    };
+
+    const res = await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.equal(res.statusCode, 200);
+
+    assert.deepEqual(store.updates[0].Key, { signatureId: 'sig-1' });
+    assert.equal(store.updates[0].ExpressionAttributeValues[':s'], 'superada');
+    const w = escrito(store.updates[1]);
+    assert.deepEqual(w.firmas, []);
+    assert.equal(w.asignaciones[0].estado, 'pendiente');
+    assert.equal(w.asignaciones[0].fechaFirma, null);
+    assert.equal(w.versiones[0].firmasArchivadas[0].token, 'tok-1');
+    assert.equal(w.versiones[0].asignacionesArchivadas[0].estado, 'firmado');
+});
+
+test('editar metadatos o reenviar el mismo archivo no toca las firmas', async () => {
+    for (const cuerpo of [{ titulo: 'Otro' }, { s3Key: 'obras/v1.pdf' }]) {
+        store.doc = firmadoPor('ana');
+        store.updates = [];
+        await handler.update(ev('d1', cuerpo));
+        assert.equal(store.updates.length, 1);
+        const w = escrito(store.updates[0]);
+        assert.equal(w.firmas, undefined);
+        assert.equal(w.asignaciones, undefined);
+    }
+});
+
+test('la evidencia reutilizada no cuenta como firma al reemplazar', async () => {
+    store.doc = {
+        documentId: 'd1', tenantId: 't1', s3Key: 'obras/v1.pdf', version: 1, firmas: [],
+        asignaciones: [{ personaId: 'ana', estado: 'firmado', fechaFirma: '2026-03-01T00:00:00.000Z', reutilizado: true }],
+    };
+    await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.equal(escrito(store.updates[0]).asignaciones, undefined);
+});
+
+const conFirmasValidas = () => {
+    const superadas = [];
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        const { constructor, input } = cmd;
+        if (constructor.name === 'QueryCommand' && input.IndexName === 'personaId-index') {
+            return { Items: [{ signatureId: `sig-${input.ExpressionAttributeValues[':p']}` }] };
+        }
+        if (constructor.name === 'UpdateCommand' && input.Key.signatureId) {
+            superadas.push(input.Key.signatureId);
+            return {};
+        }
+        return base(cmd);
+    };
+    return superadas;
+};
+
+test('publicar una nueva versión supera las firmas de todas las personas del documento', async () => {
+    const superadas = conFirmasValidas();
+    const { res } = await conFirmantes(miper([asig('ana'), asig('luis', 'pendiente')]), {});
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(superadas.sort(), ['sig-ana', 'sig-luis']);
+});
+
+test('publicar una versión corporativa supera las firmas de cada copia', async () => {
+    const superadas = conFirmasValidas();
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input.IndexName === 'tenantId-index') {
+            return { Items: ['ana', 'luis'].map((p) => ({ ...miper([asig(p)]), documentId: `copia-${p}`, tipo: 'REGLAMENTO_INTERNO' })) };
+        }
+        return base(cmd);
+    };
+    const res = await handler.nuevaVersionCorporativa({
+        ...SESION, body: JSON.stringify({ tipo: 'REGLAMENTO_INTERNO', s3Key: 'obras/ri-v2.pdf', motivo: 'Revisión anual' }),
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(superadas.sort(), ['sig-ana', 'sig-luis']);
+});
+
+test('la primera subida sobre un documento firmado no reabre firmas ni crea versión', async () => {
+    store.doc = { ...firmadoPor('ana'), s3Key: null };
+    const res = await handler.update(ev('d1', { s3Key: 'obras/v1.pdf' }));
+    assert.equal(res.statusCode, 200);
+    const w = escrito(store.updates[0]);
+    assert.equal(store.updates.length, 1);
+    assert.equal(w.firmas, undefined);
+    assert.equal(w.version, undefined);
+});
+
+test('si no se pueden superar las firmas, no se escribe el documento', async () => {
+    store.doc = firmadoPor('ana');
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'QueryCommand' && cmd.input.IndexName === 'personaId-index') throw new Error('sin capacidad');
+        return base(cmd);
+    };
+    const res = await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.equal(res.statusCode, 500);
+    assert.equal(store.updates.length, 0);
+});
+
+test('reemplazar exige que el documento no haya cambiado desde que se leyó', async () => {
+    store.doc = { ...firmadoPor('ana'), updatedAt: '2026-03-02T00:00:00.000Z' };
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        if (cmd.constructor.name === 'UpdateCommand' && cmd.input.ConditionExpression) {
+            assert.equal(cmd.input.ExpressionAttributeValues[':leido'], '2026-03-02T00:00:00.000Z');
+            throw Object.assign(new Error('x'), { name: 'ConditionalCheckFailedException' });
+        }
+        return base(cmd);
+    };
+    const res = await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.equal(res.statusCode, 409);
+});
+
+test('con solo persona.onboarding no se reemplaza un documento firmado por varias personas', async () => {
+    const soloOnboarding = (cuerpo) => {
+        const e = ev('d1', cuerpo);
+        return { ...e, requestContext: { authorizer: { lambda: { ...e.requestContext.authorizer.lambda, permisos: 'persona.onboarding' } } } };
+    };
+    store.doc = { ...firmadoPor('ana'), clasificacion: 'obra' };
+    assert.equal((await handler.update(soloOnboarding({ s3Key: 'obras/v2.pdf' }))).statusCode, 403);
+    assert.equal(store.updates.length, 0);
+
+    store.doc = { ...firmadoPor('ana'), clasificacion: 'diario' };
+    assert.equal((await handler.update(soloOnboarding({ s3Key: 'obras/v2.pdf' }))).statusCode, 200);
+});
+
+test('reemplazar o publicar reinicia la firma del relator y quita la marca de asistida', async () => {
+    const conRelator = () => ({
+        ...miper([{ ...asig('ana'), asistidoPor: 'p-asiste' }]),
+        firmaRelator: { personaId: 'rel', estado: 'firmado' },
+    });
+    const { w } = await conFirmantes(conRelator(), {});
+    assert.equal(w.firmaRelator.estado, 'pendiente');
+    assert.equal(w.versiones[0].firmaRelator.personaId, 'rel');
+    assert.equal('asistidoPor' in w.asignaciones[0], false);
+
+    store.doc = conRelator();
+    store.updates = [];
+    await handler.update(ev('m1', { s3Key: 'obras/miper-v2.pdf' }));
+    const u = escrito(store.updates.find((x) => x.Key.documentId));
+    assert.equal(u.firmaRelator.estado, 'pendiente');
+    assert.equal('asistidoPor' in u.asignaciones[0], false);
+});
+
+const falloAlEscribirElDocumento = (nombre) => {
+    const estados = [];
+    const base = docClient.send;
+    docClient.send = async (cmd) => {
+        const { constructor, input } = cmd;
+        if (constructor.name === 'QueryCommand' && input.IndexName === 'personaId-index') return { Items: [{ signatureId: 'sig-1' }] };
+        if (constructor.name === 'UpdateCommand' && input.Key.signatureId) {
+            estados.push(input.ExpressionAttributeValues[':s'] || input.ExpressionAttributeValues[':v']);
+            return {};
+        }
+        if (constructor.name === 'UpdateCommand') throw Object.assign(new Error('no se escribió'), { name: nombre });
+        return base(cmd);
+    };
+    return estados;
+};
+
+test('si el documento no se puede escribir, las firmas vuelven a ser válidas', async () => {
+    store.doc = firmadoPor('ana');
+    let estados = falloAlEscribirElDocumento('ConditionalCheckFailedException');
+    const res = await handler.update(ev('d1', { s3Key: 'obras/v2.pdf' }));
+    assert.ok(res.statusCode >= 400);
+    assert.deepEqual(estados, ['superada', 'valida']);
+
+    docClient.send = async (cmd) => (cmd.constructor.name === 'GetCommand' ? { Item: store.doc } : {});
+    estados = falloAlEscribirElDocumento('InternalServerError');
+    const publicada = await conFirmantes(miper([asig('ana')]), {});
+    assert.equal(publicada.res.statusCode, 500);
+    assert.deepEqual(estados, ['superada', 'valida']);
+});

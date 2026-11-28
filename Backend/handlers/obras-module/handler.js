@@ -114,9 +114,20 @@ module.exports.obrasHandler = conAuditoriaSalud(async (event) => {
             if (!await obraDelTenant(obraId)) return error('Obra no encontrada', 404);
             const body = JSON.parse(event.body || '{}');
             const obra = await obraService.actualizar(tenantId, obraId, body);
+            let asignacion;
+            if (body.plantillasOnboarding !== undefined) {
+                try {
+                    const { syncPlantillasObra } = require('../personas-module/handler');
+                    asignacion = await syncPlantillasObra({ tenantId, obra });
+                } catch (e) {
+                    console.error(`Asignación por plantillas de obra ${obraId}:`, e.message);
+                    asignacion = { error: true };
+                }
+            }
             return success({
                 message: 'Obra actualizada',
-                obra: obra.toSafeFormat()
+                obra: obra.toSafeFormat(),
+                ...(asignacion ? { asignacion } : {}),
             });
         }
 

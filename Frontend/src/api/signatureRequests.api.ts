@@ -101,7 +101,7 @@ export interface NewSignature {
     userAgent: string;
     metodoValidacion: string;
     documentosFirmados: DocumentoAdjunto[];
-    estado: 'valida' | 'disputada' | 'revocada' | 'pendiente';
+    estado: 'valida' | 'disputada' | 'revocada' | 'pendiente' | 'superada';
     disputaInfo?: DisputeInfo;
     empresaId: string;
     createdAt: string;

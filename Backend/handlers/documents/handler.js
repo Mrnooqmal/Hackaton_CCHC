@@ -29,6 +29,10 @@ const anotarDocumentosSalud = (docs, tipo = TIPOS_ACCESO_SALUD.DOCUMENTO) => {
 const { DESTINATARIO, MEDIO } = require('../../lib/distribucion');
 const almacenamiento = require('../../lib/almacenamiento');
 const { camposDeArchivo, verificarArchivo } = require('../../lib/huellaArchivo');
+const {
+    firmoLaAsignacion, hayFirmas, esCopiaIndividual, asignacionPendiente, relatorPendiente,
+    superandoFirmasDelDocumento,
+} = require('../../lib/services/superarFirmas');
 const { registrarFallo } = require('../../lib/degradacion');
 const {
     llaveDe: llaveDeArreglos,
@@ -555,7 +559,6 @@ module.exports.remove = async (event) => {
  * se archiva en `versiones[]` y sube el contador `version`. Es un invariante del
  * documento (reemplazar nunca destruye lo anterior), no una función de un
  * endpoint, por eso vive acá y cubre todas las pantallas que reemplazan archivos.
- * A diferencia de `nuevaVersion`, no toca firmas ni asignaciones.
  */
 module.exports.update = async (event) => {
     try {
@@ -604,6 +607,8 @@ module.exports.update = async (event) => {
 
         // Archivar la versión saliente cuando el archivo cambia de verdad.
         const nuevoS3Key = body.s3Key !== undefined ? body.s3Key : body.archivoUrl;
+        let refirman = [];
+        let cambiaArchivo = false;
         if (nuevoS3Key) {
             // H-7: el archivo nuevo trae su huella, leída de S3.
             const { archivoHuella } = await camposDeArchivo(nuevoS3Key);
@@ -614,7 +619,32 @@ module.exports.update = async (event) => {
             const doc = actual;
 
             const s3KeyActual = doc.s3Key || doc.archivoUrl || null;
-            if (s3KeyActual && s3KeyActual !== nuevoS3Key) {
+            cambiaArchivo = Boolean(s3KeyActual) && s3KeyActual !== nuevoS3Key;
+            const reabreFirmas = cambiaArchivo && hayFirmas(doc);
+            if (reabreFirmas && !puedeSubir(sesion) && !esCopiaIndividual(doc)) {
+                return error('No tienes permiso para reemplazar un documento firmado por varias personas', 403);
+            }
+
+            if (reabreFirmas) {
+                refirman = [...new Set([
+                    ...(doc.asignaciones || []).filter(firmoLaAsignacion).map((a) => a.personaId),
+                    ...(doc.firmas || []).map((f) => f.personaId),
+                    doc.firmaRelator?.estado === 'firmado' ? doc.firmaRelator.personaId : null,
+                ].filter(Boolean))];
+
+                updateExpressions.push('#firmas = :firmas', '#asig = :asig');
+                expressionNames['#firmas'] = 'firmas';
+                expressionNames['#asig'] = 'asignaciones';
+                expressionValues[':firmas'] = [];
+                expressionValues[':asig'] = (doc.asignaciones || []).map(asignacionPendiente);
+                if (doc.firmaRelator) {
+                    updateExpressions.push('#relator = :relator');
+                    expressionNames['#relator'] = 'firmaRelator';
+                    expressionValues[':relator'] = relatorPendiente();
+                }
+            }
+
+            if (cambiaArchivo) {
                 const versionActual = doc.version || 1;
                 const snapshot = {
                     version: versionActual,
@@ -627,6 +657,11 @@ module.exports.update = async (event) => {
                     publicadaEn: doc.updatedAt || doc.createdAt || null,
                     motivo: doc.ultimoMotivoVersion || null,
                     participantes: doc.ultimosParticipantesRevision || null,
+                    ...(reabreFirmas ? {
+                        firmasArchivadas: doc.firmas || [],
+                        asignacionesArchivadas: doc.asignaciones || [],
+                        firmaRelator: doc.firmaRelator || null,
+                    } : {}),
                 };
                 const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
 
@@ -654,19 +689,40 @@ module.exports.update = async (event) => {
         expressionNames['#updatedAt'] = 'updatedAt';
         expressionValues[':updatedAt'] = new Date().toISOString();
 
-        const result = await docClient.send(new UpdateCommand({
+        const sinCambiosAjenos = cambiaArchivo && actual.updatedAt;
+        if (sinCambiosAjenos) expressionValues[':leido'] = actual.updatedAt;
+        const escribir = () => docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
             UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            ...(sinCambiosAjenos ? { ConditionExpression: '#updatedAt = :leido' } : {}),
             ExpressionAttributeNames: expressionNames,
             ExpressionAttributeValues: expressionValues,
             ReturnValues: 'ALL_NEW'
         }));
+        const result = cambiaArchivo ? await superandoFirmasDelDocumento(actual, escribir) : await escribir();
+        if (refirman.length > 0) {
+            try {
+                await eventBus.emit('document.assigned', {
+                    documentId: id,
+                    userIds: refirman,
+                    assignedBy: sesion.personaId,
+                    creatorName: body.publicadaPorNombre || 'Gestor SST',
+                    documentName: `${result.Attributes?.titulo || actual.titulo} (versión actualizada)`,
+                    dueDate: null,
+                });
+            } catch (eventError) {
+                console.error('Error emitting document.assigned event (reemplazo):', eventError);
+            }
+        }
         // El programa precreado de una obra recibe su archivo por acá.
         await asignarRepresentanteSiCorresponde(result.Attributes);
 
         return success(await descifrarDocumentoDeTenant(result.Attributes, sesion.tenantId));
     } catch (err) {
+        if (err.name === 'ConditionalCheckFailedException') {
+            return error('El documento cambió mientras lo reemplazabas. Recarga e inténtalo de nuevo.', 409);
+        }
         console.error('Error updating document:', err);
         return error(err.message, 500);
     }
@@ -742,13 +798,21 @@ module.exports.nuevaVersionCorporativa = async (event) => {
         const now = new Date().toISOString();
         const firmantes = new Set();
         let actualizados = 0;
+        let fallidas = 0;
+        let versionPublicada = 1;
 
         // H-7: el archivo nuevo es uno solo para todas las copias; su huella se
         // lee de S3 una vez.
         const { archivoHuella } = await camposDeArchivo(s3Key);
 
         for (const doc of copias) {
+            (doc.asignaciones || []).forEach((a) => a.personaId && firmantes.add(a.personaId));
             const versionPrevia = doc.version || 1;
+            if ((doc.s3Key || doc.archivoUrl) === s3Key) {
+                versionPublicada = Math.max(versionPublicada, versionPrevia);
+                continue;
+            }
+            versionPublicada = Math.max(versionPublicada, versionPrevia + 1);
             const snapshot = {
                 version: versionPrevia,
                 s3Key: doc.s3Key || doc.archivoUrl || null,
@@ -758,24 +822,24 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                 // FUF 51 / Art. 57 inc. 5: participantes de la revisión anual.
                 participantes: doc.ultimosParticipantesRevision || null,
                 firmas: doc.firmas || [],
+                firmaRelator: doc.firmaRelator || null,
                 publicadaPor: doc.ultimaPublicacionPor || null,
                 publicadaEn: doc.updatedAt || null,
             };
-            const asignacionesReset = (doc.asignaciones || []).map(a => ({
-                ...a, estado: 'pendiente', fechaFirma: null, notificado: true,
-            }));
-            (doc.asignaciones || []).forEach(a => a.personaId && firmantes.add(a.personaId));
+            const asignacionesReset = (doc.asignaciones || []).map((a) => ({ ...asignacionPendiente(a), notificado: true }));
 
             try {
-                await docClient.send(new UpdateCommand({
+                await superandoFirmasDelDocumento(doc, () => docClient.send(new UpdateCommand({
                     TableName: TABLE_NAME,
                     Key: { documentId: doc.documentId },
+                    ...(doc.updatedAt ? { ConditionExpression: 'updatedAt = :leido' } : {}),
                     UpdateExpression: 'SET #version = :v'
                         + ', s3Key = :k, archivoUrl = :k, archivoNombre = :n, archivoHuella = :h, firmas = :vacio,'
                         + ' asignaciones = :asig,'
                         + ' ultimoMotivoVersion = :m, notasCambio = :nc,'
                         + ' ultimaPublicacionPor = :p, ultimaPublicacionNombre = :pn,'
                         + ' ultimosParticipantesRevision = :part,'
+                        + (doc.firmaRelator ? ' firmaRelator = :relator,' : '')
                         + ' versiones = list_append(if_not_exists(versiones, :vacio), :snap), updatedAt = :now',
                     ExpressionAttributeNames: { '#version': 'version' },
                     ExpressionAttributeValues: {
@@ -792,10 +856,13 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                         ':part': participantesRevision || null,
                         ':snap': [snapshot],
                         ':now': now,
+                        ...(doc.firmaRelator ? { ':relator': relatorPendiente() } : {}),
+                        ...(doc.updatedAt ? { ':leido': doc.updatedAt } : {}),
                     },
-                }));
+                })));
                 actualizados += 1;
             } catch (e) {
+                fallidas += 1;
                 console.error(`No se pudo versionar la copia ${doc.documentId}:`, e.message);
             }
         }
@@ -808,7 +875,7 @@ module.exports.nuevaVersionCorporativa = async (event) => {
                 tenantId,
                 obraId: null,
                 documentName: DOCUMENT_TYPES[tipo] || tipo,
-                version: (copias[0].version || 1) + 1,
+                version: versionPublicada,
                 motivo: String(motivo).trim(),
                 publicadaPor: publicadaPor || null,
                 publicadaPorNombre: publicadaPorNombre || null,
@@ -819,7 +886,9 @@ module.exports.nuevaVersionCorporativa = async (event) => {
         }
 
         return success({
-            message: `Nueva versión publicada en ${plural(actualizados, 'copia', 'copias')}. El personal debe re-firmar.`,
+            message: `Nueva versión publicada en ${plural(actualizados, 'copia', 'copias')}. El personal debe re-firmar.`
+                + (fallidas ? ` No se pudo actualizar ${plural(fallidas, 'copia', 'copias')}: publícala de nuevo.` : ''),
+            copiasFallidas: fallidas,
             tipo,
             copiasActualizadas: actualizados,
             firmantesConvocados: firmantes.size,
@@ -887,6 +956,7 @@ module.exports.nuevaVersion = async (event) => {
             participantes: doc.ultimosParticipantesRevision || null,
             firmasArchivadas: doc.firmas || [],
             asignacionesArchivadas: doc.asignaciones || [],
+            firmaRelator: doc.firmaRelator || null,
         };
         const versiones = Array.isArray(doc.versiones) ? [...doc.versiones, snapshot] : [snapshot];
 
@@ -901,9 +971,7 @@ module.exports.nuevaVersion = async (event) => {
         const previas = (doc.asignaciones || []).filter((a) => !elegidos || elegidos.has(a.personaId));
 
         // Re-firma: las personas que siguen quedan en estado 'pendiente'.
-        const asignacionesReset = previas.map(a => ({
-            ...a, estado: 'pendiente', fechaFirma: null, notificado: true,
-        }));
+        const asignacionesReset = previas.map((a) => ({ ...asignacionPendiente(a), notificado: true }));
         const firmantesPrevios = [...new Set(previas.map(a => a.personaId).filter(Boolean))];
 
         // Las agregadas se construyen igual que en `assign`: solo personas de la
@@ -924,11 +992,14 @@ module.exports.nuevaVersion = async (event) => {
             }
         }
 
-        await docClient.send(new UpdateCommand({
+        const { archivoHuella: huellaNueva } = await camposDeArchivo(s3Key);
+        await superandoFirmasDelDocumento(doc, () => docClient.send(new UpdateCommand({
             TableName: TABLE_NAME,
             Key: { documentId: id },
+            ...(doc.updatedAt ? { ConditionExpression: 'updatedAt = :leido' } : {}),
             UpdateExpression: 'SET version = :v, versiones = :vs, s3Key = :s3, archivoUrl = :s3, archivoNombre = :an, archivoHuella = :h, '
                 + 'firmas = :empty, asignaciones = :asig, '
+                + (doc.firmaRelator ? 'firmaRelator = :relator, ' : '')
                 + '#um = :motivo, notasCambio = :notas, ultimaPublicacionPor = :pby, ultimaPublicacionNombre = :pbn, ultimosParticipantesRevision = :part, updatedAt = :now',
             ExpressionAttributeNames: { '#um': 'ultimoMotivoVersion' },
             ExpressionAttributeValues: {
@@ -937,7 +1008,7 @@ module.exports.nuevaVersion = async (event) => {
                 ':s3': s3Key,
                 ':an': body.archivoNombre || doc.archivoNombre || null,
                 // H-7: leída de S3, no del cuerpo.
-                ':h': (await camposDeArchivo(s3Key)).archivoHuella,
+                ':h': huellaNueva,
                 ':empty': [],
                 ':asig': [...asignacionesReset, ...asignacionesNuevas],
                 ':motivo': motivo,
@@ -946,8 +1017,10 @@ module.exports.nuevaVersion = async (event) => {
                 ':pbn': body.publicadaPorNombre || null,
                 ':part': participantesRevision || null,
                 ':now': now,
+                ...(doc.firmaRelator ? { ':relator': relatorPendiente() } : {}),
+                ...(doc.updatedAt ? { ':leido': doc.updatedAt } : {}),
             },
-        }));
+        })));
 
         // Notificación desacoplada (best-effort: no rompe la publicación).
         try {
@@ -988,6 +1061,9 @@ module.exports.nuevaVersion = async (event) => {
         const updated = await docClient.send(new GetCommand({ TableName: TABLE_NAME, Key: { documentId: id } }));
         return success(updated.Item);
     } catch (err) {
+        if (err.name === 'ConditionalCheckFailedException') {
+            return error('El documento cambió mientras publicabas. Recarga e inténtalo de nuevo.', 409);
+        }
         console.error('Error creating document version:', err);
         return error(err.message, 500);
     }
